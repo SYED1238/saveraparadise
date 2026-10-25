@@ -1166,35 +1166,71 @@ body.pwa-customer-installed .header-pwa-dock {
   display: inline-block;
 }
 
-/* Hero Delivery Distance & ETA Badge (Appears when customer adds/selects address) */
+/* Hero Delivery Distance & ETA Badge (Puffy Cloud & Jelly Style - Pure Info, No Modal Opening) */
 .hero-distance-badge {
   display: inline-flex;
   align-items: center;
   margin-top: 18px;
   margin-bottom: 2px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1.5px solid rgba(255, 90, 38, 0.22);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 250, 246, 0.93) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  outline: 1px solid rgba(255, 106, 61, 0.14);
   border-radius: var(--radius-full, 9999px);
-  box-shadow: 0 4px 18px rgba(255, 90, 38, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
-  padding: 8px 18px 8px 10px;
-  cursor: pointer;
+  box-shadow: 
+    0 12px 28px -4px rgba(255, 90, 38, 0.14),
+    0 4px 14px rgba(0, 0, 0, 0.04),
+    inset 0 2px 4px rgba(255, 255, 255, 1),
+    inset 0 -2px 4px rgba(255, 106, 61, 0.05);
+  padding: 8px 20px 8px 12px;
+  cursor: default;
   z-index: 26;
   position: relative;
-  transition: transform 0.22s var(--ease-spring, ease), box-shadow 0.22s ease, border-color 0.22s ease;
   user-select: none;
   max-width: fit-content;
+  animation: cloudFloatingDrift 4.5s ease-in-out infinite;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  will-change: transform;
 }
 
+/* Cloud Floating Drift Keyframes */
+@keyframes cloudFloatingDrift {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+/* Jelly squish & stretch micro-interactions */
 .hero-distance-badge:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 90, 38, 0.22), 0 3px 8px rgba(0, 0, 0, 0.06);
-  border-color: rgba(255, 90, 38, 0.45);
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 
+    0 16px 36px -4px rgba(255, 90, 38, 0.2),
+    0 6px 18px rgba(0, 0, 0, 0.06),
+    inset 0 2px 4px rgba(255, 255, 255, 1),
+    inset 0 -2px 4px rgba(255, 106, 61, 0.07);
 }
 
 .hero-distance-badge:active {
-  transform: translateY(0);
+  transform: scale(0.94, 0.9) translateY(0);
+  transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Tactile Jelly Pop Spring */
+@keyframes jellyBouncePop {
+  0% { transform: scale(1, 1); }
+  25% { transform: scale(1.12, 0.88); }
+  45% { transform: scale(0.92, 1.08); }
+  65% { transform: scale(1.06, 0.96); }
+  82% { transform: scale(0.98, 1.02); }
+  100% { transform: scale(1, 1); }
+}
+
+.hero-distance-badge.jelly-pop {
+  animation: jellyBouncePop 0.6s cubic-bezier(0.25, 1.25, 0.5, 1) !important;
 }
 
 .hero-distance-inner {
@@ -1273,23 +1309,13 @@ body.pwa-customer-installed .header-pwa-dock {
   font-size: 0.8rem;
 }
 
-.hero-distance-chevron {
-  font-size: 0.75rem;
-  color: #94A3B8;
-  margin-left: 2px;
-  transition: transform 0.2s ease, color 0.2s ease;
-  flex-shrink: 0;
-}
-
-.hero-distance-badge:hover .hero-distance-chevron {
-  transform: translateX(3px);
-  color: #FF5A26;
-}
-
 [data-theme="dark"] .hero-distance-badge {
-  background: rgba(30, 27, 24, 0.95);
-  border-color: rgba(255, 90, 38, 0.35);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  background: linear-gradient(135deg, rgba(38, 33, 29, 0.96) 0%, rgba(28, 24, 21, 0.94) 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  outline: 1px solid rgba(255, 90, 38, 0.25);
+  box-shadow: 
+    0 12px 28px -4px rgba(0, 0, 0, 0.6),
+    inset 0 1px 2px rgba(255, 255, 255, 0.1);
 }
 
 [data-theme="dark"] .hero-distance-text {
@@ -5921,21 +5947,25 @@ body.food-modal-open .mobile-floating-bar {
     letter-spacing: 0.02em;
   }
 
-  /* Hero Delivery Distance Badge on Mobile (Fills the empty space below headline) */
+  /* Hero Delivery Distance Badge on Mobile (Puffy Cloud & Jelly Style) */
   .hero-distance-badge {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
     margin-top: 12px;
     margin-bottom: 0px;
-    padding: 9px 12px;
-    border-radius: 12px;
+    padding: 10px 14px;
+    border-radius: 18px;
+    box-shadow: 
+      0 8px 24px -2px rgba(255, 90, 38, 0.12),
+      0 3px 10px rgba(0, 0, 0, 0.04),
+      inset 0 2px 3px rgba(255, 255, 255, 0.95);
   }
 
   .hero-distance-inner {
     width: 100%;
-    justify-content: space-between;
-    gap: 8px;
+    justify-content: flex-start;
+    gap: 10px;
     flex-wrap: nowrap;
   }
 

@@ -5646,23 +5646,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Click on hero badge opens address modal to view/change delivery location
+  // Hero delivery distance badge: cloud-like floating pill with tactile jelly wobble (pure info, does not open anything)
   const heroDistanceBadge = document.getElementById('hero-distance-badge');
   if (heroDistanceBadge) {
-    heroDistanceBadge.addEventListener('click', () => {
-      const addresses = getCurrentAddresses();
-      if (!addresses || addresses.length === 0) {
-        openAddressModal();
-        return;
-      }
-      const activeAddr = (selectedAddressId && addresses.find(a => a.id === selectedAddressId))
-        || addresses.find(a => a.isDefault)
-        || addresses[0];
-      if (activeAddr) {
-        openAddressModal(activeAddr.id);
-      } else {
-        openAddressModal();
-      }
+    heroDistanceBadge.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Tactile jelly squish on tap
+      heroDistanceBadge.classList.remove('jelly-pop');
+      void heroDistanceBadge.offsetWidth; // trigger reflow
+      heroDistanceBadge.classList.add('jelly-pop');
     });
   }
 
