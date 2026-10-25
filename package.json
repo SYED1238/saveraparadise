@@ -1,0 +1,24 @@
+{
+  "name": "restaurant2",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "leaflet": "^1.9.4",
+    "canvas-confetti": "^1.9.4"
+  }
+}

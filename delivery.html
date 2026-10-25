@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Savera Paradise Rider — Delivery Partner App</title>
+  <meta name="description" content="Savera Paradise Rider Delivery Partner App. Real-time pickup & drop navigation, live order queue, and COD tracking.">
+  
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <link rel="stylesheet" href="/delivery.css">
+  <link rel="stylesheet" href="/passcodeLock.css">
+
+  <!-- PWA & Mobile Web App Meta -->
+  <link rel="manifest" href="/manifest-delivery.json">
+  <link rel="icon" type="image/svg+xml" href="/icon-rider-192.svg">
+  <link rel="apple-touch-icon" href="/icon-rider-192.svg">
+  <meta name="theme-color" content="#059669">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Savera Paradise Rider">
+  <link rel="stylesheet" href="/pwa.css">
+  <script>
+    (function() {
+      try {
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+          document.documentElement.classList.add('pwa-rider-installed');
+        } else {
+          document.documentElement.classList.remove('pwa-rider-installed');
+        }
+      } catch(e) {}
+    })();
+  </script>
+</head>
+<body class="rider-body">
+
+  <!-- ============================================================== -->
+  <!-- RIDER SECURITY GATE: iOS-STYLE PASSCODE LOCK SCREEN            -->
+  <!-- No keyboard needed - on-screen circular keypad with glassmorphic blur -->
+  <!-- ============================================================== -->
+  <div class="portal-lock-overlay" id="rider-lock-overlay">
+    <div class="ios-passcode-glow glow-rider"></div>
+    <div class="ios-passcode-wrap">
+      <div class="ios-passcode-badge">
+        <i class="fa-solid fa-motorcycle"></i>
+        <span>Delivery Partner Access</span>
+      </div>
+      <h1 class="ios-passcode-title">Enter passcode</h1>
+      <p class="ios-passcode-subtitle" id="rider-lock-subtitle">Enter your 4-digit rider passcode</p>
+      
+      <!-- 4 Passcode Dots -->
+      <div class="ios-passcode-dots" id="rider-passcode-dots" aria-label="Passcode digits">
+        <span class="ios-dot" data-index="0"></span>
+        <span class="ios-dot" data-index="1"></span>
+        <span class="ios-dot" data-index="2"></span>
+        <span class="ios-dot" data-index="3"></span>
+      </div>
+
+      <!-- 3x4 iOS Circular Keypad -->
+      <div class="ios-keypad-grid" id="rider-keypad">
+        <button type="button" class="ios-key" data-key="1">
+          <span class="key-digit">1</span>
+          <span class="key-sub">&nbsp;</span>
+        </button>
+        <button type="button" class="ios-key" data-key="2">
+          <span class="key-digit">2</span>
+          <span class="key-sub">ABC</span>
+        </button>
+        <button type="button" class="ios-key" data-key="3">
+          <span class="key-digit">3</span>
+          <span class="key-sub">DEF</span>
+        </button>
+
+        <button type="button" class="ios-key" data-key="4">
+          <span class="key-digit">4</span>
+          <span class="key-sub">GHI</span>
+        </button>
+        <button type="button" class="ios-key" data-key="5">
+          <span class="key-digit">5</span>
+          <span class="key-sub">JKL</span>
+        </button>
+        <button type="button" class="ios-key" data-key="6">
+          <span class="key-digit">6</span>
+          <span class="key-sub">MNO</span>
+        </button>
+
+        <button type="button" class="ios-key" data-key="7">
+          <span class="key-digit">7</span>
+          <span class="key-sub">PQRS</span>
+        </button>
+        <button type="button" class="ios-key" data-key="8">
+          <span class="key-digit">8</span>
+          <span class="key-sub">TUV</span>
+        </button>
+        <button type="button" class="ios-key" data-key="9">
+          <span class="key-digit">9</span>
+          <span class="key-sub">WXYZ</span>
+        </button>
+
+        <div class="ios-key-spacer"></div>
+        <button type="button" class="ios-key" data-key="0">
+          <span class="key-digit">0</span>
+          <span class="key-sub">&nbsp;</span>
+        </button>
+        <button type="button" class="ios-key ios-key-action" data-action="delete" aria-label="Delete">
+          Delete
+        </button>
+      </div>
+
+      <div class="ios-passcode-hint" id="rider-passcode-hint">
+        <i class="fa-solid fa-lock"></i> Enter your assigned 4-digit Rider PIN
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Rider App Bar -->
+  <header class="rider-header">
+    <div class="rider-header-container">
+      <div class="rider-brand-group">
+        <a href="/delivery.html" class="rider-logo">
+          <span class="rider-logo-icon">🍗</span>
+          <span class="rider-logo-text"><span class="hide-mobile">Savera Paradise </span><span class="show-mobile">Savera </span><strong>Rider</strong></span>
+        </a>
+        <div class="rider-badge-status online" id="rider-status-pill">
+          <span class="rider-status-dot"></span>
+          <span id="rider-status-text">Online<span class="hide-mobile"> • Active</span></span>
+        </div>
+      </div>
+
+      <div class="rider-top-actions">
+        <div class="rider-cash-pill" id="btn-rider-cash-summary" title="Click to view cash breakdown">
+          <span class="cash-icon">💵</span>
+          <div class="cash-pill-info">
+            <span class="cash-pill-label hide-mobile">Cash in Hand</span>
+            <strong class="cash-pill-amount" id="top-cash-amount">₹0</strong>
+          </div>
+        </div>
+
+        <button type="button" class="btn-admin-lock" id="btn-rider-logout" title="Lock Rider Portal" aria-label="Lock Rider Portal">
+          <i class="fa-solid fa-lock"></i>
+          <span class="hide-mobile">Lock</span>
+        </button>
+
+        <div class="rider-pwa-dock">
+          <!-- Compact Animated App Download Button (Docked right so cash pill never gets pushed) -->
+          <button type="button" class="btn-app-download-compact rider-pwa-btn" id="btn-rider-download-app" aria-label="Get Web App" title="Download & Install Rider App">
+            <span class="pwa-icon-glow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </span>
+            <span class="pwa-animated-label">Get Web App</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="rider-main-container">
+    <!-- Rider Welcome & KPI Summary Bar -->
+    <section class="rider-hero-bar">
+      <div class="rider-profile-row">
+        <div class="rider-profile-card" id="rider-profile-summary">
+          <div class="rider-avatar-wrap" id="rider-avatar-badge">
+            <img src="/avatars/rider-1.svg" alt="Rider Avatar" class="rider-avatar-img" id="rider-avatar-img" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src='/avatars/rider-1.svg';">
+            <span class="rider-vehicle-tag" id="rider-vehicle-tag">🏍️ Bike</span>
+          </div>
+          <div class="rider-greeting">
+            <div class="rider-name-row">
+              <h2 id="rider-name-display">Delivery Partner</h2>
+              <span class="rider-pin-badge" id="rider-pin-badge">PIN: ----</span>
+            </div>
+            <div class="rider-meta-row">
+              <span class="rider-phone-badge" id="rider-phone-badge">
+                <i class="fa-solid fa-phone"></i> <span id="rider-phone-display">--</span>
+              </span>
+              <span class="gps-status-pill acquiring" id="rider-gps-pill">
+                <span class="gps-dot"></span>
+                <span id="gps-status-text">Acquiring Live GPS...</span>
+              </span>
+            </div>
+            <p class="rider-sub-info">
+              <i class="fa-solid fa-store"></i> <strong>Savera Paradise Central Hub</strong> • <span id="rider-id-display">ID: ----</span>
+            </p>
+          </div>
+        </div>
+        <div class="rider-toggle-duty">
+          <label class="switch">
+            <input type="checkbox" id="rider-duty-toggle" checked>
+            <span class="slider round"></span>
+          </label>
+          <span class="duty-label" id="duty-toggle-label">On Duty</span>
+        </div>
+      </div>
+    </section>
+
+
+
+    <!-- Delivery Orders List Container -->
+    <section class="rider-orders-section">
+
+      <div class="rider-orders-list" id="rider-orders-list">
+        <!-- Dynamically rendered order delivery cards -->
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- SIGNATURE 3-BUTTON FLOATING NAVIGATION BAR                     -->
+  <!-- Navigation bar matching Main Page & Admin Page                 -->
+  <!-- ============================================================== -->
+  <nav class="mobile-floating-bar rider-floating-bar" id="rider-floating-bar" aria-label="Rider Navigation">
+    <div class="floating-capsule rider-capsule">
+      
+      <!-- BUTTON 1: Kitchen Pending (FIRST) -->
+      <button class="capsule-nav-btn rider-nav-btn active" id="capsule-btn-ready" data-tab="ready" aria-label="Kitchen Pending">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18 6h-2c0-2.21-1.79-4-4-4S8 3.79 8 6H6c-1.1 0-2 .9-2 2v1h16V8c0-1.1-.9-2-2-2zm-6-2c1.1 0 2 .9 2 2h-4c0-1.1.9-2 2-2zm7 7H3c-.55 0-1 .45-1 1 0 5 3.58 9.17 8.24 9.87.25.04.5.06.76.06.26 0 .51-.02.76-.06C18.42 21.17 22 17 22 12c0-.55-.45-1-1-1z"/>
+        </svg>
+        <span class="capsule-label">Pending</span>
+        <span class="capsule-badge-pill" id="capsule-ready-badge">0</span>
+      </button>
+
+      <!-- BUTTON 2: Active Tasks (SECOND) -->
+      <button class="capsule-nav-btn rider-nav-btn" id="capsule-btn-active" data-tab="active" aria-label="Active Tasks">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 14.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0zm-11 0a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0zM15 8h3l2 4h-5V8zm-3 2H9.5L7.2 4H3v2h2.8l2.9 8h8.8l-1.3-4H12z"/>
+        </svg>
+        <span class="capsule-label">Active</span>
+        <span class="capsule-badge-pill" id="capsule-active-badge">0</span>
+      </button>
+
+    </div>
+
+    <!-- Quick action circle button: Delivered Today (Round Button) -->
+    <button type="button" class="floating-circle-action rider-delivered-circle rider-nav-btn" id="capsule-btn-delivered" data-tab="delivered" title="Delivered Today" aria-label="Delivered Today">
+      <svg class="cart-action-svg" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1 15-5-5 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z"/>
+      </svg>
+      <span class="circle-badge-pill" id="capsule-delivered-badge">0</span>
+    </button>
+  </nav>
+
+  <!-- Modal: Confirm Delivery & Cash Collection -->
+  <div class="rider-modal-backdrop" id="modal-confirm-delivery-backdrop">
+    <div class="rider-modal-card">
+      <button class="rider-modal-close" id="modal-confirm-close">✕</button>
+      
+      <div class="confirm-modal-header">
+        <div class="confirm-icon-bubble">🎉</div>
+        <h3>Confirm Order Delivery</h3>
+        <p>Verify cash collected and handover at customer doorstep</p>
+      </div>
+
+      <div class="confirm-order-details" id="confirm-order-details">
+        <!-- Injected via JS -->
+      </div>
+
+      <form id="form-confirm-delivered" class="form-confirm-delivered">
+        <input type="hidden" id="confirm-order-id">
+        
+        <div class="confirm-cash-box" id="confirm-cash-box">
+          <div class="cash-check-row">
+            <span class="cash-check-label">Total Cash to Collect:</span>
+            <strong class="cash-check-value" id="confirm-cash-value">₹0</strong>
+          </div>
+          <label class="custom-checkbox-row">
+            <input type="checkbox" id="check-cash-received" required>
+            <span class="checkmark"></span>
+            <span class="check-text">I have collected full cash amount from customer</span>
+          </label>
+        </div>
+
+        <div class="confirm-actions-row">
+          <button type="button" class="btn-cancel-modal" id="btn-cancel-delivery">Cancel</button>
+          <button type="submit" class="btn-submit-delivered" id="btn-submit-delivered">
+            <i class="fa-solid fa-check-double"></i> Mark Order Delivered
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Cash in Hand Summary Settlement -->
+  <div class="rider-modal-backdrop" id="modal-cash-summary-backdrop">
+    <div class="rider-modal-card">
+      <button class="rider-modal-close" id="modal-cash-close">✕</button>
+      
+      <div class="confirm-modal-header">
+        <div class="confirm-icon-bubble">💵</div>
+        <h3>Cash in Hand Breakdown</h3>
+        <p>Total Cash on Delivery (COD) collected for today's shift</p>
+      </div>
+
+      <div class="cash-summary-content">
+        <div class="cash-big-kpi">
+          <span>Total to Deposit at Kitchen:</span>
+          <h1 id="modal-cash-large-total">₹0</h1>
+          <p id="modal-cash-orders-count">From 0 delivered orders</p>
+        </div>
+
+        <div class="cash-orders-breakdown-list" id="cash-orders-breakdown-list">
+          <!-- Itemized list of orders with cash collected -->
+        </div>
+
+        <button type="button" class="btn-handover-cash" id="btn-handover-cash">
+          <i class="fa-solid fa-hand-holding-dollar"></i> Deposit Cash to Kitchen Manager
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: 4-Digit Bag Code Verification & Route Preview Modal -->
+  <div class="rider-modal-backdrop" id="modal-bag-preview-backdrop">
+    <div class="rider-modal-card bag-preview-card">
+      <button type="button" class="rider-modal-close" id="btn-close-bag-preview">✕</button>
+      
+      <div class="confirm-modal-header">
+        <div class="confirm-icon-bubble">📦</div>
+        <div class="bag-code-tag-pill" id="preview-bag-code-pill">BAG CODE: #0000</div>
+        <h3 id="preview-order-id">Order #QB-0000</h3>
+        <p>Kitchen Bag verified! Review drop address, live distance, and cash payment.</p>
+      </div>
+
+      <div class="bag-preview-body">
+        <div class="preview-distance-card">
+          <div class="dist-icon-wrap">
+            <i class="fa-solid fa-route"></i>
+          </div>
+          <div class="dist-details">
+            <div class="dist-main-line">
+              <strong id="preview-dist-val">-- km away</strong>
+              <span class="dot-sep">•</span>
+              <span id="preview-eta-val">~15 mins ride</span>
+            </div>
+            <span class="dist-sub-line">Live calculated from Savera Paradise Kitchen to Customer Pinned Location</span>
+          </div>
+        </div>
+
+        <div class="preview-info-table">
+          <div class="preview-row">
+            <span class="row-label"><i class="fa-solid fa-user"></i> Customer Name:</span>
+            <strong class="row-val" id="preview-customer-name">Customer</strong>
+          </div>
+          <div class="preview-row">
+            <span class="row-label"><i class="fa-solid fa-phone"></i> Contact Phone:</span>
+            <strong class="row-val row-phone" id="preview-customer-phone">--</strong>
+          </div>
+          <div class="preview-row">
+            <span class="row-label"><i class="fa-solid fa-location-dot"></i> Drop Address:</span>
+            <span class="row-val address-val" id="preview-drop-address">Address</span>
+          </div>
+          <div class="preview-row">
+            <span class="row-label"><i class="fa-solid fa-utensils"></i> Packed Items:</span>
+            <span class="row-val items-val" id="preview-items-summary">Items</span>
+          </div>
+          <div class="preview-row highlight-payment">
+            <span class="row-label"><i class="fa-solid fa-money-bill-wave"></i> Payment Mode:</span>
+            <strong class="row-val payment-val" id="preview-payment-pill">💵 COD: ₹0</strong>
+          </div>
+        </div>
+
+        <div class="bag-preview-actions">
+          <button type="button" class="btn-cancel-modal" id="btn-cancel-bag-claim">Cancel</button>
+          <button type="button" class="btn-confirm-bag-claim" id="btn-confirm-bag-claim">
+            <i class="fa-solid fa-motorcycle"></i> Accept & Start Delivery
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="rider-toast-container"></div>
+
+  <script type="module" src="/delivery.js"></script>
+</body>
+</html>

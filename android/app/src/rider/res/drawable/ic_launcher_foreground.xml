@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:translateX="0"
+        android:translateY="0">
+
+        <!-- Speed Motion Lines behind the Scooter -->
+        <path
+            android:strokeColor="#A7F3D0"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M20,52 L28,52 M16,60 L26,60 M22,68 L30,68" />
+
+        <!-- Rear Delivery Parcel Box (Golden Amber #F59E0B) -->
+        <path
+            android:fillColor="#F59E0B"
+            android:pathData="M33,48 L50,48 L52,50 L52,65 L50,67 L33,67 L31,65 L31,50 Z" />
+        <!-- Box Top Latch -->
+        <path
+            android:fillColor="#FBBF24"
+            android:pathData="M37,45 L46,45 L47,48 L36,48 Z" />
+        <!-- Parcel Box Center Dot -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M41.5,55 C42.88,55 44,56.12 44,57.5 C44,58.88 42.88,60 41.5,60 C40.12,60 39,58.88 39,57.5 C39,56.12 40.12,55 41.5,55 Z" />
+
+        <!-- Rider Helmet (Crispy Orange #FF5A26) -->
+        <path
+            android:fillColor="#FF5A26"
+            android:pathData="M56,33 C61,33 65,37 65,42 C65,44 64,45.5 62,46 L53,46 C50,44.5 49,41 50,38 C51,35 53,33 56,33 Z" />
+        <!-- Helmet Visor (Dark Tint #0F172A) -->
+        <path
+            android:fillColor="#0F172A"
+            android:pathData="M60,39 L65,39 C65,42 63,44 60,44 Z" />
+
+        <!-- Scooter Main Chassis Frame & Floorboard (Crisp White #FFFFFF) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M50,65 L66,65 L67,61 L54,61 L52,56 L48,56 Z" />
+
+        <!-- Front Fairing & Steering Stem -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M66,66 L72,50 L68,48 L63,64 Z" />
+
+        <!-- Handlebar -->
+        <path
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M67,47 L74,47" />
+        <!-- Headlight Yellow Glow -->
+        <path
+            android:fillColor="#FEF08A"
+            android:pathData="M73,47 C74.1,47 75,47.9 75,49 C75,50.1 74.1,51 73,51 C71.9,51 71,50.1 71,49 C71,47.9 71.9,47 73,47 Z" />
+
+        <!-- Scooter Rear Wheel (Left) - Tire (r=7, center=38,74) -->
+        <path
+            android:fillColor="#1E293B"
+            android:pathData="M38,67 C41.87,67 45,70.13 45,74 C45,77.87 41.87,81 38,81 C34.13,81 31,77.87 31,74 C31,70.13 34.13,67 38,67 Z" />
+        <!-- Rear Wheel Rim (r=3.5) -->
+        <path
+            android:fillColor="#CBD5E1"
+            android:pathData="M38,70.5 C39.93,70.5 41.5,72.07 41.5,74 C41.5,75.93 39.93,77.5 38,77.5 C36.07,77.5 34.5,75.93 34.5,74 C34.5,72.07 36.07,70.5 38,70.5 Z" />
+        <!-- Rear Wheel Hub (r=1.5) -->
+        <path
+            android:fillColor="#FF5A26"
+            android:pathData="M38,72.5 C38.83,72.5 39.5,73.17 39.5,74 C39.5,74.83 38.83,75.5 38,75.5 C37.17,75.5 36.5,74.83 36.5,74 C36.5,73.17 37.17,72.5 38,72.5 Z" />
+
+        <!-- Scooter Front Wheel (Right) - Tire (r=7, center=72,74) -->
+        <path
+            android:fillColor="#1E293B"
+            android:pathData="M72,67 C75.87,67 79,70.13 79,74 C79,77.87 75.87,81 72,81 C68.13,81 65,77.87 65,74 C65,70.13 68.13,67 72,67 Z" />
+        <!-- Front Wheel Rim (r=3.5) -->
+        <path
+            android:fillColor="#CBD5E1"
+            android:pathData="M72,70.5 C73.93,70.5 75.5,72.07 75.5,74 C75.5,75.93 73.93,77.5 72,77.5 C70.07,77.5 68.5,75.93 68.5,74 C68.5,72.07 70.07,70.5 72,70.5 Z" />
+        <!-- Front Wheel Hub (r=1.5) -->
+        <path
+            android:fillColor="#FF5A26"
+            android:pathData="M72,72.5 C72.83,72.5 73.5,73.17 73.5,74 C73.5,74.83 72.83,75.5 72,75.5 C71.17,75.5 70.5,74.83 70.5,74 C70.5,73.17 71.17,72.5 72,72.5 Z" />
+
+        <!-- Front Mudguard Fender -->
+        <path
+            android:strokeColor="#FF5A26"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M66,70 C68,66 76,66 78,70" />
+
+        <!-- Road Speed Surface Dash -->
+        <path
+            android:strokeColor="#059669"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M24,84 L88,84" />
+
+    </group>
+</vector>

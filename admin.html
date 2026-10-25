@@ -1,0 +1,1533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Savera Paradise Admin Portal — Restaurant Control Hub</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome (with crossorigin and referrerpolicy) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin.css">
+  <link rel="stylesheet" href="/passcodeLock.css">
+
+  <!-- PWA & Mobile Web App Meta -->
+  <link rel="manifest" href="/manifest-admin.json">
+  <link rel="icon" type="image/svg+xml" href="/icon-admin-192.svg">
+  <link rel="apple-touch-icon" href="/icon-admin-192.svg">
+  <meta name="theme-color" content="#0F172A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Savera Paradise Admin">
+  <link rel="stylesheet" href="/pwa.css">
+  <script>
+    (function() {
+      try {
+        var searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.has('clean') || searchParams.has('reset')) {
+          localStorage.clear();
+          sessionStorage.clear();
+          if ('caches' in window) {
+            caches.keys().then(function(names) {
+              names.forEach(function(name) { caches.delete(name); });
+            });
+          }
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(r) { r.unregister(); });
+            });
+          }
+          window.location.replace(window.location.pathname);
+          return;
+        }
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+          document.documentElement.classList.add('pwa-admin-installed');
+        } else {
+          document.documentElement.classList.remove('pwa-admin-installed');
+        }
+      } catch(e) {}
+    })();
+  </script>
+</head>
+<body class="admin-body">
+
+  <!-- ============================================================== -->
+  <!-- ADMIN SECURITY GATE: iOS-STYLE PASSCODE LOCK SCREEN            -->
+  <!-- No keyboard needed - on-screen circular keypad with glassmorphic blur -->
+  <!-- ============================================================== -->
+  <div class="portal-lock-overlay portal-admin" id="admin-lock-overlay">
+    <div class="ios-passcode-glow glow-admin"></div>
+    <div class="ios-passcode-wrap">
+      <div class="ios-passcode-badge">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span>Manager Control Access</span>
+      </div>
+      <h1 class="ios-passcode-title">Enter passcode</h1>
+      <p class="ios-passcode-subtitle" id="admin-lock-subtitle">Enter your 4-digit master passcode</p>
+      
+      <!-- 4 Passcode Dots -->
+      <div class="ios-passcode-dots" id="admin-passcode-dots" aria-label="Passcode digits">
+        <span class="ios-dot" data-index="0"></span>
+        <span class="ios-dot" data-index="1"></span>
+        <span class="ios-dot" data-index="2"></span>
+        <span class="ios-dot" data-index="3"></span>
+      </div>
+
+      <!-- 3x4 iOS Circular Keypad -->
+      <div class="ios-keypad-grid" id="admin-keypad">
+        <button type="button" class="ios-key" data-key="1">
+          <span class="key-digit">1</span>
+          <span class="key-sub">&nbsp;</span>
+        </button>
+        <button type="button" class="ios-key" data-key="2">
+          <span class="key-digit">2</span>
+          <span class="key-sub">ABC</span>
+        </button>
+        <button type="button" class="ios-key" data-key="3">
+          <span class="key-digit">3</span>
+          <span class="key-sub">DEF</span>
+        </button>
+
+        <button type="button" class="ios-key" data-key="4">
+          <span class="key-digit">4</span>
+          <span class="key-sub">GHI</span>
+        </button>
+        <button type="button" class="ios-key" data-key="5">
+          <span class="key-digit">5</span>
+          <span class="key-sub">JKL</span>
+        </button>
+        <button type="button" class="ios-key" data-key="6">
+          <span class="key-digit">6</span>
+          <span class="key-sub">MNO</span>
+        </button>
+
+        <button type="button" class="ios-key" data-key="7">
+          <span class="key-digit">7</span>
+          <span class="key-sub">PQRS</span>
+        </button>
+        <button type="button" class="ios-key" data-key="8">
+          <span class="key-digit">8</span>
+          <span class="key-sub">TUV</span>
+        </button>
+        <button type="button" class="ios-key" data-key="9">
+          <span class="key-digit">9</span>
+          <span class="key-sub">WXYZ</span>
+        </button>
+
+        <div class="ios-key-spacer"></div>
+        <button type="button" class="ios-key" data-key="0">
+          <span class="key-digit">0</span>
+          <span class="key-sub">&nbsp;</span>
+        </button>
+        <button type="button" class="ios-key ios-key-action" data-action="delete" aria-label="Delete">
+          Delete
+        </button>
+      </div>
+
+      <div class="ios-passcode-hint" id="admin-passcode-hint">
+        <i class="fa-solid fa-lock"></i> Protected by 4-Digit Store Manager PIN
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- PERSISTENT KITCHEN ORDER BEEPING ALARM BANNER                  -->
+  <!-- Beeps continuously until admin clicks STOP ALARM button        -->
+  <!-- ============================================================== -->
+  <aside class="kitchen-alarm-banner" id="kitchen-alarm-banner" style="display: none;" role="alert" aria-live="assertive">
+    <div class="alarm-banner-inner">
+      <div class="alarm-banner-left">
+        <div class="alarm-pulse-beacon">
+          <i class="fa-solid fa-bell fa-shake"></i>
+          <span class="beacon-ripple"></span>
+          <span class="beacon-ripple beacon-ripple-2"></span>
+        </div>
+        <div class="alarm-text-content">
+          <div class="alarm-tag-row">
+            <span class="alarm-urgent-badge">🚨 NEW ORDER RECEIVED!</span>
+            <span class="alarm-order-id" id="alarm-banner-order-id">#QB-0000</span>
+            <span class="alarm-orders-count-badge" id="alarm-orders-count-badge" style="display: none;">1</span>
+            <span class="alarm-order-time">🔊 Sounding Alarm...</span>
+          </div>
+          <div class="alarm-order-details" id="alarm-banner-details">
+            <strong id="alarm-banner-customer">Customer</strong> • <span class="alarm-total-accent" id="alarm-banner-total">₹0</span> • <span class="alarm-items-summary" id="alarm-banner-items">Items summary...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Animated Sound Wave Bars -->
+      <div class="alarm-soundwave" title="Audio Alarm Sounding">
+        <span class="soundwave-bar"></span>
+        <span class="soundwave-bar"></span>
+        <span class="soundwave-bar"></span>
+        <span class="soundwave-bar"></span>
+        <span class="soundwave-bar"></span>
+      </div>
+
+      <!-- Actions -->
+      <div class="alarm-actions">
+        <button type="button" class="btn-stop-alarm" id="btn-stop-alarm" title="Stop Beeping Alarm">
+          <i class="fa-solid fa-volume-xmark"></i>
+          <span>STOP ALARM</span>
+        </button>
+        <button type="button" class="btn-view-alarm-order" id="btn-view-alarm-order" title="Open order details in Live Orders">
+          <i class="fa-solid fa-arrow-right"></i>
+          <span>View Order</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ADMIN TOP NAVBAR -->
+  <header class="admin-header">
+    <div class="admin-header-container">
+      <div class="admin-brand-group">
+        <a href="/admin.html" class="admin-logo">
+          <div class="logo-icon-bubble">
+            <img src="/savera-logo.png" alt="Savera Paradise" class="brand-logo-img" width="40" height="40" loading="eager" decoding="async" />
+          </div>
+          <span class="logo-text">Savera<span class="logo-text-accent"> Paradise</span></span>
+        </a>
+        <div class="admin-badge" style="display: none;">
+          <i class="fa-solid fa-shield-halved"></i> Store Manager
+        </div>
+      </div>
+
+      <div class="admin-header-right-group">
+        <div class="store-status-pill" id="admin-store-status-pill" style="display: none;">
+          <span class="status-pulse-dot" id="header-status-dot"></span>
+          <span id="header-status-text">Live Kitchen Online</span>
+        </div>
+
+        <a href="/owner.html" class="btn-owner-header" id="btn-owner-portal-link" title="Open Owner Executive Portal" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(245, 158, 11, 0.15); border: 1.5px solid rgba(245, 158, 11, 0.35); color: #FBBF24; padding: 7px 14px; border-radius: 8px; font-weight: 700; font-size: 0.82rem; text-decoration: none; transition: all 0.2s ease;">
+          <i class="fa-solid fa-crown" style="color: #F59E0B;"></i>
+          <span>Owner Portal</span>
+        </a>
+
+        <button type="button" class="btn-clear-demo-header" id="btn-clear-demo" title="Clear Demo Orders">
+          ⚡ Clear Demo
+        </button>
+
+        <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-logout" title="Lock Restaurant Portal" aria-label="Lock Admin Portal">
+          <i class="fa-solid fa-lock"></i>
+          <span class="hide-mobile" style="display: none;">Lock</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN ADMIN APP CONTAINER -->
+  <main class="admin-main">
+    
+    <!-- ============================================================== -->
+    <!-- VIEW 1: MENU & CATEGORY MANAGEMENT                             -->
+    <!-- ============================================================== -->
+    <section class="admin-view active" id="view-menu">
+      
+      <!-- View Heading -->
+      <div class="admin-view-header">
+        <div>
+          <h1 class="admin-view-title">Menu & Category Control</h1>
+          <p class="admin-view-sub">Manage your restaurant categories, dishes, prices, descriptions, and food images.</p>
+        </div>
+        <div class="header-cta-group" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary" id="btn-open-edit-all-cat" style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 0.88rem; cursor: pointer; border: 1.5px solid rgba(234, 88, 12, 0.4); background: rgba(234, 88, 12, 0.12); color: #FB923C;">
+            <i class="fa-solid fa-camera"></i> Edit "All" Photo
+          </button>
+          <button class="btn btn-primary btn-add-cat-trigger" id="btn-open-add-cat">
+            <i class="fa-solid fa-folder-plus"></i> + Add Category
+          </button>
+        </div>
+      </div>
+
+      <!-- 1. CATEGORIES MANAGEMENT SECTION (OVERVIEW) -->
+      <div class="admin-card-section categories-section" id="categories-overview-panel">
+        <div class="section-title-bar">
+          <div class="title-with-count">
+            <span class="section-icon">🗂️</span>
+            <h2>Active Categories</h2>
+            <span class="count-pill" id="categories-count-badge">0 Categories</span>
+          </div>
+          <span class="section-hint">Touch or click any category to view, add, or remove food dishes</span>
+        </div>
+
+        <!-- Categories Cards Grid -->
+        <div class="categories-admin-grid" id="categories-admin-grid">
+          <!-- Dynamically populated categories -->
+        </div>
+      </div>
+
+      <!-- 2. CATEGORY DETAIL PANEL (SHOWN WHEN A CATEGORY IS CLICKED/TOUCHED) -->
+      <div class="admin-card-section category-detail-panel" id="category-detail-panel" style="display: none;">
+        <!-- Detail Header -->
+        <div class="category-detail-header-bar">
+          <div class="cat-detail-header-left">
+            <button type="button" class="btn-cat-back" id="btn-back-to-categories" title="Back to All Categories">
+              <i class="fa-solid fa-arrow-left"></i> <span>All Categories</span>
+            </button>
+            <div class="cat-detail-heading-info">
+              <span class="cat-detail-emoji" id="cat-detail-emoji">🍗</span>
+              <div>
+                <div class="cat-detail-title-row">
+                  <h2 class="cat-detail-name" id="cat-detail-name">Crispy Specials</h2>
+                  <span class="count-pill" id="cat-detail-count">0 Dishes</span>
+                </div>
+                <p class="cat-detail-hint">Touch open to manage dishes, prices, and availability</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Outer size & button style retained for adding food inside category -->
+          <div class="cat-detail-header-right">
+            <button type="button" class="btn btn-brand-primary" id="btn-cat-add-dish">
+              <i class="fa-solid fa-burger"></i> + Add Food Dish
+            </button>
+          </div>
+        </div>
+
+        <!-- Search toolbar inside category -->
+        <div class="cat-dishes-toolbar">
+          <div class="search-box-wrap cat-search-wrap">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" id="cat-dish-search-input" placeholder="Search dishes in this category...">
+            <button class="clear-btn" id="btn-clear-cat-dish-search" style="display: none;">✕</button>
+          </div>
+        </div>
+
+        <!-- Dishes Grid Inside This Category -->
+        <div class="dishes-admin-grid" id="category-dishes-grid">
+          <!-- Dynamically populated dish cards for this category -->
+        </div>
+
+        <!-- Empty state when no dishes found in this category -->
+        <div class="cat-dishes-empty-state" id="cat-dishes-empty-state" style="display: none;">
+          <div class="empty-icon">🍽️</div>
+          <h3 id="cat-empty-title">No food dishes in this category yet</h3>
+          <p>Add your first food dish to this category to make it available on the restaurant menu.</p>
+          <button type="button" class="btn btn-brand-primary" id="btn-cat-empty-add-dish">
+            <i class="fa-solid fa-burger"></i> + Add Food Dish
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- VIEW 2: LIVE ORDERS MANAGEMENT                                 -->
+    <!-- ============================================================== -->
+    <section class="admin-view" id="view-orders">
+      
+      <!-- View Heading -->
+      <div class="admin-view-header">
+        <div>
+          <h1 class="admin-view-title">Live Kitchen & Delivery Orders</h1>
+          <p class="admin-view-sub">Track customer orders in real time, advance preparation status, and manage dispatches.</p>
+        </div>
+        <div class="header-cta-group">
+          <button class="btn btn-secondary-admin" id="btn-refresh-orders">
+            <i class="fa-solid fa-rotate"></i> Refresh Orders
+          </button>
+          <button class="btn btn-simulate-admin" id="btn-create-order-demo">
+            + Simulate Order
+          </button>
+        </div>
+      </div>
+
+      <!-- Orders Stats KPI Row (6-Status Grid: 1 Row on Desktop & Tablet, 3 Columns on Mobile) -->
+      <div class="orders-kpi-grid">
+        <div class="kpi-card accepted active" data-filter="accepted" title="Click to view accepted orders">
+          <div class="kpi-icon">✅</div>
+          <div class="kpi-data">
+            <div class="kpi-label">ACCEPTED</div>
+            <div class="kpi-value" id="kpi-accepted-orders">0</div>
+          </div>
+        </div>
+
+        <div class="kpi-card in-kitchen" data-filter="cooking" title="Click to view preparing orders">
+          <div class="kpi-icon">🔥</div>
+          <div class="kpi-data">
+            <div class="kpi-label">PREPARING</div>
+            <div class="kpi-value" id="kpi-cooking-orders">0</div>
+          </div>
+        </div>
+
+        <div class="kpi-card ready" data-filter="ready_for_pickup" title="Click to view ready to dispatch orders">
+          <div class="kpi-icon">📦</div>
+          <div class="kpi-data">
+            <div class="kpi-label">READY TO DISPATCH</div>
+            <div class="kpi-value" id="kpi-ready-orders">0</div>
+          </div>
+        </div>
+
+        <div class="kpi-card on-way" data-filter="on_the_way" title="Click to view dispatched orders">
+          <div class="kpi-icon">🛵</div>
+          <div class="kpi-data">
+            <div class="kpi-label">DISPATCHED</div>
+            <div class="kpi-value" id="kpi-out-orders">0</div>
+          </div>
+        </div>
+
+        <div class="kpi-card delivered" data-filter="delivered" title="Click to view delivered orders">
+          <div class="kpi-icon">🎉</div>
+          <div class="kpi-data">
+            <div class="kpi-label">DELIVERED</div>
+            <div class="kpi-value" id="kpi-delivered-orders">0</div>
+          </div>
+        </div>
+
+        <div class="kpi-card cancelled" data-filter="cancelled" title="Click to view cancelled orders">
+          <div class="kpi-icon">❌</div>
+          <div class="kpi-data">
+            <div class="kpi-label">CANCELLED</div>
+            <div class="kpi-value" id="kpi-cancelled-orders">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Store Revenue & All Orders Overview Card -->
+      <div class="revenue-overview-card">
+        <div class="revenue-overview-left">
+          <div class="revenue-overview-icon">💰</div>
+          <div class="revenue-overview-data">
+            <span class="revenue-overview-label">STORE REVENUE</span>
+            <span class="revenue-overview-value" id="kpi-total-revenue">₹0</span>
+          </div>
+        </div>
+        <div class="revenue-overview-right">
+          <button type="button" class="btn-all-orders-pill" id="btn-filter-all-orders" data-filter="all">
+            All Orders (<span id="kpi-total-orders">0</span>)
+          </button>
+        </div>
+      </div>
+
+      <!-- Orders Filter & Search Bar -->
+      <div class="orders-filter-bar">
+        <div class="orders-status-tabs" id="orders-status-tabs" style="display: none !important;">
+          <button class="order-filter-tab active" data-filter="accepted">Accepted</button>
+          <button class="order-filter-tab" data-filter="cooking">Preparing</button>
+          <button class="order-filter-tab" data-filter="ready_for_pickup">Ready to Dispatch</button>
+          <button class="order-filter-tab" data-filter="on_the_way">Dispatched</button>
+          <button class="order-filter-tab" data-filter="delivered">Delivered</button>
+          <button class="order-filter-tab" data-filter="cancelled" style="color: #DC2626;">❌ Cancelled</button>
+        </div>
+
+        <div class="orders-search-input-wrap">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="order-search-input" placeholder="Search by Order ID (e.g. #QB-8942) or items...">
+        </div>
+      </div>
+
+      <!-- Overdue Orders Alert Banner (Triggers if any accepted order unstarted > 5 mins) -->
+      <div class="pending-overdue-alert-banner" id="pending-overdue-alert-banner" style="display: none;">
+        <div class="overdue-banner-icon">
+          <i class="fa-solid fa-triangle-exclamation fa-beat"></i>
+        </div>
+        <div class="overdue-banner-content">
+          <strong id="overdue-banner-title">⚠️ Order Accepted > 5 Minutes!</strong>
+          <span id="overdue-banner-sub">Action required: Order has been accepted but kitchen preparation has not started yet.</span>
+        </div>
+        <div class="overdue-banner-actions">
+          <button type="button" class="btn-overdue-action-accept" id="btn-overdue-quick-accept">
+            <i class="fa-solid fa-fire"></i> Start Preparing
+          </button>
+          <button type="button" class="btn-overdue-action-view" id="btn-overdue-quick-view">
+            <i class="fa-solid fa-receipt"></i> View Details
+          </button>
+        </div>
+      </div>
+
+      <!-- Orders List Container -->
+      <div class="orders-cards-container" id="orders-cards-container">
+        <!-- Dynamically rendered order cards -->
+      </div>
+
+      <!-- Empty state when no orders exist -->
+      <div class="orders-empty-state" id="orders-empty-state" style="display: none;">
+        <div class="empty-icon">📦</div>
+        <h3>No Customer Orders Yet</h3>
+        <p>Live customer orders placed on your storefront will appear here automatically in real time.</p>
+      </div>
+
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- VIEW 3: STORE TIMINGS & KITCHEN RUSH CONTROL                   -->
+    <!-- ============================================================== -->
+    <section class="admin-view" id="view-hours">
+      
+      <!-- View Heading -->
+      <div class="admin-view-header">
+        <div>
+          <h1 class="admin-view-title">Store Hours & Rush Control</h1>
+          <p class="admin-view-sub">Manage your restaurant operating schedule and pause incoming orders with 10-minute intervals during high kitchen rush.</p>
+        </div>
+        <div class="header-cta-group">
+          <div class="store-live-status-chip" id="admin-live-rush-chip">
+            <span class="status-pulse-dot" id="rush-status-dot"></span>
+            <span id="rush-status-chip-text">Kitchen Online</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. KITCHEN RUSH & SNOOZE CONTROL (HERO CARD) -->
+      <div class="admin-card-section rush-control-card">
+        <div class="section-title-bar">
+          <div class="title-with-count">
+            <span class="section-icon">⚡</span>
+            <h2>Kitchen Rush Snooze (Pause Orders)</h2>
+            <span class="count-pill rush-mode-pill" id="rush-mode-badge">Active</span>
+          </div>
+          <span class="section-hint">Temporarily stops new orders on the homepage while the kitchen catches up.</span>
+        </div>
+
+        <!-- ACTIVE PAUSE STATE BANNER (Shown when paused) -->
+        <div class="rush-active-state-box" id="rush-active-state-box" style="display: none;">
+          <div class="rush-active-content">
+            <div class="rush-active-icon-wrap">
+              <span class="rush-active-fire">⚡</span>
+            </div>
+            <div class="rush-active-details">
+              <div class="rush-active-badge">KITCHEN RUSH MODE ACTIVE</div>
+              <h3 class="rush-active-headline">New orders are temporarily paused</h3>
+              <p class="rush-active-sub" id="rush-active-reason">High kitchen rush — orders temporarily paused</p>
+              
+              <div class="rush-countdown-timer-group">
+                <div class="rush-countdown-unit">
+                  <span class="rush-time-num" id="rush-timer-min">00</span>
+                  <span class="rush-time-lbl">MINUTES</span>
+                </div>
+                <span class="rush-colon">:</span>
+                <div class="rush-countdown-unit">
+                  <span class="rush-time-num" id="rush-timer-sec">00</span>
+                  <span class="rush-time-lbl">SECONDS</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="rush-active-actions">
+              <button class="btn btn-extend-rush" id="btn-extend-rush-10">
+                <i class="fa-solid fa-plus"></i> +10 Mins Rush
+              </button>
+              <button class="btn btn-resume-live" id="btn-resume-orders">
+                <i class="fa-solid fa-circle-check"></i> 🟢 Resume Taking Orders Now
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- NEW PAUSE CONTROLLER (10-minute slide controller) -->
+        <div class="rush-setter-box" id="rush-setter-box">
+          <div class="rush-setter-header">
+            <div class="rush-slider-display">
+              <span class="slider-lead-label">Select Rush Pause Duration:</span>
+              <div class="slider-big-readout">
+                <span class="slider-big-val" id="rush-slider-val">20</span>
+                <span class="slider-big-unit">Minutes</span>
+              </div>
+            </div>
+
+            <!-- Quick 10-min presets -->
+            <div class="rush-preset-pills">
+              <button type="button" class="rush-preset-btn" data-mins="10">10m</button>
+              <button type="button" class="rush-preset-btn active" data-mins="20">20m</button>
+              <button type="button" class="rush-preset-btn" data-mins="30">30m</button>
+              <button type="button" class="rush-preset-btn" data-mins="40">40m</button>
+              <button type="button" class="rush-preset-btn" data-mins="50">50m</button>
+              <button type="button" class="rush-preset-btn" data-mins="60">60m</button>
+            </div>
+          </div>
+
+          <!-- 10-Minute Slide Control -->
+          <div class="rush-range-wrapper">
+            <input type="range" min="10" max="90" step="10" value="20" class="rush-range-slider" id="rush-range-slider">
+            <div class="slider-step-ticks">
+              <span>10m</span>
+              <span>20m</span>
+              <span>30m</span>
+              <span>40m</span>
+              <span>50m</span>
+              <span>60m</span>
+              <span>70m</span>
+              <span>80m</span>
+              <span>90m</span>
+            </div>
+          </div>
+
+          <div class="rush-optional-message">
+            <label for="rush-reason-input">Customer Notice Reason (shown on homepage):</label>
+            <input type="text" id="rush-reason-input" class="admin-input-text" value="High kitchen rush — orders temporarily paused" placeholder="e.g. Sizzling rush in kitchen! Resuming orders soon.">
+          </div>
+
+          <div class="rush-submit-row">
+            <button class="btn btn-trigger-rush" id="btn-trigger-rush">
+              <i class="fa-solid fa-hand"></i>
+              <span>Pause Orders for <strong id="btn-pause-target-mins">20</strong> Minutes</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 2. REGULAR OPERATING HOURS & RESTAURANT CONTACT -->
+      <div class="admin-card-section hours-section">
+        <div class="section-title-bar">
+          <div class="title-with-count">
+            <span class="section-icon">🕒</span>
+            <h2>Daily Restaurant Operating Timings & Helpline</h2>
+          </div>
+          <span class="section-hint">Displayed in the header, hero status tag, and pre-dispatch customer help cards (Accepted, Preparing, Ready to Dispatch).</span>
+        </div>
+
+        <form id="form-store-hours" class="admin-form store-hours-form">
+          <!-- Master Kitchen Open/Closed Toggle -->
+          <div class="offer-toggle-row" style="margin-bottom: 1.25rem;">
+            <div class="offer-toggle-info">
+              <strong style="display: flex; align-items: center; gap: 8px;">
+                <span id="store-open-status-icon">🟢</span>
+                <span>Store Ordering Status: <span id="store-open-status-label" style="color: var(--color-success, #16a34a);">Store Open (Accepting Orders)</span></span>
+              </strong>
+              <span>Turn off to close the store for the night or emergency off-hours. When closed, customers cannot place orders.</span>
+            </div>
+            <label class="admin-switch">
+              <input type="checkbox" id="input-store-open" checked>
+              <span class="admin-slider round"></span>
+            </label>
+          </div>
+
+          <div class="form-group" id="group-store-closed-reason" style="display: none; margin-bottom: 1.25rem;">
+            <label for="input-store-closed-reason"><i class="fa-solid fa-moon"></i> Closed Notice (Shown to Customers)</label>
+            <input type="text" id="input-store-closed-reason" value="🌙 The kitchen is currently closed for the night. We will reopen tomorrow at 11:00 AM!" placeholder="e.g. The kitchen is currently closed for the night. We will reopen tomorrow at 11:00 AM!">
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="input-open-time"><i class="fa-regular fa-clock"></i> Kitchen Opening Time</label>
+              <input type="text" id="input-open-time" value="11:00 AM" placeholder="e.g. 11:00 AM">
+            </div>
+
+            <div class="form-group">
+              <label for="input-close-time"><i class="fa-solid fa-moon"></i> Kitchen Closing Time</label>
+              <input type="text" id="input-close-time" value="11:00 PM" placeholder="e.g. 11:00 PM">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="input-restaurant-phone"><i class="fa-solid fa-phone"></i> Restaurant Help & Support Phone Number</label>
+            <input type="tel" id="input-restaurant-phone" value="+91 98450 12345" placeholder="e.g. +91 98450 12345 or 9845012345">
+            <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">
+              <i class="fa-solid fa-circle-info"></i> Whichever phone number is set here will be automatically provided to customers for phone calls and WhatsApp support across all 3 steps before dispatch (Accepted, Preparing, Ready to Dispatch).
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label for="input-status-notice"><i class="fa-solid fa-bullhorn"></i> Customer Status Notice Text</label>
+            <input type="text" id="input-status-notice" value="Open Now: 11:00 AM – 11:00 PM • Delivery & Pickup" placeholder="e.g. Open Now: 11:00 AM – 11:00 PM • Delivery & Pickup">
+            <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">
+              <i class="fa-solid fa-circle-info"></i> Displays directly on the customer homepage status badge when kitchen is open.
+            </small>
+          </div>
+
+          <div class="hours-card-actions">
+            <button type="submit" class="btn btn-brand-primary" id="btn-save-hours">
+              <i class="fa-solid fa-floppy-disk"></i> Save Operating Timings, Notice & Help Number
+            </button>
+          </div>
+        </form>
+      </div>
+
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- VIEW 4: PROMOTIONS & OFFERS (Discount Coupons Hub)           -->
+    <!-- ============================================================ -->
+    <section class="admin-view" id="view-offers">
+      
+      <!-- View Heading -->
+      <div class="admin-view-header">
+        <div>
+          <h1 class="admin-view-title">Promotional Offers & Coupons</h1>
+          <p class="admin-view-sub">Manage promotional coupons, flat / percentage discounts, minimum order requirements, and customer promo banners across your storefront.</p>
+        </div>
+        <div class="header-cta-group">
+          <div class="store-live-status-chip" id="admin-offer-status-chip">
+            <span class="status-pulse-dot" id="offer-status-dot"></span>
+            <span id="offer-status-chip-text">Offer Active</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. SPECIAL PROMOTIONAL OFFER & DISCOUNT CODE -->
+      <div class="admin-card-section offer-settings-section">
+        <div class="section-title-bar">
+          <div class="title-with-count">
+            <span class="section-icon">🎁</span>
+            <h2>Promotional Offer & Discount Code</h2>
+            <span class="count-pill offer-status-pill" id="offer-status-badge">Active</span>
+          </div>
+          <span class="section-hint">Customize the promo coupon code, discount percentage or flat amount, headline, and customer banners across your storefront.</span>
+        </div>
+
+        <form id="form-store-offer" class="admin-form store-offer-form">
+          <!-- Active Toggle Switch -->
+          <div class="offer-toggle-row">
+            <div class="offer-toggle-info">
+              <strong>Promotional Offer Status</strong>
+              <span>Turn off to temporarily disable discount codes and hide promo banners on storefront</span>
+            </div>
+            <label class="admin-switch">
+              <input type="checkbox" id="input-offer-active" checked>
+              <span class="admin-slider round"></span>
+            </label>
+          </div>
+
+          <!-- Discount Type Selector (Percentage vs Flat Amount) -->
+          <div class="form-group">
+            <label class="field-label-bold"><i class="fa-solid fa-tags"></i> Discount Type</label>
+            <div class="discount-type-tabs" id="discount-type-tabs">
+              <button type="button" class="discount-type-tab active" data-type="percent" id="btn-type-percent">
+                <i class="fa-solid fa-percent"></i> Percentage Discount (% OFF)
+              </button>
+              <button type="button" class="discount-type-tab" data-type="flat" id="btn-type-flat">
+                <i class="fa-solid fa-money-bill-wave"></i> Flat Amount Off (e.g. ₹50 OFF)
+              </button>
+            </div>
+            <input type="hidden" id="input-offer-type" value="percent">
+          </div>
+
+          <!-- Coupon Code & Discount Value -->
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="input-offer-code"><i class="fa-solid fa-ticket"></i> Coupon Promo Code</label>
+              <input type="text" id="input-offer-code" value="CRISPY20" placeholder="e.g. CRISPY20, WEEKEND100" style="text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">
+            </div>
+
+            <div class="form-group">
+              <label for="input-offer-discount" id="label-discount-val"><i class="fa-solid fa-percent"></i> Discount Percentage (%)</label>
+              <input type="number" id="input-offer-discount" min="1" value="20" placeholder="e.g. 20 or 100">
+            </div>
+          </div>
+
+          <!-- Quick Discount Preset Pills (Dynamic based on % or Flat) -->
+          <div class="offer-discount-presets">
+            <span class="preset-label" id="preset-discount-label">Quick Discount Presets:</span>
+            <div class="rush-preset-pills" id="discount-presets-container">
+              <button type="button" class="offer-preset-btn" data-val="10">10% OFF</button>
+              <button type="button" class="offer-preset-btn" data-val="15">15% OFF</button>
+              <button type="button" class="offer-preset-btn active" data-val="20">20% OFF</button>
+              <button type="button" class="offer-preset-btn" data-val="25">25% OFF</button>
+              <button type="button" class="offer-preset-btn" data-val="30">30% OFF</button>
+              <button type="button" class="offer-preset-btn" data-val="50">50% OFF</button>
+            </div>
+          </div>
+
+          <!-- Minimum Order Value (Valid above orders 200 / 300) -->
+          <div class="form-group min-order-group">
+            <label for="input-offer-min-order">
+              <i class="fa-solid fa-cart-shopping"></i> Minimum Order Requirement (Valid on orders above)
+            </label>
+            <div class="input-currency-wrapper">
+              <span class="input-currency-prefix">₹</span>
+              <input type="number" id="input-offer-min-order" min="0" step="10" value="300" placeholder="e.g. 200, 300 (0 for no minimum)">
+            </div>
+            <div class="offer-discount-presets" style="margin-top: 8px;">
+              <span class="preset-label">Quick Minimum Presets:</span>
+              <div class="rush-preset-pills" id="min-order-presets-container">
+                <button type="button" class="min-order-preset-btn" data-min="0">No Min</button>
+                <button type="button" class="min-order-preset-btn" data-min="150">150+</button>
+                <button type="button" class="min-order-preset-btn" data-min="200">200+</button>
+                <button type="button" class="min-order-preset-btn active" data-min="300">300+</button>
+                <button type="button" class="min-order-preset-btn" data-min="500">500+</button>
+              </div>
+            </div>
+            <span class="admin-field-tip">Coupon will only apply if the customer's cart subtotal meets or exceeds this value (e.g. 100 off above 300, or 20% off above 200).</span>
+          </div>
+
+          <!-- Offer Title & Headline -->
+          <div class="form-group">
+            <label for="input-offer-title"><i class="fa-solid fa-heading"></i> Offer Headline / Title</label>
+            <input type="text" id="input-offer-title" value="Craving Savera Paradise Delicious Food? Get Special Discount Today!" placeholder="e.g. Craving Savera Paradise? Get Special Discount Today!">
+          </div>
+
+          <!-- Offer Subtext / Description -->
+          <div class="form-group">
+            <label for="input-offer-subtext"><i class="fa-solid fa-comment-dots"></i> Offer Description & Customer Message</label>
+            <input type="text" id="input-offer-subtext" value="Use coupon code at checkout for special discount." placeholder="e.g. Use coupon code at checkout for special discount.">
+          </div>
+
+          <!-- Free Delivery with Coupon Checkbox -->
+          <div class="form-group-checkbox">
+            <label class="custom-checkbox-label">
+              <input type="checkbox" id="input-offer-free-delivery" checked>
+              <span class="custom-checkbox-mark"></span>
+              <span class="custom-checkbox-text">
+                <strong>Include 100% Free Priority Delivery with Coupon</strong>
+                <small>Customers who apply this coupon code automatically receive free shipping</small>
+              </span>
+            </label>
+          </div>
+
+          <!-- Live Customer Storefront Preview Card -->
+          <div class="offer-preview-box">
+            <div class="preview-header">
+              <span class="preview-badge">LIVE STOREFRONT PREVIEW</span>
+              <span class="preview-status" id="preview-offer-status">Active on Storefront</span>
+            </div>
+            <div class="preview-card-inner">
+              <div class="preview-text-block">
+                <span class="preview-tag">🔥 SPECIAL PROMOTION</span>
+                <h4 class="preview-title" id="preview-offer-title">Craving Savera Paradise? Get Special Discount Today!</h4>
+                <p class="preview-desc" id="preview-offer-desc">Use coupon code <strong class="preview-code-tag" id="preview-offer-code">CRISPY20</strong> for <strong id="preview-offer-discount-text">20% OFF</strong> on orders above 300!</p>
+                <div class="preview-criteria-tags" id="preview-criteria-tags">
+                  <span class="criteria-pill" id="preview-min-order-pill"><i class="fa-solid fa-cart-shopping"></i> Min Order: 300</span>
+                  <span class="criteria-pill free-deliv-pill" id="preview-coupon-free-pill"><i class="fa-solid fa-truck-fast"></i> Free Priority Delivery Included</span>
+                </div>
+              </div>
+              <div class="preview-code-badge">
+                <span class="preview-badge-code" id="preview-badge-code-display">CRISPY20</span>
+                <span class="preview-badge-discount" id="preview-badge-discount-display">20% OFF</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hours-card-actions">
+            <button type="submit" class="btn btn-brand-primary" id="btn-save-offer">
+              <i class="fa-solid fa-floppy-disk"></i> Save Promotional Offer
+            </button>
+          </div>
+        </form>
+      </div>
+
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- VIEW 5: DELIVERY OPTIONS (Dedicated Delivery Management Hub) -->
+    <!-- ============================================================ -->
+    <section class="admin-view" id="view-delivery">
+      
+      <!-- View Heading -->
+      <div class="admin-view-header">
+        <div>
+          <h1 class="admin-view-title">Delivery Options & Settings</h1>
+          <p class="admin-view-sub">Configure free delivery thresholds, standard delivery charges, and maximum delivery distance for your restaurant.</p>
+        </div>
+        <div class="header-cta-group">
+          <div class="store-live-status-chip" id="admin-delivery-status-chip">
+            <span class="status-pulse-dot" id="delivery-status-dot"></span>
+            <span id="delivery-status-chip-text">Delivery Active</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. FREE DELIVERY ABOVE MINIMUM ORDER SETTING -->
+      <div class="admin-card-section delivery-settings-section">
+        <div class="section-title-bar">
+          <div class="title-with-count">
+            <span class="section-icon">🚚</span>
+            <h2>Free Delivery Above Minimum Order</h2>
+            <span class="count-pill delivery-status-pill" id="delivery-status-badge">Active</span>
+          </div>
+          <span class="section-hint">Offer automatic free shipping when customer orders meet or exceed a specific cart subtotal (e.g. Free Delivery above 250).</span>
+        </div>
+
+        <form id="form-store-delivery" class="admin-form store-delivery-form">
+          <!-- Free Delivery Threshold Setting Box (Above 250 free delivery) -->
+          <div class="free-delivery-card-box">
+            <div class="offer-toggle-row">
+              <div class="offer-toggle-info">
+                <strong><i class="fa-solid fa-truck-fast" style="color: var(--admin-accent);"></i> Free Delivery Above Minimum Order</strong>
+                <span>Customers automatically get 100% FREE delivery when their cart reaches this amount</span>
+              </div>
+              <label class="admin-switch">
+                <input type="checkbox" id="input-free-delivery-enabled" checked>
+                <span class="admin-slider round"></span>
+              </label>
+            </div>
+
+            <div class="free-delivery-threshold-content" id="free-delivery-threshold-wrap">
+              <label for="input-free-delivery-threshold" class="threshold-label">
+                Free Delivery on Orders Above:
+              </label>
+              <div class="input-currency-wrapper">
+                <span class="input-currency-prefix">₹</span>
+                <input type="number" id="input-free-delivery-threshold" min="0" step="10" value="250" placeholder="e.g. 250">
+              </div>
+              <div class="offer-discount-presets" style="margin-top: 8px;">
+                <span class="preset-label">Quick Threshold Presets:</span>
+                <div class="rush-preset-pills" id="threshold-presets-container">
+                  <button type="button" class="threshold-preset-btn" data-thresh="150">150</button>
+                  <button type="button" class="threshold-preset-btn" data-thresh="200">200</button>
+                  <button type="button" class="threshold-preset-btn active" data-thresh="250">250 (Recommended)</button>
+                  <button type="button" class="threshold-preset-btn" data-thresh="300">300</button>
+                  <button type="button" class="threshold-preset-btn" data-thresh="400">400</button>
+                </div>
+              </div>
+              <span class="admin-field-tip" style="margin-top: 8px; display: block;">
+                When cart reaches or exceeds this amount, the delivery fee becomes ₹0 / FREE automatically at checkout.
+              </span>
+            </div>
+          </div>
+
+          <!-- Standard Delivery Fee Below Threshold -->
+          <div class="form-group" style="margin-top: 14px;">
+            <label for="input-delivery-fee-standard">
+              <i class="fa-solid fa-receipt"></i> Standard Delivery Fee (For orders below free threshold)
+            </label>
+            <div class="input-currency-wrapper">
+              <span class="input-currency-prefix">₹</span>
+              <input type="number" id="input-delivery-fee-standard" min="0" step="1" value="40" placeholder="e.g. 40">
+            </div>
+            <span class="admin-field-tip">Charged to customers whose orders do not qualify for free delivery.</span>
+          </div>
+
+          <!-- Active Orders Limit Per Customer (Max 2 concurrent orders, 3rd blocked until 1st delivered) -->
+          <div class="form-group" style="margin-top: 14px;">
+            <label for="input-max-active-orders">
+              <i class="fa-solid fa-layer-group"></i> Max Concurrent Active Orders Per Customer
+            </label>
+            <div class="input-currency-wrapper">
+              <span class="input-currency-prefix"><i class="fa-solid fa-user-clock"></i></span>
+              <input type="number" id="input-max-active-orders" min="1" max="10" step="1" value="2" placeholder="e.g. 2">
+            </div>
+            <span class="admin-field-tip" style="margin-top: 6px; display: block;">
+              Customers cannot place more than this many concurrent orders. When set to <strong>2</strong>, a customer cannot place their <strong>3rd order</strong> until their <strong>1st order is delivered</strong>.
+            </span>
+          </div>
+
+          <!-- Customer Cart Delivery Meter Live Preview -->
+          <div class="offer-preview-box delivery-preview-box" style="margin-top: 14px;">
+            <div class="preview-header">
+              <span class="preview-badge">LIVE STOREFRONT CART PREVIEW</span>
+              <span class="preview-status" id="preview-delivery-status">Live in Customer Basket</span>
+            </div>
+            <div class="preview-card-inner">
+              <div class="preview-text-block">
+                <span class="preview-tag">🛵 BASKET FREE SHIPPING METER</span>
+                <h4 class="preview-title" id="preview-delivery-title">Add ₹150 more for FREE Priority Delivery!</h4>
+                <div class="meter-preview-track" style="background: #E5E7EB; border-radius: 9999px; height: 8px; width: 100%; margin: 10px 0 6px; overflow: hidden;">
+                  <div id="preview-delivery-bar" style="background: var(--brand-primary); height: 100%; width: 60%; border-radius: 9999px; transition: width 0.3s ease;"></div>
+                </div>
+                <p class="preview-desc" id="preview-delivery-desc" style="font-size: 0.82rem; color: var(--admin-text-muted);">
+                  Orders above <strong id="preview-delivery-thresh-display" style="color: var(--admin-accent);">250</strong> qualify for 100% Free Doorstep Delivery.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="hours-card-actions">
+            <button type="submit" class="btn btn-brand-primary" id="btn-save-delivery">
+              <i class="fa-solid fa-floppy-disk"></i> Save Delivery Options
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- 2. MAXIMUM DELIVERY DISTANCE & RADIUS (KM SLIDER) -->
+      <div class="admin-card-section delivery-radius-section">
+        <div class="section-title-bar">
+          <div class="title-with-count">
+            <span class="section-icon">🛵</span>
+            <h2>Delivery Distance Limit</h2>
+          </div>
+          <span class="section-hint">Select how many kilometers your store will deliver orders within (calculated from restaurant coordinates: 12°43'14.2"N 77°17'12.6"E).</span>
+        </div>
+
+        <div class="rush-setter-box delivery-radius-box">
+          <div class="rush-setter-header">
+            <div class="rush-slider-display">
+              <span class="slider-lead-label">Maximum Delivery Radius:</span>
+              <div class="slider-big-readout">
+                <span class="slider-big-val" id="radius-slider-val">7</span>
+                <span class="slider-big-unit">KM</span>
+              </div>
+            </div>
+
+            <!-- Quick KM presets -->
+            <div class="rush-preset-pills">
+              <button type="button" class="radius-preset-btn" data-km="3">3 km</button>
+              <button type="button" class="radius-preset-btn" data-km="5">5 km</button>
+              <button type="button" class="radius-preset-btn active" data-km="7">7 km</button>
+              <button type="button" class="radius-preset-btn" data-km="10">10 km</button>
+              <button type="button" class="radius-preset-btn" data-km="15">15 km</button>
+              <button type="button" class="radius-preset-btn" data-km="20">20 km</button>
+              <button type="button" class="radius-preset-btn" data-km="25">25 km</button>
+              <button type="button" class="radius-preset-btn" data-km="30">30 km</button>
+            </div>
+          </div>
+
+          <!-- KM Slide Control -->
+          <div class="rush-range-wrapper">
+            <input type="range" min="1" max="30" step="1" value="7" class="rush-range-slider" id="delivery-radius-slider">
+            <div class="slider-step-ticks">
+              <span>1 km</span>
+              <span>5 km</span>
+              <span>10 km</span>
+              <span>15 km</span>
+              <span>20 km</span>
+              <span>25 km</span>
+              <span>30 km</span>
+            </div>
+          </div>
+
+          <div class="radius-info-badge" style="display: flex; align-items: center; gap: 8px; color: var(--admin-text-muted); font-size: 0.9rem; font-weight: 600; margin-bottom: 20px;">
+            <i class="fa-solid fa-circle-check" style="color: var(--admin-success); font-size: 1.05rem;"></i>
+            <span>Delivery available for orders within <strong id="radius-info-km" style="color: var(--brand-primary); font-weight: 800;">7 km</strong> radius</span>
+          </div>
+
+          <div class="hours-card-actions">
+            <button type="button" class="btn btn-brand-primary" id="btn-save-radius">
+              <i class="fa-solid fa-floppy-disk"></i> Save Delivery Radius
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================== -->
+      <!-- SECTION 2: DELIVERY BOY FLEET & LOGIN PIN CODES            -->
+      <!-- ========================================================== -->
+      <div class="admin-card-section rider-fleet-section" id="admin-rider-fleet-section" style="margin-top: 24px;">
+        <div class="section-title-bar" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <div class="title-with-count">
+              <span class="section-icon">🏍️</span>
+              <h2>Delivery Boy Fleet & Login PINs</h2>
+              <span class="count-badge" id="admin-riders-count-badge">0 Active</span>
+            </div>
+            <span class="section-hint">Create delivery boy profiles with Name and Mobile Phone. The system automatically generates a unique 4-digit login PIN for each rider.</span>
+          </div>
+
+          <button type="button" class="btn btn-brand-primary" id="btn-admin-add-rider">
+            <i class="fa-solid fa-user-plus"></i> Add Delivery Boy
+          </button>
+        </div>
+
+        <!-- Rider Fleet Grid -->
+        <div class="admin-riders-grid" id="admin-riders-grid">
+          <!-- Populated dynamically via admin.js -->
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- SIGNATURE 5-BUTTON FLOATING NAVIGATION BAR                     -->
+  <!-- Navigation bar with separate Offers and Delivery buttons       -->
+  <!-- ============================================================== -->
+  <nav class="mobile-floating-bar admin-floating-bar" id="admin-floating-bar" aria-label="Admin Navigation">
+    <div class="floating-capsule admin-two-btn-capsule admin-three-btn-capsule admin-four-btn-capsule admin-five-btn-capsule">
+      
+      <!-- BUTTON 1: Menu & Categories -->
+      <button class="capsule-nav-btn admin-nav-btn active" id="capsule-btn-menu" data-target="view-menu" aria-label="Menu and Categories">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 3.5C7.8 3.5 4.3 6 4 9.5h16c-.3-3.5-3.8-6-8-6zM3.5 12h17a1 1 0 0 1 1 1v.5a1 1 0 0 1-1 1h-17a1 1 0 0 1-1-1v-.5a1 1 0 0 1 1-1zm1 4.5h15c-.4 2.8-3.6 4.8-7.5 4.8s-7.1-2-7.5-4.8z"/>
+        </svg>
+        <span class="capsule-label">Menu</span>
+      </button>
+
+      <!-- BUTTON 2: Live Orders -->
+      <button class="capsule-nav-btn admin-nav-btn" id="capsule-btn-orders" data-target="view-orders" aria-label="Live Orders Hub">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 14.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0zm-11 0a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0zM15 8h3l2 4h-5V8zm-3 2H9.5L7.2 4H3v2h2.8l2.9 8h8.8l-1.3-4H12z"/>
+        </svg>
+        <span class="capsule-label">Orders</span>
+        <span class="capsule-badge-pill" id="capsule-order-badge">0</span>
+      </button>
+
+      <!-- BUTTON 3: Hours & Rush Control -->
+      <button class="capsule-nav-btn admin-nav-btn" id="capsule-btn-hours" data-target="view-hours" aria-label="Hours and Rush Control">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 10.59l3.3 1.9-1 1.71L11 13.5V7h2z"/>
+        </svg>
+        <span class="capsule-label">Hours</span>
+        <span class="capsule-badge-pill rush-badge-dot" id="capsule-rush-badge" style="display:none;">⚡</span>
+      </button>
+
+      <!-- BUTTON 4: Promotional Offers -->
+      <button class="capsule-nav-btn admin-nav-btn" id="capsule-btn-offers" data-target="view-offers" aria-label="Promotional Offers">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/>
+        </svg>
+        <span class="capsule-label">Offers</span>
+        <span class="capsule-badge-pill" id="capsule-offer-badge" style="display:none;">%</span>
+      </button>
+
+      <!-- BUTTON 5: Delivery Options -->
+      <button class="capsule-nav-btn admin-nav-btn" id="capsule-btn-delivery" data-target="view-delivery" aria-label="Delivery Options">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+        </svg>
+        <span class="capsule-label">Delivery</span>
+        <span class="capsule-badge-pill" id="capsule-delivery-badge" style="display:none;">🚚</span>
+      </button>
+
+    </div>
+
+    <!-- Quick action circle button (Customer Store preview - Temporarily Hidden) -->
+    <a href="/" class="floating-circle-action admin-store-preview-circle is-hidden" id="admin-store-preview-circle" title="View Storefront" aria-label="Store Front" style="display: none;" aria-hidden="true">
+      <svg class="cart-action-svg" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2L2 12h3v8h6v-6h2v6h6v-8h3L12 2z"/>
+      </svg>
+    </a>
+  </nav>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: ADD / EDIT CATEGORY                                     -->
+  <!-- ============================================================== -->
+  <div class="admin-modal-backdrop" id="modal-category-backdrop">
+    <div class="admin-modal-card">
+      <div class="sheet-drag-handle-bar"><div class="sheet-drag-pill"></div></div>
+      <button class="admin-modal-close" id="modal-cat-close">✕</button>
+      <div class="modal-card-header">
+        <div class="modal-header-icon">🗂️</div>
+        <div>
+          <h3 class="modal-card-title" id="cat-modal-title">Add New Category</h3>
+          <p class="modal-card-sub">Create a category to group delicious dishes on your menu.</p>
+        </div>
+      </div>
+
+      <form id="form-category" class="admin-form">
+        <input type="hidden" id="cat-edit-id" value="">
+
+        <div class="form-group">
+          <label for="cat-name-input">Category Name *</label>
+          <input type="text" id="cat-name-input" placeholder="e.g. Crispy Specials, Gourmet Bowls" required>
+        </div>
+
+        <div class="form-group">
+          <label>Category Emoji Icon *</label>
+          <div class="emoji-picker-container">
+            <input type="text" id="cat-emoji-input" class="emoji-preview-input" value="🍗" maxlength="4" required>
+            <div class="quick-emojis-list">
+              <button type="button" class="btn-quick-emoji">🍗</button>
+              <button type="button" class="btn-quick-emoji">🍔</button>
+              <button type="button" class="btn-quick-emoji">🍕</button>
+              <button type="button" class="btn-quick-emoji">🥪</button>
+              <button type="button" class="btn-quick-emoji">🍟</button>
+              <button type="button" class="btn-quick-emoji">🍜</button>
+              <button type="button" class="btn-quick-emoji">🥗</button>
+              <button type="button" class="btn-quick-emoji">🍰</button>
+              <button type="button" class="btn-quick-emoji">🍹</button>
+              <button type="button" class="btn-quick-emoji">🌮</button>
+              <button type="button" class="btn-quick-emoji">🍣</button>
+              <button type="button" class="btn-quick-emoji">🥩</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group cat-image-group">
+          <label for="cat-image-input">Category Food Image (Circular Icon on Storefront)</label>
+          <div class="cat-image-preview-and-controls" style="display: flex; gap: 14px; align-items: center; margin-top: 6px;">
+            <div class="cat-img-preview-circle" style="width: 72px; height: 72px; min-width: 72px; border-radius: 50%; overflow: hidden; border: 2.5px solid #EA580C; background: #F3F4F6; display: flex; align-items: center; justify-content: center; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+              <img id="cat-image-preview" src="" alt="Preview" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+              <span id="cat-image-fallback-emoji" style="font-size: 2rem;">🍗</span>
+            </div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="cat-image-input" placeholder="Image URL, path, or upload a file" style="flex: 1; padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 8px; font-size: 0.9rem;">
+                <label for="cat-file-upload" class="btn btn-secondary" style="margin: 0; padding: 8px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; white-space: nowrap; border-radius: 8px;">
+                  <i class="fa-solid fa-cloud-arrow-up"></i> Upload
+                </label>
+                <input type="file" id="cat-file-upload" accept="image/*" style="display: none;">
+              </div>
+              <div id="cat-upload-status" style="display: none; font-size: 0.75rem; color: #EA580C; margin-top: 4px; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-circle-notch fa-spin"></i> <span>Uploading photo...</span>
+              </div>
+              <small style="display: block; color: #6B7280; font-size: 0.78rem; margin-top: 5px;">
+                This round food photo appears in the <strong>Popular Cuisines</strong> circular row on the storefront.
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-card-actions">
+          <button type="button" class="btn btn-modal-cancel" id="btn-cancel-cat">Cancel</button>
+          <button type="submit" class="btn btn-brand-primary" id="btn-save-cat">Save Category</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: ADD / EDIT FOOD DISH                                    -->
+  <!-- ============================================================== -->
+  <div class="admin-modal-backdrop" id="modal-dish-backdrop">
+    <div class="admin-modal-card dish-modal-card">
+      <div class="sheet-drag-handle-bar"><div class="sheet-drag-pill"></div></div>
+      <button class="admin-modal-close" id="modal-dish-close">✕</button>
+      <div class="modal-card-header">
+        <div class="modal-header-icon">🍔</div>
+        <div>
+          <h3 class="modal-card-title" id="dish-modal-title">Add Food Dish</h3>
+          <p class="modal-card-sub">Fill out the dish details, pricing, and choose or upload a food image.</p>
+        </div>
+      </div>
+
+      <form id="form-dish" class="admin-form">
+        <input type="hidden" id="dish-edit-id" value="">
+
+        <!-- In-Stock / Availability Switch Inside Modal -->
+        <div class="modal-stock-banner-group">
+          <label>Food Item Availability:</label>
+          <button type="button" class="btn-modal-stock-pill in-stock" id="modal-dish-stock-btn">
+            <span class="stock-status-dot" id="modal-dish-stock-dot"></span>
+            <span id="modal-dish-stock-label">In Stock (Accepting Orders)</span>
+          </button>
+          <input type="hidden" id="dish-stock-hidden" value="true">
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="dish-name-input">Dish Title / Name *</label>
+            <input type="text" id="dish-name-input" placeholder="e.g. Signature Double Smash Burger" required>
+          </div>
+
+          <div class="form-group">
+            <label for="dish-category-select">Category *</label>
+            <select id="dish-category-select" required>
+              <!-- Dynamically populated from active categories -->
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row-3">
+          <div class="form-group">
+            <label for="dish-price-input">Price (₹) *</label>
+            <input type="number" id="dish-price-input" step="1" min="0" placeholder="240" required>
+          </div>
+
+          <div class="form-group">
+            <label for="dish-badge-input">Badge / Tag</label>
+            <select id="dish-badge-input">
+              <option value="🔥 Bestseller">🔥 Bestseller</option>
+              <option value="👑 House Signature">👑 House Signature</option>
+              <option value="🌿 Vegetarian">🌿 Vegetarian</option>
+              <option value="✨ Chef Specialty" selected>✨ Chef Specialty</option>
+              <option value="🍟 Irresistible Crunch">🍟 Irresistible Crunch</option>
+              <option value="🪵 Oak Wood Fired">🪵 Oak Wood Fired</option>
+              <option value="🍜 Slow Simmered">🍜 Slow Simmered</option>
+              <option value="Custom">Custom Text...</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="dish-time-input">Prep Time</label>
+            <input type="text" id="dish-time-input" placeholder="e.g. 10 - 15 mins" value="12 - 15 mins">
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="dish-calories-input">Calories</label>
+            <input type="text" id="dish-calories-input" placeholder="e.g. 580 kcal" value="560 kcal">
+          </div>
+
+          <div class="form-group">
+            <label for="dish-diet-input">Dietary Note</label>
+            <input type="text" id="dish-diet-input" placeholder="e.g. 100% Angus Beef, Fresh Crispy" value="Fresh Daily">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="dish-desc-input">Description</label>
+          <textarea id="dish-desc-input" rows="2" placeholder="Describe the flavors, seasoning, and texture..."></textarea>
+        </div>
+
+        <!-- FOOD IMAGE SELECTION SECTION -->
+        <div class="form-group image-selection-group">
+          <div class="image-section-header-row">
+            <label>Food Dish Image *</label>
+          </div>
+          
+          <div class="image-preview-and-options">
+            <!-- Current Image Preview -->
+            <div class="dish-img-preview-box">
+              <img id="dish-preview-img" src="/images/crispy-chicken.jpg" alt="Preview">
+              <span class="preview-overlay-tag">Active Image</span>
+            </div>
+
+            <div class="image-pick-controls">
+              <!-- Upload Custom File -->
+              <div class="upload-file-option">
+                <label for="dish-file-upload" class="btn-file-upload">
+                  <i class="fa-solid fa-cloud-arrow-up"></i> Upload From Device
+                </label>
+                <input type="file" id="dish-file-upload" accept="image/*" multiple style="display: none;">
+                <span class="upload-spinner" id="dish-upload-spinner" style="display: none;">
+                  <i class="fa-solid fa-circle-notch fa-spin"></i> Uploading photo...
+                </span>
+                <span class="file-chosen-text" id="file-chosen-text" style="display: none;"></span>
+                <input type="hidden" id="dish-image-url" value="/images/crispy-chicken.jpg">
+              </div>
+
+              <!-- Quick Presets Carousel -->
+              <div class="preset-images-title">Or pick from restaurant photo gallery:</div>
+              <div class="preset-images-strip" id="preset-images-strip">
+                <!-- Dynamically populated presets -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-card-actions">
+          <button type="button" class="btn btn-modal-delete-dish" id="btn-modal-delete-dish" style="display: none;">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px; vertical-align:middle;">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+            Delete
+          </button>
+          <button type="button" class="btn btn-modal-cancel" id="btn-cancel-dish">Cancel</button>
+          <button type="submit" class="btn btn-brand-primary" id="btn-save-dish">Save Food Dish</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: ORDER DETAILS & RECEIPT VIEW (READ-ONLY)                -->
+  <!-- ============================================================== -->
+  <div class="admin-modal-backdrop" id="modal-order-backdrop">
+    <div class="admin-modal-card order-modal-card">
+      <div class="sheet-drag-handle-bar"><div class="sheet-drag-pill"></div></div>
+      <button class="admin-modal-close" id="modal-order-close">✕</button>
+      
+      <div class="modal-card-header">
+        <div class="modal-header-icon">🧾</div>
+        <div style="flex: 1;">
+          <div class="order-modal-header-top">
+            <h3 class="modal-card-title" id="order-modal-title">Order Details #QB-8942</h3>
+            <span class="order-modal-status-badge status-accepted" id="order-modal-status-badge">Accepted</span>
+          </div>
+          <p class="modal-card-sub" id="order-modal-time-sub">Placed a few minutes ago • Priority Delivery</p>
+        </div>
+      </div>
+
+      <div class="admin-order-details-body">
+        <input type="hidden" id="order-edit-id" value="">
+
+        <!-- 1. Quick Status Selector (Pills) -->
+        <div class="form-group">
+          <label class="detail-section-label">Order Pipeline Status:</label>
+          <div class="order-status-pill-grid">
+            <button type="button" class="order-status-step-pill active" data-status="accepted">
+              <span>🟡</span>
+              <span>Accepted</span>
+            </button>
+            <button type="button" class="order-status-step-pill" data-status="cooking">
+              <span>🔥</span>
+              <span>Preparing</span>
+            </button>
+            <button type="button" class="order-status-step-pill" data-status="ready_for_pickup">
+              <span>📦</span>
+              <span>Ready to Dispatch</span>
+            </button>
+            <button type="button" class="order-status-step-pill pill-delivered-rider" data-status="on_the_way" title="Rider Privilege: Only the assigned Delivery Partner can pick up and dispatch">
+              <span>🛵</span>
+              <span>Dispatched</span>
+              <span class="pill-rider-badge">Rider Only</span>
+            </button>
+            <button type="button" class="order-status-step-pill pill-delivered-rider" data-status="delivered" title="Delivery Partner Privilege: Only rider can mark delivered at doorstep">
+              <span>🎉</span>
+              <span>Delivered</span>
+              <span class="pill-rider-badge">Rider Only</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Customer & Delivery Info (Read-only Cards) -->
+        <div class="order-readonly-info-grid">
+          <div class="order-readonly-card">
+            <div class="readonly-card-label"><i class="fa-regular fa-user"></i> Customer Name & Phone</div>
+            <div class="readonly-card-value" id="order-detail-customer">Online Guest</div>
+            <div class="order-detail-phone-actions" id="order-detail-phone-actions" style="margin-top: 8px; display: none; gap: 8px;">
+              <a href="#" id="btn-modal-call-customer" class="btn-admin-call" style="font-size: 0.82rem; padding: 6px 14px;">
+                <i class="fa-solid fa-phone"></i> Call Customer
+              </a>
+              <a href="#" id="btn-modal-wa-customer" target="_blank" rel="noopener noreferrer" class="btn-admin-wa" style="font-size: 0.82rem; padding: 6px 14px;">
+                <i class="fa-brands fa-whatsapp"></i> WhatsApp
+              </a>
+            </div>
+          </div>
+          <div class="order-readonly-card">
+            <div class="readonly-card-label"><i class="fa-regular fa-clock"></i> Delivery ETA</div>
+            <div class="readonly-card-value" id="order-detail-eta">30 - 40 Minutes</div>
+          </div>
+          <div class="order-readonly-card full-span">
+            <div class="readonly-card-label"><i class="fa-solid fa-location-dot"></i> Delivery Address</div>
+            <div class="readonly-card-value" id="order-detail-address">Express Street Food Delivery</div>
+          </div>
+          <div class="order-readonly-card full-span" id="order-detail-notes-card" style="display: none;">
+            <div class="readonly-card-label"><i class="fa-regular fa-note-sticky"></i> Customer Note</div>
+            <div class="readonly-card-value" id="order-detail-notes"></div>
+          </div>
+        </div>
+
+        <!-- 3. Ordered Food Items (Read-only Receipt Breakdown) -->
+        <div class="order-readonly-items-section">
+          <div class="order-items-header-row">
+            <label class="detail-section-label"><i class="fa-solid fa-bag-shopping"></i> Ordered Food Items</label>
+            <span class="order-items-count-tag" id="order-edit-items-count">0 items</span>
+          </div>
+          <div class="order-items-readonly-list" id="order-items-readonly-list">
+            <!-- Dynamically populated clean item rows -->
+          </div>
+        </div>
+
+        <!-- 4. Total Amount Paid Receipt Card -->
+        <div class="order-readonly-total-box">
+          <div class="readonly-total-left">
+            <span class="readonly-total-label">Total Amount Paid</span>
+            <span class="readonly-payment-tag"><i class="fa-solid fa-circle-check"></i> Paid Online</span>
+          </div>
+          <div class="readonly-total-val" id="order-detail-total">₹0</div>
+        </div>
+
+        <div class="modal-card-actions order-modal-actions">
+          <button type="button" class="btn btn-modal-cancel" id="btn-cancel-order">Close</button>
+          
+          <button type="button" class="btn btn-print-kot" id="btn-modal-print-kot" title="Print Kitchen Order Ticket (KOT) on 58mm/80mm thermal receipt printer">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            <span>Print KOT</span>
+          </button>
+
+          <button type="button" class="btn btn-danger-action btn-modal-reject" id="btn-modal-reject-order" title="Cancel or decline this customer order">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+            <span>Cancel Order</span>
+          </button>
+
+          <button type="button" class="btn btn-brand-primary" id="btn-modal-advance-status">
+            <i class="fa-solid fa-arrow-right"></i> <span id="btn-modal-advance-text">Advance Status</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: CANCEL / REJECT ORDER WITH REASON                       -->
+  <!-- ============================================================== -->
+  <div class="admin-modal-backdrop" id="modal-cancel-order-backdrop" style="display: none;">
+    <div class="admin-modal-card" style="max-width: 500px;">
+      <div class="sheet-drag-handle-bar"><div class="sheet-drag-pill"></div></div>
+      <button class="admin-modal-close" id="modal-cancel-order-close">✕</button>
+      <div class="modal-card-header">
+        <div class="modal-header-icon" style="background: #FEE2E2; color: #DC2626;">❌</div>
+        <div>
+          <h3 class="modal-card-title">Cancel Order <span id="cancel-order-id-label">#QB-0000</span></h3>
+          <p class="modal-card-sub">Choose a reason. The customer will be alerted immediately.</p>
+        </div>
+      </div>
+
+      <div class="admin-form" style="padding: 16px 0;">
+        <div class="form-group">
+          <label style="font-weight: 700; margin-bottom: 8px; display: block; font-size: 0.9rem;">Cancellation Reason *</label>
+          <div class="cancel-reason-pill-grid">
+            <button type="button" class="cancel-reason-pill active" data-reason="Item(s) Out of Stock">🍲 Item(s) Out of Stock</button>
+            <button type="button" class="cancel-reason-pill" data-reason="Kitchen Rush / Overloaded">🔥 Kitchen Rush / Overloaded</button>
+            <button type="button" class="cancel-reason-pill" data-reason="Customer Requested Cancellation">📞 Customer Requested</button>
+            <button type="button" class="cancel-reason-pill" data-reason="Delivery Address Out of Reach">📍 Address Out of Reach</button>
+            <button type="button" class="cancel-reason-pill" data-reason="Store Closing Early">🌙 Store Closing Early</button>
+            <button type="button" class="cancel-reason-pill" data-reason="Other Reason">✏️ Other Reason</button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <label for="cancel-order-note" style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 6px;">Customer Explanation Note (Optional):</label>
+          <input type="text" id="cancel-order-note" placeholder="e.g. Fresh stock arriving tomorrow morning. Sorry for the inconvenience!" class="admin-text-input" style="width: 100%; height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--admin-border); font-size: 0.9rem;" />
+        </div>
+
+        <div class="modal-card-actions" style="margin-top: 22px;">
+          <button type="button" class="btn btn-modal-cancel" id="btn-dismiss-cancel-modal">Keep Order</button>
+          <button type="button" class="btn btn-danger-action" id="btn-confirm-cancel-order" style="background: #DC2626; color: #FFFFFF; font-weight: 700;">
+            Confirm & Cancel Order
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden Printable Thermal Receipt (KOT) Container -->
+  <div id="kot-print-area" class="kot-print-area" aria-hidden="true"></div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: ADD / EDIT DELIVERY BOY PROFILE PER PIN CODE            -->
+  <!-- ============================================================== -->
+  <div class="admin-modal-backdrop" id="modal-admin-rider-backdrop">
+    <div class="admin-modal-card">
+      <div class="sheet-drag-handle-bar"><div class="sheet-drag-pill"></div></div>
+      <button class="admin-modal-close" id="modal-admin-rider-close">✕</button>
+
+      <div class="modal-card-header">
+        <h3 id="admin-rider-modal-title">Add Delivery Boy</h3>
+        <p id="admin-rider-modal-desc">Create profile by adding Name & Mobile Phone. A unique 4-digit PIN is generated for login.</p>
+      </div>
+
+      <form id="form-admin-rider" class="admin-form-sheet" autocomplete="off">
+        <input type="hidden" id="admin-rider-original-pin" value="" />
+
+        <div class="form-group">
+          <label for="admin-rider-input-name"><i class="fa-solid fa-user"></i> Delivery Boy Full Name *</label>
+          <input type="text" id="admin-rider-input-name" placeholder="e.g. Salman Ahmed" required />
+        </div>
+
+        <div class="form-group">
+          <label for="admin-rider-input-phone"><i class="fa-solid fa-phone"></i> Mobile Phone Number (10 digits) *</label>
+          <input type="tel" id="admin-rider-input-phone" placeholder="e.g. 9876543210" maxlength="15" required />
+          <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem;">Customer and kitchen will contact the rider on this mobile number.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="admin-rider-input-vehicle"><i class="fa-solid fa-motorcycle"></i> Vehicle Type</label>
+          <select id="admin-rider-input-vehicle" class="admin-select-input" style="background: var(--admin-input-bg, #1E293B); color: var(--admin-text-main, #FFFFFF); border: 1px solid var(--admin-border, rgba(255,255,255,0.15)); padding: 10px 14px; border-radius: 8px; width: 100%;">
+            <option value="🏍️ Bike">🏍️ Bike</option>
+            <option value="🛵 Scooter">🛵 Scooter</option>
+            <option value="🚲 Bicycle">🚲 Bicycle</option>
+            <option value="🚗 Car">🚗 Car</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label><i class="fa-solid fa-key"></i> Generated 4-Digit Login PIN</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="admin-rider-input-pin" readonly maxlength="4" class="lock-pin-input" style="letter-spacing: 4px; font-weight: 800; font-size: 1.25rem; text-align: center; background: rgba(255,255,255,0.06); color: #10B981; border: 1px solid rgba(16,185,129,0.4); width: 130px;" />
+            <button type="button" class="btn btn-secondary" id="btn-admin-regen-pin" title="Generate New PIN" style="padding: 9px 14px; font-size: 0.85rem; white-space: nowrap; border-radius: 8px;">
+              <i class="fa-solid fa-arrows-rotate"></i> Regenerate PIN
+            </button>
+          </div>
+          <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem;">Only by entering this PIN can the delivery boy log in and ride with their name and number.</small>
+        </div>
+
+        <div class="modal-card-actions">
+          <button type="button" class="btn btn-modal-cancel" id="btn-admin-rider-cancel">Cancel</button>
+          <button type="submit" class="btn btn-brand-primary" id="btn-admin-rider-submit">
+            <i class="fa-solid fa-check"></i> Save Delivery Boy
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script type="module" src="/admin.js"></script>
+</body>
+</html>

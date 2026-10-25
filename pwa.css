@@ -1,0 +1,600 @@
+﻿/* ==========================================================================
+   QuickBite / Cryspy Chiken - Universal PWA & Download Button Styles
+   Shared across: Customer Storefront, Admin Portal, Delivery Rider Portal
+   ========================================================================== */
+
+/* Compact Animated App Download Button - Frosted Glass Website Vibe */
+.btn-app-download-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 38px;
+  min-width: 38px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1.5px solid rgba(255, 90, 38, 0.35);
+  box-shadow: 0 3px 12px rgba(255, 90, 38, 0.12), inset 0 1px 1.5px rgba(255, 255, 255, 0.95);
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+  user-select: none;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  text-decoration: none;
+  line-height: 1;
+}
+
+.btn-app-download-compact:hover {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(255, 90, 38, 0.65);
+  box-shadow: 0 6px 20px rgba(255, 90, 38, 0.24), inset 0 1px 2px #FFFFFF;
+  transform: translateY(-1px);
+}
+
+.btn-app-download-compact:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* Distinct Vibrant App Badge inside the glass pill so it never looks like a plain white ball */
+.btn-app-download-compact .pwa-badge-icon,
+.btn-app-download-compact .pwa-icon-glow {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FF5A26, #F97316);
+  color: #FFFFFF !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 7px rgba(255, 90, 38, 0.45);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.btn-app-download-compact .pwa-badge-icon svg,
+.btn-app-download-compact .pwa-icon-glow svg {
+  width: 14px;
+  height: 14px;
+  stroke: #FFFFFF;
+  display: block;
+}
+
+.btn-app-download-compact .pwa-icon-glow i {
+  color: #FFFFFF !important;
+  font-size: 0.82rem;
+}
+
+.btn-app-download-compact:hover .pwa-badge-icon,
+.btn-app-download-compact:hover .pwa-icon-glow {
+  transform: scale(1.06);
+  box-shadow: 0 3px 10px rgba(255, 90, 38, 0.6);
+}
+
+/* Text expands out ("Get Web App") for ~3s and retracts back in for ~3s (6s cycle) */
+.btn-app-download-compact .pwa-animated-label {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 0px;
+  opacity: 0;
+  transform: translateX(-4px);
+  margin-left: 0;
+  padding-right: 0;
+  color: #1E1B18;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  animation: pwa-label-peek 6s infinite cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: max-width, opacity, transform, padding-right, margin-left;
+}
+
+@keyframes pwa-label-peek {
+  0%, 15% {
+    max-width: 0px;
+    opacity: 0;
+    transform: translateX(-4px);
+    margin-left: 0;
+    padding-right: 0;
+  }
+  25%, 72% {
+    max-width: 105px;
+    opacity: 1;
+    transform: translateX(0);
+    margin-left: 6px;
+    padding-right: 8px;
+  }
+  82%, 100% {
+    max-width: 0px;
+    opacity: 0;
+    transform: translateX(-4px);
+    margin-left: 0;
+    padding-right: 0;
+  }
+}
+
+.btn-app-download-compact:hover .pwa-animated-label,
+.btn-app-download-compact:focus-visible .pwa-animated-label {
+  animation-play-state: paused;
+  max-width: 105px !important;
+  opacity: 1 !important;
+  transform: translateX(0) !important;
+  margin-left: 6px !important;
+  padding-right: 8px !important;
+}
+
+/* Admin Kitchen Hub Glass Variant */
+.admin-pwa-btn {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border: 1.5px solid rgba(15, 23, 42, 0.22) !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1) !important;
+}
+
+.admin-pwa-btn .pwa-icon-glow {
+  background: linear-gradient(135deg, #0F172A, #334155) !important;
+  color: #F8FAFC !important;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.45) !important;
+}
+
+.admin-pwa-btn .pwa-animated-label {
+  color: #0F172A !important;
+}
+
+.admin-pwa-btn:hover {
+  background: #FFFFFF !important;
+  border-color: #0F172A !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.2) !important;
+}
+
+/* Delivery Rider Portal Glass Variant (Dark Header) */
+.rider-pwa-btn {
+  background: rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1.5px solid rgba(16, 185, 129, 0.35) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.18) !important;
+}
+
+.rider-pwa-btn .pwa-icon-glow {
+  background: linear-gradient(135deg, #059669, #10B981) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 2px 7px rgba(5, 150, 105, 0.45) !important;
+}
+
+.rider-pwa-btn .pwa-animated-label {
+  color: #FFFFFF !important;
+}
+
+.rider-pwa-btn:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-color: #10B981 !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.28) !important;
+}
+
+/* ==========================================================================
+   Header Docks - Positions download button so other buttons NEVER get disturbed
+   ========================================================================== */
+.header-pwa-dock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 140px;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+.rider-pwa-dock,
+.admin-pwa-dock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+/* On mobile (<= 768px): Docked right below the user profile / login pill */
+@media (max-width: 768px) {
+  .nav-container {
+    position: relative !important;
+  }
+  .nav-actions {
+    position: relative !important;
+  }
+  .header-pwa-dock {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: unset;
+    z-index: 100;
+  }
+}
+
+/* ==========================================================================
+   PORTAL-SCOPED SUPPRESSION: Each app ONLY hides its own button in standalone mode
+   ========================================================================== */
+html.pwa-customer-installed .header-pwa-dock,
+body.pwa-customer-installed .header-pwa-dock,
+html.pwa-customer-installed #btn-download-app,
+body.pwa-customer-installed #btn-download-app,
+html.pwa-customer-installed #btn-mobile-download-app,
+body.pwa-customer-installed #btn-mobile-download-app,
+html.pwa-customer-installed .mobile-download-item,
+body.pwa-customer-installed .mobile-download-item {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+html.pwa-admin-installed .admin-pwa-dock,
+body.pwa-admin-installed .admin-pwa-dock,
+html.pwa-admin-installed #btn-admin-download-app,
+body.pwa-admin-installed #btn-admin-download-app {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+html.pwa-rider-installed .rider-pwa-dock,
+body.pwa-rider-installed .rider-pwa-dock,
+html.pwa-rider-installed #btn-rider-download-app,
+body.pwa-rider-installed #btn-rider-download-app {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* PWA Install Guide Modal */
+.pwa-install-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.pwa-install-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pwa-install-modal {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  background: #181512;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  padding: 28px 24px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 90, 38, 0.15);
+  color: #FFF;
+  animation: pwa-modal-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-sizing: border-box;
+}
+
+@keyframes pwa-modal-pop {
+  from { transform: scale(0.92) translateY(14px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.pwa-modal-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #FFF;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pwa-modal-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: rotate(90deg);
+}
+
+.pwa-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.pwa-app-icon-wrap {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.pwa-modal-app-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(255, 90, 38, 0.35);
+}
+
+.pwa-verified-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #10B981;
+  color: #FFF;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #181512;
+}
+
+.pwa-modal-title-group h3 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 0 0 4px 0;
+  color: #FFF;
+}
+
+.pwa-modal-subtitle {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.pwa-features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.pwa-feature-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.pwa-install-steps {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.install-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FF5A26, #F97316);
+  color: #FFF;
+  font-size: 0.75rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.step-desc {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.4;
+}
+
+.step-desc strong {
+  color: #FFF;
+}
+
+.pwa-modal-footer {
+  display: flex;
+  justify-content: stretch;
+}
+
+.btn-pwa-primary {
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #FF5A26, #F97316);
+  color: #FFF;
+  font-size: 0.95rem;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(255, 90, 38, 0.4);
+  transition: all 0.25s ease;
+}
+
+.btn-pwa-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(255, 90, 38, 0.55);
+}
+
+/* Real Native App Notification Prompt Floating Banner */
+.app-notification-prompt-banner {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(140%);
+  width: calc(100% - 32px);
+  max-width: 480px;
+  background: rgba(24, 21, 18, 0.94);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1.5px solid rgba(255, 90, 38, 0.4);
+  border-radius: 20px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  z-index: 99999;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-notification-prompt-banner.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-notification-prompt-banner .prompt-icon-ring {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FF5A26, #F97316);
+  color: #FFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(255, 90, 38, 0.45);
+  animation: prompt-bell-ring 2.8s infinite ease-in-out;
+}
+
+@keyframes prompt-bell-ring {
+  0%, 100% { transform: scale(1) rotate(0); }
+  10%, 20% { transform: scale(1.08) rotate(-12deg); }
+  15%, 25% { transform: scale(1.08) rotate(12deg); }
+  30% { transform: scale(1) rotate(0); }
+}
+
+.app-notification-prompt-banner .prompt-text-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-notification-prompt-banner .prompt-text-group h4 {
+  margin: 0 0 2px 0;
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  letter-spacing: -0.2px;
+}
+
+.app-notification-prompt-banner .prompt-text-group p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.35;
+}
+
+.app-notification-prompt-banner .prompt-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.app-notification-prompt-banner .btn-prompt-enable {
+  padding: 8px 14px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #FF5A26, #F97316);
+  color: #FFF;
+  border: none;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255, 90, 38, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+}
+
+.app-notification-prompt-banner .btn-prompt-enable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 90, 38, 0.5);
+}
+
+.app-notification-prompt-banner .btn-prompt-dismiss {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.95rem;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 50%;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.app-notification-prompt-banner .btn-prompt-dismiss:hover {
+  color: #FFF;
+}
+
+@media (max-width: 480px) {
+  .app-notification-prompt-banner {
+    bottom: 16px;
+    width: calc(100% - 24px);
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .app-notification-prompt-banner .prompt-icon-ring {
+    width: 36px;
+    height: 36px;
+    font-size: 1.05rem;
+  }
+  .app-notification-prompt-banner .prompt-text-group h4 {
+    font-size: 0.85rem;
+  }
+  .app-notification-prompt-banner .prompt-text-group p {
+    font-size: 0.72rem;
+  }
+  .app-notification-prompt-banner .btn-prompt-enable {
+    padding: 7px 11px;
+    font-size: 0.75rem;
+  }
+}

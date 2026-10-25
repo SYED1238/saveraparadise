@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="rider-bg-512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064E3B"/>
+      <stop offset="50%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#065F46"/>
+    </linearGradient>
+    <linearGradient id="rider-neon-512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6EE7B7"/>
+      <stop offset="50%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="rider-gold-512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="rider-shadow-512" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#rider-bg-512)"/>
+
+  <!-- Emerald perimeter ring -->
+  <rect x="22" y="22" width="468" height="468" rx="96" fill="none" stroke="#6EE7B7" stroke-width="6" stroke-opacity="0.5"/>
+
+  <!-- Center emblem -->
+  <g filter="url(#rider-shadow-512)" transform="translate(42, 36)">
+    <circle cx="214" cy="214" r="165" fill="#10B981" fill-opacity="0.15"/>
+    <circle cx="214" cy="214" r="144" fill="#064E3B" stroke="#6EE7B7" stroke-width="5"/>
+
+    <!-- Motorcycle Wheels -->
+    <circle cx="144" cy="262" r="38" fill="none" stroke="url(#rider-gold-512)" stroke-width="13"/>
+    <circle cx="144" cy="262" r="10" fill="url(#rider-gold-512)"/>
+
+    <circle cx="284" cy="262" r="38" fill="none" stroke="url(#rider-gold-512)" stroke-width="13"/>
+    <circle cx="284" cy="262" r="10" fill="url(#rider-gold-512)"/>
+
+    <!-- Bike Frame -->
+    <path d="M144 262 L192 218 L236 218 L284 262 M236 218 L256 176 L278 176" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+    <!-- Rider Torso & Helmet -->
+    <circle cx="208" cy="138" r="26" fill="url(#rider-neon-512)"/>
+    <path d="M218 132 L232 140 L218 148 Z" fill="url(#rider-gold-512)"/>
+    <path d="M192 170 C192 170 214 165 230 180 L246 208" stroke="url(#rider-neon-512)" stroke-width="13" stroke-linecap="round" fill="none"/>
+
+    <!-- Delivery Hot Bag on Back -->
+    <rect x="138" y="176" width="42" height="42" rx="8" fill="#EF4444"/>
+    <rect x="146" y="184" width="26" height="26" rx="3" fill="#FEF2F2"/>
+
+    <!-- Speed streaks -->
+    <line x1="96" y1="198" x2="128" y2="198" stroke="#6EE7B7" stroke-width="6" stroke-linecap="round"/>
+    <line x1="80" y1="225" x2="118" y2="225" stroke="#6EE7B7" stroke-width="5" stroke-linecap="round"/>
+
+    <!-- Rider Pill -->
+    <g transform="translate(118, 342)">
+      <rect width="192" height="52" rx="26" fill="#10B981"/>
+      <text x="96" y="36" fill="#064E3B" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="26" font-weight="900" text-anchor="middle" letter-spacing="3.2">RIDER</text>
+    </g>
+  </g>
+</svg>

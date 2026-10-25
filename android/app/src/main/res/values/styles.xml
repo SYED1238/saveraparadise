@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.SASCrispy.NoActionBar" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/statusBarColor</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

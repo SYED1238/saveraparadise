@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="admin-bg-512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="60%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="gold-grad-512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="50%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="flame-grad-512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5A26"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <filter id="admin-shadow-512" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#admin-bg-512)"/>
+
+  <!-- Golden perimeter frame -->
+  <rect x="22" y="22" width="468" height="468" rx="96" fill="none" stroke="url(#gold-grad-512)" stroke-width="6" stroke-opacity="0.5"/>
+
+  <!-- Center emblem -->
+  <g filter="url(#admin-shadow-512)" transform="translate(42, 36)">
+    <circle cx="214" cy="214" r="165" fill="#F59E0B" fill-opacity="0.12"/>
+    <circle cx="214" cy="214" r="144" fill="#1E293B" stroke="url(#gold-grad-512)" stroke-width="5"/>
+
+    <!-- Chef Hat Symbol -->
+    <path d="M160 198 C134 198 122 166 144 144 C138 112 176 96 202 112 C218 85 262 85 278 112 C304 96 342 112 336 144 C358 166 346 198 320 198 Z" fill="url(#gold-grad-512)"/>
+    <!-- Hat band -->
+    <rect x="155" y="198" width="170" height="32" rx="8" fill="#D97706"/>
+    <line x1="175" y1="214" x2="305" y2="214" stroke="#FEF08A" stroke-width="5" stroke-linecap="round"/>
+
+    <!-- Crossed Utensils & Star -->
+    <path d="M182 256 L246 315" stroke="url(#gold-grad-512)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M246 256 L182 315" stroke="url(#gold-grad-512)" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="214" cy="285" r="18" fill="url(#flame-grad-512)"/>
+
+    <!-- Live Kitchen Badge -->
+    <g transform="translate(114, 342)">
+      <rect width="200" height="52" rx="26" fill="url(#flame-grad-512)"/>
+      <text x="100" y="36" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="26" font-weight="900" text-anchor="middle" letter-spacing="3.2">KITCHEN</text>
+    </g>
+  </g>
+</svg>

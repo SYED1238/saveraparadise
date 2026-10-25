@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5A26"/>
+      <stop offset="50%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="192" height="192" rx="42" fill="url(#bg)"/>
+
+  <!-- Subtle glow ring -->
+  <rect x="8" y="8" width="176" height="176" rx="36" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-opacity="0.25"/>
+
+  <!-- Food / Chicken Emoji Symbol with Tongue Smile -->
+  <g filter="url(#shadow)" transform="translate(16, 16)">
+    <!-- Plate / Glow disc -->
+    <circle cx="80" cy="80" r="66" fill="#FFFFFF" fill-opacity="0.15"/>
+    <circle cx="80" cy="80" r="58" fill="url(#gold)"/>
+
+    <!-- Drumstick / Crispy Silhouette -->
+    <!-- Happy eyes -->
+    <circle cx="62" cy="68" r="7" fill="#431407"/>
+    <circle cx="98" cy="68" r="7" fill="#431407"/>
+    <circle cx="60" cy="66" r="2.5" fill="#FFFFFF"/>
+    <circle cx="96" cy="66" r="2.5" fill="#FFFFFF"/>
+
+    <!-- Happy curved smile -->
+    <path d="M54 90 Q80 118 106 90" stroke="#431407" stroke-width="6" stroke-linecap="round" fill="none"/>
+
+    <!-- Tongue -->
+    <path d="M72 99 C72 114 88 114 88 99 Z" fill="#EF4444"/>
+
+    <!-- Chef Hat or Sparkles -->
+    <circle cx="44" cy="42" r="5" fill="#FFFFFF"/>
+    <polygon points="120,40 123,48 131,48 124,53 127,61 120,56 113,61 116,53 109,48 117,48" fill="#FFFFFF"/>
+  </g>
+</svg>

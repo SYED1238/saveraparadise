@@ -1,0 +1,326 @@
+﻿/* ============================================================== */
+/* iOS-STYLE PASSCODE LOCK SCREEN (NO KEYBOARD NEEDED)            */
+/* Glassmorphism, Frosted Blur, Circular On-Screen Keypad         */
+/* ============================================================== */
+
+.portal-lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background: rgba(10, 10, 14, 0.78);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.35s ease;
+  overflow-y: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.portal-lock-overlay.unlocked {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.ios-passcode-glow {
+  position: absolute;
+  width: 440px;
+  height: 440px;
+  border-radius: 50%;
+  filter: blur(100px);
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.22;
+}
+
+.ios-passcode-glow.glow-rider {
+  background: radial-gradient(circle, #FF5A26 0%, #EA580C 70%);
+}
+
+.ios-passcode-glow.glow-admin {
+  background: radial-gradient(circle, #3B82F6 0%, #1D4ED8 70%);
+}
+
+.ios-passcode-wrap {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: auto;
+  animation: ios-lock-fade-in 0.4s ease-out;
+}
+
+@keyframes ios-lock-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Header Badge & Title */
+.ios-passcode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 20px;
+  letter-spacing: 0.3px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.ios-passcode-badge i {
+  color: #FF5A26;
+}
+
+.portal-admin .ios-passcode-badge i {
+  color: #60A5FA;
+}
+
+.ios-passcode-title {
+  font-family: -apple-system, BlinkMacSystemFont, 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  font-size: 1.85rem;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.95);
+  margin: 0 0 6px 0;
+  letter-spacing: -0.3px;
+}
+
+.ios-passcode-subtitle {
+  font-family: -apple-system, BlinkMacSystemFont, 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0 0 24px 0;
+  font-weight: 400;
+  min-height: 20px;
+  transition: color 0.2s ease;
+}
+
+.ios-passcode-subtitle.error {
+  color: #F87171;
+  font-weight: 600;
+}
+
+/* 4-Dot Passcode Display */
+.ios-passcode-dots {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 36px;
+  padding: 6px;
+}
+
+.ios-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  background: transparent;
+  transition: all 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.ios-dot.filled {
+  background: #FFFFFF;
+  border-color: #FFFFFF;
+  transform: scale(1.1);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.7);
+}
+
+.ios-passcode-dots.error {
+  animation: ios-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.ios-passcode-dots.error .ios-dot {
+  border-color: #EF4444;
+  background: #EF4444;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.65);
+}
+
+.ios-passcode-dots.success .ios-dot {
+  border-color: #10B981;
+  background: #10B981;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.75);
+}
+
+@keyframes ios-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-12px); }
+  40%, 80% { transform: translateX(12px); }
+}
+
+/* Keypad Grid (3 columns, 4 rows) */
+.ios-keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 76px);
+  grid-auto-rows: 76px;
+  gap: 16px 26px;
+  justify-content: center;
+  align-items: center;
+  margin: 0 auto;
+}
+
+/* Individual Circular Key */
+.ios-key {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+
+.ios-key:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.ios-key:active,
+.ios-key.active-press {
+  background: rgba(255, 255, 255, 0.42) !important;
+  border-color: #FFFFFF !important;
+  transform: scale(0.92);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+}
+
+.ios-key .key-digit {
+  font-family: -apple-system, BlinkMacSystemFont, 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  font-size: 2.15rem;
+  font-weight: 300;
+  line-height: 1;
+  color: #FFFFFF;
+  pointer-events: none;
+}
+
+.ios-key .key-sub {
+  font-family: -apple-system, BlinkMacSystemFont, 'Outfit', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 3px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Keypad Spacer (Bottom Left) */
+.ios-key-spacer {
+  width: 76px;
+  height: 76px;
+  pointer-events: none;
+}
+
+/* Delete Action Button (Bottom Right) */
+.ios-key.ios-key-action {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: -apple-system, BlinkMacSystemFont, 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ios-key.ios-key-action:hover {
+  background: transparent;
+  color: #FFFFFF;
+}
+
+.ios-key.ios-key-action:active,
+.ios-key.ios-key-action.active-press {
+  transform: scale(0.92);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Passcode Hint */
+.ios-passcode-hint {
+  margin-top: 26px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.ios-passcode-hint:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.ios-passcode-hint strong {
+  color: #FFFFFF;
+  letter-spacing: 1px;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 380px) {
+  .ios-keypad-grid {
+    grid-template-columns: repeat(3, 68px);
+    grid-auto-rows: 68px;
+    gap: 14px 20px;
+  }
+  .ios-key {
+    width: 68px;
+    height: 68px;
+  }
+  .ios-key .key-digit {
+    font-size: 1.9rem;
+  }
+  .ios-key .key-sub {
+    font-size: 0.55rem;
+  }
+  .ios-key-spacer {
+    width: 68px;
+    height: 68px;
+  }
+}

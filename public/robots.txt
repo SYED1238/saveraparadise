@@ -1,0 +1,15 @@
+# SAS Crispy Chicken - Search Engine Robots Configuration
+# https://crispychicken.zarb.shop/
+
+User-agent: *
+Allow: /
+Allow: /index.html
+Allow: /manifest.json
+Allow: /icon-*.svg
+
+# Disallow internal restaurant operations & staff portals
+Disallow: /admin
+Disallow: /admin.html
+Disallow: /delivery
+Disallow: /delivery.html
+Disallow: /api/

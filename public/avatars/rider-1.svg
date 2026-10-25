@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="bg-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="skin1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fed7aa"/>
+      <stop offset="100%" stop-color="#fba866"/>
+    </linearGradient>
+    <linearGradient id="jacket1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064e3b"/>
+      <stop offset="100%" stop-color="#022c22"/>
+    </linearGradient>
+    <linearGradient id="helmet1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="visor1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Circular Base -->
+  <circle cx="60" cy="60" r="58" fill="url(#bg-emerald)" stroke="#ffffff" stroke-width="4"/>
+
+  <!-- Subtle glow ring -->
+  <circle cx="60" cy="60" r="54" fill="none" stroke="#a7f3d0" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+
+  <!-- Shoulders & Delivery Jacket -->
+  <path d="M22 108 C24 88, 38 78, 60 78 C82 78, 96 88, 98 108 Z" fill="url(#jacket1)"/>
+  <path d="M48 82 L60 96 L72 82 Z" fill="#10b981"/>
+  <path d="M57 96 L63 96 L63 112 L57 112 Z" fill="#f8fafc" opacity="0.9"/>
+  <!-- Silver Zipper & Straps -->
+  <circle cx="60" cy="98" r="2.5" fill="#e2e8f0"/>
+
+  <!-- Neck -->
+  <rect x="52" y="66" width="16" height="14" rx="4" fill="url(#skin1)"/>
+
+  <!-- Head / Face -->
+  <ellipse cx="60" cy="52" rx="18" ry="20" fill="url(#skin1)"/>
+
+  <!-- Ears -->
+  <circle cx="42" cy="53" r="4.5" fill="#fba866"/>
+  <circle cx="78" cy="53" r="4.5" fill="#fba866"/>
+
+  <!-- Eyes & Eyebrows -->
+  <circle cx="53" cy="52" r="2.5" fill="#1e293b"/>
+  <circle cx="67" cy="52" r="2.5" fill="#1e293b"/>
+  <path d="M50 47 Q53 45 56 47" stroke="#0f172a" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M64 47 Q67 45 70 47" stroke="#0f172a" stroke-width="2" stroke-linecap="round" fill="none"/>
+
+  <!-- Friendly Smile -->
+  <path d="M54 60 Q60 65 66 60" stroke="#c2410c" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+
+  <!-- Sleek Modern Rider Helmet with Visor -->
+  <path d="M38 46 C38 28, 48 20, 60 20 C72 20, 82 28, 82 46 C82 48, 80 50, 76 50 C68 50, 52 50, 44 50 C40 50, 38 48, 38 46 Z" fill="url(#helmet1)"/>
+  <!-- Helmet Top Stripe -->
+  <path d="M57 20 C57 20, 58 35, 58 42 L62 42 C62 35, 63 20, 63 20 Z" fill="#10b981"/>
+  <!-- Helmet Visor Gloss -->
+  <path d="M44 38 C44 34, 52 32, 60 32 C68 32, 76 34, 76 38 C76 43, 68 45, 60 45 C52 45, 44 43, 44 38 Z" fill="url(#visor1)" opacity="0.9"/>
+  <ellipse cx="53" cy="36" rx="5" ry="1.5" fill="#ffffff" opacity="0.7"/>
+
+  <!-- Little Chicken Drumstick Icon Badge at bottom right -->
+  <circle cx="94" cy="94" r="14" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
+  <text x="94" y="99" font-size="14" text-anchor="middle">🍗</text>
+</svg>

@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build
+dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+
+# Agent / Scratch
+.agents/
+.gemini/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Temporary scratch media from root
+scratch/
+Gemini_Generated_Image_*.png
+mobile_*.png
+*.tmp
+519d9bfc733ee589a0dc4826a228ebbb.jpg
+67514d8b588b60f281d479f0391a6706.jpg
+71f8dd52a02a233c46f1ab4d88d22f7a.jpg

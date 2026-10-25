@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="rider-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064E3B"/>
+      <stop offset="50%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#065F46"/>
+    </linearGradient>
+    <linearGradient id="rider-neon" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6EE7B7"/>
+      <stop offset="50%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="rider-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="rider-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="192" height="192" rx="42" fill="url(#rider-bg)"/>
+
+  <!-- Emerald perimeter ring -->
+  <rect x="8" y="8" width="176" height="176" rx="36" fill="none" stroke="#6EE7B7" stroke-width="2.5" stroke-opacity="0.5"/>
+
+  <!-- Center emblem: Motorcycle Rider & GPS Compass Flash -->
+  <g filter="url(#rider-shadow)" transform="translate(16, 14)">
+    <circle cx="80" cy="80" r="62" fill="#10B981" fill-opacity="0.15"/>
+    <circle cx="80" cy="80" r="54" fill="#064E3B" stroke="#6EE7B7" stroke-width="2"/>
+
+    <!-- Motorcycle Silhouette -->
+    <!-- Rear Wheel -->
+    <circle cx="54" cy="98" r="14" fill="none" stroke="url(#rider-gold)" stroke-width="5"/>
+    <circle cx="54" cy="98" r="4" fill="url(#rider-gold)"/>
+
+    <!-- Front Wheel -->
+    <circle cx="106" cy="98" r="14" fill="none" stroke="url(#rider-gold)" stroke-width="5"/>
+    <circle cx="106" cy="98" r="4" fill="url(#rider-gold)"/>
+
+    <!-- Bike Frame & Handlebars -->
+    <path d="M54 98 L72 82 L88 82 L106 98 M88 82 L96 66 L104 66" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+    <!-- Rider Torso & Helmet -->
+    <circle cx="78" cy="52" r="10" fill="url(#rider-neon)"/>
+    <!-- Visor -->
+    <path d="M82 50 L87 53 L82 56 Z" fill="url(#rider-gold)"/>
+    <!-- Body leaning forward -->
+    <path d="M72 64 C72 64 80 62 86 68 L92 78" stroke="url(#rider-neon)" stroke-width="5" stroke-linecap="round" fill="none"/>
+
+    <!-- Delivery Hot Bag on Back -->
+    <rect x="52" y="66" width="16" height="16" rx="3" fill="#EF4444"/>
+    <rect x="55" y="69" width="10" height="10" rx="1" fill="#FEF2F2"/>
+
+    <!-- Speed / Wind Streak Accents -->
+    <line x1="36" y1="74" x2="48" y2="74" stroke="#6EE7B7" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="30" y1="84" x2="44" y2="84" stroke="#6EE7B7" stroke-width="2" stroke-linecap="round"/>
+
+    <!-- Rider Bottom Pill -->
+    <g transform="translate(44, 128)">
+      <rect width="72" height="20" rx="10" fill="#10B981"/>
+      <text x="36" y="14" fill="#064E3B" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="900" text-anchor="middle" letter-spacing="1.2">RIDER</text>
+    </g>
+  </g>
+</svg>

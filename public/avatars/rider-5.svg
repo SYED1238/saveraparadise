@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="bg-rose" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#9f1239"/>
+    </linearGradient>
+    <linearGradient id="jacket5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#881337"/>
+      <stop offset="100%" stop-color="#4c0519"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Circular Base -->
+  <circle cx="60" cy="60" r="58" fill="url(#bg-rose)" stroke="#ffffff" stroke-width="4"/>
+  <circle cx="60" cy="60" r="54" fill="none" stroke="#fecdd3" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+
+  <!-- Shoulders & Jacket -->
+  <path d="M22 108 C24 88, 38 78, 60 78 C82 78, 96 88, 98 108 Z" fill="url(#jacket5)"/>
+  <path d="M46 82 L60 98 L74 82 Z" fill="#fb7185"/>
+  <circle cx="60" cy="98" r="2.5" fill="#ffffff"/>
+
+  <!-- Neck -->
+  <rect x="52" y="66" width="16" height="14" rx="4" fill="#fed7aa"/>
+
+  <!-- Head / Face -->
+  <ellipse cx="60" cy="54" rx="18" ry="19" fill="#fed7aa"/>
+  <circle cx="42" cy="54" r="4.5" fill="#fba866"/>
+  <circle cx="78" cy="54" r="4.5" fill="#fba866"/>
+
+  <!-- Eyes & Eyebrows -->
+  <circle cx="53" cy="54" r="2.5" fill="#1e293b"/>
+  <circle cx="67" cy="54" r="2.5" fill="#1e293b"/>
+  <path d="M50 49 Q53 47 56 49" stroke="#0f172a" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M64 49 Q67 47 70 49" stroke="#0f172a" stroke-width="2" stroke-linecap="round" fill="none"/>
+
+  <!-- Big Smile -->
+  <path d="M53 62 Q60 68 67 62" stroke="#be123c" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+
+  <!-- Red Sports Cap -->
+  <path d="M38 46 C38 32, 48 26, 60 26 C72 26, 82 32, 82 46 Z" fill="#e11d48"/>
+  <path d="M36 44 C42 42, 60 42, 88 44 C92 45, 90 48, 82 50 C70 51, 46 51, 36 44 Z" fill="#9f1239"/>
+  <!-- Little 5-star emblem -->
+  <circle cx="60" cy="36" r="4" fill="#fbbf24"/>
+
+  <!-- Star Badge bottom right -->
+  <circle cx="94" cy="94" r="14" fill="#0f172a" stroke="#fb7185" stroke-width="2"/>
+  <text x="94" y="99" font-size="14" text-anchor="middle">⭐</text>
+</svg>

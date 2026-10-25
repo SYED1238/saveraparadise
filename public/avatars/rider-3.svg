@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="bg-indigo" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="skin3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="jacket3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="glasses" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#0369a1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Circular Base -->
+  <circle cx="60" cy="60" r="58" fill="url(#bg-indigo)" stroke="#ffffff" stroke-width="4"/>
+
+  <!-- Subtle glow ring -->
+  <circle cx="60" cy="60" r="54" fill="none" stroke="#a5b4fc" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+
+  <!-- Shoulders & Delivery Jacket -->
+  <path d="M22 108 C24 88, 38 78, 60 78 C82 78, 96 88, 98 108 Z" fill="url(#jacket3)"/>
+  <path d="M48 82 L60 96 L72 82 Z" fill="#6366f1"/>
+  <line x1="60" y1="96" x2="60" y2="114" stroke="#ffffff" stroke-width="2"/>
+
+  <!-- Neck -->
+  <rect x="52" y="66" width="16" height="14" rx="4" fill="#fcd34d"/>
+
+  <!-- Head / Face -->
+  <ellipse cx="60" cy="54" rx="18" ry="19" fill="#fcd34d"/>
+
+  <!-- Ears -->
+  <circle cx="42" cy="54" r="4.5" fill="#f59e0b"/>
+  <circle cx="78" cy="54" r="4.5" fill="#f59e0b"/>
+
+  <!-- Cool Sunglasses -->
+  <path d="M45 49 L58 49 L56 57 L47 57 Z" fill="url(#glasses)"/>
+  <path d="M62 49 L75 49 L73 57 L64 57 Z" fill="url(#glasses)"/>
+  <line x1="58" y1="51" x2="62" y2="51" stroke="#0f172a" stroke-width="2"/>
+  <line x1="42" y1="50" x2="45" y2="50" stroke="#0f172a" stroke-width="2"/>
+  <line x1="75" y1="50" x2="78" y2="50" stroke="#0f172a" stroke-width="2"/>
+  <!-- Sunglasses glare -->
+  <line x1="47" y1="51" x2="52" y2="55" stroke="#bae6fd" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="64" y1="51" x2="69" y2="55" stroke="#bae6fd" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Smile -->
+  <path d="M54 63 Q60 67 66 63" stroke="#b45309" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+
+  <!-- Sporty Open Helmet with racing stripes -->
+  <path d="M38 46 C38 28, 48 22, 60 22 C72 22, 82 28, 82 46 Z" fill="#1e1b4b"/>
+  <path d="M56 22 L64 22 L64 46 L56 46 Z" fill="#6366f1"/>
+  <path d="M58 22 L62 22 L62 46 L58 46 Z" fill="#ffffff"/>
+
+  <!-- Speed Lightning Badge bottom right -->
+  <circle cx="94" cy="94" r="14" fill="#0f172a" stroke="#6366f1" stroke-width="2"/>
+  <text x="94" y="99" font-size="14" text-anchor="middle">⚡</text>
+</svg>

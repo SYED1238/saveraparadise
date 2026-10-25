@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">SMM Taj Portal</string>
+    <string name="portal_url">http://localhost:5173/</string>
+</resources>

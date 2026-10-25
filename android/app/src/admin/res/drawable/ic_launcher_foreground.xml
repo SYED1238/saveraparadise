@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:translateX="0"
+        android:translateY="0">
+
+        <!-- Golden Glow behind the Hat -->
+        <path
+            android:fillColor="#F59E0B"
+            android:fillAlpha="0.2"
+            android:pathData="M54,26 C68,26 80,38 80,52 C80,66 68,78 54,78 C40,78 28,66 28,52 C28,38 40,26 54,26 Z" />
+
+        <!-- Chef Hat Main Puffs (White #FFFFFF) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,28 C47,28 42,33 42,40 C42,41 42.2,42 42.5,43 C40,43.5 38,45.5 38,48 C38,50 39.5,52 41.5,52.8 L41,60 L67,60 L66.5,52.8 C68.5,52 70,50 70,48 C70,45.5 68,43.5 65.5,43 C65.8,42 66,41 66,40 C66,33 61,28 54,28 Z" />
+
+        <!-- Left Puff Highlight -->
+        <path
+            android:fillColor="#F1F5F9"
+            android:pathData="M42,40 C42,41 42.2,42 42.5,43 C40,43.5 38,45.5 38,48 C38,50.8 40.5,53 43.5,53 L45,53 L44,43 Z" />
+
+        <!-- Right Puff Highlight -->
+        <path
+            android:fillColor="#E2E8F0"
+            android:pathData="M66,40 C66,41 65.8,42 65.5,43 C68,43.5 70,45.5 70,48 C70,50.8 67.5,53 64.5,53 L63,53 L64,43 Z" />
+
+        <!-- Chef Hat Pleat Crease Shadows -->
+        <path
+            android:strokeColor="#CBD5E1"
+            android:strokeWidth="1.2"
+            android:strokeLineCap="round"
+            android:pathData="M49,38 L48,56 M54,34 L54,56 M59,38 L60,56" />
+
+        <!-- Golden Band at Base of Chef Hat -->
+        <path
+            android:fillColor="#F59E0B"
+            android:pathData="M38,59 L70,59 L68,67 L40,67 Z" />
+
+        <!-- Golden Center Star on Band -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,61.2 L55.2,63.6 L57.8,63.9 L55.9,65.6 L56.4,68.2 L54,66.9 L51.6,68.2 L52.1,65.6 L50.2,63.9 L52.8,63.6 Z" />
+
+        <!-- Crossed Kitchen Utensils (Golden Fork & Knife) below -->
+        <!-- Fork (Left to Right) -->
+        <path
+            android:fillColor="#FBBF24"
+            android:pathData="M42,72 L45,69 L64,83 L61,86 Z" />
+        <path
+            android:strokeColor="#F59E0B"
+            android:strokeWidth="1.5"
+            android:strokeLineCap="round"
+            android:pathData="M38,68 L43,73 M40,66 L45,71 M43,65 L47,70" />
+
+        <!-- Knife (Right to Left) -->
+        <path
+            android:fillColor="#FBBF24"
+            android:pathData="M66,72 L63,69 L44,83 L47,86 Z" />
+        <path
+            android:fillColor="#F59E0B"
+            android:pathData="M65,70 C68,67 71,67 72,70 C70,72 68,73 65,70 Z" />
+
+        <!-- Center Accent Dot -->
+        <path
+            android:fillColor="#EF4444"
+            android:pathData="M54,72 C55.1,72 56,72.9 56,74 C56,75.1 55.1,76 54,76 C52.9,76 52,75.1 52,74 C52,72.9 52.9,72 54,72 Z" />
+
+    </group>
+</vector>

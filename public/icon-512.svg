@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5A26"/>
+      <stop offset="45%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <linearGradient id="gold512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="shadow512" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bg512)"/>
+  <rect x="20" y="20" width="472" height="472" rx="96" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-opacity="0.2"/>
+
+  <!-- Logo Graphics -->
+  <g filter="url(#shadow512)" transform="translate(40, 40)">
+    <!-- Base disc -->
+    <circle cx="216" cy="216" r="176" fill="#FFFFFF" fill-opacity="0.15"/>
+    <circle cx="216" cy="216" r="156" fill="url(#gold512)"/>
+
+    <!-- Happy Eyes -->
+    <circle cx="166" cy="180" r="19" fill="#431407"/>
+    <circle cx="266" cy="180" r="19" fill="#431407"/>
+    <circle cx="160" cy="174" r="7" fill="#FFFFFF"/>
+    <circle cx="260" cy="174" r="7" fill="#FFFFFF"/>
+
+    <!-- Broad smile -->
+    <path d="M144 240 Q216 316 288 240" stroke="#431407" stroke-width="16" stroke-linecap="round" fill="none"/>
+
+    <!-- Tongue -->
+    <path d="M194 266 C194 306 238 306 238 266 Z" fill="#EF4444"/>
+
+    <!-- Star Sparkles -->
+    <polygon points="320,100 326,118 344,118 330,130 335,148 320,137 305,148 310,130 296,118 314,118" fill="#FFFFFF"/>
+    <circle cx="120" cy="115" r="12" fill="#FFFFFF" fill-opacity="0.9"/>
+  </g>
+</svg>
