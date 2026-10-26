@@ -28,6 +28,7 @@
   <link rel="preload" as="image" href="/api/r2-image?key=dishes/crispy-chicken.jpg" fetchpriority="high">
   <link rel="preload" as="image" href="/api/r2-image?key=dishes/hero-pizza.jpg" fetchpriority="high">
   <link rel="preload" as="image" href="/api/r2-image?key=dishes/Fried_chicken_burger_on_plate_2K_20261018163117.jpg" fetchpriority="high">
+  <link rel="preload" as="video" href="/api/r2-video" type="video/mp4">
   <script>
     (function() {
       try {
@@ -4498,9 +4499,10 @@
         <video class="tracker-bg-video-el" id="tracker-bg-video-el" src="/api/r2-video" autoplay loop muted playsinline preload="auto">
           <source src="/api/r2-video" type="video/mp4">
         </video>
-        <div class="tracker-bg-video-scrim"></div>
       </div>
-      <!-- EMPTY STATE: Shown when user has NO active orders to track -->
+      <!-- SCROLLABLE CONTENT BODY (Scrolls smoothly over the pinned background video) -->
+      <div class="order-modal-scroll-body" id="order-modal-scroll-body">
+        <!-- EMPTY STATE: Shown when user has NO active orders to track -->
       <div class="tracker-empty-state" id="tracker-empty-state" style="display: none;">
         <div class="tracker-empty-icon">🛵💨</div>
         <h3 class="modal-title">You have no orders to track</h3>
@@ -4601,6 +4603,7 @@
           </button>
         </div>
       </div>
+      </div> <!-- /order-modal-scroll-body -->
     </div>
   </div>
 

@@ -200,6 +200,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch {}
         dataService.saveOrders(curOrders);
         openOrderModal(testOrder.id, false);
+        if (urlParams.has('scroll')) {
+          setTimeout(() => {
+            const scrollEl = document.getElementById('order-modal-scroll-body');
+            if (scrollEl) scrollEl.scrollTop = 250;
+          }, 400);
+        }
       }, 500);
     }
   } catch (e) {}
@@ -238,6 +244,13 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.removeItem('quickbite_active_user_context');
       }
     } catch {}
+  }
+
+  // Pre-cache live tracker video in the background for zero-wait instant opening
+  if (typeof window !== 'undefined') {
+    setTimeout(() => {
+      preloadTrackerVideo();
+    }, 1000);
   }
 
   // Load cart from localStorage if present
@@ -2151,6 +2164,35 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ==============================================================
+  // CACHE STORAGE & INSTANT BACKGROUND VIDEO PRELOADER
+  // Pre-downloads video in background, primes browser media cache,
+  // and enables instantaneous, zero-wait opening and playback.
+  // ==============================================================
+  const TRACKER_VIDEO_URL = '/api/r2-video';
+  let isVideoPreloading = false;
+
+  async function preloadTrackerVideo() {
+    if (isVideoPreloading) return;
+    isVideoPreloading = true;
+
+    try {
+      // Prime HTTP Range cache & R2 stream socket in background
+      await fetch(TRACKER_VIDEO_URL, {
+        headers: { Range: 'bytes=0-1048575' },
+        priority: 'low'
+      });
+      const videoEl = document.getElementById('tracker-bg-video-el');
+      if (videoEl && videoEl.readyState < 2) {
+        videoEl.load();
+      }
+    } catch (err) {
+      // Non-blocking fallback to on-demand video element streaming
+    } finally {
+      isVideoPreloading = false;
+    }
+  }
+
   const PRE_DISPATCH_ORDER_STATUSES = ['pending', 'accepted', 'cooking', 'ready_for_pickup'];
 
   function isPreDispatchOrderStatus(status) {
@@ -2163,18 +2205,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoEl = document.getElementById('tracker-bg-video-el');
 
     const shouldShowVideo = Boolean(order && isPreDispatchOrderStatus(order.status));
-    console.log('[TrackerVideoSync]', order ? `${order.id} status=${order.status}` : 'null', 'shouldShowVideo:', shouldShowVideo);
 
     if (shouldShowVideo) {
       if (modalCard) modalCard.classList.add('has-video-bg');
       if (videoWrap) videoWrap.style.display = 'block';
       if (videoEl) {
         videoEl.muted = true;
+        // Instant non-blocking playback - modal opens on frame 0 without waiting
         const playPromise = videoEl.play();
         if (playPromise !== undefined) {
-          playPromise.catch(() => {
-            // Autoplay policy or low power mode handled gracefully
-          });
+          playPromise.catch(() => {});
         }
       }
     } else {
