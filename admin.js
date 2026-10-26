@@ -3230,6 +3230,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputFreeDeliveryEnabled = document.getElementById('input-free-delivery-enabled');
   const inputFreeDeliveryThreshold = document.getElementById('input-free-delivery-threshold');
   const thresholdPresetsContainer = document.getElementById('threshold-presets-container');
+  const inputMinOrderValue = document.getElementById('input-min-order-value');
+  const movPresetsContainer = document.getElementById('mov-presets-container');
   const inputDeliveryFeeStandard = document.getElementById('input-delivery-fee-standard');
   const inputMaxActiveOrders = document.getElementById('input-max-active-orders');
   const maxOrdersPresetsContainer = document.getElementById('max-orders-presets-container');
@@ -3376,6 +3378,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const isFreeEnabled = inputFreeDeliveryEnabled ? inputFreeDeliveryEnabled.checked : true;
     const thresh = Math.max(0, Number(inputFreeDeliveryThreshold?.value || 250));
     const stdFee = Number(inputDeliveryFeeStandard?.value || 3.99);
+    const movVal = Math.max(0, Number(inputMinOrderValue?.value || 0));
 
     if (deliveryStatusBadge) {
       deliveryStatusBadge.textContent = isFreeEnabled ? 'Active' : 'Disabled';
@@ -3384,9 +3387,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (adminDeliveryStatusChip) adminDeliveryStatusChip.classList.toggle('paused', !isFreeEnabled);
     if (deliveryStatusDot) deliveryStatusDot.classList.toggle('paused', !isFreeEnabled);
     if (deliveryStatusChipText) {
-      deliveryStatusChipText.textContent = isFreeEnabled
-        ? `Free Delivery Active (Above ₹${thresh})`
-        : `Free Delivery Disabled (Flat ₹${Math.round(stdFee)})`;
+      let chipMsg = isFreeEnabled ? `Free Delivery (Above ₹${thresh})` : `Flat ₹${Math.round(stdFee)}`;
+      if (movVal > 0) chipMsg += ` • Min Order ₹${movVal}`;
+      deliveryStatusChipText.textContent = chipMsg;
     }
 
     if (previewDeliveryStatus) {
@@ -3409,11 +3412,16 @@ document.addEventListener('DOMContentLoaded', () => {
       previewDeliveryBar.style.background = isFreeEnabled ? 'var(--brand-primary)' : '#9CA3AF';
     }
     if (previewDeliveryDesc) {
+      let desc = '';
       if (isFreeEnabled && thresh > 0) {
-        previewDeliveryDesc.innerHTML = `Orders above <strong style="color: var(--admin-accent);">${thresh}</strong> qualify for 100% Free Doorstep Delivery. Below that: ₹${Math.round(stdFee)}.`;
+        desc = `Orders above <strong style="color: var(--admin-accent);">${thresh}</strong> qualify for 100% Free Doorstep Delivery. Below that: ₹${Math.round(stdFee)}.`;
       } else {
-        previewDeliveryDesc.innerHTML = `All orders charged standard delivery fee of <strong>₹${Math.round(stdFee)}</strong>.`;
+        desc = `All orders charged standard delivery fee of <strong>₹${Math.round(stdFee)}</strong>.`;
       }
+      if (movVal > 0) {
+        desc += ` <span style="display:block; margin-top:4px; color:var(--admin-accent); font-weight:600;">🛒 Checkout Minimum Order: ₹${movVal}</span>`;
+      }
+      previewDeliveryDesc.innerHTML = desc;
     }
   }
 
@@ -3617,6 +3625,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const th = Number(btn.getAttribute('data-thresh'));
       btn.classList.toggle('active', th === Number(inputFreeDeliveryThreshold?.value));
     });
+
+    // Populate Minimum Order Value (MOV) to Checkout
+    if (inputMinOrderValue) {
+      const movVal = Number(settings.minOrderValue !== undefined ? settings.minOrderValue : (settings.minOrder ?? 0));
+      inputMinOrderValue.value = movVal;
+      movPresetsContainer?.querySelectorAll('.mov-preset-btn').forEach(btn => {
+        btn.classList.toggle('active', Number(btn.getAttribute('data-mov')) === movVal);
+      });
+    }
 
     // Populate delivery radius slider
     const currentRadius = settings.deliveryRadiusKm || 7;
@@ -3827,6 +3844,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Minimum Order Value (MOV) preset button clicks
+  movPresetsContainer?.querySelectorAll('.mov-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mov = Number(btn.getAttribute('data-mov'));
+      if (inputMinOrderValue) inputMinOrderValue.value = mov;
+      movPresetsContainer.querySelectorAll('.mov-preset-btn').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+
   // Toggle Free Delivery Threshold content opacity
   if (inputFreeDeliveryEnabled) {
     inputFreeDeliveryEnabled.addEventListener('change', () => {
@@ -3858,12 +3884,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Real-time input updates for delivery preview
-  [inputFreeDeliveryEnabled, inputFreeDeliveryThreshold, inputDeliveryFeeStandard, inputMaxActiveOrders].forEach(input => {
+  [inputFreeDeliveryEnabled, inputFreeDeliveryThreshold, inputMinOrderValue, inputDeliveryFeeStandard, inputMaxActiveOrders].forEach(input => {
     if (input) {
       input.addEventListener('input', () => {
         if (input === inputFreeDeliveryThreshold) {
           const val = Number(inputFreeDeliveryThreshold.value);
           thresholdPresetsContainer?.querySelectorAll('.threshold-preset-btn').forEach(b => b.classList.toggle('active', Number(b.getAttribute('data-thresh')) === val));
+        }
+        if (input === inputMinOrderValue) {
+          const val = Number(inputMinOrderValue.value);
+          movPresetsContainer?.querySelectorAll('.mov-preset-btn').forEach(b => b.classList.toggle('active', Number(b.getAttribute('data-mov')) === val));
         }
         if (input === inputMaxActiveOrders) {
           const val = Number(inputMaxActiveOrders.value);
@@ -3948,6 +3978,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const freeDelivEnabled = inputFreeDeliveryEnabled ? inputFreeDeliveryEnabled.checked : true;
       const freeDelivThreshold = Math.max(0, Number(inputFreeDeliveryThreshold?.value || 250));
+      const minOrderVal = Math.max(0, Number(inputMinOrderValue?.value || 0));
       const stdFee = Math.max(0, Number(inputDeliveryFeeStandard?.value || 40));
       const radiusKm = Number(deliveryRadiusSlider?.value || 7);
       const maxActive = Math.max(1, Number(inputMaxActiveOrders?.value || 2));
@@ -3963,6 +3994,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await dataService.setDeliverySettings({
           freeDeliveryEnabled: freeDelivEnabled,
           freeDeliveryThreshold: freeDelivThreshold,
+          minOrderValue: minOrderVal,
           deliveryFeeStandard: stdFee,
           deliveryRadiusKm: radiusKm,
           maxActiveOrdersPerCustomer: maxActive
@@ -3972,7 +4004,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const freeMsg = freeDelivEnabled && freeDelivThreshold > 0
           ? `Free delivery on orders above ₹${freeDelivThreshold} is active!`
           : `Flat delivery fee of ₹${Math.round(stdFee)} is active!`;
-        showToast(`🚚 Delivery settings saved! Max active orders: ${maxActive} at a time. ${freeMsg}`, 'success');
+        const movMsg = minOrderVal > 0 ? ` Minimum order: ₹${minOrderVal}.` : ' No minimum order limit.';
+        showToast(`🚚 Delivery settings saved!${movMsg} Max active orders: ${maxActive} at a time. ${freeMsg}`, 'success');
         if (saveBtn) {
           saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
           setTimeout(() => {

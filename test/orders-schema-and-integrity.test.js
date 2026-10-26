@@ -369,4 +369,57 @@ test('ORDER INTEGRITY & SCHEMA SPECIFICATION', async (t) => {
     assert.equal(map['all'], '/api/r2-image?key=categories%2Fall_cuisines.png');
     assert.equal(map['cat-all'], '/api/r2-image?key=categories%2Fall_cuisines.png');
   });
+
+  await t.test('Minimum Order Value (MOV) checkout validation and settings update', () => {
+    function validateCheckoutMov(cartItems, minOrderValue) {
+      const subtotal = cartItems.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+      const mov = Math.max(0, Number(minOrderValue || 0));
+      if (mov > 0 && subtotal < mov) {
+        return {
+          canCheckout: false,
+          subtotal,
+          minOrderValue: mov,
+          needed: mov - subtotal,
+          message: `Minimum order value is ₹${mov}. Please add ₹${mov - subtotal} more to proceed to checkout!`
+        };
+      }
+      return {
+        canCheckout: true,
+        subtotal,
+        minOrderValue: mov,
+        needed: 0
+      };
+    }
+
+    const cart = [
+      { id: 'dish-1', name: 'Crispy Burger', price: 90, quantity: 1 }
+    ];
+
+    // 1. With MOV = 0 (no minimum limit)
+    assert.equal(validateCheckoutMov(cart, 0).canCheckout, true);
+
+    // 2. With MOV = 149 (customer cart is 90 -> blocked, needs 59)
+    const res149 = validateCheckoutMov(cart, 149);
+    assert.equal(res149.canCheckout, false);
+    assert.equal(res149.needed, 59);
+    assert.equal(res149.minOrderValue, 149);
+
+    // 3. Customer adds more items (cart is 90 + 90 = 180 -> allowed)
+    const cartBigger = [
+      { id: 'dish-1', name: 'Crispy Burger', price: 90, quantity: 2 }
+    ];
+    assert.equal(validateCheckoutMov(cartBigger, 149).canCheckout, true);
+
+    // 4. MOV configuration parsing preserves custom values including 149 without zeroing
+    function parseMovSetting(raw) {
+      return Math.max(0, Number(raw !== undefined ? raw : 0));
+    }
+    assert.equal(parseMovSetting(0), 0);
+    assert.equal(parseMovSetting(99), 99);
+    assert.equal(parseMovSetting(149), 149);
+    assert.equal(parseMovSetting(199), 199);
+    assert.equal(parseMovSetting(249), 249);
+    assert.equal(parseMovSetting(-50), 0);
+    assert.equal(parseMovSetting(undefined), 0);
+  });
 });

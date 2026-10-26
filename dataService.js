@@ -4566,11 +4566,9 @@ class QuickBiteDataService {
       // Ensure fixed restaurant backend coordinates: 12°43'14.2"N 77°17'12.6"E
       parsed.restaurantLat = RESTAURANT_COORDINATES.lat;
       parsed.restaurantLng = RESTAURANT_COORDINATES.lng;
-      // Remove legacy 149 minimum order limit
-      if (parsed.minOrderValue === 149 || parsed.minOrder === 149) {
-        parsed.minOrderValue = 0;
-        parsed.minOrder = 0;
-      }
+      // Minimum order value setting (0 = no minimum order limit)
+      parsed.minOrderValue = Math.max(0, Number(parsed.minOrderValue !== undefined ? parsed.minOrderValue : (parsed.minOrder ?? 0)));
+      parsed.minOrder = parsed.minOrderValue;
 
       // Auto-expire rush pause if timer elapsed
       if (parsed.isRushPaused && parsed.pauseUntil && Date.now() >= parsed.pauseUntil) {
@@ -4842,6 +4840,10 @@ class QuickBiteDataService {
       freeDeliveryEnabled: Boolean(delivData.freeDeliveryEnabled !== false),
       freeDeliveryThreshold: Math.max(0, Number(delivData.freeDeliveryThreshold !== undefined ? delivData.freeDeliveryThreshold : (current.freeDeliveryThreshold ?? 250))),
       deliveryFeeStandard: Math.max(0, Number(delivData.deliveryFeeStandard !== undefined ? delivData.deliveryFeeStandard : (current.deliveryFeeStandard ?? 3.99))),
+      ...(delivData.minOrderValue !== undefined && {
+        minOrderValue: Math.max(0, Math.round(Number(delivData.minOrderValue))),
+        minOrder: Math.max(0, Math.round(Number(delivData.minOrderValue)))
+      }),
       ...(delivData.deliveryRadiusKm !== undefined && {
         deliveryRadiusKm: Math.max(1, Math.min(100, Number(delivData.deliveryRadiusKm)))
       }),

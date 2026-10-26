@@ -2499,6 +2499,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     mapCard.style.display = 'block';
+    mapCard.classList.add('is-expanded');
     activeTrackingOrderId = order.id;
 
     const restLat = RESTAURANT_COORDINATES.lat;
@@ -2636,28 +2637,6 @@ document.addEventListener('DOMContentLoaded', () => {
           e.preventDefault();
           e.stopPropagation();
           if (trackerLiveMap) trackerLiveMap.zoomOut();
-        };
-      }
-
-      const btnExpand = document.getElementById('tracker-map-expand-btn');
-      if (btnExpand) {
-        btnExpand.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const isExp = mapCard.classList.toggle('is-expanded');
-          const icon = document.getElementById('tracker-expand-icon');
-          if (icon) {
-            icon.className = isExp ? 'fa-solid fa-down-left-and-up-right-to-center' : 'fa-solid fa-up-right-and-down-left-from-center';
-          }
-          btnExpand.title = isExp ? 'Collapse Map' : 'Open / Expand Map';
-          setTimeout(() => {
-            if (trackerLiveMap && trackerRiderMarker && trackerHomeMarker) {
-              trackerLiveMap.invalidateSize();
-              const rPos = trackerRiderMarker.getLatLng();
-              const hPos = trackerHomeMarker.getLatLng();
-              trackerLiveMap.fitBounds([[rPos.lat, rPos.lng], [hPos.lat, hPos.lng]], { padding: [40, 40], maxZoom: 17 });
-            }
-          }, 300);
         };
       }
 

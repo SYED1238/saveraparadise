@@ -824,15 +824,15 @@
         </div>
       </div>
 
-      <!-- 1. FREE DELIVERY ABOVE MINIMUM ORDER SETTING -->
+      <!-- 1. FREE DELIVERY & MINIMUM ORDER REQUIREMENTS SETTING -->
       <div class="admin-card-section delivery-settings-section">
         <div class="section-title-bar">
           <div class="title-with-count">
             <span class="section-icon">🚚</span>
-            <h2>Free Delivery Above Minimum Order</h2>
+            <h2>Delivery Options & Minimum Order Requirements</h2>
             <span class="count-pill delivery-status-pill" id="delivery-status-badge">Active</span>
           </div>
-          <span class="section-hint">Offer automatic free shipping when customer orders meet or exceed a specific cart subtotal (e.g. Free Delivery above 250).</span>
+          <span class="section-hint">Configure minimum cart order value to checkout, automatic free delivery thresholds, standard fees, and delivery radius.</span>
         </div>
 
         <form id="form-store-delivery" class="admin-form store-delivery-form">
@@ -871,6 +871,30 @@
                 When cart reaches or exceeds this amount, the delivery fee becomes ₹0 / FREE automatically at checkout.
               </span>
             </div>
+          </div>
+
+          <!-- Minimum Order Value (MOV) to Checkout -->
+          <div class="form-group" style="margin-top: 14px;">
+            <label for="input-min-order-value">
+              <i class="fa-solid fa-basket-shopping" style="color: var(--admin-accent);"></i> Minimum Order Value to Checkout
+            </label>
+            <div class="input-currency-wrapper">
+              <span class="input-currency-prefix">₹</span>
+              <input type="number" id="input-min-order-value" min="0" step="1" value="0" placeholder="0 = No minimum order limit">
+            </div>
+            <div class="offer-discount-presets" style="margin-top: 8px;">
+              <span class="preset-label">Quick MOV Presets:</span>
+              <div class="rush-preset-pills" id="mov-presets-container">
+                <button type="button" class="mov-preset-btn active" data-mov="0">₹0 (No Limit)</button>
+                <button type="button" class="mov-preset-btn" data-mov="99">₹99</button>
+                <button type="button" class="mov-preset-btn" data-mov="149">₹149</button>
+                <button type="button" class="mov-preset-btn" data-mov="199">₹199</button>
+                <button type="button" class="mov-preset-btn" data-mov="249">₹249</button>
+              </div>
+            </div>
+            <span class="admin-field-tip" style="margin-top: 6px; display: block;">
+              Customers must have at least this cart subtotal to place an order. If cart is below this amount, checkout is disabled with a helpful prompt. Set to <strong>₹0</strong> to allow orders of any amount.
+            </span>
           </div>
 
           <!-- Standard Delivery Fee Below Threshold -->

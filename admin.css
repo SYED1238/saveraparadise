@@ -4692,6 +4692,7 @@ label.btn-file-upload i {
   box-shadow: 0 2px 8px rgba(255, 90, 38, 0.35);
 }
 
+.mov-preset-btn,
 .min-order-preset-btn,
 .threshold-preset-btn {
   padding: 6px 14px;
@@ -4705,12 +4706,14 @@ label.btn-file-upload i {
   transition: all 0.2s ease;
 }
 
+.mov-preset-btn:hover,
 .min-order-preset-btn:hover,
 .threshold-preset-btn:hover {
   background: #E5E7EB;
   border-color: #D1D5DB;
 }
 
+.mov-preset-btn.active,
 .min-order-preset-btn.active,
 .threshold-preset-btn.active {
   background: var(--admin-accent);

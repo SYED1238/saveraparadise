@@ -541,6 +541,10 @@ function r2DevMiddlewarePlugin() {
 }
 
 export default defineConfig({
+  server: {
+    host: '0.0.0.0',
+    port: 5173
+  },
   plugins: [r2DevMiddlewarePlugin()],
   envPrefix: ['VITE_'],
   build: {

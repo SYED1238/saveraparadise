@@ -1167,160 +1167,57 @@ body.pwa-customer-installed .header-pwa-dock {
 }
 
 /* Hero Delivery Distance & ETA Badge (Small & Proper Fluffy Cumulus Cloud) */
+/* Hero Delivery Distance & ETA Text (Clean Letters Only - No Cloud) */
 .hero-distance-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 14px;
-  margin-bottom: 4px;
+  display: block;
+  margin-top: 10px;
+  margin-bottom: 6px;
   background: transparent;
   border: none;
   box-shadow: none;
   border-radius: 0;
-  padding: 16px 28px 18px 24px;
+  padding: 0;
   cursor: default;
-  z-index: 26;
+  z-index: 10;
   position: relative;
   user-select: none;
   max-width: fit-content;
   width: auto;
-  filter: 
-    drop-shadow(0 10px 20px rgba(255, 90, 38, 0.15))
-    drop-shadow(0 3px 6px rgba(0, 0, 0, 0.04));
-  animation: cloudFloatingDrift 4.5s ease-in-out infinite;
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
-  will-change: transform;
-}
-
-/* Cloud SVG Backdrop - Compact Cumulus Silhouette */
-.cloud-svg-backdrop {
-  position: absolute;
-  inset: -6px -8px;
-  width: calc(100% + 16px);
-  height: calc(100% + 12px);
-  pointer-events: none;
-  z-index: 1;
-  overflow: visible;
-}
-
-.cloud-svg-backdrop .cloud-svg-path {
-  fill: url(#heroCloudGradLight);
-  stroke: rgba(255, 120, 75, 0.24);
-  stroke-width: 1.4;
-  transition: fill 0.3s ease, stroke 0.3s ease;
-}
-
-/* Cloud Floating Drift Keyframes */
-@keyframes cloudFloatingDrift {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-
-/* Jelly squish & stretch micro-interactions */
-.hero-distance-badge:hover {
-  transform: translateY(-3px) scale(1.02);
-  filter: 
-    drop-shadow(0 14px 26px rgba(255, 90, 38, 0.22))
-    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.06));
-}
-
-.hero-distance-badge:active {
-  transform: scale(0.93, 0.88) translateY(0);
-  transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-/* Tactile Jelly Pop Spring */
-@keyframes jellyBouncePop {
-  0% { transform: scale(1, 1); }
-  25% { transform: scale(1.14, 0.86); }
-  45% { transform: scale(0.9, 1.1); }
-  65% { transform: scale(1.06, 0.96); }
-  82% { transform: scale(0.98, 1.02); }
-  100% { transform: scale(1, 1); }
-}
-
-.hero-distance-badge.jelly-pop {
-  animation: jellyBouncePop 0.65s cubic-bezier(0.25, 1.25, 0.5, 1) !important;
+  filter: none !important;
+  animation: none !important;
 }
 
 .hero-distance-inner {
-  position: relative;
-  z-index: 3;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.hero-distance-pulse-icon {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #FF6A3D, #FF3D00);
-  color: #FFFFFF;
-  font-size: 0.76rem;
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(255, 61, 0, 0.35);
-}
-
-.hero-pulse-dot {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #10B981;
-  border: 1.5px solid #FFFFFF;
-  animation: heroDistancePing 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
-}
-
-@keyframes heroDistancePing {
-  0% {
-    transform: scale(0.9);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-  }
-  70% {
-    transform: scale(1.15);
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
-  }
-  100% {
-    transform: scale(0.9);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-  }
+  padding: 0;
+  background: transparent;
 }
 
 .hero-distance-text {
   font-family: var(--font-body, system-ui, -apple-system, sans-serif);
-  font-size: 0.8rem;
-  line-height: 1.35;
-  color: #1F2937;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--text-heading, #1F2937);
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .hero-distance-line-1 {
   font-weight: 500;
-  color: #374151;
-  white-space: nowrap;
+  color: #4B5563;
+  letter-spacing: -0.01em;
 }
 
 .hero-distance-line-2 {
   font-weight: 600;
   color: #1F2937;
-  white-space: nowrap;
+  letter-spacing: -0.01em;
 }
 
 .hero-distance-text strong.dist-highlight {
-  color: #E63900;
+  color: var(--brand-primary, #FF5A26);
   font-weight: 700;
 }
 
@@ -1330,38 +1227,30 @@ body.pwa-customer-installed .header-pwa-dock {
 }
 
 .hero-distance-cta {
-  color: #E63900;
+  color: var(--brand-primary, #FF5A26);
   font-weight: 700;
-  margin-left: 2px;
+  margin-left: 3px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 [data-theme="dark"] .hero-distance-cta {
   color: #FF784B;
 }
 
-.hero-distance-sep {
-  color: #CBD5E1;
-  font-size: 0.8rem;
-}
-
-[data-theme="dark"] .hero-distance-badge .cloud-svg-path {
-  fill: url(#heroCloudGradDark);
-  stroke: rgba(255, 106, 61, 0.35);
-}
-
 [data-theme="dark"] .hero-distance-badge {
   background: transparent;
   border: none;
   box-shadow: none;
-  filter: 
-    drop-shadow(0 16px 32px rgba(0, 0, 0, 0.7))
-    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+  filter: none !important;
 }
 
-[data-theme="dark"] .hero-distance-badge:hover {
-  filter: 
-    drop-shadow(0 20px 40px rgba(0, 0, 0, 0.85))
-    drop-shadow(0 6px 14px rgba(0, 0, 0, 0.6));
+[data-theme="dark"] .hero-distance-line-1 {
+  color: #9CA3AF;
+}
+
+[data-theme="dark"] .hero-distance-line-2 {
+  color: #F3F4F6;
 }
 
 [data-theme="dark"] .hero-distance-text {
@@ -6213,30 +6102,23 @@ body.food-modal-open .mobile-floating-bar {
     letter-spacing: 0.02em;
   }
 
-  /* Hero Delivery Distance Badge on Mobile (Small & Proper Fluffy Cloud) */
+  /* Hero Delivery Distance Text on Mobile (Clean Letters Only) */
   .hero-distance-badge {
     width: auto;
     max-width: fit-content;
     box-sizing: border-box;
-    margin-top: 14px;
-    margin-bottom: 2px;
-    padding: 13px 20px 15px 18px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    padding: 0;
     background: transparent;
     border: none;
     box-shadow: none;
   }
 
-  .cloud-svg-backdrop {
-    inset: -6px -8px;
-    width: calc(100% + 16px);
-    height: calc(100% + 12px);
-  }
-
   .hero-distance-inner {
     width: auto;
     justify-content: flex-start;
-    gap: 9px;
-    flex-wrap: nowrap;
+    padding: 0;
   }
 
   .hero-distance-text {
@@ -10738,6 +10620,10 @@ body.food-modal-open .mobile-floating-bar {
 /* ==========================================================================
    DISPATCHED SCREEN ERGONOMICS (Flat Attached Live Map On Top & Connected to Rider GPS)
    ========================================================================== */
+.order-modal-card.is-dispatched {
+  max-width: 520px;
+}
+
 .order-modal-card.is-dispatched .order-modal-scroll-body {
   padding: 0 16px 24px 16px;
 }
@@ -10769,6 +10655,9 @@ body.food-modal-open .mobile-floating-bar {
   padding: 10px 48px 10px 14px;
   background: #F9FAFB;
   border-bottom: 1px solid #F3F4F6;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-radius: 0;
 }
 
 .order-modal-card.is-dispatched .modal-close-btn {
@@ -10809,20 +10698,29 @@ body.food-modal-open .mobile-floating-bar {
   }
 }
 
-.order-modal-card.is-dispatched .tracker-map-viewport {
-  height: 270px;
-  transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+/* Permanent Full-Size Map (Never Minimized - Generous Clear Route View) */
+.order-modal-card.is-dispatched .tracker-map-viewport,
+.tracker-live-map-card.is-expanded .tracker-map-viewport,
+.tracker-map-viewport {
+  height: 440px !important;
+  max-height: 58vh !important;
+  min-height: 380px !important;
+  width: 100%;
 }
 
-@media (min-width: 640px) {
-  .order-modal-card.is-dispatched .tracker-map-viewport {
-    height: 330px;
+@media (max-width: 480px) {
+  .order-modal-card.is-dispatched .tracker-map-viewport,
+  .tracker-live-map-card.is-expanded .tracker-map-viewport,
+  .tracker-map-viewport {
+    height: 390px !important;
+    max-height: 54vh !important;
+    min-height: 340px !important;
   }
 }
 
-.tracker-live-map-card.is-expanded .tracker-map-viewport {
-  height: 480px !important;
-  max-height: 65vh !important;
+/* Hide minimize/expand button so map never minimizes */
+#tracker-map-expand-btn {
+  display: none !important;
 }
 
 .tracker-map-header-actions {
