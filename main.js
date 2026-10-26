@@ -2250,6 +2250,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeTrackingOrderId = null;
   let trackerSimulationInterval = null;
   let lastRiderCoords = null;
+  let riderAnimFrame = null;
+  const trackerRouteCache = new Map();
 
   function calculateDistanceKm(lat1, lon1, lat2, lon2) {
     if (!lat1 || !lon1 || !lat2 || !lon2) return 1.5;
@@ -2262,6 +2264,89 @@ document.addEventListener('DOMContentLoaded', () => {
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return Math.round(R * c * 10) / 10;
+  }
+
+  function generateRoadAlignedPath(startLat, startLng, endLat, endLng) {
+    const dLat = endLat - startLat;
+    const dLng = endLng - startLng;
+    const midLat = startLat + dLat * 0.45;
+    const midLng = startLng + dLng * 0.55;
+    return [
+      [startLat, startLng],
+      [midLat, startLng],
+      [midLat, midLng],
+      [endLat, midLng],
+      [endLat, endLng]
+    ];
+  }
+
+  async function fetchRoadRoute(startLat, startLng, endLat, endLng) {
+    if (!startLat || !startLng || !endLat || !endLng) return null;
+    const key = `${startLat.toFixed(4)},${startLng.toFixed(4)}->${endLat.toFixed(4)},${endLng.toFixed(4)}`;
+    if (trackerRouteCache.has(key)) {
+      return trackerRouteCache.get(key);
+    }
+
+    // Try primary OSRM, then secondary OSM mirror
+    const endpoints = [
+      `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`,
+      `https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+            const route = data.routes[0];
+            const coords = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+            const result = {
+              coords,
+              distanceMeters: route.distance,
+              durationSeconds: route.duration
+            };
+            trackerRouteCache.set(key, result);
+            return result;
+          }
+        }
+      } catch (err) {}
+    }
+
+    // Road-aligned grid fallback: Never draw a diagonal jump through houses
+    const fallbackCoords = generateRoadAlignedPath(startLat, startLng, endLat, endLng);
+    return {
+      coords: fallbackCoords,
+      distanceMeters: calculateDistanceKm(startLat, startLng, endLat, endLng) * 1000,
+      durationSeconds: Math.ceil(calculateDistanceKm(startLat, startLng, endLat, endLng) * 180)
+    };
+  }
+
+  function animateRiderMarker(fromLat, fromLng, toLat, toLng, durationMs = 800) {
+    if (!trackerRiderMarker) return;
+    if (riderAnimFrame) cancelAnimationFrame(riderAnimFrame);
+
+    const startTime = performance.now();
+
+    function step(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      const ease = 1 - (1 - progress) * (1 - progress);
+      const curLat = fromLat + (toLat - fromLat) * ease;
+      const curLng = fromLng + (toLng - fromLng) * ease;
+
+      if (trackerRiderMarker) {
+        trackerRiderMarker.setLatLng([curLat, curLng]);
+      }
+
+      if (progress < 1) {
+        riderAnimFrame = requestAnimationFrame(step);
+      } else {
+        riderAnimFrame = null;
+      }
+    }
+
+    riderAnimFrame = requestAnimationFrame(step);
   }
 
   function resolveOrderCustomerCoords(order) {
@@ -2288,6 +2373,10 @@ document.addEventListener('DOMContentLoaded', () => {
       clearInterval(trackerSimulationInterval);
       trackerSimulationInterval = null;
     }
+    if (riderAnimFrame) {
+      cancelAnimationFrame(riderAnimFrame);
+      riderAnimFrame = null;
+    }
     const mapCard = document.getElementById('tracker-live-map-card');
     if (mapCard) {
       mapCard.style.display = 'none';
@@ -2307,10 +2396,7 @@ document.addEventListener('DOMContentLoaded', () => {
     lastRiderCoords = null;
   }
 
-  function updateTrackerDistanceAndEta(riderLat, riderLng, dropLat, dropLng, isLiveGps = true) {
-    const distKm = calculateDistanceKm(riderLat, riderLng, dropLat, dropLng);
-    const estMins = Math.max(3, Math.ceil(distKm * 3.2 + 2));
-
+  function updateTrackerDistanceAndEta(distKm, estMins, isLiveGps = true) {
     const distBadge = document.getElementById('tracker-map-distance-badge');
     if (distBadge) {
       distBadge.innerHTML = `<i class="fa-solid fa-route"></i> ${distKm} km away (~${estMins} mins)`;
@@ -2318,7 +2404,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const etaTimeEl = document.getElementById('tracker-eta-time');
     if (etaTimeEl) {
-      etaTimeEl.textContent = `${estMins} - ${estMins + 5} Minutes`;
+      etaTimeEl.textContent = `${estMins} - ${estMins + 4} Minutes`;
     }
 
     const statusText = document.getElementById('tracker-map-status-text');
@@ -2327,21 +2413,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function updateTrackerRouteLine(riderLat, riderLng, dropLat, dropLng, isLiveGps = true) {
+    const routeData = await fetchRoadRoute(riderLat, riderLng, dropLat, dropLng);
+    if (!routeData || !routeData.coords || routeData.coords.length === 0) return;
+
+    if (trackerRemainingLine && trackerLiveMap) {
+      trackerRemainingLine.setLatLngs(routeData.coords);
+    }
+
+    const distKm = Math.round((routeData.distanceMeters / 1000) * 10) / 10;
+    const estMins = Math.max(2, Math.ceil(routeData.durationSeconds / 60));
+    updateTrackerDistanceAndEta(distKm, estMins, isLiveGps);
+  }
+
   function updateTrackerRiderPosition(payload) {
     if (!trackerLiveMap || !trackerRiderMarker || !payload?.lat || !payload?.lng) return;
     const newLat = Number(payload.lat);
     const newLng = Number(payload.lng);
-    lastRiderCoords = { lat: newLat, lng: newLng };
-
-    trackerRiderMarker.setLatLng([newLat, newLng]);
 
     const dropCoords = trackerHomeMarker ? trackerHomeMarker.getLatLng() : { lat: 12.7275, lng: 77.2740 };
 
-    if (trackerRemainingLine) {
-      trackerRemainingLine.setLatLngs([[newLat, newLng], [dropCoords.lat, dropCoords.lng]]);
+    // Smoothly glide marker from previous coordinates to new coordinates (no jumping across blocks)
+    if (lastRiderCoords && (lastRiderCoords.lat !== newLat || lastRiderCoords.lng !== newLng)) {
+      animateRiderMarker(lastRiderCoords.lat, lastRiderCoords.lng, newLat, newLng, 800);
+    } else {
+      trackerRiderMarker.setLatLng([newLat, newLng]);
     }
+    lastRiderCoords = { lat: newLat, lng: newLng };
 
-    updateTrackerDistanceAndEta(newLat, newLng, dropCoords.lat, dropCoords.lng, payload.isLiveGps !== false);
+    // Update real road route line along the street network if not already custom-sliced
+    if (!payload.hasCustomRoute) {
+      updateTrackerRouteLine(newLat, newLng, dropCoords.lat, dropCoords.lng, payload.isLiveGps !== false);
+    }
   }
 
   function handleIncomingRiderGps(payload) {
@@ -2481,29 +2584,48 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       trackerRiderMarker = L.marker([riderLat, riderLng], { icon: riderIcon, zIndexOffset: 1000 }).addTo(trackerLiveMap);
 
-      // 3. Direct Route Line (Rider -> Customer Delivery Location)
-      trackerRemainingLine = L.polyline([[riderLat, riderLng], [dropCoords.lat, dropCoords.lng]], {
+      // 3. Real Road Route Polyline (Following actual streets & turns)
+      const initialRoadCoords = generateRoadAlignedPath(riderLat, riderLng, dropCoords.lat, dropCoords.lng);
+      trackerRemainingLine = L.polyline(initialRoadCoords, {
         color: '#FF5A26',
-        weight: 4.5,
-        dashArray: '8, 8',
+        weight: 5,
         opacity: 0.95,
-        lineCap: 'round'
+        lineCap: 'round',
+        lineJoin: 'round'
       }).addTo(trackerLiveMap);
 
-      // Fit bounds strictly between Rider and Delivery Location
-      const bounds = L.latLngBounds([
+      // Immediately display road distance and ETA estimate so badge never displays "Calculating route..."
+      const initDistKm = calculateDistanceKm(riderLat, riderLng, dropCoords.lat, dropCoords.lng);
+      const initMins = Math.max(3, Math.ceil(initDistKm * 3.2 + 2));
+      updateTrackerDistanceAndEta(initDistKm, initMins, Boolean(liveRider));
+
+      // Immediately fetch and render real turn-by-turn road route
+      fetchRoadRoute(riderLat, riderLng, dropCoords.lat, dropCoords.lng).then(routeData => {
+        if (!trackerLiveMap) return;
+        if (routeData?.coords && routeData.coords.length > 0) {
+          if (trackerRemainingLine) trackerRemainingLine.setLatLngs(routeData.coords);
+          const b = L.latLngBounds(routeData.coords);
+          trackerLiveMap.fitBounds(b, { padding: [45, 45], maxZoom: 17 });
+
+          const distKm = Math.round((routeData.distanceMeters / 1000) * 10) / 10;
+          const estMins = Math.max(2, Math.ceil(routeData.durationSeconds / 60));
+          updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider));
+        }
+      });
+
+      // Fit bounds between Rider and Delivery Location
+      const initialBounds = L.latLngBounds([
         [riderLat, riderLng],
         [dropCoords.lat, dropCoords.lng]
       ]);
-      trackerLiveMap.fitBounds(bounds, { padding: [45, 45], maxZoom: 17 });
-
-      updateTrackerDistanceAndEta(riderLat, riderLng, dropCoords.lat, dropCoords.lng, Boolean(liveRider));
+      trackerLiveMap.fitBounds(initialBounds, { padding: [45, 45], maxZoom: 17 });
 
       // Interactive Zoom & Expand Controls
       const btnZoomIn = document.getElementById('tracker-map-zoom-in-btn');
       if (btnZoomIn) {
         btnZoomIn.onclick = (e) => {
           e.preventDefault();
+          e.stopPropagation();
           if (trackerLiveMap) trackerLiveMap.zoomIn();
         };
       }
@@ -2512,6 +2634,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (btnZoomOut) {
         btnZoomOut.onclick = (e) => {
           e.preventDefault();
+          e.stopPropagation();
           if (trackerLiveMap) trackerLiveMap.zoomOut();
         };
       }
@@ -2520,6 +2643,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (btnExpand) {
         btnExpand.onclick = (e) => {
           e.preventDefault();
+          e.stopPropagation();
           const isExp = mapCard.classList.toggle('is-expanded');
           const icon = document.getElementById('tracker-expand-icon');
           if (icon) {
@@ -2541,6 +2665,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (btnRecenter) {
         btnRecenter.onclick = (e) => {
           e.preventDefault();
+          e.stopPropagation();
           if (trackerLiveMap && trackerRiderMarker && trackerHomeMarker) {
             const rPos = trackerRiderMarker.getLatLng();
             const hPos = trackerHomeMarker.getLatLng();
@@ -2548,27 +2673,42 @@ document.addEventListener('DOMContentLoaded', () => {
               [rPos.lat, rPos.lng],
               [hPos.lat, hPos.lng]
             ]);
-            trackerLiveMap.flyToBounds(b, { padding: [45, 45], duration: 0.8, maxZoom: 17 });
+            trackerLiveMap.fitBounds(b, { padding: [45, 45], maxZoom: 17 });
           }
         };
       }
 
-      // If no live rider GPS has arrived yet, run smooth interpolation towards delivery location
+      // If no live rider GPS has arrived yet, simulate rider moving along actual street network
       if (!liveRider) {
-        let progress = 0.55;
-        trackerSimulationInterval = setInterval(() => {
-          if (!trackerLiveMap || activeTrackingOrderId !== order.id) return;
-          progress += 0.02;
-          if (progress > 0.95) progress = 0.55;
-          const simLat = restLat + (dropCoords.lat - restLat) * progress;
-          const simLng = restLng + (dropCoords.lng - restLng) * progress;
-          updateTrackerRiderPosition({
-            lat: simLat,
-            lng: simLng,
-            riderName: order.assignedRiderName || 'Delivery Partner',
-            isLiveGps: false
-          });
-        }, 3500);
+        fetchRoadRoute(restLat, restLng, dropCoords.lat, dropCoords.lng).then(fullRoute => {
+          if (!fullRoute || !fullRoute.coords || fullRoute.coords.length < 2) return;
+          const roadPts = fullRoute.coords;
+          let currentIdx = Math.max(1, Math.floor(roadPts.length * 0.45));
+
+          trackerSimulationInterval = setInterval(() => {
+            if (!trackerLiveMap || activeTrackingOrderId !== order.id) return;
+            currentIdx++;
+            if (currentIdx >= roadPts.length - 1) {
+              currentIdx = Math.max(1, Math.floor(roadPts.length * 0.45));
+            }
+            const [sLat, sLng] = roadPts[currentIdx];
+            const remainingRoad = roadPts.slice(currentIdx);
+            if (trackerRemainingLine) {
+              trackerRemainingLine.setLatLngs(remainingRoad);
+            }
+            const distKm = calculateDistanceKm(sLat, sLng, dropCoords.lat, dropCoords.lng);
+            const estMins = Math.max(2, Math.ceil(distKm * 3.2));
+            updateTrackerDistanceAndEta(distKm, estMins, false);
+
+            updateTrackerRiderPosition({
+              lat: sLat,
+              lng: sLng,
+              riderName: order.assignedRiderName || 'Delivery Partner',
+              isLiveGps: false,
+              hasCustomRoute: true
+            });
+          }, 3500);
+        });
       }
 
       setTimeout(() => {

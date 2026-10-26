@@ -10510,22 +10510,26 @@ body.food-modal-open .mobile-floating-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: #F9FAFB;
   border-bottom: 1px solid #F3F4F6;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .tracker-map-status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.78rem;
+  gap: 6px;
+  font-size: 0.74rem;
   font-weight: 700;
   color: #065F46;
   background: #ECFDF5;
-  padding: 5px 12px;
+  padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid #A7F3D0;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .live-pulse-dot {
@@ -10557,6 +10561,39 @@ body.food-modal-open .mobile-floating-bar {
   gap: 6px;
   transition: all 0.2s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+@media (max-width: 480px) {
+  .tracker-map-header {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+  .tracker-map-status-pill {
+    padding: 3px 8px;
+    font-size: 0.70rem;
+    gap: 4px;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tracker-map-header-actions {
+    gap: 3px;
+    flex-shrink: 0;
+  }
+  .tracker-map-btn {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 0.68rem !important;
+  }
+  .tracker-map-recenter-btn {
+    width: 26px !important;
+    height: 26px !important;
+    padding: 0 !important;
+    justify-content: center;
+  }
+  .tracker-map-recenter-btn .recenter-btn-text {
+    display: none;
+  }
 }
 
 .tracker-map-recenter-btn:hover {
@@ -10606,6 +10643,14 @@ body.food-modal-open .mobile-floating-bar {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Real Road Route Polyline Glow & Styling */
+.tracker-map-viewport path.leaflet-interactive {
+  filter: drop-shadow(0 2px 6px rgba(255, 90, 38, 0.35));
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  transition: stroke 0.3s ease;
 }
 
 /* Custom Marker Styling for Leaflet Map */
