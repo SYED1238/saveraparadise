@@ -2,8 +2,8 @@ import crypto from 'crypto';
 import https from 'https';
 
 const R2_CONFIG = {
-  HOST: process.env.R2_HOST || 'ac8ec178ff831995f9cc03213674c306.r2.cloudflarestorage.com',
-  BUCKET_NAME: process.env.R2_BUCKET_NAME || 'smmtaj',
+  HOST: process.env.R2_HOST || '',
+  BUCKET_NAME: process.env.R2_BUCKET_NAME || '',
   ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
   SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
   REGION: process.env.R2_REGION || 'auto',

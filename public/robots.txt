@@ -1,5 +1,5 @@
-# SAS Crispy Chicken - Search Engine Robots Configuration
-# https://crispychicken.zarb.shop/
+# Savera Paradise - Search Engine Robots Configuration
+# https://saveraparadise.com/
 
 User-agent: *
 Allow: /
@@ -7,9 +7,11 @@ Allow: /index.html
 Allow: /manifest.json
 Allow: /icon-*.svg
 
-# Disallow internal restaurant operations & staff portals
+# Disallow internal restaurant operations, financials & staff portals
 Disallow: /admin
 Disallow: /admin.html
 Disallow: /delivery
 Disallow: /delivery.html
+Disallow: /owner
+Disallow: /owner.html
 Disallow: /api/

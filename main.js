@@ -2971,7 +2971,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Before dispatch (All 3 pre-dispatch steps: Accepted, Preparing, Ready to Dispatch): Restaurant Helpline Calling Card
         let statusBadgeLabel = '👨‍🍳 Accepted';
         let statusBadgeClass = 'accepted';
-        let stepHint = 'Your order is confirmed and received by the kitchen.';
 
         if (order.status === 'cooking') {
           statusBadgeLabel = '🔥 Preparing';

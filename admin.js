@@ -116,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnClearDemo = document.getElementById('btn-clear-demo');
   if (btnClearDemo) {
     btnClearDemo.addEventListener('click', () => {
+      const orders = dataService.getOrders();
       const isDemoOrder = (o) => Boolean(o && (o.isDemo === true || o.is_demo === true || String(o.id || '').startsWith('#DEMO')));
       const demoOrders = orders.filter(isDemoOrder);
       if (demoOrders.length === 0) {

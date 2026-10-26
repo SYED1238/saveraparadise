@@ -16,8 +16,8 @@ let riderPayoutRate = 35; // ₹35 default per delivered order
 let enteredPin = '';
 let isOwnerAuthenticated = false;
 
-// Default Owner PINs
-const VALID_OWNER_PINS = ['9900', '8899'];
+// Default Owner PIN
+const DEFAULT_OWNER_PIN = '9900';
 
 // ==============================================================
 // 1. DOM INITIALIZATION
@@ -180,9 +180,9 @@ function updatePinDots() {
 
 function verifyOwnerPin(pin) {
   const settings = dataService.getSettings();
-  const configuredOwnerPin = settings.ownerPin || settings.managerPin || '9900';
+  const configuredOwnerPin = String(settings.ownerPin || DEFAULT_OWNER_PIN).trim();
 
-  const isValid = VALID_OWNER_PINS.includes(pin) || String(configuredOwnerPin).trim() === pin;
+  const isValid = String(pin).trim() === configuredOwnerPin;
 
   if (isValid) {
     sessionStorage.setItem('savera_owner_authenticated', 'true');
