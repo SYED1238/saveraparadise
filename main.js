@@ -2591,12 +2591,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update title & icon based on status
     const successIcon = document.getElementById('order-success-icon');
     const modalTitle = document.getElementById('order-modal-title');
+    const modalCard = document.querySelector('.order-modal-card');
+    if (modalCard) {
+      if (order.status === 'on_the_way') modalCard.classList.add('is-dispatched');
+      else modalCard.classList.remove('is-dispatched');
+    }
+
     if (order.status === 'cancelled') {
       if (successIcon) successIcon.textContent = '❌';
       if (modalTitle) modalTitle.textContent = 'Order Cancelled';
+    } else if (order.status === 'on_the_way') {
+      if (successIcon) successIcon.textContent = '🛵';
+      if (modalTitle) modalTitle.textContent = 'Out for Delivery!';
+    } else if (order.status === 'delivered') {
+      if (successIcon) successIcon.textContent = '🎉';
+      if (modalTitle) modalTitle.textContent = 'Order Delivered!';
     } else {
-      if (successIcon) successIcon.textContent = order.status === 'delivered' ? '🎉' : '🔥';
-      if (modalTitle) modalTitle.textContent = order.status === 'delivered' ? 'Order Delivered!' : 'Order Confirmed & Sizzling!';
+      if (successIcon) successIcon.textContent = '🔥';
+      if (modalTitle) modalTitle.textContent = 'Order Confirmed & Sizzling!';
     }
 
     // Update Subtitle based on status
@@ -2613,7 +2625,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (order.status === 'ready_for_pickup') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is packed and ready to dispatch!`;
       } else if (order.status === 'on_the_way') {
-        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> has been dispatched for delivery.`;
+        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is on the way to your doorstep!`;
       } else if (order.status === 'delivered') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> has arrived at your door! 🎉 Saved to <strong>My Orders</strong>.`;
       } else {

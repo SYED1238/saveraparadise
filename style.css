@@ -10694,3 +10694,49 @@ body.food-modal-open .mobile-floating-bar {
   pointer-events: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
+
+
+/* ==========================================================================
+   DISPATCHED SCREEN ERGONOMICS (Live Map Open & Directly Visible)
+   ========================================================================== */
+.order-modal-card.is-dispatched .order-modal-scroll-body {
+  padding: 22px 18px 26px 18px;
+}
+
+.order-modal-card.is-dispatched .order-success-icon {
+  font-size: 2.2rem;
+  margin-bottom: 2px;
+  animation: rider-marker-bob 1.5s ease-in-out infinite alternate;
+}
+
+.order-modal-card.is-dispatched .modal-title {
+  font-size: 1.35rem;
+  margin-bottom: 2px;
+  color: var(--text-heading, #111827);
+}
+
+.order-modal-card.is-dispatched .modal-sub {
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+.order-modal-card.is-dispatched .order-selector-wrap {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+}
+
+.order-modal-card.is-dispatched .tracker-live-map-card {
+  margin: 6px 0 16px 0;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
+  border: 1.5px solid #E5E7EB;
+}
+
+.order-modal-card.is-dispatched .tracker-map-viewport {
+  height: 250px;
+}
+
+@media (min-width: 640px) {
+  .order-modal-card.is-dispatched .tracker-map-viewport {
+    height: 300px;
+  }
+}
