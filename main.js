@@ -2617,6 +2617,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function activateOrderPreparationScreen(orderId, triggerConfetti = true) {
     if (!orderId) return;
+
+    // Strict user requirement: ONLY for mobile interface!
+    // On desktop, keep home page completely normal & open standard order modal
+    const isMobile = window.innerWidth <= 768;
+    if (!isMobile) {
+      openOrderModal(orderId, true);
+      return;
+    }
+
     activePrepOrderId = orderId;
     try {
       sessionStorage.setItem('quickbite_active_prep_order', String(orderId));
@@ -2645,10 +2654,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Make home screen disappear & display preparation screen
     document.body.classList.add('order-prep-active');
     const prepScreen = document.getElementById('order-prep-screen');
-    if (prepScreen) prepScreen.style.display = 'block';
+    if (prepScreen) prepScreen.style.display = 'flex';
 
     // Scroll smoothly to top
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'instant' });
 
     // Video Playback from Cloudflare R2
     const prepVideo = document.getElementById('order-prep-video');
@@ -2753,6 +2762,14 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    const btnBrowseSecondary = document.getElementById('btn-mobile-prep-browse-secondary');
+    if (btnBrowseSecondary) {
+      btnBrowseSecondary.addEventListener('click', () => {
+        deactivateOrderPreparationScreen(true);
+        window.scrollTo({ top: 300, behavior: 'smooth' });
+      });
+    }
+
     const btnViewTracker = document.getElementById('btn-prep-view-tracker');
     if (btnViewTracker) {
       btnViewTracker.addEventListener('click', () => {
@@ -2779,7 +2796,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ord = orders.find(o => String(o.id) === String(savedPrepId));
         if (ord && ['pending', 'accepted', 'cooking'].includes(String(ord.status).toLowerCase())) {
           const age = ord.createdAt ? (Date.now() - Number(ord.createdAt)) : 0;
-          if (age < 20 * 60 * 1000) {
+          if (age < 20 * 60 * 1000 && window.innerWidth <= 768) {
             activateOrderPreparationScreen(ord.id, false);
           }
         }
