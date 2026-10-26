@@ -258,12 +258,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Broadcast live rider location for customer map tracking sync
     try {
+      const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
       const activeOrders = dataService.getOrders().filter(o => o.status === 'on_the_way');
+      const orderIds = activeOrders.map(o => o.id);
       const activeOrderId = activeOrders[0] ? activeOrders[0].id : null;
       dataService.broadcastRiderLocation({
         orderId: activeOrderId,
-        riderPin: currentRider?.pin || null,
-        riderName: currentRider?.name || 'Delivery Partner',
+        orderIds: orderIds,
+        riderPin: currentRider.pin,
+        riderName: currentRider.name,
         lat: riderLiveLocation.lat,
         lng: riderLiveLocation.lng,
         heading: pos.coords.heading || null,

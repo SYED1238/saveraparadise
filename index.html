@@ -4519,6 +4519,40 @@
 
       <!-- ACTIVE TRACKER CONTENT: Shown when user has active orders in progress -->
       <div class="tracker-active-content" id="tracker-active-content">
+        <!-- LIVE RIDER TRACKING MAP (Active after dispatch: on_the_way - Top Placement) -->
+        <div class="tracker-live-map-card" id="tracker-live-map-card" style="display: none;">
+          <div class="tracker-map-header">
+            <div class="tracker-map-status-pill" id="tracker-map-status-pill">
+              <span class="live-pulse-dot"></span>
+              <span id="tracker-map-status-text">Rider on the way • Live GPS</span>
+            </div>
+            <div class="tracker-map-header-actions">
+              <button type="button" class="tracker-map-btn" id="tracker-map-zoom-in-btn" title="Zoom In (+)">
+                <i class="fa-solid fa-plus"></i>
+              </button>
+              <button type="button" class="tracker-map-btn" id="tracker-map-zoom-out-btn" title="Zoom Out (-)">
+                <i class="fa-solid fa-minus"></i>
+              </button>
+              <button type="button" class="tracker-map-btn" id="tracker-map-expand-btn" title="Open Full View">
+                <i class="fa-solid fa-up-right-and-down-left-from-center" id="tracker-expand-icon"></i>
+              </button>
+              <button type="button" class="tracker-map-recenter-btn" id="tracker-map-recenter-btn" title="Center Map">
+                <i class="fa-solid fa-location-crosshairs"></i> Recenter
+              </button>
+            </div>
+          </div>
+          <div class="tracker-map-viewport" id="tracker-live-map-view"></div>
+          <div class="tracker-map-footer">
+            <div class="tracker-map-legend">
+              <span class="legend-item"><span class="legend-badge rider">🛵</span> Rider</span>
+              <span class="legend-item"><span class="legend-badge home">📍</span> Delivery Location</span>
+            </div>
+            <div class="tracker-map-distance-badge" id="tracker-map-distance-badge">
+              <i class="fa-solid fa-route"></i> Calculating route...
+            </div>
+          </div>
+        </div>
+
         <div class="order-success-icon" id="order-success-icon">🎉</div>
         <h3 class="modal-title" id="order-modal-title">Order Confirmed & Sizzling!</h3>
         <p class="modal-sub" id="order-modal-sub">Order <strong id="order-id-num">#QB-8942</strong> has been sent to our kitchen.</p>
@@ -4542,32 +4576,6 @@
           </div>
           <div class="order-tabs-scroll" id="order-tabs-scroll">
             <!-- Dynamically populated order tabs for active orders only -->
-          </div>
-        </div>
-
-        <!-- LIVE RIDER TRACKING MAP (Active after dispatch: on_the_way) -->
-        <div class="tracker-live-map-card" id="tracker-live-map-card" style="display: none;">
-          <div class="tracker-map-header">
-            <div class="tracker-map-status-pill" id="tracker-map-status-pill">
-              <span class="live-pulse-dot"></span>
-              <span id="tracker-map-status-text">Rider on the way • Live GPS</span>
-            </div>
-            <div class="tracker-map-header-actions">
-              <button type="button" class="tracker-map-recenter-btn" id="tracker-map-recenter-btn" title="Center Map on Rider">
-                <i class="fa-solid fa-location-crosshairs"></i> Recenter
-              </button>
-            </div>
-          </div>
-          <div class="tracker-map-viewport" id="tracker-live-map-view"></div>
-          <div class="tracker-map-footer">
-            <div class="tracker-map-legend">
-              <span class="legend-item"><span class="legend-badge rest">🏪</span> Kitchen</span>
-              <span class="legend-item"><span class="legend-badge rider">🛵</span> Rider</span>
-              <span class="legend-item"><span class="legend-badge home">📍</span> Doorstep</span>
-            </div>
-            <div class="tracker-map-distance-badge" id="tracker-map-distance-badge">
-              <i class="fa-solid fa-route"></i> Calculating route...
-            </div>
           </div>
         </div>
 

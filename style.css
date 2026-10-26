@@ -10697,46 +10697,81 @@ body.food-modal-open .mobile-floating-bar {
 
 
 /* ==========================================================================
-   DISPATCHED SCREEN ERGONOMICS (Live Map Open & Directly Visible)
+   DISPATCHED SCREEN ERGONOMICS (Live Map Open On Top & Connected to Rider GPS)
    ========================================================================== */
 .order-modal-card.is-dispatched .order-modal-scroll-body {
-  padding: 22px 18px 26px 18px;
+  padding: 16px 16px 24px 16px;
+}
+
+.order-modal-card.is-dispatched .tracker-live-map-card {
+  margin: 0 0 16px 0;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
+  border: 1.5px solid #E5E7EB;
+  border-radius: 18px;
+}
+
+.order-modal-card.is-dispatched .tracker-map-viewport {
+  height: 270px;
+  transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 640px) {
+  .order-modal-card.is-dispatched .tracker-map-viewport {
+    height: 330px;
+  }
+}
+
+.tracker-live-map-card.is-expanded .tracker-map-viewport {
+  height: 480px !important;
+  max-height: 65vh !important;
+}
+
+.tracker-map-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tracker-map-btn {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  color: var(--text-heading, #1F2937);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.tracker-map-btn:hover {
+  background: #F3F4F6;
+  border-color: #D1D5DB;
+  color: var(--brand-primary, #FF5A26);
 }
 
 .order-modal-card.is-dispatched .order-success-icon {
-  font-size: 2.2rem;
+  font-size: 1.8rem;
   margin-bottom: 2px;
   animation: rider-marker-bob 1.5s ease-in-out infinite alternate;
 }
 
 .order-modal-card.is-dispatched .modal-title {
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   margin-bottom: 2px;
   color: var(--text-heading, #111827);
 }
 
 .order-modal-card.is-dispatched .modal-sub {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   margin-bottom: 10px;
 }
 
 .order-modal-card.is-dispatched .order-selector-wrap {
   margin-bottom: 10px;
   padding: 8px 12px;
-}
-
-.order-modal-card.is-dispatched .tracker-live-map-card {
-  margin: 6px 0 16px 0;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
-  border: 1.5px solid #E5E7EB;
-}
-
-.order-modal-card.is-dispatched .tracker-map-viewport {
-  height: 250px;
-}
-
-@media (min-width: 640px) {
-  .order-modal-card.is-dispatched .tracker-map-viewport {
-    height: 300px;
-  }
 }

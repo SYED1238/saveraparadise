@@ -3266,6 +3266,7 @@ class QuickBiteDataService {
     if (!payload || !payload.lat || !payload.lng) return;
     const cleanPayload = {
       orderId: payload.orderId || null,
+      orderIds: Array.isArray(payload.orderIds) ? payload.orderIds : (payload.orderId ? [payload.orderId] : []),
       riderPin: payload.riderPin || null,
       riderName: payload.riderName || 'Delivery Partner',
       lat: Number(payload.lat),
@@ -3278,6 +3279,12 @@ class QuickBiteDataService {
 
     try {
       localStorage.setItem('quickbite_live_rider_location', JSON.stringify(cleanPayload));
+      if (cleanPayload.orderId) {
+        localStorage.setItem(`quickbite_rider_location_${cleanPayload.orderId}`, JSON.stringify(cleanPayload));
+      }
+      if (cleanPayload.riderPin) {
+        localStorage.setItem(`quickbite_rider_location_pin_${cleanPayload.riderPin}`, JSON.stringify(cleanPayload));
+      }
       window.dispatchEvent(new CustomEvent('quickbite:rider_location', { detail: cleanPayload }));
     } catch {}
 
@@ -3298,6 +3305,24 @@ class QuickBiteDataService {
 
   getRiderLiveLocation(orderId = null, riderPin = null) {
     try {
+      if (orderId) {
+        const orderStored = localStorage.getItem(`quickbite_rider_location_${orderId}`);
+        if (orderStored) {
+          const parsed = JSON.parse(orderStored);
+          if (parsed && parsed.lat && parsed.lng && Date.now() - (parsed.timestamp || 0) < 900000) {
+            return parsed;
+          }
+        }
+      }
+      if (riderPin) {
+        const pinStored = localStorage.getItem(`quickbite_rider_location_pin_${riderPin}`);
+        if (pinStored) {
+          const parsed = JSON.parse(pinStored);
+          if (parsed && parsed.lat && parsed.lng && Date.now() - (parsed.timestamp || 0) < 900000) {
+            return parsed;
+          }
+        }
+      }
       const stored = localStorage.getItem('quickbite_live_rider_location');
       if (stored) {
         const parsed = JSON.parse(stored);
