@@ -10490,3 +10490,207 @@ body.food-modal-open .mobile-floating-bar {
 .recipe-card.menu-item-collapsed {
   display: none !important;
 }
+
+
+/* ==========================================================================
+   LIVE RIDER TRACKING MAP (Dispatched / On The Way)
+   ========================================================================== */
+.tracker-live-map-card {
+  background: #FFFFFF;
+  border: 1.5px solid #F1E5D8;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 18px rgba(14, 11, 9, 0.05);
+  margin-bottom: 18px;
+  text-align: left;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tracker-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #F9FAFB;
+  border-bottom: 1px solid #F3F4F6;
+}
+
+.tracker-map-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #065F46;
+  background: #ECFDF5;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid #A7F3D0;
+}
+
+.live-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: live-pulse-anim 1.6s infinite;
+}
+
+@keyframes live-pulse-anim {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.tracker-map-recenter-btn {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  color: var(--text-heading, #1F2937);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 5px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.tracker-map-recenter-btn:hover {
+  background: #F3F4F6;
+  border-color: #D1D5DB;
+  color: var(--brand-primary, #FF5A26);
+}
+
+.tracker-map-viewport {
+  width: 100%;
+  height: 220px;
+  background: #E5E7EB;
+  position: relative;
+  z-index: 1;
+}
+
+.tracker-map-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #FAFAFA;
+  border-top: 1px solid #F3F4F6;
+  font-size: 0.75rem;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tracker-map-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted, #6B7280);
+  font-weight: 600;
+}
+
+.tracker-map-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tracker-map-distance-badge {
+  font-family: var(--font-display, inherit);
+  font-weight: 800;
+  color: var(--brand-primary, #FF5A26);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Custom Marker Styling for Leaflet Map */
+.tracker-custom-marker-wrap {
+  background: none !important;
+  border: none !important;
+}
+
+.tracker-pin-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.tracker-pin-marker.rider {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 3px solid #FF5A26;
+  box-shadow: 0 4px 14px rgba(255, 90, 38, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  position: relative;
+  animation: rider-marker-bob 1.5s ease-in-out infinite alternate;
+}
+
+.rider-pulse-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 90, 38, 0.6);
+  animation: pulse-ring-anim 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  pointer-events: none;
+}
+
+@keyframes pulse-ring-anim {
+  0% { transform: scale(0.6); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+@keyframes rider-marker-bob {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-3px); }
+}
+
+.tracker-pin-marker.rest {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #FFFFFF;
+  border: 2px solid #F59E0B;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+}
+
+.tracker-pin-marker.home {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #FFFFFF;
+  border: 2px solid #10B981;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+}
+
+.tracker-pin-marker .marker-tooltip {
+  position: absolute;
+  top: -22px;
+  white-space: nowrap;
+  background: rgba(17, 24, 39, 0.9);
+  color: #FFF;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}

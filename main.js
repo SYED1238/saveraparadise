@@ -172,7 +172,14 @@ document.addEventListener('DOMContentLoaded', () => {
           stepIndex: stepIndexMap[finalStatus] ?? 2,
           itemsSummary: '2x Chicken Biryani (Full)',
           total: '₹420',
-          eta: '18 - 24 Minutes',
+          eta: finalStatus === 'on_the_way' ? '8 - 12 Minutes' : '18 - 24 Minutes',
+          assignedRiderName: 'Rahul Kumar',
+          assignedRiderPhone: '+91 98451 23456',
+          assignedRiderVehicle: '🏍️ Express Bike',
+          deliveryAddress: 'Railway Colony, Near Old Station, Ramanagara',
+          addressDetails: { lat: 12.7275, lng: 77.2740, address: 'Railway Colony, Near Old Station, Ramanagara' },
+          lat: 12.7275,
+          lng: 77.2740,
           createdAt: Date.now()
         };
         const testOrder2 = {
@@ -2233,6 +2240,282 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ==========================================
+  // LIVE RIDER TRACKING MAP CONTROLLER
+  // ==========================================
+  let trackerLiveMap = null;
+  let trackerRiderMarker = null;
+  let trackerRestMarker = null;
+  let trackerHomeMarker = null;
+  let trackerTraveledLine = null;
+  let trackerRemainingLine = null;
+  let activeTrackingOrderId = null;
+  let trackerSimulationInterval = null;
+  let lastRiderCoords = null;
+
+  function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 1.5;
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c * 10) / 10;
+  }
+
+  function resolveOrderCustomerCoords(order) {
+    if (order.addressDetails && !isNaN(Number(order.addressDetails.lat)) && !isNaN(Number(order.addressDetails.lng))) {
+      return { lat: Number(order.addressDetails.lat), lng: Number(order.addressDetails.lng) };
+    }
+    if (order.lat && order.lng && !isNaN(Number(order.lat)) && !isNaN(Number(order.lng))) {
+      return { lat: Number(order.lat), lng: Number(order.lng) };
+    }
+    try {
+      const addrs = dataService.getSavedAddresses();
+      if (Array.isArray(addrs) && addrs.length > 0) {
+        const found = addrs.find(a => order.deliveryAddress && a.address && order.deliveryAddress.includes(a.address)) || addrs[0];
+        if (found && !isNaN(Number(found.lat)) && !isNaN(Number(found.lng))) {
+          return { lat: Number(found.lat), lng: Number(found.lng) };
+        }
+      }
+    } catch {}
+    return { lat: 12.7275, lng: 77.2740 };
+  }
+
+  function destroyTrackerLiveMap() {
+    if (trackerSimulationInterval) {
+      clearInterval(trackerSimulationInterval);
+      trackerSimulationInterval = null;
+    }
+    const mapCard = document.getElementById('tracker-live-map-card');
+    if (mapCard) mapCard.style.display = 'none';
+
+    if (trackerLiveMap) {
+      try {
+        trackerLiveMap.remove();
+      } catch {}
+      trackerLiveMap = null;
+    }
+    trackerRiderMarker = null;
+    trackerRestMarker = null;
+    trackerHomeMarker = null;
+    trackerTraveledLine = null;
+    trackerRemainingLine = null;
+    activeTrackingOrderId = null;
+    lastRiderCoords = null;
+  }
+
+  function updateTrackerDistanceAndEta(riderLat, riderLng, dropLat, dropLng, isLiveGps = true) {
+    const distKm = calculateDistanceKm(riderLat, riderLng, dropLat, dropLng);
+    const estMins = Math.max(3, Math.ceil(distKm * 3.2 + 2));
+
+    const distBadge = document.getElementById('tracker-map-distance-badge');
+    if (distBadge) {
+      distBadge.innerHTML = `<i class="fa-solid fa-route"></i> ${distKm} km away (~${estMins} mins)`;
+    }
+
+    const etaTimeEl = document.getElementById('tracker-eta-time');
+    if (etaTimeEl) {
+      etaTimeEl.textContent = `${estMins} - ${estMins + 5} Minutes`;
+    }
+
+    const statusText = document.getElementById('tracker-map-status-text');
+    if (statusText) {
+      statusText.textContent = isLiveGps ? `Rider on the way • Live GPS` : `Rider on the way • In Transit`;
+    }
+  }
+
+  function updateTrackerRiderPosition(payload) {
+    if (!trackerLiveMap || !trackerRiderMarker || !payload?.lat || !payload?.lng) return;
+    const newLat = Number(payload.lat);
+    const newLng = Number(payload.lng);
+    lastRiderCoords = { lat: newLat, lng: newLng };
+
+    trackerRiderMarker.setLatLng([newLat, newLng]);
+
+    const restCoords = [RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng];
+    const dropCoords = trackerHomeMarker ? trackerHomeMarker.getLatLng() : { lat: 12.7275, lng: 77.2740 };
+
+    if (trackerTraveledLine) {
+      trackerTraveledLine.setLatLngs([restCoords, [newLat, newLng]]);
+    }
+    if (trackerRemainingLine) {
+      trackerRemainingLine.setLatLngs([[newLat, newLng], [dropCoords.lat, dropCoords.lng]]);
+    }
+
+    updateTrackerDistanceAndEta(newLat, newLng, dropCoords.lat, dropCoords.lng, payload.isLiveGps !== false);
+  }
+
+  function initTrackerLiveMap(order) {
+    const mapCard = document.getElementById('tracker-live-map-card');
+    const mapView = document.getElementById('tracker-live-map-view');
+    if (!mapCard || !mapView) return;
+
+    if (order.status !== 'on_the_way') {
+      destroyTrackerLiveMap();
+      return;
+    }
+
+    mapCard.style.display = 'block';
+    activeTrackingOrderId = order.id;
+
+    const restLat = RESTAURANT_COORDINATES.lat;
+    const restLng = RESTAURANT_COORDINATES.lng;
+    const dropCoords = resolveOrderCustomerCoords(order);
+
+    const liveRider = dataService.getRiderLiveLocation(order.id, order.assignedRiderPin);
+    let riderLat = liveRider?.lat ?? (restLat + (dropCoords.lat - restLat) * 0.55);
+    let riderLng = liveRider?.lng ?? (restLng + (dropCoords.lng - restLng) * 0.55);
+    lastRiderCoords = { lat: riderLat, lng: riderLng };
+
+    if (trackerLiveMap) {
+      updateTrackerRiderPosition({
+        lat: riderLat,
+        lng: riderLng,
+        riderName: order.assignedRiderName || 'Delivery Partner',
+        isLiveGps: Boolean(liveRider)
+      });
+      setTimeout(() => {
+        if (trackerLiveMap) trackerLiveMap.invalidateSize();
+      }, 200);
+      return;
+    }
+
+    try {
+      trackerLiveMap = L.map('tracker-live-map-view', {
+        zoomControl: false,
+        attributionControl: false,
+        dragging: true,
+        touchZoom: true,
+        scrollWheelZoom: false,
+        doubleClickZoom: true
+      }).setView([riderLat, riderLng], 15);
+
+      const streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        maxZoom: 20,
+        attribution: '&copy; Google Maps'
+      });
+      streetLayer.on('tileerror', () => {
+        if (!streetLayer._hasFailedOver) {
+          streetLayer._hasFailedOver = true;
+          const fallback = L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+            subdomains: ['a', 'b', 'c'],
+            maxZoom: 20
+          });
+          if (trackerLiveMap && trackerLiveMap.hasLayer(streetLayer)) {
+            trackerLiveMap.removeLayer(streetLayer);
+            fallback.addTo(trackerLiveMap);
+          }
+        }
+      });
+      streetLayer.addTo(trackerLiveMap);
+
+      // 1. Restaurant Marker
+      const restIcon = L.divIcon({
+        className: 'tracker-custom-marker-wrap',
+        html: `<div class="tracker-pin-marker rest"><span class="marker-emoji">🏪</span><span class="marker-tooltip">Savera Paradise</span></div>`,
+        iconSize: [38, 38],
+        iconAnchor: [19, 19]
+      });
+      trackerRestMarker = L.marker([restLat, restLng], { icon: restIcon }).addTo(trackerLiveMap);
+
+      // 2. Customer Doorstep Marker
+      const homeIcon = L.divIcon({
+        className: 'tracker-custom-marker-wrap',
+        html: `<div class="tracker-pin-marker home"><span class="marker-emoji">📍</span><span class="marker-tooltip">Your Doorstep</span></div>`,
+        iconSize: [38, 38],
+        iconAnchor: [19, 19]
+      });
+      trackerHomeMarker = L.marker([dropCoords.lat, dropCoords.lng], { icon: homeIcon }).addTo(trackerLiveMap);
+
+      // 3. Traveled Path (Restaurant -> Rider)
+      trackerTraveledLine = L.polyline([[restLat, restLng], [riderLat, riderLng]], {
+        color: '#64748B',
+        weight: 3.5,
+        opacity: 0.65,
+        lineCap: 'round'
+      }).addTo(trackerLiveMap);
+
+      // 4. Remaining Path (Rider -> Customer Doorstep)
+      trackerRemainingLine = L.polyline([[riderLat, riderLng], [dropCoords.lat, dropCoords.lng]], {
+        color: '#FF5A26',
+        weight: 4,
+        dashArray: '8, 8',
+        opacity: 0.95,
+        lineCap: 'round'
+      }).addTo(trackerLiveMap);
+
+      // 5. Rider Moving Marker
+      const riderName = order.assignedRiderName || 'Delivery Partner';
+      const riderIcon = L.divIcon({
+        className: 'tracker-custom-marker-wrap',
+        html: `
+          <div class="tracker-pin-marker rider" id="tracker-rider-pin">
+            <div class="rider-pulse-ring"></div>
+            <span class="marker-emoji">🛵</span>
+            <span class="marker-tooltip">${escapeHtml(riderName)}</span>
+          </div>
+        `,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22]
+      });
+      trackerRiderMarker = L.marker([riderLat, riderLng], { icon: riderIcon, zIndexOffset: 1000 }).addTo(trackerLiveMap);
+
+      const bounds = L.latLngBounds([
+        [restLat, restLng],
+        [riderLat, riderLng],
+        [dropCoords.lat, dropCoords.lng]
+      ]);
+      trackerLiveMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
+
+      updateTrackerDistanceAndEta(riderLat, riderLng, dropCoords.lat, dropCoords.lng, Boolean(liveRider));
+
+      const btnRecenter = document.getElementById('tracker-map-recenter-btn');
+      if (btnRecenter) {
+        btnRecenter.onclick = (e) => {
+          e.preventDefault();
+          if (trackerLiveMap && trackerRiderMarker) {
+            const rPos = trackerRiderMarker.getLatLng();
+            const b = L.latLngBounds([
+              [restLat, restLng],
+              [rPos.lat, rPos.lng],
+              [dropCoords.lat, dropCoords.lng]
+            ]);
+            trackerLiveMap.flyToBounds(b, { padding: [35, 35], duration: 0.8 });
+          }
+        };
+      }
+
+      if (!liveRider) {
+        let progress = 0.55;
+        trackerSimulationInterval = setInterval(() => {
+          if (!trackerLiveMap || activeTrackingOrderId !== order.id) return;
+          progress += 0.025;
+          if (progress > 0.95) progress = 0.55;
+          const simLat = restLat + (dropCoords.lat - restLat) * progress;
+          const simLng = restLng + (dropCoords.lng - restLng) * progress;
+          updateTrackerRiderPosition({
+            lat: simLat,
+            lng: simLng,
+            riderName: order.assignedRiderName || 'Delivery Partner',
+            isLiveGps: false
+          });
+        }, 3500);
+      }
+
+      setTimeout(() => {
+        if (trackerLiveMap) trackerLiveMap.invalidateSize();
+      }, 300);
+
+    } catch (err) {
+      console.warn('[Live Tracker Map] Initialization error:', err);
+    }
+  }
+
   function renderOrderTracker(orderId) {
     orders = dataService.getOrders();
     const userPhone = getCurrentUserPhone();
@@ -2605,6 +2888,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Synchronize live preparation background video with current order status
     syncTrackerVideoBackground(order);
+
+    // Live interactive map for dispatched orders
+    if (order.status === 'on_the_way') {
+      initTrackerLiveMap(order);
+    } else {
+      destroyTrackerLiveMap();
+    }
   }
 
   function handleCustomerCancelOrder(orderId) {
@@ -2712,6 +3002,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function closeOrderModalInternal() {
     pauseTrackerVideo();
+    destroyTrackerLiveMap();
     orderModalBackdrop.classList.remove('open');
     document.body.style.overflow = '';
     syncCapsuleNavWithScroll();

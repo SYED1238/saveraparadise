@@ -255,6 +255,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
     updateLivePositionsOnMiniMaps();
+
+    // Broadcast live rider location for customer map tracking sync
+    try {
+      const activeOrders = dataService.getOrders().filter(o => o.status === 'on_the_way');
+      const activeOrderId = activeOrders[0] ? activeOrders[0].id : null;
+      dataService.broadcastRiderLocation({
+        orderId: activeOrderId,
+        riderPin: currentRider?.pin || null,
+        riderName: currentRider?.name || 'Delivery Partner',
+        lat: riderLiveLocation.lat,
+        lng: riderLiveLocation.lng,
+        heading: pos.coords.heading || null,
+        speed: pos.coords.speed || null,
+        accuracy: riderLiveLocation.accuracy,
+        timestamp: Date.now()
+      });
+    } catch (e) {
+      console.warn('[Rider GPS] Broadcast failed:', e);
+    }
   }
 
   function initRiderLiveGeolocation() {
@@ -858,6 +877,19 @@ document.addEventListener('DOMContentLoaded', () => {
       activeTab = 'active';
       updateActiveTabUI();
       renderPortal();
+
+      // Immediately broadcast initial location on dispatch
+      try {
+        dataService.broadcastRiderLocation({
+          orderId: orderId,
+          riderPin: currentRider.pin,
+          riderName: currentRider.name,
+          lat: riderLiveLocation.lat,
+          lng: riderLiveLocation.lng,
+          accuracy: riderLiveLocation.accuracy,
+          timestamp: Date.now()
+        });
+      } catch {}
     } else {
       showToast(`❌ ${result.message || 'Cannot claim this order.'}`, 'error');
     }

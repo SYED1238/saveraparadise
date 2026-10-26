@@ -2840,6 +2840,16 @@ class QuickBiteDataService {
             }
           }
         })
+        .on('broadcast', { event: 'rider_location' }, (event) => {
+          const payload = event?.payload || {};
+          if (payload.lat && payload.lng) {
+            try {
+              localStorage.setItem('quickbite_live_rider_location', JSON.stringify(payload));
+              window.dispatchEvent(new CustomEvent('quickbite:rider_location', { detail: payload }));
+            } catch {}
+            this.notifyChange('rider_location', payload);
+          }
+        })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
             console.log('[DataService] Kitchen cross-device broadcast channel connected.');
@@ -3250,6 +3260,55 @@ class QuickBiteDataService {
     } catch (err) {
       console.warn('[Supabase Realtime] settings broadcast exception:', err);
     }
+  }
+
+  broadcastRiderLocation(payload) {
+    if (!payload || !payload.lat || !payload.lng) return;
+    const cleanPayload = {
+      orderId: payload.orderId || null,
+      riderPin: payload.riderPin || null,
+      riderName: payload.riderName || 'Delivery Partner',
+      lat: Number(payload.lat),
+      lng: Number(payload.lng),
+      heading: payload.heading != null ? Number(payload.heading) : null,
+      speed: payload.speed != null ? Number(payload.speed) : null,
+      accuracy: Math.round(payload.accuracy || 10),
+      timestamp: payload.timestamp || Date.now()
+    };
+
+    try {
+      localStorage.setItem('quickbite_live_rider_location', JSON.stringify(cleanPayload));
+      window.dispatchEvent(new CustomEvent('quickbite:rider_location', { detail: cleanPayload }));
+    } catch {}
+
+    try {
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'rider_location',
+          payload: cleanPayload
+        }).catch(err => console.warn('[DataService] Rider location broadcast failed:', err));
+      }
+    } catch (err) {
+      console.warn('[DataService] Error sending rider location broadcast:', err);
+    }
+
+    this.notifyChange('rider_location', cleanPayload);
+  }
+
+  getRiderLiveLocation(orderId = null, riderPin = null) {
+    try {
+      const stored = localStorage.getItem('quickbite_live_rider_location');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.lat && parsed.lng) {
+          if (Date.now() - (parsed.timestamp || 0) < 900000) {
+            return parsed;
+          }
+        }
+      }
+    } catch {}
+    return null;
   }
 
   async syncSettingsFromSupabase(force = false) {
