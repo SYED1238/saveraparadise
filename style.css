@@ -10280,65 +10280,50 @@ body.food-modal-open .mobile-floating-bar {
 }
 
 /* ==========================================================================
-   IMMERSIVE ORDER PREPARATION & CLOUDFLARE R2 VIDEO SCREEN
-   Home screen disappears & kitchen cooking video plays live
-   ========================================================================== */
-body.order-prep-active {
-  background: #0B0F19 !important;
-  color: #F8FAFC !important;
-}
-
-/* ==========================================================================
-   MOBILE-ONLY FULLSCREEN BACKGROUND VIDEO ORDER PREPARATION SCREEN
-   Plays video edge-to-edge as full screen background (not as a player)
-   Completely replaces the home page on mobile interface
+   IMMERSIVE ORDER PREPARATION & CLOUDFLARE R2 VIDEO SECTION
+   On mobile: The FIRST section becomes this live video preparation experience
+   ONLY while order is preparing and ready to dispatch!
+   All other sections (menu, categories, offers, bottom capsule nav, cart bar,
+   footer) STAY EXACTLY AS THEY WERE!
+   As soon as delivery guy picks up (status: on_the_way) or order completes,
+   it becomes normal as how it was!
    ========================================================================== */
 
-/* 1. When preparation screen is active on mobile, hide the ENTIRE home page */
-body.order-prep-active {
-  overflow: hidden !important;
-  background: #000000 !important;
+/* 1. On mobile (<= 768px), when order-prep-active is set, only replace the first section */
+@media (max-width: 768px) {
+  body.order-prep-active #hero-section,
+  body.order-prep-active .hero-collage-scene,
+  body.order-prep-active .showcase-biryani-stage,
+  body.order-prep-active #hero-biryani-stage,
+  body.order-prep-active .showcase-plate-side,
+  body.order-prep-active .food-blob-item,
+  body.order-prep-active #navbar {
+    display: none !important;
+  }
 }
 
-body.order-prep-active::before,
-body.order-prep-active::after,
-body.order-prep-active header,
-body.order-prep-active .storefront-header,
-body.order-prep-active .navbar,
-body.order-prep-active .hero-section,
-body.order-prep-active .hero-collage-scene,
-body.order-prep-active .showcase-biryani-stage,
-body.order-prep-active #hero-biryani-stage,
-body.order-prep-active .showcase-plate-side,
-body.order-prep-active .food-blob-item,
-body.order-prep-active .menu-section,
-body.order-prep-active .special-offers-section,
-body.order-prep-active .store-rush-banner,
-body.order-prep-active .bottom-cart-bar,
-body.order-prep-active footer,
-body.order-prep-active .footer,
-body.order-prep-active .mobile-bottom-capsule-nav,
-body.order-prep-active .app-install-banner,
-body.order-prep-active .app-install-card,
-body.order-prep-active .pwa-install-banner {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-/* 2. Fullscreen Fixed Container taking over entire mobile viewport */
+/* 2. By default, preparation video screen is hidden */
+.order-prep-screen,
 .mobile-prep-video-screen {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100vw !important;
-  height: 100dvh !important;
-  z-index: 999999 !important;
-  background: #000000 !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
+  display: none !important;
+}
+
+/* 3. First Section Container: ONLY displayed on mobile when order-prep-active is present! */
+@media (max-width: 768px) {
+  body.order-prep-active .order-prep-screen.mobile-prep-video-screen {
+    position: relative !important;
+    width: 100% !important;
+    min-height: 100dvh !important;
+    height: auto !important;
+    background: #000000 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    border-radius: 0 0 28px 28px !important;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45) !important;
+    margin-bottom: 24px !important;
+    z-index: 10 !important;
+  }
 }
 
 /* 3. The video IS the background! Edge-to-edge, full bleed, not a player card */

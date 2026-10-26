@@ -233,19 +233,28 @@ function r2DevMiddlewarePlugin() {
           };
 
           const r2Req = https.request(getOptions, (r2Res) => {
+            if (res.writableEnded || res.destroyed) return;
             if (r2Res.statusCode === 200 || r2Res.statusCode === 206) {
-              res.setHeader('Content-Type', r2Res.headers['content-type'] || 'video/mp4');
-              res.setHeader('Accept-Ranges', 'bytes');
-              if (r2Res.headers['content-range']) res.setHeader('Content-Range', r2Res.headers['content-range']);
-              if (r2Res.headers['content-length']) res.setHeader('Content-Length', r2Res.headers['content-length']);
-              res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-              res.statusCode = r2Res.statusCode;
+              if (!res.headersSent) {
+                res.setHeader('Content-Type', r2Res.headers['content-type'] || 'video/mp4');
+                res.setHeader('Accept-Ranges', 'bytes');
+                if (r2Res.headers['content-range']) res.setHeader('Content-Range', r2Res.headers['content-range']);
+                if (r2Res.headers['content-length']) res.setHeader('Content-Length', r2Res.headers['content-length']);
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+                res.statusCode = r2Res.statusCode;
+              }
               r2Res.pipe(res);
             } else {
-              res.statusCode = r2Res.statusCode || 404;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ error: 'Video not found in R2' }));
+              if (!res.headersSent) {
+                res.statusCode = r2Res.statusCode || 404;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Video not found in R2' }));
+              }
             }
+          });
+
+          req.on('close', () => {
+            try { r2Req.destroy(); } catch {}
           });
 
           r2Req.on('error', (err) => {

@@ -2540,6 +2540,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Status & Step Logic
     const status = String(order.status || 'pending').toLowerCase();
+    const prepStatuses = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup'];
+
+    // Strict user requirement: ONLY while preparing and ready to dispatch!
+    // As soon as delivery guy picks up (on_the_way) or completed/cancelled,
+    // the first section must automatically become normal as how it was!
+    if (!prepStatuses.includes(status)) {
+      deactivateOrderPreparationScreen(false);
+      return;
+    }
+
     const elHeadline = document.getElementById('prep-headline');
     const elBadge = document.getElementById('prep-status-badge');
     const elSubtext = document.getElementById('prep-subtext');
@@ -2554,25 +2564,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (st) st.className = 'prep-step';
     });
 
-    if (status === 'delivered') {
-      if (elHeadline) elHeadline.textContent = '🎉 Order Delivered!';
-      if (elBadge) elBadge.textContent = 'SAFELY DELIVERED';
-      if (elSubtext) elSubtext.textContent = 'Your gourmet food was delivered. We hope you love every bite!';
-      if (stepAccepted) stepAccepted.classList.add('done');
-      if (stepCooking) stepCooking.classList.add('done');
-      if (stepReady) stepReady.classList.add('done');
-      if (stepDelivered) stepDelivered.classList.add('done', 'active');
-    } else if (status === 'on_the_way') {
-      if (elHeadline) elHeadline.textContent = '🛵 Rider Dispatched!';
-      if (elBadge) elBadge.textContent = 'ON THE WAY TO YOU';
-      if (elSubtext) elSubtext.textContent = 'Your food has left the kitchen and is rushing hot to your door!';
-      if (stepAccepted) stepAccepted.classList.add('done');
-      if (stepCooking) stepCooking.classList.add('done');
-      if (stepReady) stepReady.classList.add('active');
-    } else if (status === 'ready' || status === 'ready_for_pickup') {
+    if (status === 'ready' || status === 'ready_for_pickup') {
       if (elHeadline) elHeadline.textContent = '📦 Cooked & Packed!';
-      if (elBadge) elBadge.textContent = 'READY FOR PICKUP';
-      if (elSubtext) elSubtext.textContent = 'Your order is hot, fresh, and waiting for delivery partner assignment.';
+      if (elBadge) elBadge.textContent = 'READY TO DISPATCH';
+      if (elSubtext) elSubtext.textContent = 'Your order is hot, fresh, and waiting for delivery partner pickup & dispatch.';
       if (stepAccepted) stepAccepted.classList.add('done');
       if (stepCooking) stepCooking.classList.add('done');
       if (stepReady) stepReady.classList.add('active');
@@ -2580,7 +2575,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // pending, accepted, cooking
       if (elHeadline) elHeadline.textContent = 'Your Order is Getting Prepared!';
       if (elBadge) elBadge.textContent = 'PREPARING IN KITCHEN';
-      if (elSubtext) elSubtext.textContent = 'Our master chefs are preparing your fresh, sizzling meal right now. Sit back and watch the magic!';
+      if (elSubtext) elSubtext.textContent = 'Our master chefs are sizzling your fresh meal right now 🔥';
       if (stepAccepted) stepAccepted.classList.add('done');
       if (stepCooking) stepCooking.classList.add('active');
     }
@@ -2626,6 +2621,20 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    orders = dataService.getOrders();
+    const order = orders.find(o => String(o.id) === String(orderId));
+    const status = String(order?.status || 'pending').toLowerCase();
+    const prepStatuses = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup'];
+    
+    // Strict user requirement: ONLY while preparing and ready to dispatch!
+    // After delivery guy picks up (on_the_way) or completed/cancelled,
+    // the first section must stay normal!
+    if (order && !prepStatuses.includes(status)) {
+      deactivateOrderPreparationScreen(false);
+      openOrderModal(orderId, false);
+      return;
+    }
+
     activePrepOrderId = orderId;
     try {
       sessionStorage.setItem('quickbite_active_prep_order', String(orderId));
@@ -2644,20 +2653,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cartBackdrop) cartBackdrop.classList.remove('open');
     document.body.style.overflow = '';
 
-    // Hide floating bar while preparation screen is open
-    const floatingBar = document.getElementById('floating-order-prep-bar');
-    if (floatingBar) floatingBar.style.display = 'none';
-
     // Populate data
     renderOrderPreparationScreen(orderId);
 
-    // Make home screen disappear & display preparation screen
+    // Switch first section: hide default hero, show preparation section
+    // All other sections below (menu, categories, offers, bottom nav) stay normal!
     document.body.classList.add('order-prep-active');
     const prepScreen = document.getElementById('order-prep-screen');
     if (prepScreen) prepScreen.style.display = 'flex';
 
-    // Scroll smoothly to top
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    // Scroll smoothly to top so user sees the preparation section
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 
     // Video Playback from Cloudflare R2
     const prepVideo = document.getElementById('order-prep-video');
@@ -2682,7 +2688,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function deactivateOrderPreparationScreen(showFloatingBar = true) {
+  function deactivateOrderPreparationScreen(showFloatingBar = false) {
     document.body.classList.remove('order-prep-active');
     const prepScreen = document.getElementById('order-prep-screen');
     if (prepScreen) prepScreen.style.display = 'none';
@@ -2693,27 +2699,8 @@ document.addEventListener('DOMContentLoaded', () => {
       try { prepVideo.pause(); } catch {}
     }
 
-    // Show floating bar if order is still active
     const floatingBar = document.getElementById('floating-order-prep-bar');
-    if (floatingBar) {
-      if (showFloatingBar && activePrepOrderId) {
-        orders = dataService.getOrders();
-        const ord = orders.find(o => String(o.id) === String(activePrepOrderId));
-        if (ord && !['delivered', 'cancelled'].includes(String(ord.status).toLowerCase())) {
-          floatingBar.style.display = 'block';
-          const flId = document.getElementById('floating-prep-id');
-          if (flId) {
-            const rawId = String(ord.id || '');
-            const clean = ord.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
-            flId.textContent = clean.replace('#', '');
-          }
-        } else {
-          floatingBar.style.display = 'none';
-        }
-      } else {
-        floatingBar.style.display = 'none';
-      }
-    }
+    if (floatingBar) floatingBar.style.display = 'none';
   }
 
   // Expose on window for accessibility
@@ -2754,19 +2741,28 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    // When customer taps Browse Menu or X, smoothly scroll down to the menu section right below
     const btnBrowseMenu = document.getElementById('btn-prep-browse-menu');
     if (btnBrowseMenu) {
       btnBrowseMenu.addEventListener('click', () => {
-        deactivateOrderPreparationScreen(true);
-        window.scrollTo({ top: 300, behavior: 'smooth' });
+        const menuSec = document.getElementById('menu-section');
+        if (menuSec) {
+          menuSec.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          window.scrollTo({ top: 600, behavior: 'smooth' });
+        }
       });
     }
 
     const btnBrowseSecondary = document.getElementById('btn-mobile-prep-browse-secondary');
     if (btnBrowseSecondary) {
       btnBrowseSecondary.addEventListener('click', () => {
-        deactivateOrderPreparationScreen(true);
-        window.scrollTo({ top: 300, behavior: 'smooth' });
+        const menuSec = document.getElementById('menu-section');
+        if (menuSec) {
+          menuSec.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          window.scrollTo({ top: 600, behavior: 'smooth' });
+        }
       });
     }
 
@@ -2794,11 +2790,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (savedPrepId) {
         orders = dataService.getOrders();
         const ord = orders.find(o => String(o.id) === String(savedPrepId));
-        if (ord && ['pending', 'accepted', 'cooking'].includes(String(ord.status).toLowerCase())) {
+        const prepStatuses = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup'];
+        if (ord && prepStatuses.includes(String(ord.status).toLowerCase())) {
           const age = ord.createdAt ? (Date.now() - Number(ord.createdAt)) : 0;
-          if (age < 20 * 60 * 1000 && window.innerWidth <= 768) {
+          if (age < 30 * 60 * 1000 && window.innerWidth <= 768) {
             activateOrderPreparationScreen(ord.id, false);
           }
+        } else {
+          sessionStorage.removeItem('quickbite_active_prep_order');
+          deactivateOrderPreparationScreen(false);
         }
       }
     } catch {}
@@ -2807,11 +2807,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('test_prep')) {
       activateOrderPreparationScreen('ord_prep_test', false);
     }
+
+    // Periodic safety watcher: If delivery guy picks up the order (status becomes on_the_way)
+    // or order completes, immediately revert the first section back to normal as how it was!
+    setInterval(() => {
+      if (activePrepOrderId && document.body.classList.contains('order-prep-active')) {
+        orders = dataService.getOrders();
+        const ord = orders.find(o => String(o.id) === String(activePrepOrderId));
+        if (ord) {
+          const s = String(ord.status || '').toLowerCase();
+          const prepStatuses = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup'];
+          if (!prepStatuses.includes(s)) {
+            // Delivery guy picked up (on_the_way) or finished -> revert to normal!
+            deactivateOrderPreparationScreen(false);
+          }
+        }
+      }
+    }, 2500);
   }
   initOrderPreparationControls();
 
   function openOrderModal(orderIdToOpen, isNewCheckout = false) {
-    if (modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open')) {
+    const myOrdersEl = document.getElementById('modal-my-orders-backdrop');
+    if (myOrdersEl && myOrdersEl.classList.contains('open')) {
       closeMyOrdersModalInternal();
       backNav.removeStepDirect('my-orders-modal');
     }
@@ -3912,8 +3930,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (activePrepOrderId && (activePrepOrderId === orderId || !orderId)) {
-      if (document.body.classList.contains('order-prep-active')) {
-        renderOrderPreparationScreen(activePrepOrderId);
+      const currentPrepOrder = orders.find(o => String(o.id) === String(activePrepOrderId));
+      const s = String(currentPrepOrder?.status || '').toLowerCase();
+      const prepStatuses = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup'];
+      if (currentPrepOrder && prepStatuses.includes(s)) {
+        if (window.innerWidth <= 768) {
+          if (!document.body.classList.contains('order-prep-active')) {
+            activateOrderPreparationScreen(activePrepOrderId, false);
+          } else {
+            renderOrderPreparationScreen(activePrepOrderId);
+          }
+        }
+      } else {
+        // Delivery guy has picked up (on_the_way) or completed/cancelled:
+        // Automatically revert the first section back to normal as how it was!
+        deactivateOrderPreparationScreen(false);
       }
     }
 
