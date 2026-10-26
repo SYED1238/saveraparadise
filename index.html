@@ -4493,6 +4493,13 @@
   <div class="order-modal-backdrop" id="order-modal-backdrop">
     <div class="order-modal-card">
       <button class="modal-close-btn" id="modal-close-btn">✕</button>
+      <!-- LIVE TRACKER BACKGROUND PREPARATION VIDEO (Active pre-dispatch: Accepted, Cooking, Ready to Dispatch) -->
+      <div class="order-tracker-video-bg" id="order-tracker-video-bg" style="display: none;" aria-hidden="true">
+        <video class="tracker-bg-video-el" id="tracker-bg-video-el" src="/api/r2-video" autoplay loop muted playsinline preload="auto">
+          <source src="/api/r2-video" type="video/mp4">
+        </video>
+        <div class="tracker-bg-video-scrim"></div>
+      </div>
       <!-- EMPTY STATE: Shown when user has NO active orders to track -->
       <div class="tracker-empty-state" id="tracker-empty-state" style="display: none;">
         <div class="tracker-empty-icon">🛵💨</div>

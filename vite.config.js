@@ -173,6 +173,108 @@ function r2DevMiddlewarePlugin() {
           return;
         }
 
+        // 0b. GET /api/r2-video
+        if (req.method === 'GET' && url === '/api/r2-video') {
+          const defaultKey = 'Untitled design (16).mp4';
+          const query = new URL(req.url, 'http://localhost').searchParams;
+          let videoKey = query.get('key') || defaultKey;
+          const cleanKey = videoKey.replace(/^\/+/, '');
+          if (cleanKey.includes('..') || (!cleanKey.endsWith('.mp4') && !cleanKey.endsWith('.webm'))) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: 'Invalid video key' }));
+            return;
+          }
+
+          const rangeHeader = req.headers['range'] || null;
+          const date = new Date();
+          const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
+          const dateStamp = amzDate.substring(0, 8);
+          const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
+          const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(cleanKey)}`;
+          const payloadHash = sha256Hex('');
+
+          let canonicalHeaders = `host:${R2_CONFIG.HOST}\n`;
+          let signedHeaders = 'host';
+
+          if (rangeHeader) {
+            canonicalHeaders += `range:${rangeHeader}\n`;
+            signedHeaders += ';range';
+          }
+
+          canonicalHeaders += `x-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
+          signedHeaders += ';x-amz-content-sha256;x-amz-date';
+
+          const canonicalRequest = `GET\n${canonicalUri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+          const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${sha256Hex(canonicalRequest)}`;
+
+          const signingKey = getSigningKey(R2_CONFIG.SECRET_ACCESS_KEY, dateStamp, R2_CONFIG.REGION, R2_CONFIG.SERVICE);
+          const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
+
+          const authorizationHeader = `AWS4-HMAC-SHA256 Credential=${R2_CONFIG.ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+          const upstreamHeaders = {
+            'host': R2_CONFIG.HOST,
+            'x-amz-date': amzDate,
+            'x-amz-content-sha256': payloadHash,
+            'Authorization': authorizationHeader
+          };
+          if (rangeHeader) {
+            upstreamHeaders['range'] = rangeHeader;
+          }
+
+          const getOptions = {
+            hostname: R2_CONFIG.HOST,
+            path: canonicalUri,
+            method: 'GET',
+            headers: upstreamHeaders
+          };
+
+          const r2Req = https.request(getOptions, (r2Res) => {
+            const status = r2Res.statusCode;
+            if (status === 200 || status === 206) {
+              if (!res.headersSent) {
+                res.setHeader('Content-Type', r2Res.headers['content-type'] || 'video/mp4');
+                res.setHeader('Accept-Ranges', 'bytes');
+                if (r2Res.headers['content-range']) {
+                  res.setHeader('Content-Range', r2Res.headers['content-range']);
+                }
+                if (r2Res.headers['content-length']) {
+                  res.setHeader('Content-Length', r2Res.headers['content-length']);
+                }
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+                res.statusCode = status;
+              }
+              r2Res.pipe(res);
+            } else {
+              r2Res.resume();
+              if (!res.headersSent) {
+                res.statusCode = status || 404;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Video not found' }));
+              }
+            }
+          });
+
+          r2Req.setTimeout(12000, () => {
+            r2Req.destroy(new Error('R2 timeout'));
+          });
+
+          r2Req.on('error', (err) => {
+            if (!res.headersSent) {
+              res.statusCode = 502;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          req.on('close', () => {
+            r2Req.destroy();
+          });
+
+          r2Req.end();
+          return;
+        }
+
         // 1. POST /api/r2-upload
         if (req.method === 'POST' && url === '/api/r2-upload') {
           const auth = verifyAdminToken(req);

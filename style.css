@@ -4079,6 +4079,134 @@ body.pwa-customer-installed .header-pwa-dock {
   transform: scale(1) translateY(0);
 }
 
+/* ============================================================== */
+/* LIVE TRACKER BACKGROUND VIDEO (PRE-DISPATCH STATUSES)          */
+/* ============================================================== */
+.order-tracker-video-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.order-modal-card.has-video-bg .order-tracker-video-bg {
+  opacity: 1;
+}
+
+.tracker-bg-video-el {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.tracker-bg-video-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.38) 0%,
+    rgba(255, 255, 255, 0.48) 40%,
+    rgba(255, 255, 255, 0.65) 100%
+  );
+  backdrop-filter: blur(0.5px);
+  -webkit-backdrop-filter: blur(0.5px);
+}
+
+.order-modal-card.has-video-bg .modal-title {
+  text-shadow: 0 1px 4px rgba(255, 255, 255, 0.95);
+}
+
+.order-modal-card.has-video-bg .modal-sub {
+  color: #1F2937;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgba(255, 255, 255, 0.95);
+}
+
+.order-modal-card.has-video-bg .order-selector-wrap {
+  background: rgba(255, 255, 255, 0.90);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 10px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.order-modal-card.has-video-bg .order-tracker-timeline {
+  background: rgba(255, 255, 255, 0.90);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 14px 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.order-modal-card > .modal-close-btn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 10;
+}
+
+.order-modal-card > .tracker-empty-state,
+.order-modal-card > .tracker-active-content {
+  position: relative;
+  z-index: 2;
+}
+
+.order-modal-card.has-video-bg {
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(255, 90, 38, 0.08);
+}
+
+.order-modal-card.has-video-bg .order-tab-btn {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(229, 231, 235, 0.9);
+}
+
+.order-modal-card.has-video-bg .order-tab-btn.active {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: var(--brand-primary);
+  box-shadow: 0 4px 14px rgba(255, 90, 38, 0.18);
+}
+
+.order-modal-card.has-video-bg .order-items-preview {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(243, 244, 246, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.order-modal-card.has-video-bg .tracker-eta-card {
+  background: rgba(255, 248, 240, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 90, 38, 0.16);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.order-modal-card.has-video-bg .tracker-contact-card {
+  background: rgba(255, 255, 255, 0.90);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(243, 244, 246, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
 .modal-close-btn {
   position: absolute;
   top: 18px;

@@ -144,6 +144,64 @@ document.addEventListener('DOMContentLoaded', () => {
         window.showSkeletonDemo(5000);
       }, 500);
     }
+    if (urlParams.has('test_track')) {
+      const trackState = urlParams.get('test_track') || 'ready_for_pickup';
+      const statusMap = {
+        'ready': 'ready_for_pickup',
+        'ready_for_pickup': 'ready_for_pickup',
+        'cooking': 'cooking',
+        'preparing': 'cooking',
+        'accepted': 'accepted',
+        'dispatched': 'on_the_way',
+        'on_the_way': 'on_the_way',
+        'delivered': 'delivered'
+      };
+      const finalStatus = statusMap[trackState] || trackState;
+      const stepIndexMap = {
+        'accepted': 0,
+        'cooking': 1,
+        'ready_for_pickup': 2,
+        'on_the_way': 3,
+        'delivered': 4
+      };
+      setTimeout(() => {
+        const testOrder = {
+          id: '#QB-5678',
+          status: finalStatus,
+          statusLabel: finalStatus === 'ready_for_pickup' ? 'Ready to Dispatch' : (finalStatus === 'cooking' ? 'Preparing' : (finalStatus === 'on_the_way' ? 'Dispatched' : 'Accepted')),
+          stepIndex: stepIndexMap[finalStatus] ?? 2,
+          itemsSummary: '2x Chicken Biryani (Full)',
+          total: '₹420',
+          eta: '18 - 24 Minutes',
+          createdAt: Date.now()
+        };
+        const testOrder2 = {
+          id: '#QB-5119',
+          status: 'ready_for_pickup',
+          statusLabel: 'Ready to Dispatch',
+          stepIndex: 2,
+          itemsSummary: '1x Crispy Chicken Wings (6 pcs)',
+          total: '₹220',
+          eta: '20 - 25 Minutes',
+          createdAt: Date.now() - 300000
+        };
+        const curOrders = dataService.getOrders();
+        [testOrder, testOrder2].forEach(ord => {
+          const idx = curOrders.findIndex(o => o.id === ord.id);
+          if (idx >= 0) curOrders[idx] = ord;
+          else curOrders.unshift(ord);
+        });
+        try {
+          const myIds = JSON.parse(localStorage.getItem('quickbite_my_order_ids') || '[]');
+          ['#QB-5678', '#QB-5119'].forEach(id => {
+            if (!myIds.includes(id)) myIds.unshift(id);
+          });
+          localStorage.setItem('quickbite_my_order_ids', JSON.stringify(myIds));
+        } catch {}
+        dataService.saveOrders(curOrders);
+        openOrderModal(testOrder.id, false);
+      }, 500);
+    }
   } catch (e) {}
 
   // ==========================================
@@ -2093,6 +2151,48 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const PRE_DISPATCH_ORDER_STATUSES = ['pending', 'accepted', 'cooking', 'ready_for_pickup'];
+
+  function isPreDispatchOrderStatus(status) {
+    return PRE_DISPATCH_ORDER_STATUSES.includes(status);
+  }
+
+  function syncTrackerVideoBackground(order) {
+    const modalCard = document.querySelector('.order-modal-card');
+    const videoWrap = document.getElementById('order-tracker-video-bg');
+    const videoEl = document.getElementById('tracker-bg-video-el');
+
+    const shouldShowVideo = Boolean(order && isPreDispatchOrderStatus(order.status));
+    console.log('[TrackerVideoSync]', order ? `${order.id} status=${order.status}` : 'null', 'shouldShowVideo:', shouldShowVideo);
+
+    if (shouldShowVideo) {
+      if (modalCard) modalCard.classList.add('has-video-bg');
+      if (videoWrap) videoWrap.style.display = 'block';
+      if (videoEl) {
+        videoEl.muted = true;
+        const playPromise = videoEl.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            // Autoplay policy or low power mode handled gracefully
+          });
+        }
+      }
+    } else {
+      if (modalCard) modalCard.classList.remove('has-video-bg');
+      if (videoWrap) videoWrap.style.display = 'none';
+      if (videoEl && !videoEl.paused) {
+        videoEl.pause();
+      }
+    }
+  }
+
+  function pauseTrackerVideo() {
+    const videoEl = document.getElementById('tracker-bg-video-el');
+    if (videoEl && !videoEl.paused) {
+      videoEl.pause();
+    }
+  }
+
   function renderOrderTracker(orderId) {
     orders = dataService.getOrders();
     const userPhone = getCurrentUserPhone();
@@ -2462,6 +2562,9 @@ document.addEventListener('DOMContentLoaded', () => {
         btnCustomerCancelOrder.style.display = 'none';
       }
     }
+
+    // Synchronize live preparation background video with current order status
+    syncTrackerVideoBackground(order);
   }
 
   function handleCustomerCancelOrder(orderId) {
@@ -2519,6 +2622,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isNewCheckout && !orderIdToOpen && activeOrders.length === 0) {
       if (trackerEmptyState) trackerEmptyState.style.display = 'block';
       if (trackerActiveContent) trackerActiveContent.style.display = 'none';
+      syncTrackerVideoBackground(null);
       orderModalBackdrop.classList.add('open');
       document.body.style.overflow = 'hidden';
       setActiveCapsuleBtn(navBtnTrack);
@@ -2567,6 +2671,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function closeOrderModalInternal() {
+    pauseTrackerVideo();
     orderModalBackdrop.classList.remove('open');
     document.body.style.overflow = '';
     syncCapsuleNavWithScroll();
