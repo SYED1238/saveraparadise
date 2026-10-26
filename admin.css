@@ -1878,8 +1878,9 @@
 }
 
 /* ==========================================================================
-   FLOATING iOS GLASS 2-BUTTON NAVIGATION BAR
-   Matches the signature capsule style of the customer page
+   FLOATING NAVIGATION BAR - SIGNATURE CAPSULE STYLE
+   Mobile: Floating bottom capsule bar
+   Desktop (min-width: 1024px): Floating left vertical dock
    ========================================================================== */
 .admin-floating-bar {
   position: fixed;
@@ -1944,17 +1945,186 @@
   transform: scale(1.15);
 }
 
+.capsule-icon-bubble {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
 .capsule-badge-pill {
   position: absolute;
-  top: 4px;
-  right: 18px;
-  background: var(--brand-primary);
+  top: -2px;
+  right: -5px;
+  background: #EF4444;
   color: #FFFFFF;
   font-size: 0.65rem;
   font-weight: 800;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 10px;
   line-height: 1.1;
+  border: 1.5px solid #FFFFFF;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+/* ==========================================================================
+   DESKTOP DOCKED LEFT NAVIGATION BAR (min-width: 1024px)
+   Matches the vertical floating capsule design on the left side
+   ========================================================================== */
+@media (min-width: 1024px) {
+  .admin-floating-bar {
+    position: fixed !important;
+    top: 50% !important;
+    left: 24px !important;
+    bottom: auto !important;
+    right: auto !important;
+    transform: translateY(-50%) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    max-width: none !important;
+    width: auto !important;
+    z-index: 1000 !important;
+    pointer-events: none !important;
+  }
+
+  .admin-floating-bar .floating-capsule,
+  .admin-floating-bar .admin-two-btn-capsule,
+  .admin-floating-bar .admin-five-btn-capsule {
+    pointer-events: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 80px !important;
+    height: auto !important;
+    min-height: 420px !important;
+    padding: 24px 10px !important;
+    background: #FFFFFF !important;
+    border-radius: 9999px !important;
+    border: 1px solid rgba(226, 232, 240, 0.95) !important;
+    box-shadow: 
+      0 20px 48px -8px rgba(15, 23, 42, 0.12),
+      0 4px 16px rgba(15, 23, 42, 0.05),
+      inset 0 1px 1px #FFFFFF !important;
+    gap: 18px !important;
+  }
+
+  .admin-floating-bar .admin-nav-btn {
+    flex: none !important;
+    width: 62px !important;
+    height: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 5px !important;
+    padding: 2px 0 !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 20px !important;
+    cursor: pointer !important;
+    outline: none !important;
+    transition: transform 0.15s ease, color 0.2s ease !important;
+  }
+
+  .admin-floating-bar .capsule-icon-bubble {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: #EDF2F7 !important;
+    color: #475569 !important;
+    position: relative !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .admin-floating-bar .admin-nav-btn.active .capsule-icon-bubble {
+    background: #FFF4EC !important;
+    color: #EA580C !important;
+  }
+
+  .admin-floating-bar .admin-nav-btn:hover .capsule-icon-bubble {
+    transform: scale(1.05);
+    background: #E2E8F0 !important;
+    color: #1E293B !important;
+  }
+
+  .admin-floating-bar .admin-nav-btn.active:hover .capsule-icon-bubble {
+    background: #FFEAD9 !important;
+    color: #C2410C !important;
+  }
+
+  .admin-floating-bar .capsule-svg {
+    width: 21px !important;
+    height: 21px !important;
+    fill: currentColor !important;
+    transition: transform 0.2s ease !important;
+  }
+
+  .admin-floating-bar .admin-nav-btn.active .capsule-svg {
+    transform: scale(1.05) !important;
+  }
+
+  .admin-floating-bar .capsule-label {
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+    color: #475569 !important;
+    letter-spacing: -0.01em !important;
+    line-height: 1.2 !important;
+    transition: color 0.2s ease, font-weight 0.2s ease !important;
+  }
+
+  .admin-floating-bar .admin-nav-btn.active .capsule-label {
+    color: #EA580C !important;
+    font-weight: 700 !important;
+  }
+
+  .admin-floating-bar .capsule-badge-pill {
+    position: absolute !important;
+    top: -2px !important;
+    right: -2px !important;
+    background: #EF4444 !important;
+    color: #FFFFFF !important;
+    font-size: 0.65rem !important;
+    font-weight: 800 !important;
+    min-width: 19px !important;
+    height: 19px !important;
+    line-height: 15px !important;
+    padding: 0 4px !important;
+    border-radius: 9999px !important;
+    border: 2px solid #FFFFFF !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4) !important;
+    z-index: 5 !important;
+  }
+
+  .admin-floating-bar .capsule-badge-pill.rush-badge-dot {
+    background: #F59E0B !important;
+    box-shadow: 0 2px 6px rgba(245, 158, 11, 0.4) !important;
+  }
+
+  /* Main container left offset on desktop */
+  .admin-main {
+    padding-left: 124px !important;
+    padding-right: 32px !important;
+    padding-bottom: 40px !important;
+    max-width: 1440px;
+  }
+
+  /* Admin header container adjustment so brand aligns well */
+  .admin-header-container {
+    padding-left: 28px;
+    padding-right: 28px;
+    max-width: 1440px;
+  }
 }
 
 .admin-store-preview-circle.is-hidden,
@@ -3813,18 +3983,20 @@ label.btn-file-upload i {
 /* ==========================================================================
    Store Hours & Kitchen Rush Control Styles
    ========================================================================== */
-.admin-two-btn-capsule.admin-three-btn-capsule {
-  width: 360px;
-}
+@media (max-width: 1023px) {
+  .admin-two-btn-capsule.admin-three-btn-capsule {
+    width: 360px;
+  }
 
-.admin-two-btn-capsule.admin-three-btn-capsule.admin-four-btn-capsule,
-.admin-four-btn-capsule {
-  width: 440px;
-}
+  .admin-two-btn-capsule.admin-three-btn-capsule.admin-four-btn-capsule,
+  .admin-four-btn-capsule {
+    width: 440px;
+  }
 
-.admin-two-btn-capsule.admin-three-btn-capsule.admin-four-btn-capsule.admin-five-btn-capsule,
-.admin-five-btn-capsule {
-  width: 530px;
+  .admin-two-btn-capsule.admin-three-btn-capsule.admin-four-btn-capsule.admin-five-btn-capsule,
+  .admin-five-btn-capsule {
+    width: 530px;
+  }
 }
 
 .nav-rush-badge-pill {
