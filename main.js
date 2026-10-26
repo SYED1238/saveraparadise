@@ -5875,8 +5875,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const addresses = getCurrentAddresses();
     if (!Array.isArray(addresses) || addresses.length === 0) {
-      heroDistanceBadge.style.display = 'none';
-      if (heroContent) heroContent.classList.remove('has-distance-badge');
+      const defaultDistDisplay = "890 m";
+      const defaultTimeStr = "10–15 mins";
+      heroDistanceText.innerHTML = `<span class="hero-distance-line-1">We are just <strong class="dist-highlight">${defaultDistDisplay}</strong> away from you</span><span class="hero-distance-line-2">Get your favorite meal in <strong class="eta-highlight">${defaultTimeStr}</strong>! <span class="hero-distance-cta">Order now</span></span>`;
+      heroDistanceBadge.style.display = 'inline-flex';
+      if (heroContent) heroContent.classList.add('has-distance-badge');
       return;
     }
 
@@ -5886,8 +5889,11 @@ document.addEventListener('DOMContentLoaded', () => {
       || addresses[0];
 
     if (!activeAddr) {
-      heroDistanceBadge.style.display = 'none';
-      if (heroContent) heroContent.classList.remove('has-distance-badge');
+      const defaultDistDisplay = "890 m";
+      const defaultTimeStr = "10–15 mins";
+      heroDistanceText.innerHTML = `<span class="hero-distance-line-1">We are just <strong class="dist-highlight">${defaultDistDisplay}</strong> away from you</span><span class="hero-distance-line-2">Get your favorite meal in <strong class="eta-highlight">${defaultTimeStr}</strong>! <span class="hero-distance-cta">Order now</span></span>`;
+      heroDistanceBadge.style.display = 'inline-flex';
+      if (heroContent) heroContent.classList.add('has-distance-badge');
       return;
     }
 
@@ -5909,7 +5915,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let syncMaxTime = syncMinTime + 5;
     let syncTimeStr = `${syncMinTime}–${syncMaxTime} mins`;
 
-    heroDistanceText.innerHTML = `<span class="hero-distance-line-1">We are just <strong class="dist-highlight">${syncDistDisplay}</strong> away</span><span class="hero-distance-line-2">Fresh meal in <strong class="eta-highlight">${syncTimeStr}</strong>!</span>`;
+    heroDistanceText.innerHTML = `<span class="hero-distance-line-1">We are just <strong class="dist-highlight">${syncDistDisplay}</strong> away from you</span><span class="hero-distance-line-2">Get your favorite meal in <strong class="eta-highlight">${syncTimeStr}</strong>! <span class="hero-distance-cta">Order now</span></span>`;
     heroDistanceBadge.style.display = 'inline-flex';
     if (heroContent) heroContent.classList.add('has-distance-badge');
 
@@ -5936,7 +5942,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const liveMaxTime = liveMinTime + 5;
             const liveTimeStr = `${liveMinTime}–${liveMaxTime} mins`;
 
-            heroDistanceText.innerHTML = `<span class="hero-distance-line-1">We are just <strong class="dist-highlight">${liveDistDisplay}</strong> away</span><span class="hero-distance-line-2">Fresh meal in <strong class="eta-highlight">${liveTimeStr}</strong>!</span>`;
+            heroDistanceText.innerHTML = `<span class="hero-distance-line-1">We are just <strong class="dist-highlight">${liveDistDisplay}</strong> away from you</span><span class="hero-distance-line-2">Get your favorite meal in <strong class="eta-highlight">${liveTimeStr}</strong>! <span class="hero-distance-cta">Order now</span></span>`;
           }
         }
       } catch (err) {
