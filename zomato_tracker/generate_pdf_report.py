@@ -4,12 +4,24 @@ from playwright.sync_api import sync_playwright
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-JSON_PATH = r'C:\Users\DELL\Desktop\Zomato_Tracker\zomato_customer_orders.json'
-DESKTOP_PDF = r'C:\Users\DELL\Desktop\Zomato_Orders_Report_2026-10-25.pdf'
-TRACKER_PDF = r'C:\Users\DELL\Desktop\Zomato_Tracker\Zomato_Orders_Report_2026-10-25.pdf'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+JSON_PATH = os.environ.get('ZOMATO_JSON_PATH') or os.path.join(BASE_DIR, 'zomato_customer_orders.json')
+if not os.path.exists(JSON_PATH):
+    desktop_fallback = os.path.expanduser(r'~\Desktop\Zomato_Tracker\zomato_customer_orders.json')
+    if os.path.exists(desktop_fallback):
+        JSON_PATH = desktop_fallback
 
-with open(JSON_PATH, 'r', encoding='utf-8') as f:
-    orders = json.load(f)
+today_str = datetime.now().strftime('%Y-%m-%d')
+PDF_FILENAME = f'Zomato_Orders_Report_{today_str}.pdf'
+TRACKER_PDF = os.path.join(BASE_DIR, PDF_FILENAME)
+desktop_dir = os.path.expanduser(r'~\Desktop')
+DESKTOP_PDF = os.path.join(desktop_dir, PDF_FILENAME) if os.path.exists(desktop_dir) else TRACKER_PDF
+
+if os.path.exists(JSON_PATH):
+    with open(JSON_PATH, 'r', encoding='utf-8') as f:
+        orders = json.load(f)
+else:
+    orders = []
 
 # Sort highest to lowest
 orders.sort(key=lambda x: x.get('price_num', 0.0), reverse=True)

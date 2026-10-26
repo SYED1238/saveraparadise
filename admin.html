@@ -30,23 +30,6 @@
   <script>
     (function() {
       try {
-        var searchParams = new URLSearchParams(window.location.search);
-        if (searchParams.has('clean') || searchParams.has('reset')) {
-          localStorage.clear();
-          sessionStorage.clear();
-          if ('caches' in window) {
-            caches.keys().then(function(names) {
-              names.forEach(function(name) { caches.delete(name); });
-            });
-          }
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(regs) {
-              regs.forEach(function(r) { r.unregister(); });
-            });
-          }
-          window.location.replace(window.location.pathname);
-          return;
-        }
         if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
           document.documentElement.classList.add('pwa-admin-installed');
         } else {
@@ -704,7 +687,7 @@
           <div class="form-row-2">
             <div class="form-group">
               <label for="input-offer-code"><i class="fa-solid fa-ticket"></i> Coupon Promo Code</label>
-              <input type="text" id="input-offer-code" value="CRISPY20" placeholder="e.g. CRISPY20, WEEKEND100" style="text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">
+              <input type="text" id="input-offer-code" value="SAVERA20" placeholder="e.g. SAVERA20, WEEKEND100" style="text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">
             </div>
 
             <div class="form-group">
@@ -782,14 +765,14 @@
               <div class="preview-text-block">
                 <span class="preview-tag">🔥 SPECIAL PROMOTION</span>
                 <h4 class="preview-title" id="preview-offer-title">Craving Savera Paradise? Get Special Discount Today!</h4>
-                <p class="preview-desc" id="preview-offer-desc">Use coupon code <strong class="preview-code-tag" id="preview-offer-code">CRISPY20</strong> for <strong id="preview-offer-discount-text">20% OFF</strong> on orders above 300!</p>
+                <p class="preview-desc" id="preview-offer-desc">Use coupon code <strong class="preview-code-tag" id="preview-offer-code">SAVERA20</strong> for <strong id="preview-offer-discount-text">20% OFF</strong> on orders above 300!</p>
                 <div class="preview-criteria-tags" id="preview-criteria-tags">
                   <span class="criteria-pill" id="preview-min-order-pill"><i class="fa-solid fa-cart-shopping"></i> Min Order: 300</span>
                   <span class="criteria-pill free-deliv-pill" id="preview-coupon-free-pill"><i class="fa-solid fa-truck-fast"></i> Free Priority Delivery Included</span>
                 </div>
               </div>
               <div class="preview-code-badge">
-                <span class="preview-badge-code" id="preview-badge-code-display">CRISPY20</span>
+                <span class="preview-badge-code" id="preview-badge-code-display">SAVERA20</span>
                 <span class="preview-badge-discount" id="preview-badge-discount-display">20% OFF</span>
               </div>
             </div>

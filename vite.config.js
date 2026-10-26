@@ -534,6 +534,60 @@ function r2DevMiddlewarePlugin() {
           return;
         }
 
+        // 4. GET /api/ola-maps (Local dev proxy for Ola Maps API)
+        if (req.method === 'GET' && url === '/api/ola-maps') {
+          const searchParams = new URL(req.url, 'http://localhost').searchParams;
+          const action = searchParams.get('action');
+          const lat = searchParams.get('lat');
+          const lng = searchParams.get('lng');
+          const input = searchParams.get('input');
+          const apiKey = process.env.OLA_MAPS_API_KEY || '';
+
+          if (!apiKey) {
+            res.statusCode = 503;
+            res.setHeader('Content-Type', 'application/json');
+            return res.end(JSON.stringify({ error: 'Ola Maps API key not configured' }));
+          }
+
+          try {
+            if (action === 'reverse') {
+              const parsedLat = parseFloat(lat);
+              const parsedLng = parseFloat(lng);
+              if (isNaN(parsedLat) || isNaN(parsedLng)) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ error: 'Invalid coordinates' }));
+              }
+              const fetchUrl = `https://api.olamaps.io/places/v1/reverse-geocode?latlng=${parsedLat},${parsedLng}&api_key=${encodeURIComponent(apiKey)}`;
+              const resp = await fetch(fetchUrl, { headers: { 'Accept': 'application/json' } });
+              const data = await resp.json();
+              res.statusCode = resp.status;
+              res.setHeader('Content-Type', 'application/json');
+              return res.end(JSON.stringify(data));
+            } else if (action === 'autocomplete') {
+              if (!input || !input.trim()) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ error: 'Search input is required' }));
+              }
+              const fetchUrl = `https://api.olamaps.io/places/v1/autocomplete?input=${encodeURIComponent(input.trim())}&api_key=${encodeURIComponent(apiKey)}`;
+              const resp = await fetch(fetchUrl, { headers: { 'Accept': 'application/json' } });
+              const data = await resp.json();
+              res.statusCode = resp.status;
+              res.setHeader('Content-Type', 'application/json');
+              return res.end(JSON.stringify(data));
+            } else {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              return res.end(JSON.stringify({ error: 'Unsupported action' }));
+            }
+          } catch (err) {
+            res.statusCode = 502;
+            res.setHeader('Content-Type', 'application/json');
+            return res.end(JSON.stringify({ error: 'Ola Maps dev proxy failed: ' + err.message }));
+          }
+        }
+
         next();
       });
     }

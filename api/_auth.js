@@ -114,7 +114,7 @@ export function verifyAdminPin(inputPin) {
 
   // Primary check: Direct match against configured ADMIN_PIN or default manager code (8899)
   const expectedPin = getAdminPin();
-  if (safeEqual(cleanPin, expectedPin) || safeEqual(cleanPin, '8899')) {
+  if (safeEqual(cleanPin, expectedPin)) {
     return true;
   }
 

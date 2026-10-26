@@ -221,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // STATE MANAGEMENT
   // ==========================================
   let cart = [];
-  let appliedPromo = null; // 'CRISPY20' gives 20% off
+  let appliedPromo = null; // 'SAVERA20' gives 20% off
   const FREE_SHIPPING_THRESHOLD = 25.00;
   let currentUser = null;
 
@@ -1031,7 +1031,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Calculations & Dynamic Offer Sync
     const settings = dataService.getSettings();
-    const activeCode = (settings.offerCode || 'CRISPY20').trim().toUpperCase();
+    const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
     const discountType = settings.offerDiscountType || 'percent'; // 'percent' | 'flat'
     const discountPct = Number(settings.offerDiscountPercent || 20);
     const discountAmt = Number(settings.offerDiscountAmount || 50);
@@ -1811,7 +1811,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getActivePromoCode() {
     const settings = dataService.getSettings();
-    return (settings.offerCode || 'CRISPY20').trim().toUpperCase();
+    return (settings.offerCode || 'SAVERA20').trim().toUpperCase();
   }
 
   function copyActivePromoCode() {
@@ -1912,7 +1912,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function applyPromoCode(code) {
     const settings = dataService.getSettings();
     const cleanCode = code.trim().toUpperCase();
-    const activeCode = (settings.offerCode || 'CRISPY20').trim().toUpperCase();
+    const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
 
     if (settings.offerActive === false) {
       promoStatusMsg.style.color = '#DC2626';
@@ -6922,7 +6922,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateStoreOfferUI() {
     const settings = dataService.getSettings();
     const isActive = settings.offerActive !== false;
-    const code = (settings.offerCode || 'CRISPY20').trim().toUpperCase();
+    const code = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
     const discountType = settings.offerDiscountType || 'percent';
     const discountPct = Number(settings.offerDiscountPercent) || 20;
     const discountAmt = Number(settings.offerDiscountAmount) || 50;

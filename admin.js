@@ -116,18 +116,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnClearDemo = document.getElementById('btn-clear-demo');
   if (btnClearDemo) {
     btnClearDemo.addEventListener('click', () => {
-      const orders = dataService.getOrders();
-      const demoOrders = orders.filter(o => o && (o.isDemo || String(o.id || '').startsWith('#QB-')));
+      const isDemoOrder = (o) => Boolean(o && (o.isDemo === true || o.is_demo === true || String(o.id || '').startsWith('#DEMO')));
+      const demoOrders = orders.filter(isDemoOrder);
       if (demoOrders.length === 0) {
         showToast('No demo orders found', 'info');
         return;
       }
-      const keptOrders = orders.filter(o => o && !o.isDemo && !String(o.id || '').startsWith('#QB-'));
-      if (keptOrders.length === 0) {
-        dataService.clearAllOrders();
-      } else {
-        dataService.saveOrders(keptOrders, { action: 'demo_orders_cleared' });
-      }
+      const keptOrders = orders.filter(o => !isDemoOrder(o));
+      dataService.saveOrders(keptOrders, { action: 'demo_orders_cleared' });
       renderOrders();
       calculateOrderKPIs(keptOrders);
       showToast(`Cleared ${demoOrders.length} demo order(s)`, 'success');
@@ -1327,7 +1323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const name = dishNameInput.value.trim();
     const category = dishCategorySelect.value;
-    const price = parseFloat(dishPriceInput.value) || 9.99;
+    const price = parseFloat(dishPriceInput.value) || 199;
     const badge = dishBadgeInput.value;
     const time = dishTimeInput.value.trim();
     const calories = dishCaloriesInput.value.trim();
@@ -1670,8 +1666,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const riderTagHtml = order.assignedRiderName ? `
         <div class="order-rider-status-bar">
-          <span class="rider-assigned-chip" title="Claimed by ${escapeHtml(order.assignedRiderName)} (PIN: ${escapeHtml(order.assignedRiderPin)})">
-            <i class="fa-solid fa-motorcycle"></i> Assigned Rider: <strong>${escapeHtml(order.assignedRiderName)}</strong> (PIN: ${escapeHtml(order.assignedRiderPin)})
+          <span class="rider-assigned-chip" title="Claimed by ${escapeHtml(order.assignedRiderName)}">
+            <i class="fa-solid fa-motorcycle"></i> Assigned Rider: <strong>${escapeHtml(order.assignedRiderName)}</strong>
           </span>
         </div>
       ` : `
@@ -1803,7 +1799,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (orderModalTitle) orderModalTitle.textContent = `Order Receipt ${order.id} • Bag #${bagCode}`;
 
     if (orderModalTimeSub) {
-      const riderStr = order.assignedRiderName ? ` • 🏍️ Rider: ${order.assignedRiderName} (PIN: ${order.assignedRiderPin})` : ' • 📦 Waiting for Rider Pickup';
+      const riderStr = order.assignedRiderName ? ` • 🏍️ Rider: ${order.assignedRiderName}` : ' • 📦 Waiting for Rider Pickup';
       orderModalTimeSub.textContent = `Placed ${formatTimeAgo(order.createdAt)}${riderStr}`;
     }
 
@@ -3313,7 +3309,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateOfferPreview() {
     const isActive = inputOfferActive ? inputOfferActive.checked : true;
-    const code = (inputOfferCode?.value || 'CRISPY20').trim().toUpperCase() || 'CRISPY20';
+    const code = (inputOfferCode?.value || 'SAVERA20').trim().toUpperCase() || 'SAVERA20';
     const type = inputOfferType?.value === 'flat' ? 'flat' : 'percent';
     const rawVal = Number(inputOfferDiscount?.value || (type === 'flat' ? 100 : 20));
     const discountVal = type === 'flat' ? Math.max(1, rawVal) : Math.max(1, Math.min(100, rawVal));
@@ -3587,7 +3583,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Populate promotional offer
     if (inputOfferActive) inputOfferActive.checked = settings.offerActive !== false;
-    if (inputOfferCode) inputOfferCode.value = (settings.offerCode || 'CRISPY20').toUpperCase();
+    if (inputOfferCode) inputOfferCode.value = (settings.offerCode || 'SAVERA20').toUpperCase();
     const offerType = settings.offerDiscountType === 'flat' ? 'flat' : 'percent';
     const currentDiscount = offerType === 'flat' ? (settings.offerDiscountAmount || 100) : (settings.offerDiscountPercent || 20);
     if (inputOfferDiscount) inputOfferDiscount.value = currentDiscount;
@@ -3910,7 +3906,7 @@ document.addEventListener('DOMContentLoaded', () => {
     formStoreOffer.addEventListener('submit', async (e) => {
       e.preventDefault();
       const active = inputOfferActive ? inputOfferActive.checked : true;
-      const code = (inputOfferCode?.value || 'CRISPY20').trim().toUpperCase() || 'CRISPY20';
+      const code = (inputOfferCode?.value || 'SAVERA20').trim().toUpperCase() || 'SAVERA20';
       const type = inputOfferType?.value === 'flat' ? 'flat' : 'percent';
       const rawDiscount = Number(inputOfferDiscount?.value || (type === 'flat' ? 100 : 20));
       const discount = type === 'flat' ? Math.max(1, rawDiscount) : Math.max(1, Math.min(100, rawDiscount));

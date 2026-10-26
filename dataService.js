@@ -2555,18 +2555,7 @@ class QuickBiteDataService {
           this._lastOrdersSyncTime = Date.now();
           if (data.length === 0) {
             this.isSupabaseConnected = true;
-            const currentLocal = this.getOrders();
-            if (currentLocal.length > 0) {
-              console.log('[Supabase] syncOrders: remote database has 0 orders, clearing local cache for fresh restaurant handover');
-              localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
-              try {
-                localStorage.removeItem('quickbite_my_order_ids');
-                localStorage.removeItem('quickbite_order_status_sync');
-                localStorage.removeItem('quickbite_acknowledged_alarms');
-                localStorage.removeItem('quickbite_last_notified_order');
-              } catch {}
-              this.notifyChange('orders', { action: 'orders_cleared' });
-            }
+            // Offline-first safety: Preserve local active orders cache on empty remote sync
             return;
           }
 
@@ -2616,7 +2605,7 @@ class QuickBiteDataService {
               eta: effectiveEta,
               itemsSummary: remote.items_summary || local?.itemsSummary || '',
               items: remote.items || local?.items || [],
-              total: remote.total || local?.total || '$0.00',
+              total: remote.total || local?.total || '₹0',
               paymentMethod: remote.payment_method || local?.paymentMethod || 'Cash on Delivery (COD)',
               paymentStatus: remote.payment_status || local?.paymentStatus || 'Cash on Delivery',
               lat: remote.lat ? Number(remote.lat) : (local?.lat || local?.addressDetails?.lat || null),
@@ -3094,7 +3083,7 @@ class QuickBiteDataService {
               eta: remote.eta || '25 - 35 Minutes',
               itemsSummary: remote.items_summary || '',
               items: remote.items || [],
-              total: remote.total || '$0.00',
+              total: remote.total || '₹0',
               paymentMethod: remote.payment_method || 'Cash on Delivery (COD)',
               paymentStatus: remote.payment_status || 'Cash on Delivery',
               pickupCode: remote.pickup_code || null,
@@ -3812,7 +3801,7 @@ class QuickBiteDataService {
       name: dishData.name.trim(),
       category: dishData.category,
       categoryName: dishData.categoryName || '',
-      price: parseFloat(dishData.price) || 9.99,
+      price: parseFloat(dishData.price) || 199,
       rating: '',
       image: dishData.image || '/api/r2-image?key=dishes/crispy-chicken.jpg',
       badge: dishData.badge || '✨ Chef Specialty',
@@ -4143,7 +4132,7 @@ class QuickBiteDataService {
     let discount = 0;
     if (orderData.appliedPromo || orderData.promoCode) {
       const code = String(orderData.appliedPromo || orderData.promoCode).trim().toUpperCase();
-      if (settings.offerActive && code === String(settings.offerCode || 'CRISPY20').trim().toUpperCase()) {
+      if (settings.offerActive && code === String(settings.offerCode || 'SAVERA20').trim().toUpperCase()) {
         if (computedSubtotal >= (Number(settings.offerMinOrder) || 0)) {
           if (settings.offerDiscountType === 'percent') {
             discount = Math.round((computedSubtotal * (Number(settings.offerDiscountPercent) || 20)) / 100);
@@ -4208,6 +4197,15 @@ class QuickBiteDataService {
       const { data, error } = await supabase.from('orders').insert([cleanPayload]).select('tracking_token');
       if (error) {
         console.warn('[Supabase] addOrder insert error:', error.message);
+        // Roll back optimistic local mutation on database insertion failure
+        const rollbackList = this.getOrders().filter(o => o.id !== orderData.id);
+        this.saveOrders(rollbackList, { action: 'order_rollback', orderId: orderData.id });
+        try {
+          const latest = JSON.parse(localStorage.getItem('quickbite_latest_incoming_order') || '{}');
+          if (latest && (latest.id === orderData.id || latest.order?.id === orderData.id)) {
+            localStorage.removeItem('quickbite_latest_incoming_order');
+          }
+        } catch {}
         return { success: false, error };
       } else {
         if (data && data[0]?.tracking_token) {
@@ -4222,6 +4220,15 @@ class QuickBiteDataService {
       }
     } catch (err) {
       console.warn('[Supabase] addOrder exception:', err);
+      // Roll back optimistic local mutation on database insertion exception
+      const rollbackList = this.getOrders().filter(o => o.id !== orderData.id);
+      this.saveOrders(rollbackList, { action: 'order_rollback', orderId: orderData.id });
+      try {
+        const latest = JSON.parse(localStorage.getItem('quickbite_latest_incoming_order') || '{}');
+        if (latest && (latest.id === orderData.id || latest.order?.id === orderData.id)) {
+          localStorage.removeItem('quickbite_latest_incoming_order');
+        }
+      } catch {}
       return { success: false, error: err };
     }
 
@@ -4432,9 +4439,9 @@ class QuickBiteDataService {
       };
 
       const doUpdate = async (targetId) => {
-        const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId).in('status', ['accepted', 'cooking', 'ready_for_pickup']);
+        const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
         if (error) {
-          await supabase.from('orders').update(basePayload).eq('id', targetId).in('status', ['accepted', 'cooking', 'ready_for_pickup']);
+          await supabase.from('orders').update(basePayload).eq('id', targetId).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
         }
       };
 
@@ -4818,7 +4825,7 @@ class QuickBiteDataService {
     const updated = {
       ...current,
       offerActive: Boolean(offerData.offerActive !== false),
-      offerCode: (offerData.offerCode || 'CRISPY20').trim().toUpperCase(),
+      offerCode: (offerData.offerCode || 'SAVERA20').trim().toUpperCase(),
       offerDiscountType: discountType,
       offerDiscountPercent: Math.max(1, Math.min(100, Number(offerData.offerDiscountPercent || 20))),
       offerDiscountAmount: Math.max(1, Number(offerData.offerDiscountAmount || 100)),
@@ -5554,7 +5561,7 @@ class QuickBiteDataService {
         step_index: 3,
         status_label: 'Dispatched for Delivery',
         eta: '10 - 15 Minutes',
-        pickup_code: order.pickupCode || bagCode,
+        pickup_code: order.pickupCode || String(code).trim(),
         assigned_rider_pin: rider.pin,
         assigned_rider_name: rider.name,
         assigned_rider_phone: rider.phone,

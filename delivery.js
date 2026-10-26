@@ -69,7 +69,11 @@ document.addEventListener('DOMContentLoaded', () => {
     defaultCode: '',
     onVerify: async (pin) => {
       const cleanPin = String(pin).trim();
-      const rider = dataService.getRiderByPin(cleanPin);
+      let rider = dataService.getRiderByPin(cleanPin);
+      if (!rider) {
+        await dataService.syncRidersFromSupabase();
+        rider = dataService.getRiderByPin(cleanPin);
+      }
       return !!(rider && rider.name);
     },
     onSuccess: (pin) => {
@@ -259,7 +263,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Broadcast live rider location for customer map tracking sync
     try {
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
-      const activeOrders = dataService.getOrders().filter(o => o.status === 'on_the_way');
+      const activeOrders = dataService.getOrders().filter(o => 
+        o.status === 'on_the_way' && (o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin)
+      );
+      if (activeOrders.length === 0) return;
       const orderIds = activeOrders.map(o => o.id);
       const activeOrderId = activeOrders[0] ? activeOrders[0].id : null;
       dataService.broadcastRiderLocation({

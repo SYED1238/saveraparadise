@@ -191,7 +191,7 @@ function verifyOwnerPin(pin) {
     const errorEl = document.getElementById('owner-lock-error');
     if (errorEl) {
       errorEl.style.display = 'block';
-      errorEl.textContent = '❌ Incorrect Owner PIN. Try 9900 or 8899.';
+      errorEl.textContent = '❌ Incorrect Owner PIN. Please try again.';
     }
     const pinDisplay = document.getElementById('owner-pin-display');
     if (pinDisplay) {

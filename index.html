@@ -34,12 +34,6 @@
       try {
         // Forward back to localhost if OAuth callback returned to production with return_to
         var searchParams = new URLSearchParams(window.location.search);
-        if (searchParams.has('clean') || searchParams.has('reset')) {
-          localStorage.clear();
-          sessionStorage.clear();
-          window.location.replace(window.location.pathname);
-          return;
-        }
         var returnTo = searchParams.get('return_to');
         if (returnTo) {
           try {

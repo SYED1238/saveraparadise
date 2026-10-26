@@ -155,26 +155,6 @@ export async function ensureAdminToken() {
     }
   }
 
-  // Auto-acquire fresh signed admin session token via serverless /api/admin-auth
-  try {
-    const res = await fetch('/api/admin-auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: '8899' })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.token) {
-        if (typeof sessionStorage !== 'undefined') {
-          sessionStorage.setItem('quickbite_admin_token', data.token);
-        }
-        return data.token;
-      }
-    }
-  } catch (e) {
-    console.warn('[Security] Auto-refresh admin token warning:', e);
-  }
-
   return null;
 }
 

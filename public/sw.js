@@ -1,4 +1,4 @@
-﻿/**
+/**
  * QuickBite / Crispy Chicken - Advanced Background Service Worker
  * Handles:
  * 1. PWA Offline Caching & App Shell
@@ -7,10 +7,13 @@
  * 4. Background Supabase Order Polling & Sync Channel
  */
 
-const CACHE_NAME = 'crispy-pwa-v20';
+const CACHE_NAME = 'crispy-pwa-v21';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
+  '/admin.html',
+  '/delivery.html',
+  '/owner.html',
   '/manifest.json',
   '/icon-192.svg',
   '/icon-512.svg'
@@ -75,7 +78,13 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => caches.match(event.request).then(cached => cached || caches.match('/index.html')))
+        .catch(() => caches.match(event.request).then(cached => {
+          if (cached) return cached;
+          if (url.pathname.startsWith('/admin')) return caches.match('/admin.html');
+          if (url.pathname.startsWith('/delivery')) return caches.match('/delivery.html');
+          if (url.pathname.startsWith('/owner')) return caches.match('/owner.html');
+          return caches.match('/index.html');
+        }))
     );
     return;
   }

@@ -9,7 +9,7 @@
  * 3. Rate-limiting: Blocks abuse or automated crawlers (max 40 req/min per IP).
  */
 
-const OLA_API_KEY = process.env.OLA_MAPS_API_KEY || 'Ng3VTZtBjDMzAUJaEtWX7vAkZc7WbYdVWo0kwfe1';
+const OLA_API_KEY = process.env.OLA_MAPS_API_KEY || '';
 const STORE_LAT = process.env.STORE_LAT || '12.720611';
 const STORE_LNG = process.env.STORE_LNG || '77.286833';
 
