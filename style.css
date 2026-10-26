@@ -10635,6 +10635,7 @@ body.food-modal-open .mobile-floating-bar {
 }
 
 .order-modal-card.is-dispatched .tracker-live-map-card {
+  position: relative;
   margin: 0 -16px 18px -16px;
   width: calc(100% + 32px);
   box-shadow: none;
@@ -10651,50 +10652,99 @@ body.food-modal-open .mobile-floating-bar {
   }
 }
 
-.order-modal-card.is-dispatched .tracker-map-header {
-  padding: 10px 48px 10px 14px;
-  background: #F9FAFB;
-  border-bottom: 1px solid #F3F4F6;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  border-radius: 0;
+/* Remove header bar from above map completely */
+.order-modal-card.is-dispatched .tracker-map-header,
+.tracker-map-header {
+  display: none !important;
 }
 
+/* Floating Close Button directly on top-right of map */
 .order-modal-card.is-dispatched .modal-close-btn {
-  top: 10px;
-  right: 12px;
-  width: 28px;
-  height: 28px;
-  background: #FFFFFF;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 50%;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
   color: var(--text-heading, #1F2937);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 700;
-  z-index: 40;
+  z-index: 600;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .order-modal-card.is-dispatched .modal-close-btn:hover {
-  background: #F3F4F6;
-  border-color: #D1D5DB;
+  background: #FFFFFF;
   color: var(--brand-primary, #FF5A26);
+  transform: scale(1.06);
 }
 
 @media (max-width: 480px) {
-  .order-modal-card.is-dispatched .tracker-map-header {
-    padding: 8px 42px 8px 10px;
-  }
   .order-modal-card.is-dispatched .modal-close-btn {
-    top: 8px;
-    right: 10px;
-    width: 26px;
-    height: 26px;
-    font-size: 0.75rem;
+    top: 12px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    font-size: 0.78rem;
+  }
+}
+
+/* Floating Zoom & Recenter Controls inside map corner */
+.tracker-map-floating-controls {
+  position: absolute;
+  bottom: 58px;
+  right: 14px;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tracker-map-floating-controls .tracker-map-btn,
+.tracker-map-floating-controls .tracker-map-recenter-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  color: var(--text-heading, #1F2937);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  transition: all 0.2s ease;
+}
+
+.tracker-map-floating-controls .tracker-map-btn:hover,
+.tracker-map-floating-controls .tracker-map-recenter-btn:hover {
+  background: #FFFFFF;
+  color: var(--brand-primary, #FF5A26);
+  transform: scale(1.05);
+}
+
+@media (max-width: 480px) {
+  .tracker-map-floating-controls {
+    bottom: 54px;
+    right: 12px;
+  }
+  .tracker-map-floating-controls .tracker-map-btn,
+  .tracker-map-floating-controls .tracker-map-recenter-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 0.78rem;
   }
 }
 

@@ -4489,24 +4489,18 @@
       <div class="tracker-active-content" id="tracker-active-content">
         <!-- LIVE RIDER TRACKING MAP (Active after dispatch: on_the_way - Top Placement) -->
         <div class="tracker-live-map-card" id="tracker-live-map-card" style="display: none;">
-          <div class="tracker-map-header">
-            <div class="tracker-map-status-pill" id="tracker-map-status-pill">
-              <span class="live-pulse-dot"></span>
-              <span id="tracker-map-status-text">Rider on the way • Live GPS</span>
-            </div>
-            <div class="tracker-map-header-actions">
-              <button type="button" class="tracker-map-btn" id="tracker-map-zoom-in-btn" title="Zoom In (+)">
-                <i class="fa-solid fa-plus"></i>
-              </button>
-              <button type="button" class="tracker-map-btn" id="tracker-map-zoom-out-btn" title="Zoom Out (-)">
-                <i class="fa-solid fa-minus"></i>
-              </button>
-              <button type="button" class="tracker-map-recenter-btn" id="tracker-map-recenter-btn" title="Center Map">
-                <i class="fa-solid fa-location-crosshairs"></i> <span class="recenter-btn-text">Recenter</span>
-              </button>
-            </div>
-          </div>
           <div class="tracker-map-viewport" id="tracker-live-map-view"></div>
+          <div class="tracker-map-floating-controls" id="tracker-map-floating-controls">
+            <button type="button" class="tracker-map-btn" id="tracker-map-zoom-in-btn" title="Zoom In (+)" aria-label="Zoom In">
+              <i class="fa-solid fa-plus"></i>
+            </button>
+            <button type="button" class="tracker-map-btn" id="tracker-map-zoom-out-btn" title="Zoom Out (-)" aria-label="Zoom Out">
+              <i class="fa-solid fa-minus"></i>
+            </button>
+            <button type="button" class="tracker-map-recenter-btn" id="tracker-map-recenter-btn" title="Center Map" aria-label="Center Map">
+              <i class="fa-solid fa-location-crosshairs"></i>
+            </button>
+          </div>
           <div class="tracker-map-footer">
             <div class="tracker-map-legend">
               <span class="legend-item"><span class="legend-badge rider">🛵</span> Rider</span>
