@@ -4191,33 +4191,86 @@ body.pwa-customer-installed .header-pwa-dock {
 }
 
 .order-modal-card.has-video-bg .order-tracker-timeline {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  padding: 16px 12px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 8px 0 16px 0;
+}
+
+.order-modal-card.has-video-bg .order-tracker-timeline::before {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.order-modal-card.has-video-bg .track-circle {
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.5);
+}
+
+.order-modal-card.has-video-bg .track-label {
+  color: #FFFFFF;
+  font-weight: 700;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 2px 8px rgba(0, 0, 0, 0.85);
+}
+
+.order-modal-card.has-video-bg .track-step.current .track-label {
+  color: #FFD2A6;
+  font-weight: 800;
 }
 
 .order-modal-card.has-video-bg .order-tab-btn {
-  background: #F9FAFB;
-  border: 1.5px solid #E5E7EB;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
 }
 
 .order-modal-card.has-video-bg .order-tab-btn.active {
   background: #FFFFFF;
   border-color: var(--brand-primary);
-  box-shadow: 0 4px 14px rgba(255, 90, 38, 0.2);
+  box-shadow: 0 4px 14px rgba(255, 90, 38, 0.3);
 }
 
 .order-modal-card.has-video-bg .order-items-preview {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  border-radius: 18px;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 8px 4px;
+}
+
+.order-modal-card.has-video-bg .items-preview-icon {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.order-modal-card.has-video-bg .items-preview-title {
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 700;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.order-modal-card.has-video-bg .items-preview-text {
+  color: #FFFFFF;
+  font-weight: 700;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.9);
+}
+
+.order-modal-card.has-video-bg .items-preview-price {
+  color: #FFB070;
+  font-weight: 800;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.95);
+}
+
+.order-modal-card.has-video-bg .order-notif-optin-banner {
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 90, 38, 0.4);
+}
+
+.order-modal-card.has-video-bg .notif-banner-info {
+  color: #FFFFFF;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
 .order-modal-card.has-video-bg .tracker-eta-card {
