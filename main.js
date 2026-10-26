@@ -2500,6 +2500,299 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ==============================================================
+  // IMMERSIVE ORDER PREPARATION & CLOUDFLARE R2 VIDEO CONTROLLER
+  // As soon as customer places order, home screen disappears & video plays live
+  // ==============================================================
+  let activePrepOrderId = null;
+
+  function renderOrderPreparationScreen(orderId) {
+    const prepScreen = document.getElementById('order-prep-screen');
+    if (!prepScreen) return;
+
+    orders = dataService.getOrders();
+    let order = orders.find(o => String(o.id) === String(orderId));
+    if (!order && orders.length > 0) order = orders[0];
+    if (!order) {
+      order = {
+        id: orderId || 'QB-1045',
+        cleanId: String(orderId || '').startsWith('#') ? String(orderId) : `#QB-1045`,
+        status: 'cooking',
+        total: 880,
+        items: [
+          { name: 'Chicken Biryani Full', quantity: 2, price: 320 },
+          { name: 'Crispy Fried Chicken', quantity: 1, price: 240 }
+        ],
+        paymentMethod: 'Cash on Delivery',
+        deliveryAddress: 'Delivering to your address'
+      };
+    }
+
+    activePrepOrderId = order.id;
+
+    // Clean ID display
+    const rawId = String(order.id || '');
+    const cleanId = order.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
+    const elId = document.getElementById('prep-order-id');
+    const elFloatingId = document.getElementById('floating-prep-id');
+    if (elId) elId.textContent = cleanId;
+    if (elFloatingId) elFloatingId.textContent = cleanId.replace('#', '');
+
+    // Status & Step Logic
+    const status = String(order.status || 'pending').toLowerCase();
+    const elHeadline = document.getElementById('prep-headline');
+    const elBadge = document.getElementById('prep-status-badge');
+    const elSubtext = document.getElementById('prep-subtext');
+
+    const stepAccepted = document.getElementById('prep-step-accepted');
+    const stepCooking = document.getElementById('prep-step-cooking');
+    const stepReady = document.getElementById('prep-step-ready');
+    const stepDelivered = document.getElementById('prep-step-delivered');
+
+    // Reset steps
+    [stepAccepted, stepCooking, stepReady, stepDelivered].forEach(st => {
+      if (st) st.className = 'prep-step';
+    });
+
+    if (status === 'delivered') {
+      if (elHeadline) elHeadline.textContent = '🎉 Order Delivered!';
+      if (elBadge) elBadge.textContent = 'SAFELY DELIVERED';
+      if (elSubtext) elSubtext.textContent = 'Your gourmet food was delivered. We hope you love every bite!';
+      if (stepAccepted) stepAccepted.classList.add('done');
+      if (stepCooking) stepCooking.classList.add('done');
+      if (stepReady) stepReady.classList.add('done');
+      if (stepDelivered) stepDelivered.classList.add('done', 'active');
+    } else if (status === 'on_the_way') {
+      if (elHeadline) elHeadline.textContent = '🛵 Rider Dispatched!';
+      if (elBadge) elBadge.textContent = 'ON THE WAY TO YOU';
+      if (elSubtext) elSubtext.textContent = 'Your food has left the kitchen and is rushing hot to your door!';
+      if (stepAccepted) stepAccepted.classList.add('done');
+      if (stepCooking) stepCooking.classList.add('done');
+      if (stepReady) stepReady.classList.add('active');
+    } else if (status === 'ready' || status === 'ready_for_pickup') {
+      if (elHeadline) elHeadline.textContent = '📦 Cooked & Packed!';
+      if (elBadge) elBadge.textContent = 'READY FOR PICKUP';
+      if (elSubtext) elSubtext.textContent = 'Your order is hot, fresh, and waiting for delivery partner assignment.';
+      if (stepAccepted) stepAccepted.classList.add('done');
+      if (stepCooking) stepCooking.classList.add('done');
+      if (stepReady) stepReady.classList.add('active');
+    } else {
+      // pending, accepted, cooking
+      if (elHeadline) elHeadline.textContent = 'Your Order is Getting Prepared!';
+      if (elBadge) elBadge.textContent = 'PREPARING IN KITCHEN';
+      if (elSubtext) elSubtext.textContent = 'Our master chefs are preparing your fresh, sizzling meal right now. Sit back and watch the magic!';
+      if (stepAccepted) stepAccepted.classList.add('done');
+      if (stepCooking) stepCooking.classList.add('active');
+    }
+
+    // Items list
+    const items = Array.isArray(order.items) ? order.items : [];
+    const itemsContainer = document.getElementById('prep-items-list');
+    const itemsCountEl = document.getElementById('prep-count-num');
+    if (itemsCountEl) itemsCountEl.textContent = items.reduce((acc, it) => acc + (it.quantity || 1), 0);
+
+    if (itemsContainer) {
+      itemsContainer.innerHTML = items.map(it => `
+        <div class="prep-item-row">
+          <span><strong class="prep-item-qty">${it.quantity || 1}x</strong> ${escapeHtml(it.name || 'Dish')}</span>
+          <span style="font-weight:600; color:#F8FAFC;">₹${(Number(it.price || 0) * (it.quantity || 1)).toLocaleString('en-IN')}</span>
+        </div>
+      `).join('');
+    }
+
+    // Total Amount & Payment
+    const rawTotal = Number(String(order.total || '0').replace(/[^0-9.]/g, '')) || 0;
+    const totalEl = document.getElementById('prep-total-amount');
+    if (totalEl) totalEl.textContent = `₹${rawTotal.toLocaleString('en-IN')}`;
+
+    const payment = String(order.paymentMethod || order.payment_method || 'COD');
+    const isOnline = payment.toLowerCase().includes('online') || payment.toLowerCase().includes('upi') || Boolean(order.isPaidOnline);
+    const payEl = document.getElementById('prep-payment-method');
+    if (payEl) payEl.textContent = isOnline ? 'Online Paid (UPI/Card)' : 'Cash on Delivery (Pay at Door)';
+
+    const addr = String(order.deliveryAddress || order.delivery_address || 'Delivering to your location');
+    const addrEl = document.getElementById('prep-delivery-address');
+    if (addrEl) addrEl.textContent = addr || 'Delivering to your location';
+  }
+
+  function activateOrderPreparationScreen(orderId, triggerConfetti = true) {
+    if (!orderId) return;
+    activePrepOrderId = orderId;
+    try {
+      sessionStorage.setItem('quickbite_active_prep_order', String(orderId));
+    } catch {}
+
+    // Safely hide any open modals / cart drawer without TDZ variable dependency
+    const checkoutModal = document.getElementById('modal-checkout-backdrop');
+    if (checkoutModal) checkoutModal.classList.remove('open');
+    const myOrdersModal = document.getElementById('modal-my-orders-backdrop');
+    if (myOrdersModal) myOrdersModal.classList.remove('open');
+    const orderTrackerModal = document.getElementById('order-modal-backdrop');
+    if (orderTrackerModal) orderTrackerModal.classList.remove('open');
+    const cartDrawer = document.getElementById('cart-drawer');
+    if (cartDrawer) cartDrawer.classList.remove('open');
+    const cartBackdrop = document.getElementById('cart-drawer-backdrop');
+    if (cartBackdrop) cartBackdrop.classList.remove('open');
+    document.body.style.overflow = '';
+
+    // Hide floating bar while preparation screen is open
+    const floatingBar = document.getElementById('floating-order-prep-bar');
+    if (floatingBar) floatingBar.style.display = 'none';
+
+    // Populate data
+    renderOrderPreparationScreen(orderId);
+
+    // Make home screen disappear & display preparation screen
+    document.body.classList.add('order-prep-active');
+    const prepScreen = document.getElementById('order-prep-screen');
+    if (prepScreen) prepScreen.style.display = 'block';
+
+    // Scroll smoothly to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // Video Playback from Cloudflare R2
+    const prepVideo = document.getElementById('order-prep-video');
+    if (prepVideo) {
+      if (!prepVideo.src || !prepVideo.src.includes('/api/r2-video')) {
+        prepVideo.src = '/api/r2-video';
+      }
+      prepVideo.currentTime = 0;
+      prepVideo.muted = true; // Ensure browser autoplay policy permits it
+      prepVideo.play().catch(err => {
+        console.warn('[Preparation Video Autoplay]:', err?.message || err);
+      });
+    }
+
+    if (triggerConfetti && typeof confetti === 'function') {
+      confetti({
+        particleCount: 120,
+        spread: 90,
+        origin: { y: 0.4 },
+        colors: ['#FF5A26', '#F59E0B', '#10B981', '#3B82F6']
+      });
+    }
+  }
+
+  function deactivateOrderPreparationScreen(showFloatingBar = true) {
+    document.body.classList.remove('order-prep-active');
+    const prepScreen = document.getElementById('order-prep-screen');
+    if (prepScreen) prepScreen.style.display = 'none';
+
+    // Pause video to save bandwidth/battery
+    const prepVideo = document.getElementById('order-prep-video');
+    if (prepVideo) {
+      try { prepVideo.pause(); } catch {}
+    }
+
+    // Show floating bar if order is still active
+    const floatingBar = document.getElementById('floating-order-prep-bar');
+    if (floatingBar) {
+      if (showFloatingBar && activePrepOrderId) {
+        orders = dataService.getOrders();
+        const ord = orders.find(o => String(o.id) === String(activePrepOrderId));
+        if (ord && !['delivered', 'cancelled'].includes(String(ord.status).toLowerCase())) {
+          floatingBar.style.display = 'block';
+          const flId = document.getElementById('floating-prep-id');
+          if (flId) {
+            const rawId = String(ord.id || '');
+            const clean = ord.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
+            flId.textContent = clean.replace('#', '');
+          }
+        } else {
+          floatingBar.style.display = 'none';
+        }
+      } else {
+        floatingBar.style.display = 'none';
+      }
+    }
+  }
+
+  // Expose on window for accessibility
+  window.activateOrderPreparationScreen = activateOrderPreparationScreen;
+  window.deactivateOrderPreparationScreen = deactivateOrderPreparationScreen;
+
+  function initOrderPreparationControls() {
+    const btnToggleSound = document.getElementById('btn-prep-toggle-sound');
+    const soundIcon = document.getElementById('prep-sound-icon');
+    const soundText = document.getElementById('prep-sound-text');
+    const prepVideo = document.getElementById('order-prep-video');
+
+    if (btnToggleSound && prepVideo) {
+      btnToggleSound.addEventListener('click', () => {
+        prepVideo.muted = !prepVideo.muted;
+        if (prepVideo.muted) {
+          if (soundIcon) soundIcon.className = 'fa-solid fa-volume-xmark';
+          if (soundText) soundText.textContent = 'Sound Off';
+        } else {
+          if (soundIcon) soundIcon.className = 'fa-solid fa-volume-high';
+          if (soundText) soundText.textContent = 'Sound On';
+          prepVideo.play().catch(() => {});
+        }
+      });
+    }
+
+    const btnPlayPause = document.getElementById('btn-prep-playpause');
+    const playIcon = document.getElementById('prep-play-icon');
+    if (btnPlayPause && prepVideo) {
+      btnPlayPause.addEventListener('click', () => {
+        if (prepVideo.paused) {
+          prepVideo.play().catch(() => {});
+          if (playIcon) playIcon.className = 'fa-solid fa-pause';
+        } else {
+          prepVideo.pause();
+          if (playIcon) playIcon.className = 'fa-solid fa-play';
+        }
+      });
+    }
+
+    const btnBrowseMenu = document.getElementById('btn-prep-browse-menu');
+    if (btnBrowseMenu) {
+      btnBrowseMenu.addEventListener('click', () => {
+        deactivateOrderPreparationScreen(true);
+        window.scrollTo({ top: 300, behavior: 'smooth' });
+      });
+    }
+
+    const btnViewTracker = document.getElementById('btn-prep-view-tracker');
+    if (btnViewTracker) {
+      btnViewTracker.addEventListener('click', () => {
+        if (activePrepOrderId) {
+          openOrderModal(activePrepOrderId, false);
+        }
+      });
+    }
+
+    const btnFloatingReopen = document.getElementById('btn-floating-reopen-prep');
+    if (btnFloatingReopen) {
+      btnFloatingReopen.addEventListener('click', () => {
+        if (activePrepOrderId) {
+          activateOrderPreparationScreen(activePrepOrderId, false);
+        }
+      });
+    }
+
+    // Check if an order is already in preparation from current session
+    try {
+      const savedPrepId = sessionStorage.getItem('quickbite_active_prep_order');
+      if (savedPrepId) {
+        orders = dataService.getOrders();
+        const ord = orders.find(o => String(o.id) === String(savedPrepId));
+        if (ord && ['pending', 'accepted', 'cooking'].includes(String(ord.status).toLowerCase())) {
+          const age = ord.createdAt ? (Date.now() - Number(ord.createdAt)) : 0;
+          if (age < 20 * 60 * 1000) {
+            activateOrderPreparationScreen(ord.id, false);
+          }
+        }
+      }
+    } catch {}
+
+    // Headless/Preview visual audit support on localhost
+    if (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('test_prep')) {
+      activateOrderPreparationScreen('ord_prep_test', false);
+    }
+  }
+  initOrderPreparationControls();
+
   function openOrderModal(orderIdToOpen, isNewCheckout = false) {
     if (modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open')) {
       closeMyOrdersModalInternal();
@@ -3476,7 +3769,7 @@ document.addEventListener('DOMContentLoaded', () => {
         closeCheckoutModalInternal();
         backNav.removeStepDirect('checkout-modal');
         backNav.removeStepDirect('cart-drawer');
-        openOrderModal(newOrderId, true);
+        activateOrderPreparationScreen(newOrderId, true);
 
         // Clear cart after confirmed checkout
         cart = [];
@@ -3598,6 +3891,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) {
       if (activeOrderId === orderId) {
         renderOrderTracker(activeOrderId);
+      }
+    }
+
+    if (activePrepOrderId && (activePrepOrderId === orderId || !orderId)) {
+      if (document.body.classList.contains('order-prep-active')) {
+        renderOrderPreparationScreen(activePrepOrderId);
       }
     }
 

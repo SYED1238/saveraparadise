@@ -928,6 +928,558 @@ body.owner-body {
 }
 
 /* ============================================================== */
+/* MOBILE FAST-JUMP TABS & VIEW TOGGLES                           */
+/* ============================================================== */
+.owner-mobile-tabs {
+  display: none; /* Visible only on mobile via media query */
+}
+
+.view-toggle-wrap {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--owner-border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.btn-view-toggle {
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-view-toggle:hover {
+  color: #FFF;
+}
+
+.btn-view-toggle.active {
+  background: #F59E0B;
+  color: #000;
+  box-shadow: 0 1px 6px rgba(245, 158, 11, 0.35);
+}
+
+/* ============================================================== */
+/* CASH DRAWER RECONCILIATION SUMMARY CARD (Plain English)       */
+/* ============================================================== */
+.owner-drawer-summary-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(30, 41, 59, 0.95) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: 16px;
+  padding: 22px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  position: relative;
+  overflow: hidden;
+}
+
+.owner-drawer-summary-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #10B981, #F59E0B);
+}
+
+.drawer-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.drawer-summary-title-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.drawer-icon-bubble {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34D399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.drawer-tag {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #34D399;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.drawer-title {
+  margin: 0;
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #FFF;
+  letter-spacing: -0.01em;
+}
+
+.drawer-headline-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.drawer-headline-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #94A3B8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.drawer-headline-amount {
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  font-size: 1.85rem;
+  font-weight: 900;
+  line-height: 1.1;
+  color: #34D399;
+}
+
+.drawer-math-breakdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+
+.math-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.math-label {
+  font-size: 0.74rem;
+  color: #94A3B8;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.math-val {
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.math-operator {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #64748B;
+  padding: 0 4px;
+  user-select: none;
+}
+
+.math-col.highlight {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: 8px;
+  padding: 8px 14px;
+}
+
+.drawer-plain-english-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #CBD5E1;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  padding: 10px 14px;
+  border-left: 3px solid #10B981;
+}
+
+.drawer-plain-english-note i {
+  color: #34D399;
+  font-size: 0.95rem;
+  margin-top: 2px;
+}
+
+/* ============================================================== */
+/* MOBILE CARDS CONTAINERS (Cards vs Table)                       */
+/* ============================================================== */
+.owner-cards-grid {
+  display: none; /* Hidden on desktop by default; visible on mobile */
+  grid-template-columns: 1fr;
+  gap: 12px;
+  width: 100%;
+}
+
+.owner-empty-card {
+  text-align: center;
+  padding: 36px 18px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px dashed var(--owner-border);
+  border-radius: 12px;
+  color: var(--owner-text-muted);
+}
+
+.owner-empty-card i {
+  font-size: 2rem;
+  margin-bottom: 8px;
+  display: block;
+  color: var(--owner-text-dim);
+}
+
+.owner-empty-card p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+/* ============================================================== */
+/* MOBILE DELIVERY BOY CARDS                                      */
+/* ============================================================== */
+.rider-card-mobile {
+  background: var(--owner-surface-card);
+  border: 1px solid var(--owner-border);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.rider-card-mobile:active {
+  transform: scale(0.99);
+}
+
+.rider-card-mobile.deposit {
+  border-left: 4px solid #10B981;
+}
+
+.rider-card-mobile.pay {
+  border-left: 4px solid #3B82F6;
+}
+
+.rider-card-mobile.balanced {
+  border-left: 4px solid #94A3B8;
+}
+
+.rider-card-mobile.idle {
+  border-left: 4px solid #475569;
+}
+
+.rc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rc-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rc-name {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: #FFF;
+}
+
+.rc-vehicle {
+  font-size: 0.74rem;
+  color: #94A3B8;
+  display: block;
+}
+
+.rc-call-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34D399;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.rc-call-btn:hover {
+  background: rgba(16, 185, 129, 0.25);
+}
+
+.rc-settle-box {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rc-settle-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rc-settle-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94A3B8;
+}
+
+.rc-settle-formula {
+  font-size: 0.72rem;
+  color: #CBD5E1;
+}
+
+.rc-settle-amount {
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  font-size: 1.05rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.rider-card-mobile.deposit .rc-settle-amount { color: #34D399; }
+.rider-card-mobile.pay .rc-settle-amount { color: #93C5FD; }
+.rider-card-mobile.balanced .rc-settle-amount { color: #94A3B8; }
+.rider-card-mobile.idle .rc-settle-amount { color: #64748B; }
+
+.rc-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.rc-metric {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rc-metric .rc-val {
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #FFF;
+}
+
+.rc-metric .rc-lbl {
+  font-size: 0.64rem;
+  color: #94A3B8;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================== */
+/* MOBILE LIVE ORDERS CARDS                                       */
+/* ============================================================== */
+.order-card-mobile {
+  background: var(--owner-surface-card);
+  border: 1px solid var(--owner-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.oc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.oc-time {
+  font-size: 0.72rem;
+  color: #94A3B8;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.oc-customer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.oc-cust-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.88rem;
+  color: #FFF;
+}
+
+.oc-phone-link {
+  font-size: 0.74rem;
+  color: #94A3B8;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.oc-phone-link:hover {
+  color: #F59E0B;
+}
+
+.oc-address {
+  font-size: 0.76rem;
+  color: #CBD5E1;
+  line-height: 1.35;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.oc-dist-chip {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #C4B5FD;
+  background: rgba(139, 92, 246, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.oc-items {
+  font-size: 0.76rem;
+  color: #94A3B8;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.35;
+}
+
+.oc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 10px;
+  flex-wrap: wrap;
+}
+
+.oc-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.oc-rider-tag {
+  font-size: 0.74rem;
+  color: #CBD5E1;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.oc-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.oc-total {
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #FFF;
+}
+
+.btn-receipt-mobile {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--owner-border);
+  color: #FFF;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+}
+
+.btn-receipt-mobile:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================================== */
 /* MODAL (READ-ONLY ORDER INVOICE)                                */
 /* ============================================================== */
 .owner-modal-backdrop {
@@ -1133,25 +1685,88 @@ body.owner-body {
 }
 
 /* ============================================================== */
-/* RESPONSIVE LAYOUT                                              */
+/* RESPONSIVE LAYOUT & MOBILE OPTIMIZATIONS                       */
 /* ============================================================== */
 @media (max-width: 768px) {
   .owner-header {
     padding: 10px 14px;
+    gap: 10px;
   }
 
   .owner-main {
-    padding: 16px 12px 60px 12px;
-    gap: 18px;
+    padding: 12px 12px 60px 12px;
+    gap: 16px;
   }
 
   .owner-title {
     font-size: 1.1rem;
   }
 
+  .owner-sub {
+    font-size: 0.72rem;
+  }
+
+  /* Sticky 1-Tap Fast Jump Tabs */
+  .owner-mobile-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    position: sticky;
+    top: 56px;
+    z-index: 80;
+    background: rgba(11, 15, 25, 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    padding: 6px 4px;
+    gap: 6px;
+    border-bottom: 1px solid var(--owner-border);
+    margin: -4px 0 4px 0;
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .owner-tab-btn {
+    width: 100%;
+    min-width: 0;
+    padding: 8px 2px;
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #94A3B8;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--owner-border);
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
+
+  .owner-tab-btn:active {
+    transform: scale(0.97);
+  }
+
+  .owner-tab-btn.active {
+    background: #F59E0B;
+    color: #000;
+    border-color: #F59E0B;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+    font-weight: 800;
+  }
+
+  /* KPI Grid: Hero Total Revenue spans full width */
   .owner-kpi-grid {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+  }
+
+  .kpi-card.card-revenue {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(30, 41, 59, 0.95) 100%);
+    border-color: rgba(245, 158, 11, 0.3);
   }
 
   .kpi-card {
@@ -1159,32 +1774,236 @@ body.owner-body {
   }
 
   .kpi-main-num {
-    font-size: 1.4rem;
+    font-size: 1.45rem;
+  }
+
+  .card-revenue .kpi-main-num {
+    font-size: 1.85rem;
   }
 
   .hide-mobile {
     display: none !important;
   }
 
+  /* Date & Horizon Filters */
+  .owner-filter-bar {
+    padding: 12px 14px;
+    gap: 12px;
+  }
+
   .filter-presets-group {
     width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   .filter-pills-row {
     overflow-x: auto;
     width: 100%;
-    padding-bottom: 4px;
+    padding-bottom: 2px;
     flex-wrap: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .filter-pills-row::-webkit-scrollbar {
+    display: none;
   }
 
   .period-pill {
     white-space: nowrap;
-    padding: 5px 10px;
+    padding: 6px 12px;
+    font-size: 0.76rem;
+  }
+
+  .filter-period-display {
+    width: 100%;
+    box-sizing: border-box;
     font-size: 0.76rem;
   }
 
   .rider-payout-config-box {
     width: 100%;
     justify-content: space-between;
+    box-sizing: border-box;
+  }
+
+  /* Plain-English Cash Drawer Reconciliation Banner */
+  .owner-drawer-summary-card {
+    padding: 16px 14px;
+    gap: 14px;
+  }
+
+  .drawer-summary-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .drawer-headline-box {
+    width: 100%;
+    align-items: flex-start;
+    box-sizing: border-box;
+    padding: 10px 14px;
+  }
+
+  .drawer-headline-amount {
+    font-size: 1.6rem;
+  }
+
+  .drawer-math-breakdown {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .drawer-math-breakdown .math-operator {
+    display: none;
+  }
+
+  .drawer-math-breakdown .math-col {
+    padding: 6px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+  }
+
+  .drawer-math-breakdown .math-col:last-child {
+    border-bottom: none;
+  }
+
+  .math-val {
+    font-size: 1.15rem;
+  }
+
+  /* Default on Mobile: Show Cards, Hide spreadsheet tables */
+  .owner-cards-grid {
+    display: grid;
+  }
+
+  .owner-table-wrapper {
+    display: none;
+  }
+
+  /* Sections */
+  .owner-section {
+    padding: 16px 14px;
+    gap: 14px;
+    border-radius: 14px;
+  }
+
+  .section-header-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .section-badge-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  /* Orders Filter Controls */
+  .orders-filter-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .search-input-wrap {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .search-input-wrap input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .orders-view-and-filters {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .status-pills-row {
+    overflow-x: auto;
+    width: 100%;
+    padding-bottom: 2px;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .status-pills-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .order-filter-pill {
+    white-space: nowrap;
+    padding: 5px 10px;
+    font-size: 0.74rem;
+  }
+
+  /* Modal on Mobile */
+  .owner-modal-backdrop {
+    padding: 10px;
+  }
+
+  .owner-modal-card {
+    max-height: 94vh;
+    border-radius: 14px;
+  }
+
+  .owner-modal-header {
+    padding: 12px 14px;
+  }
+
+  .owner-modal-body {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .owner-modal-footer {
+    padding: 10px 14px;
+  }
+}
+
+/* Extra Compact Phones (under 420px width) */
+@media (max-width: 420px) {
+  .rc-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .rc-settle-box {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .rc-settle-amount {
+    font-size: 1.15rem;
+  }
+
+  .oc-cust-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .oc-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .oc-footer-right {
+    width: 100%;
+    justify-content: space-between;
+    margin-left: 0;
   }
 }

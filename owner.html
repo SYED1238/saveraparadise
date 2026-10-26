@@ -127,6 +127,19 @@
     <!-- Main Content Area -->
     <main class="owner-main">
 
+      <!-- Mobile Fast-Jump Navigation Tabs (Mobile Only) -->
+      <nav class="owner-mobile-tabs" id="owner-mobile-tabs" aria-label="Executive Section Jump">
+        <button type="button" class="owner-tab-btn active" data-target="owner-kpi-grid">
+          <i class="fa-solid fa-chart-pie"></i> Financials
+        </button>
+        <button type="button" class="owner-tab-btn" data-target="section-riders">
+          <i class="fa-solid fa-motorcycle"></i> Riders
+        </button>
+        <button type="button" class="owner-tab-btn" data-target="section-orders">
+          <i class="fa-solid fa-clipboard-list"></i> Orders
+        </button>
+      </nav>
+
       <!-- ========================================================== -->
       <!-- SECTION A: DATE HORIZON FILTER & PAYOUT SETTINGS BAR       -->
       <!-- ========================================================== -->
@@ -188,7 +201,7 @@
       <!-- ========================================================== -->
       <!-- SECTION B: EXECUTIVE FINANCIAL & OPERATIONAL KPIS          -->
       <!-- ========================================================== -->
-      <section class="owner-kpi-grid">
+      <section class="owner-kpi-grid" id="owner-kpi-grid">
         <!-- 1. Total Revenue -->
         <article class="kpi-card card-revenue">
           <div class="kpi-card-header">
@@ -300,6 +313,45 @@
         </div>
       </section>
 
+      <!-- Cash Drawer Reconciliation Summary Card (Plain English, High Visibility) -->
+      <section class="owner-drawer-summary-card" id="owner-drawer-summary-card">
+        <div class="drawer-summary-header">
+          <div class="drawer-summary-title-box">
+            <span class="drawer-icon-bubble"><i class="fa-solid fa-vault"></i></span>
+            <div>
+              <span class="drawer-tag">EXECUTIVE CASH SUMMARY</span>
+              <h3 class="drawer-title">Cash to Collect from Delivery Fleet</h3>
+            </div>
+          </div>
+          <div class="drawer-headline-box">
+            <span class="drawer-headline-label">Net Due to Cash Drawer:</span>
+            <div class="drawer-headline-amount num-emerald" id="drawer-net-total">₹0</div>
+          </div>
+        </div>
+
+        <div class="drawer-math-breakdown">
+          <div class="math-col">
+            <span class="math-label"><i class="fa-solid fa-hand-holding-dollar"></i> Total COD Cash Collected</span>
+            <span class="math-val num-amber" id="drawer-cod-total">₹0</span>
+          </div>
+          <span class="math-operator">−</span>
+          <div class="math-col">
+            <span class="math-label"><i class="fa-solid fa-motorcycle"></i> Less Rider Delivery Payouts</span>
+            <span class="math-val num-purple" id="drawer-payout-total">₹0</span>
+          </div>
+          <span class="math-operator">=</span>
+          <div class="math-col highlight">
+            <span class="math-label"><i class="fa-solid fa-vault"></i> Net Remaining to Drawer</span>
+            <span class="math-val num-emerald" id="drawer-net-sub-total">₹0</span>
+          </div>
+        </div>
+
+        <div class="drawer-plain-english-note">
+          <i class="fa-solid fa-circle-info"></i>
+          <span><strong>How this works:</strong> Delivery boys collect cash from customers. They keep their delivery commission (<span id="drawer-note-rate">₹35</span>/order), and hand over the remaining balance directly into your counter drawer.</span>
+        </div>
+      </section>
+
       <!-- ========================================================== -->
       <!-- SECTION C: DELIVERY BOYS PERFORMANCE, KMS & CASH PAYOUTS   -->
       <!-- ========================================================== -->
@@ -310,12 +362,26 @@
             <p class="section-sub">Audit how many orders each rider delivered, their exact road kilometers driven, COD cash in hand to collect, and rider earnings reconciliation.</p>
           </div>
           <div class="section-badge-info">
-            <span class="info-pill"><i class="fa-solid fa-calculator"></i> Net Settlement = Cash in Hand − Rider Payout</span>
+            <!-- View Toggle: Cards vs Table -->
+            <div class="view-toggle-wrap" id="rider-view-toggle">
+              <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
+                <i class="fa-solid fa-table-cells-large"></i> Cards
+              </button>
+              <button type="button" class="btn-view-toggle" data-view="table" title="Show Spreadsheet Table View">
+                <i class="fa-solid fa-table"></i> Table
+              </button>
+            </div>
+            <span class="info-pill hide-mobile"><i class="fa-solid fa-calculator"></i> Net Settlement = Cash in Hand − Rider Payout</span>
           </div>
         </div>
 
-        <!-- Rider Analytics Table -->
-        <div class="owner-table-wrapper">
+        <!-- Mobile Delivery Boy Cards (Clean & readable on phones) -->
+        <div class="owner-cards-grid" id="rider-cards-container">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Rider Analytics Table (Desktop / Spreadsheet view) -->
+        <div class="owner-table-wrapper" id="rider-table-wrapper">
           <table class="owner-table" id="owner-rider-table">
             <thead>
               <tr>
@@ -371,19 +437,36 @@
               <input type="text" id="order-search-input" placeholder="Search order ID, customer, rider, phone...">
             </div>
 
-            <div class="status-pills-row" id="order-status-filter-pills">
-              <button type="button" class="order-filter-pill active" data-status="all">All (<span id="count-all">0</span>)</button>
-              <button type="button" class="order-filter-pill" data-status="active">Live (<span id="count-active">0</span>)</button>
-              <button type="button" class="order-filter-pill" data-status="delivered">Delivered (<span id="count-delivered">0</span>)</button>
-              <button type="button" class="order-filter-pill" data-status="cash">Cash (COD)</button>
-              <button type="button" class="order-filter-pill" data-status="online">Online (Paid)</button>
-              <button type="button" class="order-filter-pill" data-status="cancelled">Cancelled (<span id="count-cancelled">0</span>)</button>
+            <div class="orders-view-and-filters">
+              <div class="status-pills-row" id="order-status-filter-pills">
+                <button type="button" class="order-filter-pill active" data-status="all">All (<span id="count-all">0</span>)</button>
+                <button type="button" class="order-filter-pill" data-status="active">Live (<span id="count-active">0</span>)</button>
+                <button type="button" class="order-filter-pill" data-status="delivered">Delivered (<span id="count-delivered">0</span>)</button>
+                <button type="button" class="order-filter-pill" data-status="cash">Cash (COD)</button>
+                <button type="button" class="order-filter-pill" data-status="online">Online (Paid)</button>
+                <button type="button" class="order-filter-pill" data-status="cancelled">Cancelled (<span id="count-cancelled">0</span>)</button>
+              </div>
+
+              <!-- View Toggle: Cards vs Table -->
+              <div class="view-toggle-wrap" id="orders-view-toggle">
+                <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
+                  <i class="fa-solid fa-table-cells-large"></i> Cards
+                </button>
+                <button type="button" class="btn-view-toggle" data-view="table" title="Show Spreadsheet Table View">
+                  <i class="fa-solid fa-table"></i> Table
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Orders Table -->
-        <div class="owner-table-wrapper">
+        <!-- Mobile Orders Cards (Clean & easy to browse on phones) -->
+        <div class="owner-cards-grid" id="orders-cards-container">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Orders Table (Spreadsheet view) -->
+        <div class="owner-table-wrapper" id="orders-table-wrapper">
           <table class="owner-table" id="owner-orders-table">
             <thead>
               <tr>

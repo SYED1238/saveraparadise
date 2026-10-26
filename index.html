@@ -182,6 +182,131 @@
       </div>
     </div>
 
+    <!-- ======================================================== -->
+    <!-- IMMERSIVE ORDER PREPARATION & CLOUDFLARE R2 VIDEO SCREEN -->
+    <!-- ======================================================== -->
+    <section class="order-prep-screen" id="order-prep-screen" style="display: none;" aria-label="Order Preparation Live Hub">
+      <div class="order-prep-container">
+        
+        <!-- Top Status & Preparation Headline -->
+        <div class="order-prep-header">
+          <div class="prep-badge-pulse">
+            <span class="prep-fire-icon">🔥</span>
+            <span class="prep-badge-text" id="prep-status-badge">PREPARING IN KITCHEN</span>
+          </div>
+          <h2 class="prep-main-title" id="prep-headline">Your Order is Getting Prepared!</h2>
+          <p class="prep-subtitle" id="prep-subtext">Our master chefs are preparing your fresh, sizzling meal right now. Sit back and watch the magic!</p>
+          
+          <div class="prep-order-chip-row">
+            <span class="prep-chip prep-chip-id"><i class="fa-solid fa-receipt"></i> <strong id="prep-order-id">#QB-0000</strong></span>
+            <span class="prep-chip prep-chip-time"><i class="fa-regular fa-clock"></i> Est. 15–20 mins</span>
+            <span class="prep-chip prep-chip-items" id="prep-order-items-count"><i class="fa-solid fa-bowl-food"></i> <span id="prep-count-num">1</span> items</span>
+          </div>
+        </div>
+
+        <!-- Central Cloudflare R2 Video Player -->
+        <div class="prep-video-card">
+          <div class="prep-video-wrapper">
+            <video 
+              id="order-prep-video" 
+              class="order-prep-video" 
+              src="/api/r2-video" 
+              autoplay 
+              playsinline 
+              loop 
+              muted 
+              preload="auto"
+              poster="/api/r2-image?key=dishes/crispy-chicken.jpg"
+              aria-label="Order is getting prepared kitchen video">
+              Your browser does not support HTML5 video streaming.
+            </video>
+            
+            <!-- Video Overlay Controls (Mute/Unmute, Play/Pause) -->
+            <div class="prep-video-controls">
+              <button type="button" class="btn-prep-sound" id="btn-prep-toggle-sound" title="Toggle Video Audio" aria-label="Toggle Sound">
+                <i class="fa-solid fa-volume-xmark" id="prep-sound-icon"></i>
+                <span id="prep-sound-text">Sound Off</span>
+              </button>
+              <button type="button" class="btn-prep-playpause" id="btn-prep-playpause" title="Play or Pause Video" aria-label="Play or Pause">
+                <i class="fa-solid fa-pause" id="prep-play-icon"></i>
+              </button>
+            </div>
+
+            <div class="prep-live-cooking-indicator">
+              <span class="prep-live-dot"></span>
+              <span>LIVE KITCHEN PREPARATION</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live 4-Step Progress Tracker -->
+        <div class="prep-steps-card">
+          <div class="prep-steps-grid">
+            <div class="prep-step done" id="prep-step-accepted">
+              <div class="step-circle"><i class="fa-solid fa-check"></i></div>
+              <div class="step-meta">
+                <span class="step-name">Order Placed</span>
+                <span class="step-desc">Received by kitchen</span>
+              </div>
+            </div>
+            <div class="prep-step active" id="prep-step-cooking">
+              <div class="step-circle"><i class="fa-solid fa-fire-burner"></i></div>
+              <div class="step-meta">
+                <span class="step-name">Getting Prepared</span>
+                <span class="step-desc">Cooking fresh & hot</span>
+              </div>
+            </div>
+            <div class="prep-step" id="prep-step-ready">
+              <div class="step-circle"><i class="fa-solid fa-motorcycle"></i></div>
+              <div class="step-meta">
+                <span class="step-name">On The Way</span>
+                <span class="step-desc">Rider dispatched</span>
+              </div>
+            </div>
+            <div class="prep-step" id="prep-step-delivered">
+              <div class="step-circle"><i class="fa-solid fa-house"></i></div>
+              <div class="step-meta">
+                <span class="step-name">Delivered</span>
+                <span class="step-desc">Enjoy your meal!</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Order Summary Card -->
+        <div class="prep-details-card" id="prep-details-card">
+          <div class="prep-details-head">
+            <h3 class="prep-details-title"><i class="fa-solid fa-bag-shopping"></i> Order Details</h3>
+            <span class="prep-details-total" id="prep-total-amount">₹0</span>
+          </div>
+          <div class="prep-items-list" id="prep-items-list">
+            <!-- Dynamically populated -->
+          </div>
+          <div class="prep-delivery-meta" id="prep-delivery-meta">
+            <div class="prep-meta-row">
+              <i class="fa-solid fa-location-dot"></i>
+              <span id="prep-delivery-address">Delivering to your location</span>
+            </div>
+            <div class="prep-meta-row">
+              <i class="fa-solid fa-money-bill-wave"></i>
+              <span id="prep-payment-method">Cash on Delivery</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Navigation / Action Bar -->
+        <div class="prep-action-bar">
+          <button type="button" class="btn-prep-action btn-prep-map" id="btn-prep-view-tracker">
+            <i class="fa-solid fa-map-location-dot"></i> View Full Tracker & Map
+          </button>
+          <button type="button" class="btn-prep-action btn-prep-browse" id="btn-prep-browse-menu">
+            <i class="fa-solid fa-utensils"></i> Browse Menu / Home
+          </button>
+        </div>
+
+      </div>
+    </section>
+
     <!-- HERO SECTION -->
     <section class="hero-section" id="hero-section">
       <!-- Showcase Biryani Plates (2 Rotating Edge Stages with 5s Alternating 3rd Plate Exchange) -->
@@ -5079,6 +5204,18 @@
           </form>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Floating Bottom Bar to Return to Preparation Video Anytime -->
+  <div class="floating-order-prep-bar" id="floating-order-prep-bar" style="display: none;" role="region" aria-label="Active Order Preparation Tracker">
+    <div class="floating-prep-content" id="btn-floating-reopen-prep">
+      <span class="floating-prep-flame">🔥</span>
+      <div class="floating-prep-text">
+        <span class="floating-prep-title">Order <strong id="floating-prep-id">#QB-0000</strong> is getting prepared!</span>
+        <span class="floating-prep-sub">Tap to watch kitchen video & live status</span>
+      </div>
+      <button type="button" class="btn-floating-view">Watch Video <i class="fa-solid fa-arrow-right"></i></button>
     </div>
   </div>
 

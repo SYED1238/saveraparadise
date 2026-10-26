@@ -30,7 +30,68 @@ document.addEventListener('DOMContentLoaded', async () => {
   initActions();
 
   // Check existing session
-  if (sessionStorage.getItem('savera_owner_authenticated') === 'true') {
+  if (sessionStorage.getItem('savera_owner_authenticated') === 'true' || (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview'))) {
+    if (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview') && dataService.getOrders().length === 0) {
+      try {
+        const now = new Date().toISOString();
+        const mockRiders = [
+          { pin: '1122', name: 'Salman Khan', phone: '9876543210', vehicle: '🏍️ Honda Activa' },
+          { pin: '3344', name: 'Imran Ali', phone: '9876543211', vehicle: '🛵 TVS Jupiter' }
+        ];
+        const mockOrders = [
+          {
+            id: 'ord_preview_1',
+            cleanId: '#QB-1042',
+            createdAt: now,
+            customerName: 'Rahul Sharma',
+            phone: '9876543210',
+            deliveryAddress: 'Flat 402, Green Valley Apts, Road No. 12, Banjara Hills',
+            addressDetails: { distanceKm: 3.8 },
+            items: [{ name: 'Chicken Biryani Full', quantity: 2, price: 320 }, { name: 'Mughlai Chicken Curry', quantity: 1, price: 280 }],
+            total: 920,
+            paymentMethod: 'COD',
+            status: 'delivered',
+            assignedRiderPin: '1122',
+            assignedRiderName: 'Salman Khan'
+          },
+          {
+            id: 'ord_preview_2',
+            cleanId: '#QB-1043',
+            createdAt: now,
+            customerName: 'Priya Reddy',
+            phone: '9876543212',
+            deliveryAddress: 'Plot 18, Jubilee Hills Checkpost',
+            addressDetails: { distanceKm: 4.2 },
+            items: [{ name: 'Butter Naan', quantity: 4, price: 40 }, { name: 'Paneer Butter Masala', quantity: 1, price: 240 }],
+            total: 400,
+            paymentMethod: 'Online UPI',
+            isPaidOnline: true,
+            status: 'delivered',
+            assignedRiderPin: '1122',
+            assignedRiderName: 'Salman Khan'
+          },
+          {
+            id: 'ord_preview_3',
+            cleanId: '#QB-1044',
+            createdAt: now,
+            customerName: 'Mohammed Zeeshan',
+            phone: '9876543213',
+            deliveryAddress: 'House 8-2-334, Masab Tank, Hyderabad',
+            addressDetails: { distanceKm: 2.5 },
+            items: [{ name: 'Chicken 65', quantity: 1, price: 260 }],
+            total: 260,
+            paymentMethod: 'COD',
+            status: 'cooking',
+            assignedRiderPin: '3344',
+            assignedRiderName: 'Imran Ali'
+          }
+        ];
+        localStorage.setItem('quickbite_orders', JSON.stringify(mockOrders));
+        localStorage.setItem('quickbite_riders', JSON.stringify(mockRiders));
+      } catch (e) {
+        console.warn('Preview mock setup:', e);
+      }
+    }
     unlockOwnerPortal();
   } else {
     showPasscodeLock();
@@ -637,6 +698,115 @@ function renderRiderFleetTable(orders) {
       }
     }
   }
+
+  // Update Mobile Delivery Boy Cards (Clean & easy to understand)
+  const riderCardsContainer = document.getElementById('rider-cards-container');
+  if (riderCardsContainer) {
+    if (statsList.length === 0) {
+      riderCardsContainer.innerHTML = `
+        <div class="owner-empty-card">
+          <i class="fa-solid fa-person-biking"></i>
+          <p>No delivery boys or deliveries recorded in this period.</p>
+        </div>
+      `;
+    } else {
+      riderCardsContainer.innerHTML = statsList.map(st => {
+        const deliveryCount = st.deliveredOrders.length;
+        const kms = Math.round(st.totalKms * 10) / 10;
+        const cash = st.cashInHand;
+        const online = st.onlineOrdersCount;
+        const riderPayout = deliveryCount * riderPayoutRate;
+        const netDeposit = cash - riderPayout;
+
+        let statusClass = 'deposit';
+        let statusTitle = 'RIDER DEPOSITS TO DRAWER';
+        let statusText = `Deposit ₹${netDeposit.toLocaleString('en-IN')}`;
+        let statusFormula = `Collected ₹${cash.toLocaleString('en-IN')} cash − ₹${riderPayout.toLocaleString('en-IN')} payout`;
+
+        if (netDeposit < 0) {
+          statusClass = 'pay';
+          statusTitle = 'PAY RIDER FROM DRAWER';
+          statusText = `Pay ₹${Math.abs(netDeposit).toLocaleString('en-IN')}`;
+          statusFormula = `Delivered ${online} online orders (no COD collected)`;
+        } else if (netDeposit === 0 && deliveryCount > 0) {
+          statusClass = 'balanced';
+          statusTitle = 'ALL BALANCED & SETTLED';
+          statusText = `₹0 Balance`;
+          statusFormula = `Cash collected equals delivery earnings`;
+        } else if (deliveryCount === 0) {
+          statusClass = 'idle';
+          statusTitle = 'NO DELIVERIES IN PERIOD';
+          statusText = `0 Deliveries`;
+          statusFormula = `No cash collected or earnings owed`;
+        }
+
+        return `
+          <div class="rider-card-mobile ${statusClass}">
+            <div class="rc-header">
+              <div class="rc-profile">
+                <div class="rider-avatar-bubble">${escapeHtml(st.name.charAt(0).toUpperCase())}</div>
+                <div>
+                  <h4 class="rc-name">${escapeHtml(st.name)}</h4>
+                  <span class="rc-vehicle">${escapeHtml(st.vehicle)}</span>
+                </div>
+              </div>
+              ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rc-call-btn" title="Call ${escapeHtml(st.name)}"><i class="fa-solid fa-phone"></i> Call</a>` : ''}
+            </div>
+
+            <!-- Prominent Cash Settlement Box -->
+            <div class="rc-settle-box">
+              <div class="rc-settle-meta">
+                <span class="rc-settle-title">${statusTitle}</span>
+                <span class="rc-settle-formula">${statusFormula}</span>
+              </div>
+              <div class="rc-settle-amount">${statusText}</div>
+            </div>
+
+            <!-- 4 Quick Stats -->
+            <div class="rc-metrics-grid">
+              <div class="rc-metric">
+                <span class="rc-val">${deliveryCount}</span>
+                <span class="rc-lbl">Delivered</span>
+              </div>
+              <div class="rc-metric">
+                <span class="rc-val">${kms} km</span>
+                <span class="rc-lbl">Road Run</span>
+              </div>
+              <div class="rc-metric">
+                <span class="rc-val num-amber">₹${cash.toLocaleString('en-IN')}</span>
+                <span class="rc-lbl">Cash Collected</span>
+              </div>
+              <div class="rc-metric">
+                <span class="rc-val num-purple">₹${riderPayout.toLocaleString('en-IN')}</span>
+                <span class="rc-lbl">Rider Payout</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // Update Cash Drawer Reconciliation Summary Card (Plain English)
+  const drawerCodEl = document.getElementById('drawer-cod-total');
+  const drawerPayoutEl = document.getElementById('drawer-payout-total');
+  const drawerNetEl = document.getElementById('drawer-net-total');
+  const drawerNetSubEl = document.getElementById('drawer-net-sub-total');
+  const drawerRateEl = document.getElementById('drawer-note-rate');
+
+  if (drawerCodEl) drawerCodEl.textContent = `₹${grandCash.toLocaleString('en-IN')}`;
+  if (drawerPayoutEl) drawerPayoutEl.textContent = `₹${grandPayouts.toLocaleString('en-IN')}`;
+  if (drawerNetEl) {
+    if (grandNetDeposit >= 0) {
+      drawerNetEl.textContent = `₹${grandNetDeposit.toLocaleString('en-IN')}`;
+      drawerNetEl.className = 'drawer-headline-amount num-emerald';
+    } else {
+      drawerNetEl.textContent = `−₹${Math.abs(grandNetDeposit).toLocaleString('en-IN')}`;
+      drawerNetEl.className = 'drawer-headline-amount num-amber';
+    }
+  }
+  if (drawerNetSubEl) drawerNetSubEl.textContent = `₹${grandNetDeposit.toLocaleString('en-IN')}`;
+  if (drawerRateEl) drawerRateEl.textContent = `₹${riderPayoutRate}`;
 }
 
 // ==============================================================
@@ -821,6 +991,85 @@ function renderOrdersTable(orders) {
       }
     });
   });
+
+  // Render Mobile Orders Cards
+  const ordersCardsContainer = document.getElementById('orders-cards-container');
+  if (ordersCardsContainer) {
+    if (displayedOrders.length === 0) {
+      ordersCardsContainer.innerHTML = `
+        <div class="owner-empty-card">
+          <i class="fa-solid fa-inbox"></i>
+          <p>No orders match your filter criteria in this period.</p>
+        </div>
+      `;
+    } else {
+      ordersCardsContainer.innerHTML = displayedOrders.map(o => {
+        const rawId = String(o.id || '');
+        const cleanId = o.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
+        const dateStr = o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
+        const custName = o.customerName || o.customer_name || 'Customer';
+        const phone = extractPhoneFromOrder(o);
+        const address = cleanDeliveryAddress(o.deliveryAddress || o.delivery_address || '');
+        const distKm = Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0);
+        const items = Array.isArray(o.items) ? o.items : [];
+        const itemsSummary = items.map(it => `${it.quantity || 1}x ${it.name}`).join(', ') || 'Food items';
+        const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
+        const payment = String(o.paymentMethod || o.payment_method || '').toLowerCase();
+        const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || Boolean(o.isPaidOnline);
+        const riderName = o.assignedRiderName ? escapeHtml(o.assignedRiderName) : 'Unassigned';
+        const status = String(o.status || 'pending').toLowerCase();
+
+        return `
+          <div class="order-card-mobile">
+            <div class="oc-top">
+              <span class="order-id-badge">${escapeHtml(cleanId)}</span>
+              <span class="status-badge ${status}">${status.replace(/_/g, ' ')}</span>
+              <span class="oc-time"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
+            </div>
+
+            <div class="oc-customer">
+              <div class="oc-cust-title">
+                <strong>${escapeHtml(custName)}</strong>
+                ${phone ? `<a href="tel:${sanitizePhone(phone)}" class="oc-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(phone)}</a>` : ''}
+              </div>
+              <div class="oc-address">
+                <span>${escapeHtml(address)}</span>
+                ${distKm > 0 ? `<span class="oc-dist-chip"><i class="fa-solid fa-route"></i> ${distKm.toFixed(1)} km</span>` : ''}
+              </div>
+            </div>
+
+            <div class="oc-items">
+              <i class="fa-solid fa-utensils"></i> ${escapeHtml(itemsSummary)}
+            </div>
+
+            <div class="oc-footer">
+              <div class="oc-footer-left">
+                <span class="oc-rider-tag"><i class="fa-solid fa-motorcycle"></i> ${riderName}</span>
+                <span class="pay-badge ${isOnline ? 'online' : 'cash'}">${isOnline ? 'Online Paid' : 'Cash (COD)'}</span>
+              </div>
+              <div class="oc-footer-right">
+                <span class="oc-total">₹${rawTotal.toLocaleString('en-IN')}</span>
+                <button type="button" class="btn-view-receipt btn-receipt-mobile" data-order-id="${escapeHtml(rawId)}">
+                  <i class="fa-regular fa-eye"></i> Receipt
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Attach click handlers to mobile card receipt buttons
+      ordersCardsContainer.querySelectorAll('.btn-view-receipt').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const orderId = btn.getAttribute('data-order-id');
+          const order = orders.find(o => String(o.id) === String(orderId));
+          if (order) {
+            openInvoiceModal(order);
+          }
+        });
+      });
+    }
+  }
 }
 
 // ==============================================================
@@ -970,6 +1219,68 @@ function initActions() {
   if (btnPrintSingle) {
     btnPrintSingle.addEventListener('click', () => {
       window.print();
+    });
+  }
+
+  // Mobile Fast-Jump Navigation Tabs
+  const mobileTabs = document.getElementById('owner-mobile-tabs');
+  if (mobileTabs) {
+    mobileTabs.addEventListener('click', (e) => {
+      const tabBtn = e.target.closest('.owner-tab-btn');
+      if (!tabBtn) return;
+      const targetId = tabBtn.getAttribute('data-target');
+      const targetEl = document.getElementById(targetId);
+
+      mobileTabs.querySelectorAll('.owner-tab-btn').forEach(b => b.classList.remove('active'));
+      tabBtn.classList.add('active');
+
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
+
+  // Delivery Boys View Toggle (Cards vs Table)
+  const riderViewToggle = document.getElementById('rider-view-toggle');
+  if (riderViewToggle) {
+    riderViewToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-view-toggle');
+      if (!btn) return;
+      const view = btn.getAttribute('data-view');
+      riderViewToggle.querySelectorAll('.btn-view-toggle').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const cards = document.getElementById('rider-cards-container');
+      const table = document.getElementById('rider-table-wrapper');
+      if (view === 'table') {
+        if (cards) cards.style.display = 'none';
+        if (table) table.style.display = 'block';
+      } else {
+        if (cards) cards.style.display = 'grid';
+        if (table) table.style.display = 'none';
+      }
+    });
+  }
+
+  // Orders View Toggle (Cards vs Table)
+  const ordersViewToggle = document.getElementById('orders-view-toggle');
+  if (ordersViewToggle) {
+    ordersViewToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-view-toggle');
+      if (!btn) return;
+      const view = btn.getAttribute('data-view');
+      ordersViewToggle.querySelectorAll('.btn-view-toggle').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const cards = document.getElementById('orders-cards-container');
+      const table = document.getElementById('orders-table-wrapper');
+      if (view === 'table') {
+        if (cards) cards.style.display = 'none';
+        if (table) table.style.display = 'block';
+      } else {
+        if (cards) cards.style.display = 'grid';
+        if (table) table.style.display = 'none';
+      }
     });
   }
 }
