@@ -10586,13 +10586,7 @@ body.food-modal-open .mobile-floating-bar {
     font-size: 0.68rem !important;
   }
   .tracker-map-recenter-btn {
-    width: 26px !important;
-    height: 26px !important;
-    padding: 0 !important;
-    justify-content: center;
-  }
-  .tracker-map-recenter-btn .recenter-btn-text {
-    display: none;
+    display: none !important;
   }
 }
 
@@ -10742,17 +10736,77 @@ body.food-modal-open .mobile-floating-bar {
 
 
 /* ==========================================================================
-   DISPATCHED SCREEN ERGONOMICS (Live Map Open On Top & Connected to Rider GPS)
+   DISPATCHED SCREEN ERGONOMICS (Flat Attached Live Map On Top & Connected to Rider GPS)
    ========================================================================== */
 .order-modal-card.is-dispatched .order-modal-scroll-body {
-  padding: 16px 16px 24px 16px;
+  padding: 0 16px 24px 16px;
+}
+
+@media (min-width: 640px) {
+  .order-modal-card.is-dispatched .order-modal-scroll-body {
+    padding: 0 20px 24px 20px;
+  }
 }
 
 .order-modal-card.is-dispatched .tracker-live-map-card {
-  margin: 0 0 16px 0;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
-  border: 1.5px solid #E5E7EB;
-  border-radius: 18px;
+  margin: 0 -16px 18px -16px;
+  width: calc(100% + 32px);
+  box-shadow: none;
+  border: none;
+  border-bottom: 1.5px solid #E5E7EB;
+  border-radius: 0;
+  background: #FFFFFF;
+}
+
+@media (min-width: 640px) {
+  .order-modal-card.is-dispatched .tracker-live-map-card {
+    margin: 0 -20px 20px -20px;
+    width: calc(100% + 40px);
+  }
+}
+
+.order-modal-card.is-dispatched .tracker-map-header {
+  padding: 10px 48px 10px 14px;
+  background: #F9FAFB;
+  border-bottom: 1px solid #F3F4F6;
+}
+
+.order-modal-card.is-dispatched .modal-close-btn {
+  top: 10px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  color: var(--text-heading, #1F2937);
+  font-size: 0.8rem;
+  font-weight: 700;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.order-modal-card.is-dispatched .modal-close-btn:hover {
+  background: #F3F4F6;
+  border-color: #D1D5DB;
+  color: var(--brand-primary, #FF5A26);
+}
+
+@media (max-width: 480px) {
+  .order-modal-card.is-dispatched .tracker-map-header {
+    padding: 8px 42px 8px 10px;
+  }
+  .order-modal-card.is-dispatched .modal-close-btn {
+    top: 8px;
+    right: 10px;
+    width: 26px;
+    height: 26px;
+    font-size: 0.75rem;
+  }
 }
 
 .order-modal-card.is-dispatched .tracker-map-viewport {
@@ -10801,6 +10855,7 @@ body.food-modal-open .mobile-floating-bar {
 
 .order-modal-card.is-dispatched .order-success-icon {
   font-size: 1.8rem;
+  margin-top: 4px;
   margin-bottom: 2px;
   animation: rider-marker-bob 1.5s ease-in-out infinite alternate;
 }

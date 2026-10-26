@@ -3220,6 +3220,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeOrderModalInternal() {
     pauseTrackerVideo();
     destroyTrackerLiveMap();
+    const modalCard = document.querySelector('.order-modal-card');
+    if (modalCard) modalCard.classList.remove('is-dispatched');
     orderModalBackdrop.classList.remove('open');
     document.body.style.overflow = '';
     syncCapsuleNavWithScroll();
