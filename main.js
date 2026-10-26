@@ -2102,7 +2102,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (textEl) {
         const isRider = trackEl.classList.contains('rider');
-        const textLabel = isRider ? 'Swipe to Call Delivery Boy' : (label.includes('Support') ? 'Swipe to Call Support' : 'Swipe to Call Kitchen');
+        const customText = trackEl.getAttribute('data-swipe-text');
+        const textLabel = customText || (isRider ? 'Swipe to Call Delivery Boy' : 'Swipe to Call');
         textEl.innerHTML = `
           <span class="swipe-text-shimmer">${textLabel}</span>
           <span class="swipe-chevrons">
@@ -2975,15 +2976,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (order.status === 'cooking') {
           statusBadgeLabel = '🔥 Preparing';
           statusBadgeClass = 'cooking';
-          stepHint = 'Our kitchen team is freshly preparing your meal.';
         } else if (order.status === 'ready_for_pickup') {
           statusBadgeLabel = '📦 Ready to Dispatch';
           statusBadgeClass = 'ready';
-          stepHint = 'Packed and ready for delivery partner pickup & dispatch.';
         }
-
-        const waText = encodeURIComponent(`Hi Savera Paradise Support, I have a query regarding Order ${order.id}.`);
-        const waUrl = cleanRestDigits.length >= 10 ? `https://wa.me/91${cleanRestDigits.slice(-10)}?text=${waText}` : '#';
 
         contactCardEl.innerHTML = `
           <div class="tracker-contact-header">
@@ -3002,31 +2998,21 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
 
           <div class="swipe-to-call-container">
-            <div class="swipe-to-call-track kitchen" id="swipe-track-kitchen" data-phone="${dialerRestPhone}" data-label="Restaurant Support">
+            <div class="swipe-to-call-track kitchen" id="swipe-track-kitchen" data-phone="${dialerRestPhone}" data-label="Restaurant Support" data-swipe-text="Swipe to Call">
               <div class="swipe-to-call-fill"></div>
               <div class="swipe-to-call-text">
-                <span class="swipe-text-shimmer">Swipe to Call Help (${escapeHtml(restaurantPhone)})</span>
+                <span class="swipe-text-shimmer">Swipe to Call</span>
                 <span class="swipe-chevrons">
                   <i class="fa-solid fa-chevron-right"></i>
                   <i class="fa-solid fa-chevron-right"></i>
                   <i class="fa-solid fa-chevron-right"></i>
                 </span>
               </div>
-              <div class="swipe-to-call-thumb" role="button" aria-label="Swipe to Call Restaurant Support" tabindex="0">
+              <div class="swipe-to-call-thumb" role="button" aria-label="Swipe to Call" tabindex="0">
                 <div class="thumb-glow"></div>
                 <i class="fa-solid fa-phone"></i>
               </div>
             </div>
-          </div>
-
-          <div class="tracker-secondary-wa-row">
-            <a href="${waUrl}" target="_blank" rel="noopener noreferrer" class="tracker-contact-wa-link" title="WhatsApp Restaurant Support">
-              <i class="fa-brands fa-whatsapp"></i> Chat with Restaurant on WhatsApp (${escapeHtml(restaurantPhone)})
-            </a>
-          </div>
-
-          <div class="tracker-contact-note">
-            <i class="fa-solid fa-circle-info"></i> ${stepHint} For cooking instructions or questions before dispatch, swipe above to call our restaurant team.
           </div>
         `;
         initSwipeToCall(contactCardEl.querySelector('.swipe-to-call-track'));

@@ -4613,6 +4613,10 @@ body.pwa-customer-installed .header-pwa-dock {
   width: 100%;
 }
 
+.swipe-to-call-container:last-child {
+  margin-bottom: 2px;
+}
+
 .swipe-to-call-track {
   position: relative;
   width: 100%;
