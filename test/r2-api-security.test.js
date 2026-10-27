@@ -6,6 +6,7 @@ import r2UploadHandler from '../api/r2-upload.js';
 import r2DeleteHandler from '../api/r2-delete.js';
 import r2ListHandler from '../api/r2-list.js';
 import r2ImageHandler from '../api/r2-image.js';
+import r2VideoHandler from '../api/r2-video.js';
 
 // Helper to mock minimal Serverless req / res
 function createMockReqRes({ method = 'GET', url = '/', headers = {}, body = null, query = {} } = {}) {
@@ -211,5 +212,52 @@ test('STAGE 1: Public Image Delivery & Path Traversal Guards (r2-image.js)', asy
     const { req: req2, res: res2 } = createMockReqRes({ method: 'GET', query: { key: 'categories/category_123.jpg' } });
     await r2ImageHandler(req2, res2);
     assert.notStrictEqual(res2.statusCode, 400);
+  });
+});
+
+test('STAGE 1: Live Tracker Video Streaming Endpoint (r2-video.js)', async (t) => {
+  await t.test('Rejects non-GET/HEAD methods with 405 Method Not Allowed', async () => {
+    const { req, res } = createMockReqRes({ method: 'POST' });
+    await r2VideoHandler(req, res);
+    assert.strictEqual(res.statusCode, 405);
+  });
+
+  await t.test('Rejects path traversal attempts with 400', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: { key: '../etc/passwd' } });
+    await r2VideoHandler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+    assert.ok(res.data.error.includes('path traversal') || res.data.error.includes('Invalid video key'));
+  });
+
+  await t.test('Rejects non-video extensions with 400', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: { key: 'dishes/sample.jpg' } });
+    await r2VideoHandler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+    assert.ok(res.data.error.includes('.mp4 and .webm') || res.data.error.includes('Invalid video key'));
+  });
+
+  await t.test('Rejects illegal characters in video path with 400', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: { key: 'videos/<script>.mp4' } });
+    await r2VideoHandler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+  });
+
+  await t.test('Rejects unauthorized bucket paths outside videos/ or default with 400', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: { key: 'secrets/private_video.mp4' } });
+    await r2VideoHandler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+  });
+
+  await t.test('Accepts default tracking preparation video without query param', async () => {
+    // Default video must pass path validation (won't return 400; may proceed to 503 or stream)
+    const { req, res } = createMockReqRes({ method: 'GET', query: {} });
+    await r2VideoHandler(req, res);
+    assert.notStrictEqual(res.statusCode, 400, 'Default video Untitled design (16).mp4 must NOT fail validation');
+  });
+
+  await t.test('Accepts videos in videos/ subfolder', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: { key: 'videos/prep_kitchen.mp4' } });
+    await r2VideoHandler(req, res);
+    assert.notStrictEqual(res.statusCode, 400, 'videos/ folder paths must pass validation');
   });
 });

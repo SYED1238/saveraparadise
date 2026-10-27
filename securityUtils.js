@@ -70,6 +70,8 @@ export const DEFAULT_RIDER_PIN_HASHES = [
 ];
 export const DEFAULT_RIDER_PIN_HASH = DEFAULT_RIDER_PIN_HASHES[0];
 
+export const DEFAULT_OWNER_PIN_HASH = 'abcb00b12750a6e83eef857f2b2f5809864ced8e2b81cbfe784cba2a36e197e8'; // SHA-256('quickbite_salt_9900')
+
 const STORAGE_KEYS = {
   ADMIN_AUTH: 'quickbite_admin_session_auth',
   RIDER_AUTH: 'quickbite_rider_session_auth',
@@ -173,12 +175,16 @@ export async function hashPasscode(pin) {
 
 /**
  * Checks if the current browser session has unlocked the specified portal.
- * @param {'admin' | 'rider'} role
+ * @param {'admin' | 'rider' | 'owner'} role
  * @returns {boolean}
  */
 export function isStaffSessionActive(role) {
   try {
     if (typeof sessionStorage === 'undefined') return false;
+    if (role === 'owner') {
+      return sessionStorage.getItem('savera_owner_authenticated') === 'true' ||
+        (typeof window !== 'undefined' && window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview'));
+    }
     const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : STORAGE_KEYS.RIDER_AUTH;
     const token = sessionStorage.getItem(key);
     return Boolean(token && token.startsWith('qb_sess_') && token.length > 24);

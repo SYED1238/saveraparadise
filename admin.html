@@ -1222,15 +1222,17 @@
           <div class="form-group">
             <label for="dish-badge-input">Badge / Tag</label>
             <select id="dish-badge-input">
+              <option value="" selected>None</option>
               <option value="🔥 Bestseller">🔥 Bestseller</option>
               <option value="👑 House Signature">👑 House Signature</option>
               <option value="🌿 Vegetarian">🌿 Vegetarian</option>
-              <option value="✨ Chef Specialty" selected>✨ Chef Specialty</option>
+              <option value="✨ Chef Specialty">✨ Chef Specialty</option>
               <option value="🍟 Irresistible Crunch">🍟 Irresistible Crunch</option>
               <option value="🪵 Oak Wood Fired">🪵 Oak Wood Fired</option>
               <option value="🍜 Slow Simmered">🍜 Slow Simmered</option>
               <option value="Custom">Custom Text...</option>
             </select>
+            <input type="text" id="dish-badge-custom-input" placeholder="Enter custom badge text (e.g. ⭐ Value Combo)" style="display:none; margin-top: 8px;" maxlength="40">
           </div>
 
           <div class="form-group">

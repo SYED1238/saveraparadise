@@ -38,6 +38,7 @@ export default async function handler(req, res) {
     origin.includes('localhost') ||
     origin.includes('127.0.0.1') ||
     origin.endsWith('.vercel.app') ||
+    origin.includes('foodbliz.in') ||
     origin.includes('saveraparadise') ||
     origin.includes('zarb.shop');
 

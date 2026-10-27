@@ -4,7 +4,7 @@
 // ==============================================================
 
 import { dataService, extractPhoneFromOrder, cleanDeliveryAddress } from './dataService.js';
-import { escapeHtml, sanitizePhone } from './securityUtils.js';
+import { escapeHtml, sanitizePhone, hashPasscode, DEFAULT_OWNER_PIN_HASH } from './securityUtils.js';
 
 // --- STATE MANAGEMENT ---
 let currentPeriod = 'today'; // 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom'
@@ -178,13 +178,23 @@ function updatePinDots() {
   });
 }
 
-function verifyOwnerPin(pin) {
+async function verifyOwnerPin(pin) {
   const settings = dataService.getSettings();
-  const configuredOwnerPin = String(settings.ownerPin || DEFAULT_OWNER_PIN).trim();
+  const cleanPin = String(pin || '').trim();
+  const inputHash = await hashPasscode(cleanPin);
 
-  const isValid = String(pin).trim() === configuredOwnerPin;
+  const targetHash = settings.ownerPinHash || DEFAULT_OWNER_PIN_HASH;
+  const legacyPin = settings.ownerPin ? String(settings.ownerPin).trim() : null;
+
+  const isValid = inputHash === targetHash || (legacyPin && cleanPin === legacyPin);
 
   if (isValid) {
+    // If legacy plaintext pin was used, migrate to salted hash and delete plaintext
+    if (settings.ownerPin) {
+      settings.ownerPinHash = inputHash;
+      delete settings.ownerPin;
+      dataService.saveSettings(settings);
+    }
     sessionStorage.setItem('savera_owner_authenticated', 'true');
     unlockOwnerPortal();
   } else {

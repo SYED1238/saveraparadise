@@ -42,9 +42,14 @@ if (typeof window !== 'undefined') {
   window.showSamsungToast = showSamsungToast;
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function initStorefrontApp() {
   // Navigation Back Stack Controller (Single-step back navigation for storefront)
   const backNav = createBackNavigationManager('storefront');
+
+  // ==========================================
+  // CINEMATIC MOTION GRAPHICS INTRO
+  // Initialized instantly via inline compositor engine in index.html for zero latency
+  // ==========================================
 
   // ==========================================
   // IMAGE SKELETON LOADER & ALT-TEXT SYSTEM
@@ -397,6 +402,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof syncCapsuleNavWithScroll === 'function') {
       syncCapsuleNavWithScroll();
     }
+
+    // 3. Hero Scroll Guide Arrow (Fades out smoothly once user scrolls down)
+    const heroScrollGuide = document.getElementById('hero-scroll-guide');
+    if (heroScrollGuide) {
+      if (currentY > 50) {
+        heroScrollGuide.classList.add('guide-hidden');
+      } else {
+        heroScrollGuide.classList.remove('guide-hidden');
+      }
+    }
   }
 
   window.addEventListener('scroll', () => {
@@ -528,6 +543,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Hero Scroll Guide Click (Smooth scroll to Browse Food Menu)
+  const heroScrollGuideBtn = document.getElementById('hero-scroll-guide');
+  if (heroScrollGuideBtn) {
+    heroScrollGuideBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const menuSection = document.getElementById('menu-section');
+      if (menuSection) {
+        menuSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  }
+
   // ==========================================
   // CATEGORY CAROUSEL & MENU FILTERING
   // ==========================================
@@ -653,12 +680,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const allImg = (typeof dataService.getAllCategoryImage === 'function')
       ? dataService.getAllCategoryImage()
-      : 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=200&auto=format&fit=crop&q=80';
+      : '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png';
 
     let html = `
       <button class="category-pill cuisine-circle-item ${activeFilter === 'all' ? 'active' : ''}" data-filter="all" title="View All Dishes">
         <div class="cuisine-circle-wrap">
-          <img src="${escapeHtml(allImg)}" alt="All" class="cuisine-circle-img cuisine-circle-all-img" loading="lazy" />
+          <img src="${escapeHtml(allImg)}" alt="All" class="cuisine-circle-img cuisine-circle-all-img" loading="lazy" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+          <span class="cuisine-circle-fallback" style="display:none;">🍽️</span>
           <span class="cuisine-check-badge"><i class="fa-solid fa-check"></i></span>
         </div>
         <span class="cuisine-circle-name">All</span>
@@ -1237,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return {
       ...dish,
       rating: dish.rating || '5.0 (200+ reviews)',
-      badge: dish.badge || (dish.inStock === false ? 'Sold Out' : '🔥 Popular'),
+      badge: dish.badge || (dish.inStock === false ? 'Sold Out' : ''),
       category: dish.categoryName || dish.category,
       time: dish.time || '10 - 12 mins',
       calories: dish.calories || '420 kcal',
@@ -1305,7 +1333,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (foodDetailPrice) foodDetailPrice.textContent = `₹${Math.round(dish.price)}`;
     if (foodDetailCat) foodDetailCat.textContent = dish.category;
     if (foodDetailDesc) foodDetailDesc.textContent = dish.desc;
-    if (foodDetailBadge) foodDetailBadge.textContent = dish.badge;
+    if (foodDetailBadge) {
+      if (dish.badge && dish.badge.trim()) {
+        foodDetailBadge.textContent = dish.badge.trim();
+        foodDetailBadge.style.display = '';
+      } else {
+        foodDetailBadge.textContent = '';
+        foodDetailBadge.style.display = 'none';
+      }
+    }
     if (foodDetailRating) foodDetailRating.style.display = 'none';
     if (foodDetailTime) foodDetailTime.textContent = dish.time;
     if (foodDetailCals) foodDetailCals.textContent = dish.calories;
@@ -1496,7 +1532,7 @@ document.addEventListener('DOMContentLoaded', () => {
         card.id = `card-${dish.id}`;
         card.innerHTML = `
           <div class="recipe-card-inner is-img-loading">
-            <span class="recipe-card-badge-pill">${escapeHtml(dish.badge || '✨ Chef Specialty')}</span>
+            ${(dish.badge && dish.badge.trim()) ? `<span class="recipe-card-badge-pill">${escapeHtml(dish.badge.trim())}</span>` : ''}
             <img src="${dish.image || '/api/r2-image?key=dishes/crispy-chicken.jpg'}" alt="${escapeHtml(dish.name)}" class="recipe-img food-card-img" loading="lazy" decoding="async"/>
             <div class="recipe-overlay"></div>
             <button 
@@ -2788,6 +2824,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (order.status === 'cancelled') {
       if (successIcon) successIcon.textContent = '❌';
       if (modalTitle) modalTitle.textContent = 'Order Cancelled';
+    } else if (order.status === 'undelivered') {
+      if (successIcon) successIcon.textContent = '📦';
+      if (modalTitle) modalTitle.textContent = 'Order Undelivered (Returned)';
     } else if (order.status === 'on_the_way') {
       if (successIcon) successIcon.textContent = '🛵';
       if (modalTitle) modalTitle.textContent = 'Out for Delivery!';
@@ -2806,6 +2845,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (order.status === 'cancelled') {
         const reasonHtml = order.cancellationReason ? `<br><span style="color:#B91C1C; font-size:0.86rem; display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-weight:600;"><i class="fa-solid fa-circle-exclamation"></i> Reason: ${escapeHtml(order.cancellationReason)}</span>` : '';
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was cancelled by the kitchen.${reasonHtml}`;
+      } else if (order.status === 'undelivered') {
+        const reasonHtml = order.undeliveredReason || order.cancellationReason ? `<br><span style="color:#B91C1C; font-size:0.86rem; display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Reason: ${escapeHtml(order.undeliveredReason || order.cancellationReason)}</span>` : '';
+        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was marked undelivered. Our rider waited at your doorstep for 10 minutes but could not reach you. Parcel returned to Savera Paradise kitchen.${reasonHtml}`;
       } else if (order.status === 'accepted' || order.status === 'pending') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> has been accepted by our kitchen.`;
       } else if (order.status === 'cooking') {
@@ -2813,7 +2855,8 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (order.status === 'ready_for_pickup') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is packed and ready to dispatch!`;
       } else if (order.status === 'on_the_way') {
-        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is on the way to your doorstep!`;
+        const waitingNotice = order.riderWaitingAtDoorstep ? `<br><span style="color:#D97706; font-size:0.9rem; font-weight:700; display:inline-flex; align-items:center; gap:6px; margin-top:8px; background:#FEF3C7; padding:6px 10px; border-radius:6px; border:1px solid #FCD34D;"><i class="fa-solid fa-bell fa-shake"></i> ⚠️ Your rider is at your doorstep right now! Please open the door or check your phone.</span>` : '';
+        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is on the way to your doorstep!${waitingNotice}`;
       } else if (order.status === 'delivered') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> has arrived at your door! 🎉 Saved to <strong>My Orders</strong>.`;
       } else {
@@ -3293,8 +3336,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const cleanPhone = riderPhone.replace(/\D/g, '');
           const dialerPhone = cleanPhone.length === 10 ? `+91${cleanPhone}` : `+${cleanPhone}`;
           cardCallBtnHtml = `
-            <a href="tel:${dialerPhone}" class="btn-card-call-contact" title="Call Delivery Boy (${riderPhone})">
-              <i class="fa-solid fa-phone"></i> Call Delivery Boy
+            <a href="tel:${dialerPhone}" class="btn-card-call-contact rider" title="Call Delivery Partner (${riderPhone})">
+              <i class="fa-solid fa-phone"></i> Call Rider
             </a>
           `;
         } else {
@@ -3304,7 +3347,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const dialerRest = cleanRest.length === 10 ? `+91${cleanRest}` : `+${cleanRest}`;
           cardCallBtnHtml = `
             <a href="tel:${dialerRest}" class="btn-card-call-contact kitchen" title="Call Restaurant (${restPhone})">
-              <i class="fa-solid fa-phone"></i> Call Restaurant (${escapeHtml(restPhone)})
+              <i class="fa-solid fa-phone"></i> Call
             </a>
           `;
         }
@@ -3313,19 +3356,19 @@ document.addEventListener('DOMContentLoaded', () => {
       // Strict Rule: Customers can ONLY cancel an order when it is in 'accepted' status
       const canCancel = !isPast && order.status === 'accepted';
       const cancelBtnHtml = canCancel ? `
-        <button type="button" class="btn-card-cancel-order" data-cancel-id="${safeId}">
-          <i class="fa-solid fa-ban"></i> Cancel
+        <button type="button" class="btn-card-cancel-order" data-cancel-id="${safeId}" title="Cancel Order">
+          <i class="fa-solid fa-xmark"></i> Cancel
         </button>
       ` : '';
 
       const actionBtnHtml = isPast ? `
-        <button type="button" class="btn-card-reorder" data-reorder-id="${safeId}">
+        <button type="button" class="btn-card-reorder" data-reorder-id="${safeId}" title="Reorder these dishes">
           <i class="fa-solid fa-arrows-rotate"></i> Reorder Items
         </button>
       ` : `
         ${cardCallBtnHtml}
         ${cancelBtnHtml}
-        <button type="button" class="btn-card-track" data-track-id="${safeId}">
+        <button type="button" class="btn-card-track" data-track-id="${safeId}" title="Live Track Order">
           <i class="fa-solid fa-motorcycle"></i> Track Live
         </button>
       `;
@@ -4334,6 +4377,18 @@ document.addEventListener('DOMContentLoaded', () => {
         data: { orderId: order.id, url: '/' }
       });
       flashTabTitle(`❌ CANCELLED: ${order.id}`);
+    } else if (order.status === 'undelivered') {
+      updateAppBadge(0);
+      playNotificationSound('cancelled');
+      const reasonSuffix = order.undeliveredReason || order.cancellationReason ? `: ${order.undeliveredReason || order.cancellationReason}` : '';
+      showToast(`⚠️ Order Undelivered: Delivery partner waited at your doorstep but could not reach you. Parcel returned to kitchen counter${reasonSuffix}`, 'error');
+      sendSystemNotification({
+        title: `⚠️ Order ${order.id} Undelivered`,
+        body: `Rider waited 10 mins at your door but could not reach you. Parcel returned to Savera Paradise.`,
+        tag: `customer-undelivered-${order.id}`,
+        data: { orderId: order.id, url: '/' }
+      });
+      flashTabTitle(`⚠️ UNDELIVERED: ${order.id}`);
     }
   }
 
@@ -5290,8 +5345,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (swiggyStepMap) swiggyStepMap.style.display = 'flex';
     if (swiggyStepForm) swiggyStepForm.style.display = 'none';
 
-    const swiggyInputFlat = document.getElementById('swiggy-input-flat');
-    const swiggyInputFloor = document.getElementById('swiggy-input-floor');
     const swiggyInputStreet = document.getElementById('swiggy-input-street');
     const swiggySaveAsInput = document.getElementById('swiggy-save-as-input');
     const swiggyAccountDetailsPreview = document.getElementById('swiggy-account-details-preview');
@@ -5319,8 +5372,6 @@ document.addEventListener('DOMContentLoaded', () => {
         pincode: existing.pincode || '',
         fullText: [existing.flatNo, existing.area, existing.city, existing.pincode].filter(Boolean).join(', ')
       };
-      if (swiggyInputFlat) swiggyInputFlat.value = existing.flatNo || '';
-      if (swiggyInputFloor) swiggyInputFloor.value = existing.floor || '';
       if (swiggyInputStreet) swiggyInputStreet.value = existing.street || '';
       if (swiggySaveAsInput) swiggySaveAsInput.value = existing.tag || 'Home';
       if (addrInputFlat) addrInputFlat.value = detectedAddressDetails.flatNo;
@@ -5441,9 +5492,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const swiggyCardLocalityText = document.getElementById('swiggy-card-locality-text');
       if (swiggyCardLocalityText) swiggyCardLocalityText.textContent = detectedAddressDetails.fullText || 'Pinned Doorstep, Ramanagara';
 
-      const swiggyInputFlat = document.getElementById('swiggy-input-flat');
-      if (swiggyInputFlat && !swiggyInputFlat.value) {
-        setTimeout(() => swiggyInputFlat.focus(), 150);
+      const swiggyInputStreet = document.getElementById('swiggy-input-street');
+      if (swiggyInputStreet && !swiggyInputStreet.value) {
+        setTimeout(() => swiggyInputStreet.focus(), 150);
       }
     });
   }
@@ -5670,24 +5721,14 @@ document.addEventListener('DOMContentLoaded', () => {
     formDeliveryAddress.addEventListener('submit', (e) => {
       e.preventDefault();
 
-      const swiggyInputFlat = document.getElementById('swiggy-input-flat');
-      const swiggyInputFloor = document.getElementById('swiggy-input-floor');
       const swiggyInputStreet = document.getElementById('swiggy-input-street');
       const swiggySaveAsInput = document.getElementById('swiggy-save-as-input');
       const swiggyInputInstructions = document.getElementById('swiggy-input-instructions');
       const swiggyUseAccountCheckbox = document.getElementById('swiggy-use-account-checkbox');
 
-      const flatNoVal = swiggyInputFlat?.value?.trim() || '';
-      const floorVal = swiggyInputFloor?.value?.trim() || '';
       const streetVal = swiggyInputStreet?.value?.trim() || '';
       const instructionsVal = swiggyInputInstructions?.value?.trim() || '';
       const saveAsVal = swiggySaveAsInput?.value?.trim() || 'Home';
-
-      if (!flatNoVal) {
-        showToast('Please enter your House / Flat Number', 'warning');
-        if (swiggyInputFlat) swiggyInputFlat.focus();
-        return;
-      }
 
       // Determine Contact Name & Phone Number
       let name = '';
@@ -5732,8 +5773,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Construct formatted multi-part delivery address
       const fullAddressParts = [
-        flatNoVal,
-        floorVal ? `Floor ${floorVal}` : '',
         streetVal,
         detectedAddressDetails.fullText || 'Ramanagara'
       ].filter(Boolean);
@@ -5752,8 +5791,8 @@ document.addEventListener('DOMContentLoaded', () => {
         name,
         phone,
         tag,
-        flatNo: flatNoVal,
-        floor: floorVal,
+        flatNo: '',
+        floor: '',
         street: streetVal,
         instructions: instructionsVal,
         area,
@@ -6588,7 +6627,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) throw error;
       } catch (err) {
         console.warn('[Cloud OAuth Error]:', err);
-        showToast(`Cloud OAuth error: ${err?.message || err}`, 'error');
+        showToast('Sign-in error. Please try again.', 'error');
         btnDevCloudOAuth.disabled = false;
         btnDevCloudOAuth.innerHTML = '<i class="fa-solid fa-cloud"></i> Test Real Google OAuth (Cloud)';
       }
@@ -7016,4 +7055,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial render
   renderCart();
   updateHeroDeliveryDistanceBadge();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initStorefrontApp);
+} else {
+  initStorefrontApp();
+}

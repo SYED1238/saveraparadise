@@ -1295,6 +1295,104 @@ input:checked + .slider:before {
   transform: translateY(-1px);
 }
 
+.btn-action-pill.btn-action-unreachable {
+  background: #FFF7ED;
+  color: #C2410C;
+  border: 1.5px solid #FDBA74;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-action-pill.btn-action-unreachable:hover {
+  background: #FFEDD5;
+  border-color: #FB923C;
+  color: #9A3412;
+  transform: translateY(-1px);
+}
+.btn-action-pill.btn-action-unreachable:active {
+  transform: translateY(0) scale(0.96);
+}
+.btn-action-pill.btn-action-unreachable.is-waiting {
+  background: #FEF3C7;
+  color: #92400E;
+  border-color: #FCD34D;
+  animation: cnrWaitingGlow 2s infinite ease-in-out;
+}
+@keyframes cnrWaitingGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+}
+
+/* Doorstep waiting indicator strip on active card */
+.cnr-waiting-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.cnr-waiting-indicator:hover {
+  background: #FEF3C7;
+  border-color: #FCD34D;
+}
+.cnr-indicator-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #F59E0B;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  animation: pulseDot 1.5s infinite;
+  flex-shrink: 0;
+}
+.cnr-indicator-text {
+  font-size: 0.82rem;
+  color: #92400E;
+  font-weight: 600;
+  flex: 1;
+}
+.cnr-indicator-tap {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #B45309;
+  text-decoration: underline;
+}
+
+.row-actions-comms {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.row-actions-resolution {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row-returned-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #FFF7ED;
+  color: #C2410C;
+  border: 1px solid #FDBA74;
+}
+.row-order-id.undelivered {
+  background: #FEE2E2;
+  color: #DC2626;
+  border-color: #FECACA;
+}
+
 .btn-row-pickup {
   display: inline-flex;
   align-items: center;
@@ -1716,22 +1814,45 @@ input:checked + .slider:before {
   /* Row 3: Action Buttons (Compact Touch Symbols + Expandable Delivered Action) */
   .row-actions-group {
     display: flex;
+    flex-direction: column;
     width: 100%;
     gap: 8px;
-    align-items: center;
   }
 
-  .btn-action-pill.btn-action-icon {
-    width: 44px;
+  .row-actions-comms {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .row-actions-comms .btn-action-icon {
+    flex: 1;
     height: 44px;
-    flex: 0 0 44px;
     padding: 0;
     font-size: 1.2rem;
     box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .btn-action-pill.btn-action-deliver {
+  .row-actions-resolution {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .row-actions-resolution .btn-action-unreachable {
     flex: 1;
+    min-height: 44px;
+    justify-content: center;
+    font-size: 0.88rem;
+    padding: 10px 12px;
+    box-sizing: border-box;
+  }
+
+  .row-actions-resolution .btn-action-deliver {
+    flex: 1.2;
     min-height: 44px;
     justify-content: center;
     font-size: 0.92rem;
@@ -2016,6 +2137,331 @@ input:checked + .slider:before {
   justify-content: center;
   gap: 8px;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.3);
+}
+
+/* ==========================================================================
+   Customer Unreachable at Doorstep (CNR) Modal & Components
+   ========================================================================== */
+.unreachable-modal-card {
+  max-width: 500px;
+  padding: 24px;
+}
+.unreachable-bubble {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  color: #D97706;
+  font-size: 2.2rem;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.unreachable-badge-pill {
+  display: inline-block;
+  padding: 4px 12px;
+  background: #FEF3C7;
+  color: #92400E;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+  border: 1px solid #FCD34D;
+}
+.unreachable-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+/* 10-Minute Doorstep Countdown Timer Card */
+.cnr-timer-card {
+  background: linear-gradient(135deg, #1E293B, #0F172A);
+  color: #FFFFFF;
+  border-radius: 14px;
+  padding: 16px;
+  border: 1px solid #334155;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+}
+.cnr-timer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.cnr-timer-label {
+  font-size: 0.8rem;
+  color: #94A3B8;
+  font-weight: 600;
+}
+.cnr-timer-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: rgba(245, 158, 11, 0.2);
+  color: #FCD34D;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.cnr-countdown-display {
+  text-align: center;
+  padding: 6px 0;
+}
+.cnr-clock {
+  font-family: var(--font-heading, monospace);
+  font-size: 2.8rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #FDE047;
+  text-shadow: 0 0 16px rgba(253, 224, 71, 0.3);
+  line-height: 1.1;
+}
+.cnr-clock.expired {
+  color: #F87171;
+  text-shadow: 0 0 16px rgba(248, 113, 113, 0.3);
+  animation: cnrExpiredPulse 1.5s infinite;
+}
+@keyframes cnrExpiredPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+.cnr-clock-sub {
+  font-size: 0.78rem;
+  color: #CBD5E1;
+  margin-top: 4px;
+}
+.cnr-progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: #334155;
+  border-radius: 3px;
+  margin-top: 12px;
+  overflow: hidden;
+}
+.cnr-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #F59E0B, #10B981);
+  border-radius: 3px;
+  transition: width 1s linear;
+}
+
+/* 3 Quick Contact Action Buttons */
+.cnr-contact-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.cnr-contact-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 12px 6px;
+  border-radius: 12px;
+  text-decoration: none;
+  border: 1.5px solid transparent;
+  transition: all 0.2s ease;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.cnr-contact-btn i {
+  font-size: 1.25rem;
+}
+.cnr-btn-text strong {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+.cnr-btn-text span {
+  display: block;
+  font-size: 0.68rem;
+  opacity: 0.85;
+}
+.btn-cnr-call {
+  background: #ECFDF5;
+  color: #065F46;
+  border-color: #A7F3D0;
+}
+.btn-cnr-call:hover {
+  background: #D1FAE5;
+  transform: translateY(-1px);
+}
+.btn-cnr-wa {
+  background: #F0FDF4;
+  color: #166534;
+  border-color: #BBF7D0;
+}
+.btn-cnr-wa:hover {
+  background: #DCFCE7;
+  transform: translateY(-1px);
+}
+.btn-cnr-manager {
+  background: #F1F5F9;
+  color: #334155;
+  border-color: #CBD5E1;
+}
+.btn-cnr-manager:hover {
+  background: #E2E8F0;
+  transform: translateY(-1px);
+}
+
+/* Doorstep Resolution Box */
+.cnr-resolution-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cnr-resolution-box {
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 16px;
+}
+.cnr-box-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.cnr-pill-cod {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #B45309;
+}
+.cnr-pill-prepaid {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #047857;
+}
+.cnr-paid-verified {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #059669;
+}
+.cnr-warning-notice {
+  display: flex;
+  gap: 8px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  color: #92400E;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+.cnr-warning-notice i {
+  color: #D97706;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.cnr-field-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 6px;
+}
+.cnr-select, .cnr-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid #CBD5E1;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-family: inherit;
+  background: #FFFFFF;
+  color: #1E293B;
+  box-sizing: border-box;
+  min-height: 44px;
+}
+.cnr-select:focus, .cnr-input:focus {
+  outline: none;
+  border-color: #FF5A26;
+  box-shadow: 0 0 0 3px rgba(255, 90, 38, 0.15);
+}
+.btn-cnr-return {
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #DC2626, #B91C1C);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  transition: all 0.2s ease;
+}
+.btn-cnr-return:hover {
+  background: linear-gradient(135deg, #B91C1C, #991B1B);
+  transform: translateY(-1px);
+}
+
+.cnr-prepaid-option {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 10px;
+}
+.cnr-prepaid-option h5 {
+  margin: 0 0 4px 0;
+  font-size: 0.85rem;
+  color: #0F172A;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cnr-opt-desc {
+  font-size: 0.75rem;
+  color: #64748B;
+  margin: 0 0 8px 0;
+}
+.btn-cnr-safedrop {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  background: linear-gradient(135deg, #059669, #047857);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 0.86rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+}
+.btn-cnr-return-prepaid {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  background: #F1F5F9;
+  color: #DC2626;
+  border: 1.5px solid #FECACA;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 0.84rem;
+  cursor: pointer;
+  min-height: 44px;
+}
+.cnr-footer-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
 }
 
 /* ==========================================================================

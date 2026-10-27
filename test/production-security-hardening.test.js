@@ -1,7 +1,26 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { escapeHtml, sanitizeUrl, sanitizePhone, hashPasscode } from '../securityUtils.js';
-import { createAdminToken, verifyAdminToken, verifyAdminPin } from '../api/_auth.js';
+import { createAdminToken, verifyAdminToken, verifyAdminPin, verifySignedPayload } from '../api/_auth.js';
+import checkoutHandler from '../api/checkout.js';
+
+function createMockReqRes({ method = 'GET', url = '/', headers = {}, body = null } = {}) {
+  let statusCode = 200;
+  let responseData = null;
+  const responseHeaders = {};
+
+  const req = { method, url, headers: { ...headers }, body };
+  const res = {
+    status(code) { statusCode = code; return this; },
+    setHeader(key, val) { responseHeaders[key] = val; return this; },
+    json(data) { responseData = data; return this; },
+    end() { return this; },
+    get statusCode() { return statusCode; },
+    get data() { return responseData; },
+    get headers() { return responseHeaders; }
+  };
+  return { req, res };
+}
 
 test('PRODUCTION SECURITY HARDENING: Input Sanitization & XSS Defenses', async (t) => {
   await t.test('escapeHtml eliminates script tags and dangerous HTML attributes', () => {
@@ -121,5 +140,46 @@ test('PRODUCTION SECURITY HARDENING: Financial Calculations & Price Tampering De
     const total = Math.max(0, subtotal - promoDiscount + 40);
     assert.strictEqual(promoDiscount, 100, 'Discount must not exceed subtotal');
     assert.strictEqual(total, 40, 'Final bill with delivery fee must be ₹40, not negative');
+  });
+
+  await t.test('POST /api/checkout validates items and calculates authoritative total with HMAC signature', async () => {
+    const catalogDishes = [
+      { id: 'dish-1', name: 'Zinger Burger', price: 180 },
+      { id: 'dish-2', name: 'Hot Wings (6pc)', price: 150 }
+    ];
+
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: JSON.stringify({
+        items: [
+          { id: 'dish-1', quantity: 2, price: 1 }, // Manipulated price
+          { id: 'dish-2', quantity: 1, price: 5 }  // Manipulated price
+        ],
+        catalogDishes
+      })
+    });
+
+    await checkoutHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.data.verified, true);
+    assert.strictEqual(res.data.subtotal, 510, 'Catalog price 2*180 + 1*150 overrides manipulated price');
+    assert.strictEqual(res.data.total, '₹510');
+    assert.ok(res.data.checkoutToken, 'Must issue signed HMAC checkout token');
+
+    const decoded = verifySignedPayload(res.data.checkoutToken);
+    assert.strictEqual(decoded.total, '₹510');
+  });
+
+  await t.test('POST /api/checkout rejects empty items or malformed quantities', async () => {
+    const emptyReq = createMockReqRes({ method: 'POST', body: JSON.stringify({ items: [] }) });
+    await checkoutHandler(emptyReq.req, emptyReq.res);
+    assert.strictEqual(emptyReq.res.statusCode, 400);
+
+    const badQtyReq = createMockReqRes({
+      method: 'POST',
+      body: JSON.stringify({ items: [{ id: 'dish-1', name: 'Burger', price: 100, quantity: -5 }] })
+    });
+    await checkoutHandler(badQtyReq.req, badQtyReq.res);
+    assert.strictEqual(badQtyReq.res.statusCode, 400);
   });
 });

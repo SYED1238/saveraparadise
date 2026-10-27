@@ -363,6 +363,134 @@
     </div>
   </div>
 
+  <!-- Modal: Customer Unreachable at Doorstep Protocol -->
+  <div class="rider-modal-backdrop" id="modal-unreachable-backdrop" role="dialog" aria-modal="true" aria-labelledby="unreachable-modal-title">
+    <div class="rider-modal-card unreachable-modal-card">
+      <button type="button" class="rider-modal-close" id="modal-unreachable-close" aria-label="Close modal">✕</button>
+      
+      <div class="confirm-modal-header unreachable-header">
+        <div class="confirm-icon-bubble unreachable-bubble">⚠️</div>
+        <div class="unreachable-badge-pill" id="unreachable-order-badge">ORDER #QB-0000</div>
+        <h3 id="unreachable-modal-title">Customer Not Answering</h3>
+        <p>Savera Paradise doorstep waiting & return protocol</p>
+      </div>
+
+      <div class="unreachable-body">
+        <!-- 10-Minute Waiting Countdown Timer Card -->
+        <div class="cnr-timer-card">
+          <div class="cnr-timer-top">
+            <span class="cnr-timer-label"><i class="fa-solid fa-stopwatch"></i> Doorstep Waiting Timer</span>
+            <span class="cnr-timer-badge" id="cnr-timer-status-badge">10 Mins Policy Active</span>
+          </div>
+          
+          <div class="cnr-countdown-display">
+            <div class="cnr-clock" id="cnr-clock-display">10:00</div>
+            <div class="cnr-clock-sub" id="cnr-clock-sub">Please wait 10 minutes at doorstep before returning parcel</div>
+          </div>
+
+          <div class="cnr-progress-bar-bg">
+            <div class="cnr-progress-bar-fill" id="cnr-progress-fill" style="width: 100%;"></div>
+          </div>
+        </div>
+
+        <!-- 3 Quick Contact Actions -->
+        <div class="cnr-contact-actions">
+          <a href="#" id="cnr-btn-call-customer" class="cnr-contact-btn btn-cnr-call">
+            <i class="fa-solid fa-phone"></i>
+            <div class="cnr-btn-text">
+              <strong>Call Customer</strong>
+              <span id="cnr-customer-phone-display">--</span>
+            </div>
+          </a>
+
+          <a href="#" id="cnr-btn-whatsapp" target="_blank" rel="noopener noreferrer" class="cnr-contact-btn btn-cnr-wa">
+            <i class="fa-brands fa-whatsapp"></i>
+            <div class="cnr-btn-text">
+              <strong>Urgent WhatsApp</strong>
+              <span>Doorstep Alert</span>
+            </div>
+          </a>
+
+          <a href="#" id="cnr-btn-call-manager" class="cnr-contact-btn btn-cnr-manager">
+            <i class="fa-solid fa-headset"></i>
+            <div class="cnr-btn-text">
+              <strong>Kitchen Manager</strong>
+              <span id="cnr-manager-phone-display">Helpline</span>
+            </div>
+          </a>
+        </div>
+
+        <!-- Doorstep Resolution Section -->
+        <div class="cnr-resolution-section">
+          <!-- COD Section -->
+          <div class="cnr-resolution-box cnr-box-cod" id="cnr-box-cod">
+            <div class="cnr-box-header">
+              <span class="cnr-pill-cod">💵 Cash on Delivery (COD)</span>
+              <strong id="cnr-cod-amount">₹0</strong>
+            </div>
+            <div class="cnr-warning-notice">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span><strong>Strict Cash Policy:</strong> Food parcel must <strong>NEVER</strong> be handed over without collecting cash. If customer does not answer after 10 minutes, return parcel to kitchen. Rider cash liability remains <strong>₹0</strong>.</span>
+            </div>
+
+            <div class="cnr-reason-select-wrap">
+              <label for="cnr-cod-reason" class="cnr-field-label">Select Return Reason:</label>
+              <select id="cnr-cod-reason" class="cnr-select">
+                <option value="Customer did not answer calls/doorbell after 10 mins wait">Customer did not answer calls/doorbell after 10 mins wait</option>
+                <option value="Customer phone switched off / unreachable">Customer phone switched off / unreachable</option>
+                <option value="House/flat locked, nobody at premises">House/flat locked, nobody at premises</option>
+                <option value="Incorrect address provided and customer unreachable">Incorrect address provided and customer unreachable</option>
+                <option value="Customer refused to accept order">Customer refused to accept order</option>
+              </select>
+            </div>
+
+            <button type="button" class="btn-cnr-return" id="btn-cnr-return-cod">
+              <i class="fa-solid fa-box-archive"></i> Mark Undelivered: Return to Kitchen
+            </button>
+          </div>
+
+          <!-- Prepaid Section (Paid Online) -->
+          <div class="cnr-resolution-box cnr-box-prepaid" id="cnr-box-prepaid" style="display: none;">
+            <div class="cnr-box-header">
+              <span class="cnr-pill-prepaid">💳 Paid Online (Prepaid)</span>
+              <span class="cnr-paid-verified">✓ Payment Verified</span>
+            </div>
+
+            <!-- Option 1: Safe Drop -->
+            <div class="cnr-prepaid-option">
+              <h5><i class="fa-solid fa-door-open"></i> Option A: Safe Drop (Doorstep / Security Guard)</h5>
+              <p class="cnr-opt-desc">Customer has already paid. You may leave parcel at the doorstep or with building security guard.</p>
+              <div class="cnr-safedrop-input-wrap">
+                <input type="text" id="cnr-safedrop-note" class="cnr-input" placeholder="e.g. Left at shoe rack outside door / with guard Ramesh" />
+              </div>
+              <button type="button" class="btn-cnr-safedrop" id="btn-cnr-safedrop">
+                <i class="fa-solid fa-circle-check"></i> Complete Safe Drop (Mark Delivered)
+              </button>
+            </div>
+
+            <!-- Option 2: Return to Kitchen -->
+            <div class="cnr-prepaid-option cnr-option-return">
+              <h5><i class="fa-solid fa-box-archive"></i> Option B: Inaccessible / Return to Kitchen</h5>
+              <p class="cnr-opt-desc">If building gate is locked or security refuses parcel.</p>
+              <select id="cnr-prepaid-reason" class="cnr-select">
+                <option value="Location completely inaccessible & customer unreachable">Location completely inaccessible & customer unreachable</option>
+                <option value="Gate security refused entry/parcel">Gate security refused entry/parcel</option>
+                <option value="Wrong address / premise locked">Wrong address / premise locked</option>
+              </select>
+              <button type="button" class="btn-cnr-return-prepaid" id="btn-cnr-return-prepaid">
+                <i class="fa-solid fa-rotate-left"></i> Return Parcel to Kitchen
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cnr-footer-actions">
+          <button type="button" class="btn-cancel-modal" id="btn-close-unreachable-modal">Still Waiting / Back</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div class="toast-container" id="rider-toast-container"></div>
 

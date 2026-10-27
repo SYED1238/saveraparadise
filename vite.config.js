@@ -230,29 +230,32 @@ function r2DevMiddlewarePlugin() {
           };
 
           const r2Req = https.request(getOptions, (r2Res) => {
+            r2Req.setTimeout(0);
             const status = r2Res.statusCode;
-            if (status === 200 || status === 206) {
-              if (!res.headersSent) {
-                res.setHeader('Content-Type', r2Res.headers['content-type'] || 'video/mp4');
-                res.setHeader('Accept-Ranges', 'bytes');
-                if (r2Res.headers['content-range']) {
-                  res.setHeader('Content-Range', r2Res.headers['content-range']);
+            try {
+              if (status === 200 || status === 206) {
+                if (!res.headersSent && !res.writableEnded) {
+                  res.setHeader('Content-Type', r2Res.headers['content-type'] || 'video/mp4');
+                  res.setHeader('Accept-Ranges', 'bytes');
+                  if (r2Res.headers['content-range']) {
+                    res.setHeader('Content-Range', r2Res.headers['content-range']);
+                  }
+                  if (r2Res.headers['content-length']) {
+                    res.setHeader('Content-Length', r2Res.headers['content-length']);
+                  }
+                  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+                  res.statusCode = status;
                 }
-                if (r2Res.headers['content-length']) {
-                  res.setHeader('Content-Length', r2Res.headers['content-length']);
+                r2Res.pipe(res);
+              } else {
+                r2Res.resume();
+                if (!res.headersSent && !res.writableEnded) {
+                  res.statusCode = status || 404;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Video not found' }));
                 }
-                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-                res.statusCode = status;
               }
-              r2Res.pipe(res);
-            } else {
-              r2Res.resume();
-              if (!res.headersSent) {
-                res.statusCode = status || 404;
-                res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify({ error: 'Video not found' }));
-              }
-            }
+            } catch (e) {}
           });
 
           r2Req.setTimeout(12000, () => {
@@ -260,10 +263,12 @@ function r2DevMiddlewarePlugin() {
           });
 
           r2Req.on('error', (err) => {
-            if (!res.headersSent) {
-              res.statusCode = 502;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ error: err.message }));
+            if (!res.headersSent && !res.writableEnded) {
+              try {
+                res.statusCode = 502;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              } catch {}
             }
           });
 

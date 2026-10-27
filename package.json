@@ -14,11 +14,12 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "qrcode": "^1.5.4",
     "vite": "^8.3.4"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
-    "leaflet": "^1.9.4",
-    "canvas-confetti": "^1.9.4"
+    "canvas-confetti": "^1.9.4",
+    "leaflet": "^1.9.4"
   }
 }

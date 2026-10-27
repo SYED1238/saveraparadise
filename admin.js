@@ -87,6 +87,11 @@ document.addEventListener('DOMContentLoaded', () => {
       setStaffSessionActive('admin');
       requestWakeLock();
       showToast('🔓 Manager Access Granted', 'success');
+      dataService.syncOrdersFromSupabase(true).then(() => {
+        renderOrders();
+        updateOrderBadges();
+      }).catch(() => {});
+      dataService.syncRidersFromSupabase().catch(() => {});
     }
   });
 
@@ -95,6 +100,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (adminLockOverlay) adminLockOverlay.classList.add('unlocked');
       requestWakeLock();
       ensureAdminToken().catch(() => {});
+      dataService.syncOrdersFromSupabase().then(() => {
+        renderOrders();
+        updateOrderBadges();
+      }).catch(() => {});
+      dataService.syncRidersFromSupabase().catch(() => {});
     } else {
       if (adminLockOverlay) {
         adminLockOverlay.classList.remove('unlocked');
@@ -221,6 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const dishCategorySelect = document.getElementById('dish-category-select');
   const dishPriceInput = document.getElementById('dish-price-input');
   const dishBadgeInput = document.getElementById('dish-badge-input');
+  const dishBadgeCustomInput = document.getElementById('dish-badge-custom-input');
   const dishTimeInput = document.getElementById('dish-time-input');
   const dishCaloriesInput = document.getElementById('dish-calories-input');
   const dishDietInput = document.getElementById('dish-diet-input');
@@ -380,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (categoriesGrid) {
       const allImg = (typeof dataService.getAllCategoryImage === 'function')
         ? dataService.getAllCategoryImage()
-        : 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=200&auto=format&fit=crop&q=80';
+        : '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png';
       const safeAllImg = (typeof dataService.sanitizeCategoryImageUrl === 'function')
         ? dataService.sanitizeCategoryImageUrl(allImg)
         : allImg;
@@ -562,7 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'all' || id === 'cat-all') {
       const allImg = (typeof dataService.getAllCategoryImage === 'function')
         ? dataService.getAllCategoryImage()
-        : 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=200&auto=format&fit=crop&q=80';
+        : '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png';
       catModalTitle.textContent = 'Edit "All" Category Photo';
       catEditId.value = 'all';
       catNameInput.value = 'All Categories (Storefront Circle)';
@@ -672,7 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
           try {
             if (typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && cloudflareR2Service.uploadImage) {
               if (catUploadStatus) {
-                catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Syncing to Cloudflare R2...`;
+                catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Uploading photo...`;
               }
               const catFileName = `category_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
               const r2Res = await cloudflareR2Service.uploadImage(file, catFileName, 'categories');
@@ -695,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     dataService.saveCategoryImage('all', finalImg);
                     dataService.saveCategoryImage('cat-all', finalImg);
                   }
-                  showToast('✓ "All" category photo uploaded to Cloudflare R2! Click Save Category to publish.', 'success');
+                  showToast('✓ "All" category photo uploaded! Click Save Category to publish.', 'success');
                 } else if (activeEditId) {
                   dataService.saveCategoryImage(activeEditId, finalImg);
                   const cats = dataService.getCategories();
@@ -705,17 +716,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (matchedCat.slug) dataService.saveCategoryImage(matchedCat.slug, finalImg);
                     dataService.updateCategory(activeEditId, { image: finalImg });
                   }
-                  showToast('✓ Category photo uploaded to Cloudflare R2! Click Save Category to publish.', 'success');
+                  showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
                 }
               } else {
-                showToast('⚠️ Could not save photo to Cloudflare R2. Please retry.', 'error');
+                showToast('⚠️ Could not save photo. Please retry.', 'error');
               }
             } else {
               if (catImageInput) catImageInput.value = dataUrl;
             }
           } catch (r2Err) {
             console.warn('[CategoryUpload] R2 storage note:', r2Err);
-            showToast('⚠️ Cloudflare R2 upload error. Please retry.', 'error');
+            showToast('⚠️ Photo upload error. Please retry.', 'error');
           } finally {
             if (catUploadStatus) catUploadStatus.style.display = 'none';
           }
@@ -743,7 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         if (catUploadStatus) {
           catUploadStatus.style.display = 'inline-flex';
-          catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Syncing to Cloudflare R2...`;
+          catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Saving photo...`;
         }
         const fileName = `category_${editId || 'custom'}_${Date.now()}.png`;
         const r2Res = await cloudflareR2Service.uploadImage(image, fileName, 'categories');
@@ -1045,7 +1056,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dishImageUrl.value = path;
         dishPreviewImg.src = path;
         currentDishGdriveFileId = r2Key || '';
-        fileChosenText.textContent = uploadId ? 'Selected from uploaded photos' : (r2Key ? 'Selected from Cloudflare R2' : 'Selected from gallery');
+        fileChosenText.textContent = uploadId ? 'Selected from uploaded photos' : (r2Key ? 'Selected from photo gallery' : 'Selected from gallery');
         fileChosenText.style.display = 'inline';
         renderPresetGalleryStrip(path);
       });
@@ -1086,8 +1097,12 @@ document.addEventListener('DOMContentLoaded', () => {
       dishCategorySelect.value = activeCategoryFilter;
     }
 
-    dishPriceInput.value = '11.99';
-    dishBadgeInput.value = '✨ Chef Specialty';
+    dishPriceInput.value = '199';
+    dishBadgeInput.value = '';
+    if (dishBadgeCustomInput) {
+      dishBadgeCustomInput.style.display = 'none';
+      dishBadgeCustomInput.value = '';
+    }
     dishTimeInput.value = '12 - 15 mins';
     dishCaloriesInput.value = '560 kcal';
     dishDietInput.value = 'Fresh Daily';
@@ -1117,7 +1132,30 @@ document.addEventListener('DOMContentLoaded', () => {
     dishNameInput.value = dish.name;
     dishCategorySelect.value = dish.category;
     dishPriceInput.value = dish.price;
-    dishBadgeInput.value = dish.badge || '✨ Chef Specialty';
+
+    const rawBadge = (dish.badge || '').trim();
+    const hasOption = Array.from(dishBadgeInput.options).some(o => o.value === rawBadge);
+
+    if (!rawBadge) {
+      dishBadgeInput.value = '';
+      if (dishBadgeCustomInput) {
+        dishBadgeCustomInput.style.display = 'none';
+        dishBadgeCustomInput.value = '';
+      }
+    } else if (hasOption) {
+      dishBadgeInput.value = rawBadge;
+      if (dishBadgeCustomInput) {
+        dishBadgeCustomInput.style.display = 'none';
+        dishBadgeCustomInput.value = '';
+      }
+    } else {
+      dishBadgeInput.value = 'Custom';
+      if (dishBadgeCustomInput) {
+        dishBadgeCustomInput.style.display = 'block';
+        dishBadgeCustomInput.value = rawBadge;
+      }
+    }
+
     dishTimeInput.value = dish.time || '12 - 15 mins';
     dishCaloriesInput.value = dish.calories || '560 kcal';
     dishDietInput.value = dish.diet || 'Fresh Daily';
@@ -1130,7 +1168,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentImg = dish.image || '/api/r2-image?key=dishes/crispy-chicken.jpg';
     dishImageUrl.value = currentImg.startsWith('data:') ? '' : currentImg;
     dishPreviewImg.src = currentImg;
-    fileChosenText.textContent = currentImg.startsWith('data:') ? 'Photo upload required for R2' : 'Current active Cloudflare R2 image';
+    fileChosenText.textContent = currentImg.startsWith('data:') ? 'Photo upload required' : 'Current active dish photo';
 
     renderPresetGalleryStrip(currentImg);
     modalDishBackdrop.classList.add('open');
@@ -1277,11 +1315,11 @@ document.addEventListener('DOMContentLoaded', () => {
             firstUploadedUrl = compressedDataUrl;
             dishPreviewImg.src = compressedDataUrl;
             // DO NOT write Base64 into dishImageUrl.value! Keep input reserved for permanent R2 URL.
-            fileChosenText.textContent = `Uploading ${file.name} to Cloudflare R2...`;
+            fileChosenText.textContent = `Uploading ${file.name}...`;
             fileChosenText.style.display = 'inline';
           }
 
-          // 4. Cloudflare R2 upload
+          // 4. Cloud photo upload
           try {
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
             const r2Res = await Promise.race([cloudflareR2Service.uploadImage(file, file.name), timeoutPromise]);
@@ -1292,11 +1330,11 @@ document.addEventListener('DOMContentLoaded', () => {
               dishPreviewImg.src = finalUrl;
               dishImageUrl.value = finalUrl;
               currentDishGdriveFileId = finalFileId;
-              fileChosenText.textContent = `✓ Saved in Cloudflare R2: ${file.name}`;
+              fileChosenText.textContent = `✓ Saved photo: ${file.name}`;
             }
           } catch (r2Err) {
-            console.warn('[Upload] Cloudflare R2 upload notice:', r2Err?.message || r2Err);
-            fileChosenText.textContent = `⚠️ R2 upload issue. Please retry.`;
+            console.warn('[Upload] Photo storage notice:', r2Err?.message || r2Err);
+            fileChosenText.textContent = `⚠️ Photo upload issue. Please retry.`;
           }
 
           successCount++;
@@ -1320,12 +1358,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  if (dishBadgeInput) {
+    dishBadgeInput.addEventListener('change', () => {
+      if (dishBadgeInput.value === 'Custom') {
+        if (dishBadgeCustomInput) {
+          dishBadgeCustomInput.style.display = 'block';
+          dishBadgeCustomInput.focus();
+        }
+      } else {
+        if (dishBadgeCustomInput) {
+          dishBadgeCustomInput.style.display = 'none';
+        }
+      }
+    });
+  }
+
   formDish.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = dishNameInput.value.trim();
     const category = dishCategorySelect.value;
     const price = parseFloat(dishPriceInput.value) || 199;
-    const badge = dishBadgeInput.value;
+    let badge = dishBadgeInput.value.trim();
+    if (badge === 'Custom') {
+      badge = dishBadgeCustomInput ? dishBadgeCustomInput.value.trim() : '';
+    }
     const time = dishTimeInput.value.trim();
     const calories = dishCaloriesInput.value.trim();
     const diet = dishDietInput.value.trim();
@@ -1336,7 +1392,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const editId = dishEditId.value;
 
     if (image.startsWith('data:')) {
-      showToast('⚠️ Image is still uploading to Cloudflare R2 storage. Please wait a moment...', 'warning');
+      showToast('⚠️ Photo is still uploading. Please wait a moment...', 'warning');
       return;
     }
 
@@ -1592,6 +1648,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let statusLabel = order.statusLabel;
       if (!statusLabel) {
         if (order.status === 'cancelled') statusLabel = 'Cancelled';
+        else if (order.status === 'undelivered') statusLabel = 'Undelivered (Returned)';
         else if (order.status === 'accepted' || order.status === 'pending') statusLabel = 'Accepted';
         else if (order.status === 'cooking') statusLabel = 'Preparing';
         else if (order.status === 'ready_for_pickup') statusLabel = 'Ready to Dispatch';
@@ -1618,6 +1675,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (order.status === 'cancelled') {
         const reasonText = order.cancellationReason ? escapeHtml(order.cancellationReason) : 'Cancelled by Kitchen';
         nextActionBtn = `<span class="btn-advance-status" style="background:#FEE2E2; color:#DC2626; border:1px solid #FECACA; cursor:default;" title="${reasonText}">❌ Cancelled</span>`;
+      } else if (order.status === 'undelivered') {
+        const reasonText = order.undeliveredReason || order.cancellationReason || 'Customer unreachable at doorstep';
+        nextActionBtn = `<span class="btn-advance-status" style="background:#FFF7ED; color:#C2410C; border:1.5px solid #FDBA74; cursor:default;" title="${escapeHtml(reasonText)}"><i class="fa-solid fa-box-archive"></i> Returned to Kitchen</span>`;
       } else if (order.status === 'accepted' || order.status === 'pending') {
         nextActionBtn = `<button class="btn-advance-status" data-id="${order.id}" data-next="cooking">🔥 Start Preparing</button>`;
       } else if (order.status === 'cooking') {
@@ -1679,6 +1739,20 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `;
 
+      const isDoorstepWaiting = order.status === 'on_the_way' && order.riderWaitingAtDoorstep;
+      const doorstepWaitingBadgeHtml = isDoorstepWaiting ? `
+        <div class="badge-doorstep-waiting" style="background:#FFFBEB; border:1.5px solid #FDE68A; color:#92400E; padding:8px 12px; border-radius:8px; margin:8px 0; font-size:0.82rem; font-weight:700; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span><i class="fa-solid fa-hourglass-half fa-spin" style="color:#D97706; margin-right:4px;"></i> ⚠️ Rider Waiting at Doorstep (Customer Unreachable)</span>
+          ${hasRealPhone ? `<a href="tel:${dialerPhone}" class="btn-kitchen-call-cust" style="background:#D97706; color:#FFF; padding:4px 10px; border-radius:6px; text-decoration:none; font-size:0.75rem; font-weight:800; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid fa-phone"></i> Call Customer</a>` : ''}
+        </div>
+      ` : '';
+
+      const undeliveredReasonHtml = order.status === 'undelivered' ? `
+        <div class="badge-undelivered-notice" style="background:#FFF7ED; border:1.5px solid #FDBA74; color:#C2410C; padding:8px 12px; border-radius:8px; margin:8px 0; font-size:0.8rem; font-weight:700;">
+          <i class="fa-solid fa-box-archive"></i> Returned to Kitchen: ${escapeHtml(order.undeliveredReason || order.cancellationReason || 'Customer unreachable at doorstep')}
+        </div>
+      ` : '';
+
       return `
         <div class="order-card-admin ${cardOverdueClass}" data-id="${safeOrderId}">
           <div class="order-card-header">
@@ -1695,6 +1769,8 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
 
           ${riderTagHtml}
+          ${doorstepWaitingBadgeHtml}
+          ${undeliveredReasonHtml}
 
           <div class="order-customer-box">
             <div class="order-customer-header">
@@ -2341,7 +2417,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderOrders();
     updateOrderBadges();
     btnRefreshOrders.classList.remove('rotating');
-    showToast('Live orders synchronized from Supabase Cloud!', 'info');
+    showToast('🔄 Orders updated!', 'info');
   });
 
   // ========================================================
@@ -2895,6 +2971,15 @@ document.addEventListener('DOMContentLoaded', () => {
         tag: `admin-delivered-${orderId}`
       });
       flashTabTitle(`🎉 DELIVERED: ${orderId}`);
+    } else if (status === 'undelivered') {
+      playNotificationSound('cancelled');
+      showToast(`⚠️ Order ${orderId} marked UNDELIVERED by Rider: Customer unreachable. Returning to kitchen.`, 'error');
+      sendSystemNotification({
+        title: `⚠️ Order ${orderId} Returning to Kitchen!`,
+        body: `Customer unreachable at doorstep. Rider returning parcel to counter.`,
+        tag: `admin-undelivered-${orderId}`
+      });
+      flashTabTitle(`⚠️ UNDELIVERED: ${orderId}`);
     }
 
     renderOrders();

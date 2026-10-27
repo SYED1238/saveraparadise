@@ -1,0 +1,308 @@
+import QRCode from 'qrcode';
+import fs from 'fs';
+import path from 'path';
+
+const TARGET_URL = 'https://saveraparadise.foodbliz.in';
+const PUBLIC_DIR = path.resolve('public');
+const ARTIFACT_DIR = 'C:/Users/DELL/.gemini/antigravity-ide/brain/15d8ab56-af6a-4466-9560-50dc2b466284';
+
+async function generate() {
+  console.log(`Generating permanent QR codes for: ${TARGET_URL}`);
+
+  // 1. Generate High-Res SVG Vector (Crisp at any print scale)
+  const svgString = await QRCode.toString(TARGET_URL, {
+    type: 'svg',
+    errorCorrectionLevel: 'H', // 30% error tolerance (highest)
+    margin: 2,
+    color: {
+      dark: '#111827',
+      light: '#FFFFFF'
+    }
+  });
+
+  const svgPath = path.join(PUBLIC_DIR, 'savera-paradise-qr.svg');
+  fs.writeFileSync(svgPath, svgString, 'utf8');
+  console.log(`✓ Vector SVG QR generated: ${svgPath}`);
+
+  // 2. Generate High-Res 2048x2048 PNG (Ultra high-density for physical print)
+  const pngPath = path.join(PUBLIC_DIR, 'savera-paradise-qr.png');
+  await QRCode.toFile(pngPath, TARGET_URL, {
+    errorCorrectionLevel: 'H',
+    type: 'png',
+    width: 2048,
+    margin: 2,
+    color: {
+      dark: '#111827',
+      light: '#FFFFFF'
+    }
+  });
+  console.log(`✓ Ultra High-Res PNG (2048x2048) generated: ${pngPath}`);
+
+  // Also copy to artifact directory for instant viewing
+  if (fs.existsSync(ARTIFACT_DIR)) {
+    fs.copyFileSync(svgPath, path.join(ARTIFACT_DIR, 'savera_paradise_qr.svg'));
+    fs.copyFileSync(pngPath, path.join(ARTIFACT_DIR, 'savera_paradise_qr.png'));
+    console.log(`✓ Copied QR assets to artifacts directory`);
+  }
+
+  // 3. Generate a beautiful, print-ready Table Standee / Takeout Flyer HTML
+  const standeeHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Savera Paradise — Scan & Order Table Standee</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: #0E0C0A;
+      color: #FFF;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .print-actions {
+      margin-bottom: 24px;
+      display: flex;
+      gap: 12px;
+    }
+    .btn {
+      background: #FF5A26;
+      color: #FFF;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 14px rgba(255, 90, 38, 0.4);
+      transition: transform 0.2s, background 0.2s;
+      text-decoration: none;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      background: #E04818;
+    }
+    .btn-secondary {
+      background: #262320;
+      box-shadow: none;
+      color: #E2E8F0;
+    }
+    .btn-secondary:hover {
+      background: #36322C;
+    }
+    .standee-card {
+      width: 100%;
+      max-width: 420px;
+      background: #181512;
+      border: 2px solid #2E2822;
+      border-radius: 28px;
+      padding: 36px 28px;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+      position: relative;
+      overflow: hidden;
+    }
+    .standee-card::before {
+      content: '';
+      position: absolute;
+      top: -120px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 260px;
+      height: 260px;
+      background: radial-gradient(circle, rgba(255,90,38,0.2) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .brand-crown {
+      font-size: 2rem;
+      margin-bottom: 4px;
+    }
+    .brand-title {
+      font-size: 1.6rem;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #FFF 0%, #FFD2C2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .brand-subtitle {
+      font-size: 0.85rem;
+      color: #A8A29E;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 24px;
+    }
+    .qr-frame {
+      background: #FFFFFF;
+      padding: 16px;
+      border-radius: 20px;
+      display: inline-block;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .qr-frame img {
+      width: 240px;
+      height: 240px;
+      display: block;
+    }
+    .scan-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,90,38,0.15);
+      color: #FF7A45;
+      border: 1px solid rgba(255,90,38,0.3);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 14px;
+    }
+    .standee-headline {
+      font-size: 1.25rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .standee-desc {
+      font-size: 0.88rem;
+      color: #A8A29E;
+      line-height: 1.45;
+      margin-bottom: 20px;
+    }
+    .features-row {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      padding-top: 16px;
+      border-top: 1px dashed #2E2822;
+      font-size: 0.76rem;
+      color: #D6D3D1;
+      font-weight: 600;
+    }
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .domain-pill {
+      margin-top: 18px;
+      background: #0E0C0A;
+      border: 1px solid #262320;
+      padding: 8px 16px;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      color: #FF5A26;
+      font-weight: 700;
+      display: inline-block;
+    }
+
+    @media print {
+      body {
+        background: #FFF;
+        color: #000;
+        padding: 0;
+      }
+      .print-actions {
+        display: none !important;
+      }
+      .standee-card {
+        box-shadow: none;
+        border: 2px solid #000;
+        background: #FFF;
+        color: #000;
+        max-width: 100%;
+        page-break-inside: avoid;
+      }
+      .brand-title {
+        color: #000 !important;
+        -webkit-text-fill-color: #000 !important;
+      }
+      .brand-subtitle, .standee-desc, .features-row {
+        color: #444 !important;
+      }
+      .scan-badge {
+        background: #EEE !important;
+        color: #000 !important;
+        border: 1px solid #000 !important;
+      }
+      .domain-pill {
+        background: #F4F4F4 !important;
+        border: 1px solid #CCC !important;
+        color: #000 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="print-actions">
+    <button class="btn" onclick="window.print()">
+      🖨️ Print Standee / Table Card
+    </button>
+    <a class="btn btn-secondary" href="/savera-paradise-qr.png" download="savera-paradise-qr-2048px.png">
+      ⬇️ Download High-Res PNG
+    </a>
+  </div>
+
+  <div class="standee-card">
+    <div class="brand-crown">👑</div>
+    <div class="brand-title">SAVERA PARADISE</div>
+    <div class="brand-subtitle">Authentic Multi-Cuisine Restaurant</div>
+
+    <div class="qr-frame">
+      <img src="/savera-paradise-qr.svg" alt="Scan QR to Order at Savera Paradise">
+    </div>
+
+    <div>
+      <div class="scan-badge">📷 SCAN CAMERA TO ORDER</div>
+      <div class="standee-headline">Explore Menu & Order Online</div>
+      <div class="standee-desc">
+        Browse fresh dishes, customize portions, and track delivery live to your doorstep or table.
+      </div>
+    </div>
+
+    <div class="features-row">
+      <div class="feature-item">⚡ Instant Kitchen Prep</div>
+      <div class="feature-item">•</div>
+      <div class="feature-item">🛵 Live GPS Tracking</div>
+      <div class="feature-item">•</div>
+      <div class="feature-item">💳 UPI / COD</div>
+    </div>
+
+    <div class="domain-pill">
+      🌐 saveraparadise.foodbliz.in
+    </div>
+  </div>
+
+</body>
+</html>`;
+
+  const standeePath = path.join(PUBLIC_DIR, 'qr-standee.html');
+  fs.writeFileSync(standeePath, standeeHtml, 'utf8');
+  console.log(`✓ Print-Ready Standee HTML template generated: ${standeePath}`);
+}
+
+generate().catch(err => {
+  console.error('Failed to generate QR codes:', err);
+  process.exit(1);
+});

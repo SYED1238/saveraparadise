@@ -86,7 +86,11 @@ document.addEventListener('DOMContentLoaded', () => {
         updateRiderProfileHeader();
         requestWakeLock();
         showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
-        renderPortal();
+        dataService.syncOrdersFromSupabase(true).then(() => {
+          renderPortal();
+        }).catch(() => {
+          renderPortal();
+        });
       } else {
         showToast('❌ Rider account not found. Please contact Admin.', 'error');
         if (riderPasscodeLock) riderPasscodeLock.reset();
@@ -107,6 +111,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (riderLockOverlay) riderLockOverlay.classList.add('unlocked');
       updateRiderProfileHeader();
       requestWakeLock();
+      dataService.syncOrdersFromSupabase().then(() => {
+        renderPortal();
+      }).catch(() => {});
     } else {
       if (riderLockOverlay) {
         riderLockOverlay.classList.remove('unlocked');
@@ -240,6 +247,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalCashOrdersCount = document.getElementById('modal-cash-orders-count');
   const cashOrdersBreakdownList = document.getElementById('cash-orders-breakdown-list');
   const btnHandoverCash = document.getElementById('btn-handover-cash');
+
+  // Customer Unreachable Modal Elements
+  const modalUnreachableBackdrop = document.getElementById('modal-unreachable-backdrop');
+  const modalUnreachableClose = document.getElementById('modal-unreachable-close');
+  const btnCloseUnreachableModal = document.getElementById('btn-close-unreachable-modal');
+  const unreachableOrderBadge = document.getElementById('unreachable-order-badge');
+  const cnrClockDisplay = document.getElementById('cnr-clock-display');
+  const cnrClockSub = document.getElementById('cnr-clock-sub');
+  const cnrTimerStatusBadge = document.getElementById('cnr-timer-status-badge');
+  const cnrProgressFill = document.getElementById('cnr-progress-fill');
+  const cnrBtnCallCustomer = document.getElementById('cnr-btn-call-customer');
+  const cnrCustomerPhoneDisplay = document.getElementById('cnr-customer-phone-display');
+  const cnrBtnWhatsapp = document.getElementById('cnr-btn-whatsapp');
+  const cnrBtnCallManager = document.getElementById('cnr-btn-call-manager');
+  const cnrManagerPhoneDisplay = document.getElementById('cnr-manager-phone-display');
+  const cnrBoxCod = document.getElementById('cnr-box-cod');
+  const cnrCodAmount = document.getElementById('cnr-cod-amount');
+  const cnrCodReason = document.getElementById('cnr-cod-reason');
+  const btnCnrReturnCod = document.getElementById('btn-cnr-return-cod');
+  const cnrBoxPrepaid = document.getElementById('cnr-box-prepaid');
+  const cnrSafedropNote = document.getElementById('cnr-safedrop-note');
+  const btnCnrSafedrop = document.getElementById('btn-cnr-safedrop');
+  const cnrPrepaidReason = document.getElementById('cnr-prepaid-reason');
+  const btnCnrReturnPrepaid = document.getElementById('btn-cnr-return-prepaid');
 
   // ========================================================
   // RIDER REAL-TIME GEOLOCATION WATCH
@@ -503,9 +534,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return !hasSpecificOrders;
     });
     const deliveredOrders = orders.filter(o => {
-      if (o.status !== 'delivered') return false;
+      if (o.status !== 'delivered' && o.status !== 'undelivered') return false;
       if (!o.assignedRiderPin || o.assignedRiderPin === currentRider.pin) return true;
-      const hasSpecificOrders = orders.some(x => x.status === 'delivered' && x.assignedRiderPin === currentRider.pin);
+      const hasSpecificOrders = orders.some(x => (x.status === 'delivered' || x.status === 'undelivered') && x.assignedRiderPin === currentRider.pin);
       return !hasSpecificOrders;
     });
 
@@ -716,6 +747,19 @@ document.addEventListener('DOMContentLoaded', () => {
           ? `<span class="parcel-step-pill"><i class="fa-solid fa-box"></i> Parcel ${orderIdx + 1} of ${displayList.length}</span>`
           : '';
 
+        const cnrKey = `quickbite_cnr_start_${cleanId}`;
+        const cnrStartTime = localStorage.getItem(cnrKey);
+        let isWaiting = false;
+        let formattedTimer = '10:00';
+        if (cnrStartTime) {
+          isWaiting = true;
+          const elapsedSecs = Math.floor((Date.now() - Number(cnrStartTime)) / 1000);
+          const remSecs = Math.max(0, 600 - elapsedSecs);
+          const m = Math.floor(remSecs / 60);
+          const s = remSecs % 60;
+          formattedTimer = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
         return `
           <article class="rider-order-row row-active" data-order-id="${safeId}" data-droplat="${dropLat}" data-droplng="${dropLng}" data-hascustomercoords="${dropCoords.hasCustomerCoords}" data-dropaddr="${safeDropAddress}" data-cleanid="${cleanId}">
             <!-- Top Bar: Order ID, Live Distance & Cash to Collect -->
@@ -751,37 +795,57 @@ document.addEventListener('DOMContentLoaded', () => {
               </a>
             </div>
 
-            <!-- 4 Action Buttons (Guaranteed Visibility with Inline SVGs) -->
+            <!-- Action Buttons Group -->
             <div class="row-actions-group">
-              <!-- 1. Navigation Button (Symbol Only) -->
-              <a href="${googleMapsNavUrl}" id="btn-nav-${cleanId}" target="_blank" rel="noopener noreferrer" class="btn-action-pill btn-action-icon btn-action-nav" title="Start Turn-by-Turn GPS Driving Navigation" aria-label="Start Navigation">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="#FFFFFF" aria-hidden="true" style="display: block;">
-                  <path d="M21.71 11.29l-9-9a1 1 0 0 0-1.42 0l-9 9a1 1 0 0 0 0 1.42l9 9a1 1 0 0 0 1.42 0l9-9a1 1 0 0 0 0-1.42zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z"/>
-                </svg>
-              </a>
+              <div class="row-actions-comms">
+                <!-- 1. Navigation Button (Symbol Only) -->
+                <a href="${googleMapsNavUrl}" id="btn-nav-${cleanId}" target="_blank" rel="noopener noreferrer" class="btn-action-pill btn-action-icon btn-action-nav" title="Start Turn-by-Turn GPS Driving Navigation" aria-label="Start Navigation">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="#FFFFFF" aria-hidden="true" style="display: block;">
+                    <path d="M21.71 11.29l-9-9a1 1 0 0 0-1.42 0l-9 9a1 1 0 0 0 0 1.42l9 9a1 1 0 0 0 1.42 0l9-9a1 1 0 0 0 0-1.42zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z"/>
+                  </svg>
+                </a>
 
-              <!-- 2. Call Button (Symbol Only) -->
-              <a href="${hasRealPhone ? `tel:${dialerPhone}` : '#'}" class="btn-action-pill btn-action-icon btn-action-call ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `Call Customer: ${displayPhone}` : 'Customer phone not provided'}" aria-label="Call Customer">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="#FFFFFF" aria-hidden="true" style="display: block;">
-                  <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.5 3.92c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.54c0-.55-.45-1-.99-1z"/>
-                </svg>
-              </a>
+                <!-- 2. Call Button (Symbol Only) -->
+                <a href="${hasRealPhone ? `tel:${dialerPhone}` : '#'}" class="btn-action-pill btn-action-icon btn-action-call ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `Call Customer: ${displayPhone}` : 'Customer phone not provided'}" aria-label="Call Customer">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="#FFFFFF" aria-hidden="true" style="display: block;">
+                    <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.5 3.92c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.54c0-.55-.45-1-.99-1z"/>
+                  </svg>
+                </a>
 
-              <!-- 3. WhatsApp Button (Symbol Only) -->
-              <a href="${whatsappUrl}" ${hasRealPhone ? 'target="_blank" rel="noopener noreferrer"' : ''} class="btn-action-pill btn-action-icon btn-action-wa ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `WhatsApp Customer: ${displayPhone}` : 'Customer phone not provided'}" aria-label="WhatsApp Customer">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="#FFFFFF" aria-hidden="true" style="display: block;">
-                  <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.41a8.19 8.19 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.25-.75-.67-1.26-1.5-1.41-1.75-.15-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.34-.76-1.84-.2-.49-.4-.42-.56-.43h-.47c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.77 2.7 4.29 3.79.6.26 1.07.41 1.43.53.6.19 1.15.16 1.58.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.07-.12-.23-.19-.48-.31z"/>
-                </svg>
-              </a>
+                <!-- 3. WhatsApp Button (Symbol Only) -->
+                <a href="${whatsappUrl}" ${hasRealPhone ? 'target="_blank" rel="noopener noreferrer"' : ''} class="btn-action-pill btn-action-icon btn-action-wa ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `WhatsApp Customer: ${displayPhone}` : 'Customer phone not provided'}" aria-label="WhatsApp Customer">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="#FFFFFF" aria-hidden="true" style="display: block;">
+                    <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.41a8.19 8.19 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.25-.75-.67-1.26-1.5-1.41-1.75-.15-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.34-.76-1.84-.2-.49-.4-.42-.56-.43h-.47c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.77 2.7 4.29 3.79.6.26 1.07.41 1.43.53.6.19 1.15.16 1.58.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.07-.12-.23-.19-.48-.31z"/>
+                  </svg>
+                </a>
+              </div>
 
-              <!-- 4. Mark Delivered Button -->
-              <button type="button" class="btn-action-pill btn-action-deliver" data-action="open-delivered-modal" data-id="${safeId}" title="Mark Delivered & Collect Cash">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="#FFFFFF" aria-hidden="true" style="margin-right: 6px; flex-shrink: 0;">
-                  <path d="m18 7-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41 6 19l1.41-1.41L1.83 12 .41 13.41z"/>
-                </svg>
-                <span>Delivered</span>
-              </button>
+              <div class="row-actions-resolution">
+                <!-- 4. Unreachable Button -->
+                <button type="button" class="btn-action-pill btn-action-unreachable ${isWaiting ? 'is-waiting' : ''}" data-action="open-unreachable-modal" data-id="${safeId}" title="Customer Not Answering / Unreachable at Doorstep" aria-label="Customer Unreachable">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" style="margin-right: 4px; flex-shrink: 0;">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                  </svg>
+                  <span>${isWaiting ? `⏱️ ${formattedTimer}` : 'Unreachable'}</span>
+                </button>
+
+                <!-- 5. Mark Delivered Button -->
+                <button type="button" class="btn-action-pill btn-action-deliver" data-action="open-delivered-modal" data-id="${safeId}" title="Mark Delivered & Collect Cash">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="#FFFFFF" aria-hidden="true" style="margin-right: 6px; flex-shrink: 0;">
+                    <path d="m18 7-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41 6 19l1.41-1.41L1.83 12 .41 13.41z"/>
+                  </svg>
+                  <span>Delivered</span>
+                </button>
+              </div>
             </div>
+
+            ${isWaiting ? `
+              <div class="cnr-waiting-indicator" data-action="open-unreachable-modal" data-id="${safeId}" title="Tap to view waiting countdown and resolution options">
+                <span class="cnr-indicator-pulse"></span>
+                <span class="cnr-indicator-text"><i class="fa-solid fa-hourglass-half fa-spin"></i> Rider waiting at doorstep: <strong>${formattedTimer} remaining</strong></span>
+                <span class="cnr-indicator-tap">View Modal &gt;</span>
+              </div>
+            ` : ''}
           </article>
         `;
       }
@@ -789,17 +853,24 @@ document.addEventListener('DOMContentLoaded', () => {
       // ==========================================
       // TAB 3: DELIVERED TODAY ('delivered')
       // ==========================================
+      const isUndelivered = order.status === 'undelivered';
+
       return `
-        <article class="rider-order-row row-delivered" data-order-id="${safeId}">
+        <article class="rider-order-row row-delivered ${isUndelivered ? 'row-undelivered' : ''}" data-order-id="${safeId}">
           <div class="row-top-bar">
             <div class="row-id-meta-group">
-              <span class="row-order-id delivered">${safeId}</span>
+              <span class="row-order-id ${isUndelivered ? 'undelivered' : 'delivered'}">${safeId}</span>
+              ${isUndelivered ? `
+                <span class="row-returned-badge"><i class="fa-solid fa-box-archive"></i> Returned to Kitchen</span>
+              ` : (order.safeDrop ? `
+                <span class="row-returned-badge" style="background:#ECFDF5; color:#065F46; border-color:#A7F3D0;"><i class="fa-solid fa-door-open"></i> Safe Drop</span>
+              ` : '')}
               <span class="row-delivered-time"><i class="fa-regular fa-clock"></i> ${timeStr}</span>
             </div>
 
-            <div class="row-price-badge ${isCod ? 'cod' : 'prepaid'}">
-              <span class="price-badge-label">${isCod ? 'Cash Collected' : 'Paid Online'}</span>
-              <strong class="price-badge-val">${isCod ? `₹${cashAmount}` : '₹0'}</strong>
+            <div class="row-price-badge ${isUndelivered ? 'cod' : (isCod ? 'cod' : 'prepaid')}">
+              <span class="price-badge-label">${isUndelivered ? 'Cash Collected' : (isCod ? 'Cash Collected' : 'Paid Online')}</span>
+              <strong class="price-badge-val">${isUndelivered ? '₹0' : (isCod ? `₹${cashAmount}` : '₹0')}</strong>
             </div>
           </div>
 
@@ -809,11 +880,20 @@ document.addEventListener('DOMContentLoaded', () => {
               <i class="fa-solid fa-location-dot"></i>
               <span>${safeDropAddress}</span>
             </div>
+            ${isUndelivered ? `
+              <div style="font-size: 0.8rem; color: #DC2626; margin-top: 6px; font-weight: 600;">
+                <i class="fa-solid fa-triangle-exclamation"></i> Customer Unreachable: ${escapeHtml(order.undeliveredReason || order.cancellationReason || 'Returned to kitchen')}
+              </div>
+            ` : (order.safeDropNote ? `
+              <div style="font-size: 0.8rem; color: #047857; margin-top: 6px; font-weight: 600;">
+                <i class="fa-solid fa-circle-info"></i> Safe Drop Note: ${escapeHtml(order.safeDropNote)}
+              </div>
+            ` : '')}
           </div>
 
           <div class="row-delivered-action">
-            <span class="badge-delivered-done">
-              <i class="fa-solid fa-circle-check"></i> Delivered & Settled
+            <span class="badge-delivered-done" style="${isUndelivered ? 'background:#FEE2E2; color:#B91C1C; border-color:#FECACA;' : ''}">
+              <i class="fa-solid ${isUndelivered ? 'fa-box-archive' : 'fa-circle-check'}"></i> ${isUndelivered ? 'Returned to Kitchen Counter' : 'Delivered & Settled'}
             </span>
           </div>
         </article>
@@ -833,6 +913,14 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-id');
         openDeliveryConfirmModal(id);
+      });
+    });
+
+    // Attach Customer Unreachable Button & Waiting Indicator Listeners
+    riderOrdersList.querySelectorAll('[data-action="open-unreachable-modal"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        openUnreachableModal(id);
       });
     });
 
@@ -1012,6 +1100,260 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ========================================================
+  // CUSTOMER UNREACHABLE AT DOORSTEP (CNR) MODAL CONTROLLER
+  // ========================================================
+  let activeCnrOrder = null;
+  let cnrTimerInterval = null;
+
+  function openUnreachableModal(orderId) {
+    const list = dataService.getOrders();
+    const cleanId = String(orderId || '').trim().replace(/^#/, '');
+    const order = list.find(o => o && String(o.id || '').trim().replace(/^#/, '') === cleanId);
+    if (!order) return;
+
+    activeCnrOrder = order;
+
+    const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
+    const safeId = order.id.startsWith('#') ? order.id : `#${order.id}`;
+
+    // Persistent 10-Minute Waiting Countdown Timer
+    const timerStorageKey = `quickbite_cnr_start_${cleanId}`;
+    let startTime = localStorage.getItem(timerStorageKey);
+    if (!startTime) {
+      startTime = Date.now();
+      localStorage.setItem(timerStorageKey, startTime);
+      // Notify kitchen admin and customer live tracking
+      dataService.riderWaitingAtDoorstep(order.id, {
+        riderPin: currentRider.pin,
+        waitingStartedAt: startTime
+      });
+      showToast(`⏱️ 10-Minute doorstep waiting timer started for ${safeId}.`, 'info');
+    }
+
+    if (unreachableOrderBadge) unreachableOrderBadge.textContent = `ORDER ${safeId}`;
+
+    // Extract customer phone
+    const rawAddrs = dataService.getAllAddressesRaw();
+    const rawCustomerPhone = extractPhoneFromOrder(order, rawAddrs) || order.customerPhone || '';
+    const cleanPhoneDigits = String(rawCustomerPhone || '').replace(/\D/g, '');
+    const hasRealPhone = Boolean(cleanPhoneDigits.length >= 8);
+    const dialerPhone = cleanPhoneDigits.length === 10 ? `+91${cleanPhoneDigits}` : (cleanPhoneDigits ? `+${cleanPhoneDigits}` : '');
+    const displayPhone = cleanPhoneDigits.length >= 10
+      ? (cleanPhoneDigits.length === 10 ? `+91 ${cleanPhoneDigits.slice(0, 5)} ${cleanPhoneDigits.slice(5)}` : rawCustomerPhone)
+      : 'Phone not provided';
+
+    if (cnrCustomerPhoneDisplay) cnrCustomerPhoneDisplay.textContent = displayPhone;
+    if (cnrBtnCallCustomer) {
+      cnrBtnCallCustomer.href = hasRealPhone ? `tel:${dialerPhone}` : '#';
+      cnrBtnCallCustomer.classList.toggle('disabled', !hasRealPhone);
+    }
+
+    // Urgent Doorstep WhatsApp
+    if (cnrBtnWhatsapp) {
+      const urgentWaMsg = `Hello ${order.customerName || 'Customer'}, this is your Savera Paradise delivery partner. I have reached your doorstep with Order ${safeId}. I tried calling you on ${displayPhone} but could not reach you. Please open the door or call me back immediately. Thank you!`;
+      const waDigits = cleanPhoneDigits.length === 10 ? `91${cleanPhoneDigits}` : cleanPhoneDigits;
+      cnrBtnWhatsapp.href = hasRealPhone ? `https://wa.me/${waDigits}?text=${encodeURIComponent(urgentWaMsg)}` : '#';
+      cnrBtnWhatsapp.classList.toggle('disabled', !hasRealPhone);
+    }
+
+    // Kitchen Manager Direct Phone
+    const settings = dataService.getSettings();
+    const managerPhone = settings?.restaurantPhone || settings?.helpline || '+91 98450 12345';
+    if (cnrManagerPhoneDisplay) cnrManagerPhoneDisplay.textContent = managerPhone;
+    if (cnrBtnCallManager) {
+      cnrBtnCallManager.href = `tel:${managerPhone.replace(/\D/g, '')}`;
+    }
+
+    // Payment-specific resolution UI
+    const isCod = isCashOnDelivery(order);
+    const cash = extractCashAmount(order.total);
+    if (isCod) {
+      if (cnrBoxCod) cnrBoxCod.style.display = 'block';
+      if (cnrBoxPrepaid) cnrBoxPrepaid.style.display = 'none';
+      if (cnrCodAmount) cnrCodAmount.textContent = `₹${cash}`;
+    } else {
+      if (cnrBoxCod) cnrBoxCod.style.display = 'none';
+      if (cnrBoxPrepaid) cnrBoxPrepaid.style.display = 'block';
+      if (cnrSafedropNote) cnrSafedropNote.value = '';
+    }
+
+    // Start live countdown ticker
+    if (cnrTimerInterval) clearInterval(cnrTimerInterval);
+    updateCnrCountdown();
+    cnrTimerInterval = setInterval(updateCnrCountdown, 1000);
+
+    if (modalUnreachableBackdrop) {
+      modalUnreachableBackdrop.classList.add('open');
+      backNav.pushStep('modal-unreachable', () => closeUnreachableModal());
+    }
+  }
+
+  function updateCnrCountdown() {
+    if (!activeCnrOrder) return;
+    const cleanId = String(activeCnrOrder.id || '').trim().replace(/^#/, '');
+    const startTime = localStorage.getItem(`quickbite_cnr_start_${cleanId}`);
+    if (!startTime) return;
+
+    const elapsedSeconds = Math.floor((Date.now() - Number(startTime)) / 1000);
+    const totalDuration = 600; // 10 minutes (600 seconds)
+    const remainingSeconds = Math.max(0, totalDuration - elapsedSeconds);
+
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+    const formatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+    if (cnrClockDisplay) {
+      cnrClockDisplay.textContent = formatted;
+      if (remainingSeconds === 0) {
+        cnrClockDisplay.classList.add('expired');
+      } else {
+        cnrClockDisplay.classList.remove('expired');
+      }
+    }
+
+    const pct = Math.max(0, Math.min(100, (remainingSeconds / totalDuration) * 100));
+    if (cnrProgressFill) {
+      cnrProgressFill.style.width = `${pct}%`;
+      if (remainingSeconds === 0) {
+        cnrProgressFill.style.background = '#EF4444';
+      } else if (remainingSeconds < 180) {
+        cnrProgressFill.style.background = 'linear-gradient(90deg, #EF4444, #F59E0B)';
+      } else {
+        cnrProgressFill.style.background = 'linear-gradient(90deg, #F59E0B, #10B981)';
+      }
+    }
+
+    if (cnrTimerStatusBadge) {
+      if (remainingSeconds === 0) {
+        cnrTimerStatusBadge.textContent = '⚠️ 10 Mins Completed';
+        cnrTimerStatusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+        cnrTimerStatusBadge.style.color = '#F87171';
+        cnrTimerStatusBadge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+      } else {
+        cnrTimerStatusBadge.textContent = `⏱️ ${Math.ceil(remainingSeconds / 60)} Mins Left`;
+        cnrTimerStatusBadge.style.background = 'rgba(245, 158, 11, 0.2)';
+        cnrTimerStatusBadge.style.color = '#FCD34D';
+        cnrTimerStatusBadge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+      }
+    }
+
+    if (cnrClockSub) {
+      if (remainingSeconds === 0) {
+        cnrClockSub.textContent = '10-Minute waiting protocol completed. Customer did not respond. Return parcel to kitchen counter.';
+        cnrClockSub.style.color = '#FCA5A5';
+      } else {
+        cnrClockSub.textContent = 'Please wait 10 minutes at doorstep before returning parcel';
+        cnrClockSub.style.color = '#CBD5E1';
+      }
+    }
+  }
+
+  function closeUnreachableModal() {
+    if (cnrTimerInterval) {
+      clearInterval(cnrTimerInterval);
+      cnrTimerInterval = null;
+    }
+    if (modalUnreachableBackdrop) {
+      modalUnreachableBackdrop.classList.remove('open');
+    }
+    backNav.removeStep('modal-unreachable');
+    activeCnrOrder = null;
+    renderPortal();
+  }
+
+  if (modalUnreachableClose) modalUnreachableClose.addEventListener('click', closeUnreachableModal);
+  if (btnCloseUnreachableModal) btnCloseUnreachableModal.addEventListener('click', closeUnreachableModal);
+  if (modalUnreachableBackdrop) {
+    modalUnreachableBackdrop.addEventListener('click', (e) => {
+      if (e.target === modalUnreachableBackdrop) closeUnreachableModal();
+    });
+  }
+
+  // COD Return to Kitchen
+  if (btnCnrReturnCod) {
+    btnCnrReturnCod.addEventListener('click', () => {
+      if (!activeCnrOrder) return;
+      const orderId = activeCnrOrder.id;
+      const cleanId = String(orderId).replace(/^#/, '');
+      const reason = cnrCodReason ? cnrCodReason.value : 'Customer did not answer calls/doorbell after 10 mins wait';
+      const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
+
+      localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+
+      dataService.riderUndeliveredOrder(orderId, {
+        reason,
+        riderPin: currentRider.pin,
+        returnToKitchen: true
+      });
+
+      closeUnreachableModal();
+      showToast(`📦 Order ${orderId} marked for return to kitchen counter. COD cash liability remains ₹0.`, 'info');
+
+      activeTab = 'delivered';
+      persistRiderTab('delivered');
+      updateActiveTabUI();
+      renderPortal();
+    });
+  }
+
+  // Prepaid Safe Drop
+  if (btnCnrSafedrop) {
+    btnCnrSafedrop.addEventListener('click', () => {
+      if (!activeCnrOrder) return;
+      const orderId = activeCnrOrder.id;
+      const cleanId = String(orderId).replace(/^#/, '');
+      const note = (cnrSafedropNote?.value || '').trim() || 'Left at customer doorstep / with building security';
+      const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
+
+      localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+
+      dataService.riderSafeDropPrepaid(orderId, {
+        safeDropNote: note,
+        riderPin: currentRider.pin
+      });
+
+      try {
+        confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+      } catch {}
+
+      closeUnreachableModal();
+      showToast(`🚪 Order ${orderId} delivered via Safe Drop: ${note}`, 'success');
+
+      activeTab = 'delivered';
+      persistRiderTab('delivered');
+      updateActiveTabUI();
+      renderPortal();
+    });
+  }
+
+  // Prepaid Return to Kitchen
+  if (btnCnrReturnPrepaid) {
+    btnCnrReturnPrepaid.addEventListener('click', () => {
+      if (!activeCnrOrder) return;
+      const orderId = activeCnrOrder.id;
+      const cleanId = String(orderId).replace(/^#/, '');
+      const reason = cnrPrepaidReason ? cnrPrepaidReason.value : 'Inaccessible location / customer unreachable';
+      const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
+
+      localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+
+      dataService.riderUndeliveredOrder(orderId, {
+        reason,
+        riderPin: currentRider.pin,
+        returnToKitchen: true
+      });
+
+      closeUnreachableModal();
+      showToast(`📦 Prepaid order ${orderId} marked for return to kitchen counter.`, 'info');
+
+      activeTab = 'delivered';
+      persistRiderTab('delivered');
+      updateActiveTabUI();
+      renderPortal();
+    });
+  }
+
+  // ========================================================
   // CASH IN HAND BREAKDOWN MODAL (SEGREGATED PER RIDER)
   // ========================================================
   function openCashSummaryModal() {
@@ -1121,7 +1463,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await dataService.syncOrdersFromSupabase(true);
       } catch {}
       renderPortal();
-      showToast('🔄 Live orders synchronized from Supabase!', 'info');
+      showToast('🔄 Live orders updated!', 'info');
       setTimeout(() => {
         btnManualRefresh.classList.remove('spinning');
       }, 500);
@@ -1405,6 +1747,10 @@ document.addEventListener('DOMContentLoaded', () => {
   backNav.registerFallbackChecker({
     isOpen: () => modalCashBackdrop && modalCashBackdrop.classList.contains('open'),
     close: () => closeCashSummaryModal()
+  });
+  backNav.registerFallbackChecker({
+    isOpen: () => modalUnreachableBackdrop && modalUnreachableBackdrop.classList.contains('open'),
+    close: () => closeUnreachableModal()
   });
 
   // Listen to rider session / settlement / claim events

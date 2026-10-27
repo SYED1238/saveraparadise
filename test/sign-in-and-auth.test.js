@@ -42,6 +42,9 @@ function createMockReqRes({ method = 'GET', url = '/', headers = {}, body = null
     },
     get data() {
       return responseData;
+    },
+    get headers() {
+      return responseHeaders;
     }
   };
 
@@ -248,6 +251,39 @@ test('SIGN-IN & AUTHENTICATION AUDIT: Kitchen Admin / Manager PIN & API Security
     await adminAuthHandler(blocked.req, blocked.res);
     assert.strictEqual(blocked.res.statusCode, 429);
     assert.ok(blocked.res.data.error.includes('Too many failed passcode attempts'));
+  });
+
+  await t.test('POST /api/admin-auth persists lockout across cold starts via signed state cookie', async () => {
+    const testIp = '203.0.113.88';
+    let lastSetCookie = '';
+    // Send 5 failed attempts and capture Set-Cookie header
+    for (let i = 0; i < 5; i++) {
+      const { req, res } = createMockReqRes({
+        method: 'POST',
+        headers: {
+          'x-forwarded-for': testIp,
+          ...(lastSetCookie ? { cookie: lastSetCookie.split(';')[0] } : {})
+        },
+        body: JSON.stringify({ pin: '0000' })
+      });
+      await adminAuthHandler(req, res);
+      const setCookie = res.headers['Set-Cookie'] || res.headers['set-cookie'];
+      if (setCookie) lastSetCookie = setCookie;
+    }
+
+    assert.ok(lastSetCookie.includes('qb_auth_rl='), 'Must set signed rate limit cookie');
+
+    // Request with the cookie presenting to handler
+    const coldStartReq = createMockReqRes({
+      method: 'POST',
+      headers: {
+        'x-forwarded-for': testIp,
+        cookie: lastSetCookie.split(';')[0]
+      },
+      body: JSON.stringify({ pin: '8899' })
+    });
+    await adminAuthHandler(coldStartReq.req, coldStartReq.res);
+    assert.strictEqual(coldStartReq.res.statusCode, 429, 'Signed state cookie must enforce lockout');
   });
 });
 

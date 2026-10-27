@@ -12,6 +12,18 @@ const R2_CONFIG = {
 
 const DEFAULT_VIDEO_KEY = 'Untitled design (16).mp4';
 
+// Allowed explicit video keys or folder prefixes
+const ALLOWED_EXPLICIT_KEYS = new Set([
+  DEFAULT_VIDEO_KEY,
+  'videos/' + DEFAULT_VIDEO_KEY
+]);
+
+export const config = {
+  api: {
+    responseLimit: false,
+  },
+};
+
 function hmac(key, string) {
   return crypto.createHmac('sha256', key).update(string).digest();
 }
@@ -46,8 +58,27 @@ export default async function handler(req, res) {
   if (!key) key = DEFAULT_VIDEO_KEY;
 
   const cleanKey = key.replace(/^\/+/, '');
-  if (!cleanKey.startsWith('videos/') || cleanKey.includes('..') || (!cleanKey.endsWith('.mp4') && !cleanKey.endsWith('.webm')) || !/^[a-zA-Z0-9_\-./]+$/.test(cleanKey)) {
-    return res.status(400).json({ error: 'Invalid video key: videos must reside in videos/ folder' });
+  
+  // 1. Block directory traversal or dangerous path characters
+  if (cleanKey.includes('..') || cleanKey.includes('\\')) {
+    return res.status(400).json({ error: 'Invalid video key: path traversal detected' });
+  }
+
+  // 2. Must end with valid video extension
+  if (!cleanKey.endsWith('.mp4') && !cleanKey.endsWith('.webm')) {
+    return res.status(400).json({ error: 'Invalid video key: only .mp4 and .webm files are supported' });
+  }
+
+  // 3. Must match safe character set (alphanumeric, spaces, (), -, _, ., /)
+  if (!/^[a-zA-Z0-9_\-. /()]+$/.test(cleanKey)) {
+    return res.status(400).json({ error: 'Invalid video key: illegal characters in path' });
+  }
+
+  // 4. Must be either the default video or reside in videos/ folder
+  const isDefaultVideo = cleanKey === DEFAULT_VIDEO_KEY || ALLOWED_EXPLICIT_KEYS.has(cleanKey);
+  const isInVideosFolder = cleanKey.startsWith('videos/');
+  if (!isDefaultVideo && !isInVideosFolder) {
+    return res.status(400).json({ error: 'Invalid video key: videos must reside in videos/ folder or be the default video' });
   }
 
   if (!R2_CONFIG.ACCESS_KEY_ID || !R2_CONFIG.SECRET_ACCESS_KEY || !R2_CONFIG.HOST || !R2_CONFIG.BUCKET_NAME) {
@@ -101,6 +132,9 @@ export default async function handler(req, res) {
   };
 
   const r2Req = https.request(options, (r2Res) => {
+    // Clear initial socket connection timeout once response headers arrive
+    r2Req.setTimeout(0);
+
     const status = r2Res.statusCode;
     if (status === 200 || status === 206) {
       if (!res.headersSent) {
@@ -113,7 +147,12 @@ export default async function handler(req, res) {
           res.setHeader('Content-Length', r2Res.headers['content-length']);
         }
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        res.setHeader('Access-Control-Allow-Origin', '*');
         res.statusCode = status;
+      }
+      if (req.method === 'HEAD') {
+        r2Res.resume();
+        return res.end();
       }
       r2Res.pipe(res);
     } else {

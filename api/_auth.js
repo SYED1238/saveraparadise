@@ -44,6 +44,24 @@ function signData(data) {
   return crypto.createHmac('sha256', getSigningSecret()).update(data).digest('hex');
 }
 
+export function signPayload(data) {
+  const serialized = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const signature = crypto.createHmac('sha256', getSigningSecret()).update(serialized).digest('base64url');
+  return `${serialized}.${signature}`;
+}
+
+export function verifySignedPayload(signedString) {
+  if (!signedString || typeof signedString !== 'string' || !signedString.includes('.')) return null;
+  const [serialized, signature] = signedString.split('.');
+  const expectedSig = crypto.createHmac('sha256', getSigningSecret()).update(serialized).digest('base64url');
+  if (!safeEqual(signature, expectedSig)) return null;
+  try {
+    return JSON.parse(Buffer.from(serialized, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Creates a signed admin session token.
  * Token format: <base64Payload>.<signatureHex>

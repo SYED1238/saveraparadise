@@ -5,6 +5,7 @@
  */
 
 import { supabase } from './supabaseClient.js';
+import { isStaffSessionActive } from './securityUtils.js';
 
 const STORAGE_KEYS = {
   CATEGORIES: 'quickbite_categories',
@@ -24,6 +25,7 @@ export const ORDER_STATUS_RANKS = {
   'ready_for_pickup': 3,
   'on_the_way': 4,
   'delivered': 5,
+  'undelivered': 5,
   'cancelled': -1
 };
 
@@ -159,6 +161,35 @@ export const DEFAULT_ORDERS = [];
 
 export const DEFAULT_RIDERS = [];
 
+export const CANONICAL_CATEGORY_IMAGES = {
+  'all': '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png',
+  'cat-all': '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png',
+  'biryani': '/api/r2-image?key=categories%2FGemini_Generated_Image_bm077mbm077mbm07-removebg-preview.png',
+  'cat-biryani': '/api/r2-image?key=categories%2FGemini_Generated_Image_bm077mbm077mbm07-removebg-preview.png',
+  'bbq-tandoori': '/api/r2-image?key=categories%2Fcategory_1792937103352_BBQ_and_tandoori_chicken_platter_2K_20261025193320-removebg-preview.png',
+  'cat-bbq': '/api/r2-image?key=categories%2Fcategory_1792937103352_BBQ_and_tandoori_chicken_platter_2K_20261025193320-removebg-preview.png',
+  'tandoori': '/api/r2-image?key=categories%2Fcategory_1792937103352_BBQ_and_tandoori_chicken_platter_2K_20261025193320-removebg-preview.png',
+  'cat-tandoori': '/api/r2-image?key=categories%2Fcategory_1792937103352_BBQ_and_tandoori_chicken_platter_2K_20261025193320-removebg-preview.png',
+  'seafood': '/api/r2-image?key=categories%2Fcategory_1792937169468_Seafood_dishes_with_lemon_wedges_2K_20261025193534-removebg-preview.png',
+  'cat-seafood': '/api/r2-image?key=categories%2Fcategory_1792937169468_Seafood_dishes_with_lemon_wedges_2K_20261025193534-removebg-preview.png',
+  'chinese-dry': '/api/r2-image?key=categories%2Fcategory_1792937267768_Indo-Chinese_dry_starter_dish_2K_20261025193708-removebg-preview.png',
+  'cat-chinese': '/api/r2-image?key=categories%2Fcategory_1792937267768_Indo-Chinese_dry_starter_dish_2K_20261025193708-removebg-preview.png',
+  'chinese': '/api/r2-image?key=categories%2Fcategory_1792937267768_Indo-Chinese_dry_starter_dish_2K_20261025193708-removebg-preview.png',
+  'kabab-spl': '/api/r2-image?key=categories%2Fcategory_1792937330965_Mixed_kebab_platter_served_with_2K_20261025193820-removebg-preview.png',
+  'cat-kebab': '/api/r2-image?key=categories%2Fcategory_1792937330965_Mixed_kebab_platter_served_with_2K_20261025193820-removebg-preview.png',
+  'chicken-gravy': '/api/r2-image?key=categories%2Fcategory_1792937430156_Chicken_curry_in_bowl_2K_20261025193939-removebg-preview.png',
+  'cat-gravy': '/api/r2-image?key=categories%2Fcategory_1792937430156_Chicken_curry_in_bowl_2K_20261025193939-removebg-preview.png',
+  'gravy': '/api/r2-image?key=categories%2Fcategory_1792937430156_Chicken_curry_in_bowl_2K_20261025193939-removebg-preview.png',
+  'roti-items': '/api/r2-image?key=categories%2Fcategory_1792937765385_Assortment_of_Indian_breads_served_2K_20261025194513-removebg-preview.png',
+  'cat-roti': '/api/r2-image?key=categories%2Fcategory_1792937765385_Assortment_of_Indian_breads_served_2K_20261025194513-removebg-preview.png',
+  'breads': '/api/r2-image?key=categories%2Fcategory_1792937765385_Assortment_of_Indian_breads_served_2K_20261025194513-removebg-preview.png',
+  'cat-breads': '/api/r2-image?key=categories%2Fcategory_1792937765385_Assortment_of_Indian_breads_served_2K_20261025194513-removebg-preview.png',
+  'shawarma-rolls': '/api/r2-image?key=categories%2Fcategory_1792937884259_Chicken_shawarma_wrap_and_rolls_2K_20261025194737-removebg-preview.png',
+  'cat-shawarma': '/api/r2-image?key=categories%2Fcategory_1792937884259_Chicken_shawarma_wrap_and_rolls_2K_20261025194737-removebg-preview.png',
+  'veg-gravy': '/api/r2-image?key=categories%2Fcategory_1792937628345_Serving_paneer_gravy_and_dal_2K_20261025194236-removebg-preview.png',
+  'cat-veg': '/api/r2-image?key=categories%2Fcategory_1792937628345_Serving_paneer_gravy_and_dal_2K_20261025194236-removebg-preview.png'
+};
+
 export const DEFAULT_CATEGORIES = [
   {
     "id": "cat-biryani",
@@ -171,56 +202,56 @@ export const DEFAULT_CATEGORIES = [
     "id": "cat-bbq",
     "name": "BBQ & Tandoori",
     "emoji": "🔥",
-    "image": "/api/r2-image?key=categories%2FGemini_Generated_Image_9ocagm9ocagm9oca__3_-removebg-preview.png",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937103352_BBQ_and_tandoori_chicken_platter_2K_20261025193320-removebg-preview.png",
     "slug": "bbq-tandoori"
   },
   {
     "id": "cat-seafood",
     "name": "Sea Food Dishes",
     "emoji": "🦐",
-    "image": "https://images.unsplash.com/photo-1559737558-245ff29d2b27?w=500&auto=format&fit=crop&q=80",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937169468_Seafood_dishes_with_lemon_wedges_2K_20261025193534-removebg-preview.png",
     "slug": "seafood"
   },
   {
     "id": "cat-chinese",
     "name": "Chinese Dry",
     "emoji": "🥢",
-    "image": "https://images.unsplash.com/photo-1525755662778-989d0524087e?w=500&auto=format&fit=crop&q=80",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937267768_Indo-Chinese_dry_starter_dish_2K_20261025193708-removebg-preview.png",
     "slug": "chinese-dry"
   },
   {
     "id": "cat-kebab",
     "name": "Kebab Specials",
     "emoji": "🍢",
-    "image": "/api/r2-image?key=categories%2FGemini_Generated_Image_cd6g2ncd6g2ncd6g-removebg-preview.png",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937330965_Mixed_kebab_platter_served_with_2K_20261025193820-removebg-preview.png",
     "slug": "kabab-spl"
   },
   {
     "id": "cat-gravy",
     "name": "Chicken Gravies",
     "emoji": "🍲",
-    "image": "https://images.unsplash.com/photo-1588166524941-3bf61a9c41db?w=500&auto=format&fit=crop&q=80",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937430156_Chicken_curry_in_bowl_2K_20261025193939-removebg-preview.png",
     "slug": "chicken-gravy"
   },
   {
     "id": "cat-roti",
     "name": "Roti & Breads",
     "emoji": "🫓",
-    "image": "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=500&auto=format&fit=crop&q=80",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937765385_Assortment_of_Indian_breads_served_2K_20261025194513-removebg-preview.png",
     "slug": "roti-items"
   },
   {
     "id": "cat-shawarma",
     "name": "Shawarma & Rolls",
     "emoji": "🌯",
-    "image": "https://images.unsplash.com/photo-1529006557810-274b9b2fc783?w=500&auto=format&fit=crop&q=80",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937884259_Chicken_shawarma_wrap_and_rolls_2K_20261025194737-removebg-preview.png",
     "slug": "shawarma-rolls"
   },
   {
     "id": "cat-veg",
     "name": "Veg Gravy & Dal",
     "emoji": "🥗",
-    "image": "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=500&auto=format&fit=crop&q=80",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937628345_Serving_paneer_gravy_and_dal_2K_20261025194236-removebg-preview.png",
     "slug": "veg-gravy"
   }
 ];
@@ -2188,7 +2219,20 @@ class QuickBiteDataService {
     if (typeof window !== 'undefined' && window.location) {
       path = window.location.pathname.toLowerCase();
     }
-    this.portalType = path.includes('admin') ? 'admin' : (path.includes('delivery') ? 'delivery' : 'customer');
+    this.portalType = path.includes('admin') ? 'admin' : (path.includes('delivery') ? 'delivery' : (path.includes('owner') ? 'owner' : 'customer'));
+
+  }
+
+  /**
+   * Evaluates if the current portal session is actively unlocked with valid credentials.
+   * Prevents leaking live orders and delivery fleet data to unauthorized visitors.
+   * @returns {boolean}
+   */
+  isStaffAuthorized() {
+    if (this.portalType === 'admin') return isStaffSessionActive('admin');
+    if (this.portalType === 'delivery') return isStaffSessionActive('rider');
+    if (this.portalType === 'owner') return isStaffSessionActive('owner');
+    return false;
 
     // Memory Caches & In-Flight Request Deduplication to prevent excessive Supabase egress
     this._isSyncingCategories = null;
@@ -2412,8 +2456,14 @@ class QuickBiteDataService {
         .maybeSingle();
 
       if (!error && data && data.settings && typeof data.settings === 'object') {
+        const sanitizedRemote = {};
+        for (const [k, v] of Object.entries(data.settings)) {
+          if (v && typeof v === 'string' && !v.includes('unsplash.com')) {
+            sanitizedRemote[k] = sanitizeCategoryImageUrl(v);
+          }
+        }
         const localMap = this.getCategoryImages();
-        const merged = { ...data.settings, ...localMap };
+        const merged = { ...CANONICAL_CATEGORY_IMAGES, ...sanitizedRemote, ...localMap };
         localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(merged));
         return merged;
       }
@@ -2430,11 +2480,13 @@ class QuickBiteDataService {
       this.syncDishesFromSupabase(),
       this.syncSettingsFromSupabase()
     ];
-    // PRIVACY GUARD: Only staff portals (Admin & Delivery) may sync all restaurant orders.
+    // PRIVACY & AUTHORIZATION GUARD: Only authenticated staff sessions (Admin, Delivery, Owner) may sync all restaurant orders.
     // Customers only sync their own orders via syncCustomerOrdersFromSupabase().
-    if (this.portalType === 'admin' || this.portalType === 'delivery') {
-      syncTasks.push(this.syncOrdersFromSupabase());
-      syncTasks.push(this.syncRidersFromSupabase());
+    if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
+      if (this.isStaffAuthorized()) {
+        syncTasks.push(this.syncOrdersFromSupabase());
+        syncTasks.push(this.syncRidersFromSupabase());
+      }
     }
     await Promise.allSettled(syncTasks);
   }
@@ -2538,6 +2590,11 @@ class QuickBiteDataService {
   }
 
   async syncOrdersFromSupabase(force = false) {
+    if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
+      if (!this.isStaffAuthorized()) {
+        return this.getOrders();
+      }
+    }
     if (!force && Date.now() - this._lastOrdersSyncTime < 4000) {
       return this.getOrders();
     }
@@ -2725,8 +2782,10 @@ class QuickBiteDataService {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
           if (_ordersDebounceTimer) clearTimeout(_ordersDebounceTimer);
           _ordersDebounceTimer = setTimeout(() => {
-            if (this.portalType === 'admin' || this.portalType === 'delivery') {
-              this.syncOrdersFromSupabase(true);
+            if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
+              if (this.isStaffAuthorized()) {
+                this.syncOrdersFromSupabase(true);
+              }
             } else {
               this.syncCustomerActiveOrders();
             }
@@ -2915,8 +2974,10 @@ class QuickBiteDataService {
       if (typeof document !== 'undefined' && document.hidden) return;
 
       try {
-        if (this.portalType === 'admin' || this.portalType === 'delivery') {
-          await this.syncOrdersFromSupabase();
+        if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
+          if (this.isStaffAuthorized()) {
+            await this.syncOrdersFromSupabase();
+          }
         } else {
           // Customer portal: only poll if customer currently has active orders
           const orders = this.getOrders();
@@ -2936,8 +2997,8 @@ class QuickBiteDataService {
       const handleTabResume = () => {
         if (document.hidden) return;
         const now = Date.now();
-        if (this.portalType === 'admin' || this.portalType === 'delivery') {
-          if (now - this._lastOrdersSyncTime > 30000) {
+        if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
+          if (this.isStaffAuthorized() && now - this._lastOrdersSyncTime > 30000) {
             this.syncOrdersFromSupabase();
           }
         } else {
@@ -3427,11 +3488,20 @@ class QuickBiteDataService {
   getCategoryImages() {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.CATEGORY_IMAGES);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw);
-      return typeof parsed === 'object' && parsed !== null ? parsed : {};
+      let map = {};
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'object' && parsed !== null) {
+          for (const [k, v] of Object.entries(parsed)) {
+            if (v && typeof v === 'string' && !v.includes('unsplash.com')) {
+              map[k] = sanitizeCategoryImageUrl(v);
+            }
+          }
+        }
+      }
+      return { ...CANONICAL_CATEGORY_IMAGES, ...map };
     } catch {
-      return {};
+      return { ...CANONICAL_CATEGORY_IMAGES };
     }
   }
 
@@ -3439,9 +3509,9 @@ class QuickBiteDataService {
     try {
       const map = this.getCategoryImages();
       const custom = (map['all'] || map['cat-all'] || '').trim();
-      if (custom) return sanitizeCategoryImageUrl(custom);
+      if (custom && !custom.includes('unsplash.com')) return sanitizeCategoryImageUrl(custom);
     } catch {}
-    return 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=200&auto=format&fit=crop&q=80';
+    return CANONICAL_CATEGORY_IMAGES['all'];
   }
 
   setAllCategoryImage(imageUrl) {
@@ -3519,14 +3589,15 @@ class QuickBiteDataService {
       // Enrich categories with user custom photos first, then default photos
       return list.map(cat => {
         const customImg = (customImages[cat.id] || (cat.slug ? customImages[cat.slug] : '') || cat.image || '').trim();
-        if (customImg) {
+        if (customImg && !customImg.includes('unsplash.com')) {
           return { ...cat, image: sanitizeCategoryImageUrl(customImg) };
         }
         const match = DEFAULT_CATEGORIES.find(d => d.id === cat.id || d.slug === cat.slug);
-        if (match && match.image) {
+        if (match && match.image && !match.image.includes('unsplash.com')) {
           return { ...cat, image: sanitizeCategoryImageUrl(match.image) };
         }
-        return { ...cat, image: sanitizeCategoryImageUrl(cat.image || '') };
+        const canonical = CANONICAL_CATEGORY_IMAGES[cat.slug] || CANONICAL_CATEGORY_IMAGES[cat.id] || '';
+        return { ...cat, image: sanitizeCategoryImageUrl(canonical || cat.image || '') };
       });
     } catch {
       return DEFAULT_CATEGORIES;
@@ -4113,10 +4184,12 @@ class QuickBiteDataService {
     let computedSubtotal = 0;
     const sanitizedItems = (Array.isArray(orderData.items) ? orderData.items : []).map(item => {
       const dish = dishes.find(d => d.id === item.id || d.name === item.name);
-      const cleanPrice = dish ? Number(dish.price) : Math.max(0, Number(item.price) || 0);
+      // Authoritative pricing: Catalog price strictly overrides any client-submitted price
+      const cleanPrice = dish ? Math.max(1, Number(dish.price) || 0) : Math.max(1, Number(item.price) || 0);
       const cleanQty = Math.max(1, Math.min(50, Math.floor(Number(item.quantity) || 1)));
       computedSubtotal += cleanPrice * cleanQty;
       return {
+        id: item.id || dish?.id,
         name: String(item.name || dish?.name || 'Special Dish').slice(0, 100),
         quantity: cleanQty,
         price: cleanPrice
@@ -4372,14 +4445,15 @@ class QuickBiteDataService {
     }
 
     // PIPELINE STATUS RANKINGS (Strictly monotonic & irreversible)
-    // 0: Accepted -> 1: Preparing -> 2: Ready to Dispatch -> 3: Dispatched -> 4: Delivered
+    // 0: Accepted -> 1: Preparing -> 2: Ready to Dispatch -> 3: Dispatched -> 4: Delivered / Undelivered
     const STATUS_RANKS = {
       'pending': -1, // Backwards compatibility for legacy orders
       'accepted': 0,
       'cooking': 1,
       'ready_for_pickup': 2,
       'on_the_way': 3,
-      'delivered': 4
+      'delivered': 4,
+      'undelivered': 4
     };
 
     const currentRank = STATUS_RANKS[order.status] !== undefined ? STATUS_RANKS[order.status] : 0;
@@ -4391,9 +4465,9 @@ class QuickBiteDataService {
       return null;
     }
 
-    // STRICT POLICY: Only the Delivery Boy / Rider can pick up ('on_the_way') and deliver ('delivered')!
-    if ((newStatus === 'on_the_way' || newStatus === 'delivered') && source !== 'rider') {
-      console.warn(`[DataService] Action blocked: Order ${orderId} status "${newStatus}" cannot be set by ${source}. Only the Delivery Partner can pick up and deliver.`);
+    // STRICT POLICY: Only the Delivery Boy / Rider (or Admin) can pick up ('on_the_way'), deliver ('delivered'), or mark 'undelivered'!
+    if ((newStatus === 'on_the_way' || newStatus === 'delivered' || newStatus === 'undelivered') && source !== 'rider' && source !== 'admin') {
+      console.warn(`[DataService] Action blocked: Order ${orderId} status "${newStatus}" cannot be set by ${source}. Only the Delivery Partner or Admin can set this status.`);
       return null;
     }
 
@@ -4420,6 +4494,18 @@ class QuickBiteDataService {
       order.statusLabel = 'Delivered';
       order.eta = 'Delivered 🎉';
       order.deliveredAt = order.deliveredAt || Date.now();
+    } else if (newStatus === 'undelivered') {
+      order.stepIndex = 4;
+      order.statusLabel = 'Undelivered (Returned to Kitchen)';
+      order.eta = 'Returned to Kitchen';
+      order.undeliveredAt = order.undeliveredAt || Date.now();
+      order.returnToKitchen = true;
+      order.cashCollected = 0;
+      order.cash_collected = 0;
+      if (extraData?.undeliveredReason || extraData?.reason) {
+        order.undeliveredReason = extraData.undeliveredReason || extraData.reason;
+        order.cancellationReason = order.undeliveredReason;
+      }
     }
 
     if (extraData && typeof extraData === 'object') {
@@ -4453,6 +4539,8 @@ class QuickBiteDataService {
         eta: order.eta
       };
       if (order.deliveredAt) fullPayload.delivered_at = Number(order.deliveredAt);
+      if (order.undeliveredAt && !fullPayload.delivered_at) fullPayload.delivered_at = Number(order.undeliveredAt);
+      if (order.cancellationReason || order.undeliveredReason) fullPayload.cancellation_reason = order.cancellationReason || order.undeliveredReason;
       if (order.assignedRiderPin) fullPayload.assigned_rider_pin = order.assignedRiderPin;
       if (order.assignedRiderName) fullPayload.assigned_rider_name = order.assignedRiderName;
       if (order.assignedRiderPhone) fullPayload.assigned_rider_phone = order.assignedRiderPhone;
@@ -5420,7 +5508,10 @@ class QuickBiteDataService {
 
     // If active session was for this deleted rider, clear it
     try {
-      if (localStorage.getItem('quickbite_active_rider_pin') === cleanPin) {
+      const activeId = localStorage.getItem('quickbite_active_rider_id');
+      const legacyPin = localStorage.getItem('quickbite_active_rider_pin');
+      if (activeId === `rider-${cleanPin}` || activeId === cleanPin || legacyPin === cleanPin) {
+        localStorage.removeItem('quickbite_active_rider_id');
         localStorage.removeItem('quickbite_active_rider_pin');
         sessionStorage.removeItem('quickbite_rider_session_auth');
       }
@@ -5442,9 +5533,23 @@ class QuickBiteDataService {
 
   getActiveRider() {
     try {
-      const activePin = localStorage.getItem('quickbite_active_rider_pin');
-      if (!activePin) return null;
-      return this.getRiderByPin(activePin) || null;
+      const activeId = localStorage.getItem('quickbite_active_rider_id');
+      if (activeId) {
+        const riders = this.getRiders();
+        const found = riders.find(r => r.id === activeId || r.pin === activeId);
+        if (found) return found;
+      }
+      // Migrate legacy plaintext PIN storage if present and remove it
+      const legacyPin = localStorage.getItem('quickbite_active_rider_pin');
+      if (legacyPin) {
+        const rider = this.getRiderByPin(legacyPin);
+        if (rider) {
+          localStorage.setItem('quickbite_active_rider_id', rider.id);
+          localStorage.removeItem('quickbite_active_rider_pin');
+          return rider;
+        }
+      }
+      return null;
     } catch {
       return null;
     }
@@ -5455,7 +5560,9 @@ class QuickBiteDataService {
       const cleanPin = String(pin).trim();
       const rider = this.getRiderByPin(cleanPin);
       if (!rider) return null;
-      localStorage.setItem('quickbite_active_rider_pin', cleanPin);
+      // Store rider ID instead of raw plaintext PIN to prevent credential theft
+      localStorage.setItem('quickbite_active_rider_id', rider.id);
+      localStorage.removeItem('quickbite_active_rider_pin');
       this.notifyChange('rider_session', { pin: cleanPin, rider, timestamp: Date.now() });
       return rider;
     } catch {
@@ -5666,6 +5773,62 @@ class QuickBiteDataService {
       return { success: true, settledAt: settledTime, rider: riders[idx] };
     }
     return { success: false };
+  }
+
+  // ========================================================
+  // CUSTOMER UNREACHABLE AT DOORSTEP (CNR) PROTOCOL
+  // ========================================================
+  riderWaitingAtDoorstep(orderId, { riderPin = '', waitingStartedAt = Date.now() } = {}) {
+    const list = this.getOrders();
+    const norm = (id) => String(id || '').trim().replace(/^#/, '');
+    const cleanTarget = norm(orderId);
+    const order = list.find(o => o && norm(o.id) === cleanTarget);
+    if (!order) return null;
+
+    order.riderWaitingAtDoorstep = true;
+    order.waitingStartedAt = waitingStartedAt;
+    if (riderPin) order.assignedRiderPin = riderPin;
+
+    this.saveOrders(list, {
+      action: 'rider_waiting_doorstep',
+      orderId: order.id,
+      waitingStartedAt,
+      timestamp: Date.now()
+    });
+
+    try {
+      localStorage.setItem('quickbite_order_doorstep_wait', JSON.stringify({
+        orderId: order.id,
+        riderPin,
+        waitingStartedAt,
+        timestamp: Date.now()
+      }));
+    } catch {}
+
+    return order;
+  }
+
+  riderUndeliveredOrder(orderId, { reason = 'Customer Unreachable at Doorstep', riderPin = '', returnToKitchen = true } = {}) {
+    return this.updateOrderStatus(orderId, 'undelivered', 'rider', {
+      undeliveredReason: reason,
+      cancellationReason: reason,
+      returnToKitchen: Boolean(returnToKitchen),
+      riderWaitingAtDoorstep: false,
+      cashCollected: 0,
+      cash_collected: 0,
+      assignedRiderPin: riderPin || undefined
+    });
+  }
+
+  riderSafeDropPrepaid(orderId, { safeDropNote = 'Left at customer doorstep / security guard', riderPin = '' } = {}) {
+    return this.updateOrderStatus(orderId, 'delivered', 'rider', {
+      safeDrop: true,
+      safeDropNote: String(safeDropNote).trim() || 'Left at doorstep/guard',
+      riderWaitingAtDoorstep: false,
+      cashCollected: 0,
+      cash_collected: 0,
+      assignedRiderPin: riderPin || undefined
+    });
   }
 }
 

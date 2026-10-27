@@ -1,4 +1,4 @@
-﻿-- ========================================================
+-- ========================================================
 -- QuickBite Supabase Database Schema & Seed Data
 -- ========================================================
 
@@ -115,17 +115,19 @@ ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_addresses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
 
+-- 2.0 Store Settings: Public read-only; admin/service role mutations
 DROP POLICY IF EXISTS "public_read_store_settings" ON public.store_settings;
+DROP POLICY IF EXISTS "allow_all_store_settings" ON public.store_settings;
+DROP POLICY IF EXISTS "admin_manage_store_settings" ON public.store_settings;
+
 CREATE POLICY "public_read_store_settings" ON public.store_settings
   FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "allow_all_store_settings" ON public.store_settings;
-DROP POLICY IF EXISTS "admin_manage_store_settings" ON public.store_settings;
 CREATE POLICY "admin_manage_store_settings" ON public.store_settings
   FOR ALL USING (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role' OR auth.role() = 'anon'
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role'
   ) WITH CHECK (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role' OR auth.role() = 'anon'
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role'
   );
 
 -- 2.1 Categories: Public read-only; mutations restricted to admin/service role
@@ -138,9 +140,9 @@ CREATE POLICY "public_read_categories" ON public.categories
 
 CREATE POLICY "admin_manage_categories" ON public.categories
   FOR ALL USING (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role' OR auth.role() = 'anon'
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role'
   ) WITH CHECK (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role' OR auth.role() = 'anon'
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role'
   );
 
 -- 2.2 Food Dishes: Public read-only; mutations allowed for admin/staff
@@ -153,12 +155,12 @@ CREATE POLICY "public_read_dishes" ON public.dishes
 
 CREATE POLICY "admin_manage_dishes" ON public.dishes
   FOR ALL USING (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role' OR auth.role() = 'anon'
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role'
   ) WITH CHECK (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role' OR auth.role() = 'anon'
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role'
   );
 
--- 2.3 Orders: Anyone can create an order; reading/updating enabled for customers and fleet
+-- 2.3 Orders: Anyone can create an order with valid initial status; reading/updating scoped to customer or staff
 DROP POLICY IF EXISTS "allow_all_orders" ON public.orders;
 DROP POLICY IF EXISTS "public_create_orders" ON public.orders;
 DROP POLICY IF EXISTS "owner_read_orders" ON public.orders;
@@ -167,23 +169,26 @@ DROP POLICY IF EXISTS "app_read_orders" ON public.orders;
 DROP POLICY IF EXISTS "app_update_orders" ON public.orders;
 
 CREATE POLICY "public_create_orders" ON public.orders
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (
+    (status IS NULL OR status IN ('accepted', 'pending'))
+  );
 
 CREATE POLICY "app_read_orders" ON public.orders
   FOR SELECT USING (
     (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
-    OR (auth.jwt() ->> 'email' IS NOT NULL AND auth.jwt() ->> 'email' = customer_email)
+    OR (auth.jwt() ->> 'email' IS NOT NULL AND LOWER(auth.jwt() ->> 'email') = LOWER(customer_email))
     OR (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider')
     OR auth.role() = 'service_role'
-    OR auth.role() = 'anon'
   );
 
 CREATE POLICY "app_update_orders" ON public.orders
   FOR UPDATE USING (
     (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider')
     OR auth.role() = 'service_role'
-    OR auth.role() = 'anon'
-  ) WITH CHECK (true);
+  ) WITH CHECK (
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider')
+    OR auth.role() = 'service_role'
+  );
 
 -- 2.4 User Addresses: Strictly protect customer PII (names, phones, GPS coordinates)
 -- Only the owner or staff can select or mutate user addresses
@@ -214,7 +219,7 @@ DECLARE
 BEGIN
   -- Explicit cancellation rule: permitted ONLY from pending or accepted before cooking starts
   IF NEW.status = 'cancelled' THEN
-    IF OLD.status IN ('cooking', 'ready_for_pickup', 'on_the_way', 'delivered') THEN
+    IF OLD.status IN ('cooking', 'ready_for_pickup', 'on_the_way', 'delivered', 'undelivered') THEN
       RAISE EXCEPTION 'Cannot cancel order once kitchen preparation has begun (% to %)', OLD.status, NEW.status;
     END IF;
     RETURN NEW;
@@ -223,6 +228,11 @@ BEGIN
   -- Delivered orders cannot be changed
   IF OLD.status = 'delivered' AND NEW.status != 'delivered' THEN
     RAISE EXCEPTION 'Cannot modify an order that has already been delivered.';
+  END IF;
+
+  -- Undelivered orders cannot be changed
+  IF OLD.status = 'undelivered' AND NEW.status != 'undelivered' THEN
+    RAISE EXCEPTION 'Cannot modify an order that was marked undelivered.';
   END IF;
 
   -- Cancelled orders cannot be reactivated
@@ -238,6 +248,7 @@ BEGIN
     WHEN 'ready_for_pickup' THEN old_rank := 3;
     WHEN 'on_the_way' THEN old_rank := 4;
     WHEN 'delivered' THEN old_rank := 5;
+    WHEN 'undelivered' THEN old_rank := 5;
     ELSE old_rank := 0;
   END CASE;
 
@@ -249,6 +260,7 @@ BEGIN
     WHEN 'ready_for_pickup' THEN new_rank := 3;
     WHEN 'on_the_way' THEN new_rank := 4;
     WHEN 'delivered' THEN new_rank := 5;
+    WHEN 'undelivered' THEN new_rank := 5;
     ELSE new_rank := 0;
   END CASE;
 
