@@ -2544,20 +2544,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
         subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
         maxZoom: 20,
+        maxNativeZoom: 19,
+        keepBuffer: 4,
         attribution: '&copy; Google Maps'
-      });
-      streetLayer.on('tileerror', () => {
-        if (!streetLayer._hasFailedOver) {
-          streetLayer._hasFailedOver = true;
-          const fallback = L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
-            subdomains: ['a', 'b', 'c'],
-            maxZoom: 20
-          });
-          if (trackerLiveMap && trackerLiveMap.hasLayer(streetLayer)) {
-            trackerLiveMap.removeLayer(streetLayer);
-            fallback.addTo(trackerLiveMap);
-          }
-        }
       });
       streetLayer.addTo(trackerLiveMap);
 
@@ -5016,55 +5005,18 @@ document.addEventListener('DOMContentLoaded', () => {
       streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
         subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
         maxZoom: 20,
+        maxNativeZoom: 19,
+        keepBuffer: 4,
         attribution: '&copy; Google Maps'
-      });
-
-      // Resilient Auto-Failover: If mobile ISP or carrier blocks Google tiles, seamlessly switch to OpenStreetMap France (crisp white/grey, NO yellow!)
-      let streetErrorCount = 0;
-      streetLayer.on('tileerror', () => {
-        streetErrorCount++;
-        if (streetErrorCount >= 3 && !streetLayer._hasFailedOver) {
-          streetLayer._hasFailedOver = true;
-          console.warn('[Map] Mobile network issue loading Google tiles, falling back to high-speed OpenStreetMap France layer');
-          const fallbackStreet = L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
-            subdomains: ['a', 'b', 'c'],
-            maxZoom: 20,
-            attribution: '&copy; OpenStreetMap France'
-          });
-          if (addressMap && addressMap.hasLayer(streetLayer)) {
-            addressMap.removeLayer(streetLayer);
-            fallbackStreet.addTo(addressMap);
-            streetLayer = fallbackStreet;
-            addressMap.invalidateSize();
-          }
-        }
       });
 
       // 2. Google Satellite Hybrid: High-definition aerial photography with road & locality overlays
       satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=en&gl=IN', {
         subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
         maxZoom: 20,
+        maxNativeZoom: 19,
+        keepBuffer: 4,
         attribution: '&copy; Google Maps'
-      });
-
-      // Satellite Fallback: Esri World Imagery (high-resolution photographic satellite, 100% reliable across all mobile devices)
-      let satErrorCount = 0;
-      satelliteLayer.on('tileerror', () => {
-        satErrorCount++;
-        if (satErrorCount >= 3 && !satelliteLayer._hasFailedOver) {
-          satelliteLayer._hasFailedOver = true;
-          console.warn('[Map] Google satellite connectivity issue, switching to Esri World Imagery');
-          const fallbackSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            maxZoom: 19,
-            attribution: 'Tiles &copy; Esri World Imagery'
-          });
-          if (addressMap && addressMap.hasLayer(satelliteLayer)) {
-            addressMap.removeLayer(satelliteLayer);
-            fallbackSat.addTo(addressMap);
-            satelliteLayer = fallbackSat;
-            addressMap.invalidateSize();
-          }
-        }
       });
 
       // Default active layer: Street
