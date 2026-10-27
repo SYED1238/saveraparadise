@@ -820,7 +820,7 @@ document.addEventListener('DOMContentLoaded', () => {
         recipeSearchInput.value = '';
         clearSearchBtn.style.display = 'none';
         filterDishes('all');
-        categoryPills.forEach(p => p.classList.toggle('active', p.getAttribute('data-filter') === 'all'));
+        document.querySelectorAll('.category-pill').forEach(p => p.classList.toggle('active', p.getAttribute('data-filter') === 'all'));
       });
     }
   }
@@ -3053,10 +3053,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Customer Cancel Order button in live tracking modal
-    // Strict Requirement: Customer can ONLY cancel when order is in 'accepted' status (not in any other status)
+    // Strict Requirement: Customer can cancel when order is in 'pending' or 'accepted' status (not once cooking begins)
     const btnCustomerCancelOrder = document.getElementById('btn-customer-cancel-order');
     if (btnCustomerCancelOrder) {
-      if (order.status === 'accepted') {
+      if (order.status === 'accepted' || order.status === 'pending') {
         btnCustomerCancelOrder.style.display = 'inline-flex';
         btnCustomerCancelOrder.onclick = () => {
           handleCustomerCancelOrder(order.id);
@@ -3773,7 +3773,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (settings.storeOpen === false || (typeof dataService.isStoreOpen === 'function' && !dataService.isStoreOpen())) {
         const closedMsg = settings.storeClosedReason || '🌙 The kitchen is currently closed for the night. We will reopen tomorrow at 11:00 AM!';
         showToast(closedMsg, 'warning');
-        resetSubmitState();
         return;
       }
 
@@ -6824,9 +6823,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (homeStatusText) {
         homeStatusText.innerHTML = `<strong>🌙 Closed Now:</strong> Reopens at ${settings.openTime || '11:00 AM'} • Browsing Only`;
       }
-      if (btnCheckout) {
+      if (btnCheckoutLabel) {
+        btnCheckoutLabel.textContent = '🌙 Kitchen Closed';
+      } else if (btnCheckout) {
         btnCheckout.textContent = '🌙 Kitchen Closed';
       }
+      if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'none';
     } else if (isPaused) {
       ensureStoreStatusTicker(true);
       if (storeRushBanner) {
@@ -6860,9 +6862,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Update checkout button if present
-      if (btnCheckout) {
+      if (btnCheckoutLabel) {
+        btnCheckoutLabel.textContent = `⏸️ Rush Paused (${mins}m left)`;
+      } else if (btnCheckout) {
         btnCheckout.textContent = `⏸️ Rush Paused (${mins}m left)`;
       }
+      if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'none';
     } else {
       ensureStoreStatusTicker(false);
       // Hide top rush banner
@@ -6892,9 +6897,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Restore checkout button
-      if (btnCheckout) {
+      if (btnCheckoutLabel) {
+        btnCheckoutLabel.textContent = 'Proceed to Checkout';
+      } else if (btnCheckout) {
         btnCheckout.textContent = 'Proceed to Checkout';
       }
+      if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'inline';
     }
   }
 

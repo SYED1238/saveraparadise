@@ -4117,16 +4117,17 @@ class QuickBiteDataService {
       const cleanQty = Math.max(1, Math.min(50, Math.floor(Number(item.quantity) || 1)));
       computedSubtotal += cleanPrice * cleanQty;
       return {
-        name: String(item.name || dish?.name || 'Crispy Item').slice(0, 100),
+        name: String(item.name || dish?.name || 'Special Dish').slice(0, 100),
         quantity: cleanQty,
         price: cleanPrice
       };
     });
 
     // Authoritative delivery fee calculation
+    const isFreeDeliveryEnabled = settings.freeDeliveryEnabled !== false;
     const threshold = Number(settings.freeDeliveryThreshold) || 250;
     const standardFee = Number(settings.deliveryFeeStandard) || 40;
-    let deliveryFee = computedSubtotal >= threshold ? 0 : standardFee;
+    let deliveryFee = (isFreeDeliveryEnabled && threshold > 0 && computedSubtotal >= threshold) ? 0 : standardFee;
 
     // Validate coupon code boundaries against store settings
     let discount = 0;
@@ -4275,8 +4276,8 @@ class QuickBiteDataService {
         console.warn(`[DataService] Action blocked: Order ${orderId} has already been delivered.`);
         return null;
       }
-      if (source === 'customer' && order.status !== 'accepted') {
-        console.warn(`[DataService] Action blocked: Customer can only cancel orders in 'accepted' status. Current status: ${order.status}`);
+      if (source === 'customer' && !['pending', 'accepted'].includes(order.status)) {
+        console.warn(`[DataService] Action blocked: Customer can only cancel orders in 'pending' or 'accepted' status. Current status: ${order.status}`);
         return null;
       }
       const prevStatus = order.status;
@@ -4846,7 +4847,7 @@ class QuickBiteDataService {
       ...current,
       freeDeliveryEnabled: Boolean(delivData.freeDeliveryEnabled !== false),
       freeDeliveryThreshold: Math.max(0, Number(delivData.freeDeliveryThreshold !== undefined ? delivData.freeDeliveryThreshold : (current.freeDeliveryThreshold ?? 250))),
-      deliveryFeeStandard: Math.max(0, Number(delivData.deliveryFeeStandard !== undefined ? delivData.deliveryFeeStandard : (current.deliveryFeeStandard ?? 3.99))),
+      deliveryFeeStandard: Math.max(0, Number(delivData.deliveryFeeStandard !== undefined ? delivData.deliveryFeeStandard : (current.deliveryFeeStandard ?? 40))),
       ...(delivData.minOrderValue !== undefined && {
         minOrderValue: Math.max(0, Math.round(Number(delivData.minOrderValue))),
         minOrder: Math.max(0, Math.round(Number(delivData.minOrderValue)))

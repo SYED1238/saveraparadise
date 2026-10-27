@@ -2757,7 +2757,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tag: `admin-order-${orderData.id}`,
       data: { orderId: orderData.id, url: '/admin.html' },
       onClick: () => {
-        if (viewOrdersBtn) viewOrdersBtn.click();
+        switchView('view-orders');
       }
     });
     flashTabTitle(`🚨 NEW ORDER ${orderData.id}!`);
@@ -3358,7 +3358,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    const couponPill = document.getElementById('preview-coupon-free-pill') || previewFreeDelivPill;
+    const couponPill = document.getElementById('preview-coupon-free-pill') || document.getElementById('preview-free-deliv-pill');
     if (couponPill) {
       couponPill.style.display = freeDelivWithCoupon ? 'inline-flex' : 'none';
     }
@@ -3374,7 +3374,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateDeliveryPreview() {
     const isFreeEnabled = inputFreeDeliveryEnabled ? inputFreeDeliveryEnabled.checked : true;
     const thresh = Math.max(0, Number(inputFreeDeliveryThreshold?.value || 250));
-    const stdFee = Number(inputDeliveryFeeStandard?.value || 3.99);
+    const stdFee = Number(inputDeliveryFeeStandard?.value || 40);
     const movVal = Math.max(0, Number(inputMinOrderValue?.value || 0));
 
     if (deliveryStatusBadge) {
