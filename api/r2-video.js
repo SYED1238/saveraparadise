@@ -46,8 +46,8 @@ export default async function handler(req, res) {
   if (!key) key = DEFAULT_VIDEO_KEY;
 
   const cleanKey = key.replace(/^\/+/, '');
-  if (cleanKey.includes('..') || (!cleanKey.endsWith('.mp4') && !cleanKey.endsWith('.webm'))) {
-    return res.status(400).json({ error: 'Invalid video key' });
+  if (!cleanKey.startsWith('videos/') || cleanKey.includes('..') || (!cleanKey.endsWith('.mp4') && !cleanKey.endsWith('.webm')) || !/^[a-zA-Z0-9_\-./]+$/.test(cleanKey)) {
+    return res.status(400).json({ error: 'Invalid video key: videos must reside in videos/ folder' });
   }
 
   if (!R2_CONFIG.ACCESS_KEY_ID || !R2_CONFIG.SECRET_ACCESS_KEY || !R2_CONFIG.HOST || !R2_CONFIG.BUCKET_NAME) {

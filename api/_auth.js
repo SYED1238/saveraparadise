@@ -6,10 +6,18 @@
 import crypto from 'crypto';
 
 // Server-side signing secret: never exposed to browser bundles
+let devEphemeralSecret = null;
+
 function getSigningSecret() {
-  return process.env.SESSION_SECRET ||
-         process.env.R2_SECRET_ACCESS_KEY ||
-         'restaurant2_local_dev_secret_key_2026';
+  const secret = process.env.SESSION_SECRET || process.env.R2_SECRET_ACCESS_KEY;
+  if (secret && secret !== 'change_me_to_a_random_32_character_string') {
+    return secret;
+  }
+  // In development/test without configured secret, generate an ephemeral random 32-byte key
+  if (!devEphemeralSecret) {
+    devEphemeralSecret = crypto.randomBytes(32).toString('hex');
+  }
+  return devEphemeralSecret;
 }
 
 function getAdminPin() {
@@ -112,9 +120,9 @@ export function verifyAdminPin(inputPin) {
   const cleanPin = String(inputPin).trim();
   if (!/^\d{4}$/.test(cleanPin)) return false;
 
-  // Primary check: Direct match against configured ADMIN_PIN or default manager code (8899)
+  // Primary check: Direct match against configured ADMIN_PIN (defaults to 8899 if unconfigured)
   const expectedPin = getAdminPin();
-  if (safeEqual(cleanPin, expectedPin) || safeEqual(cleanPin, '8899')) {
+  if (expectedPin && safeEqual(cleanPin, expectedPin)) {
     return true;
   }
 

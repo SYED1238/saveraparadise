@@ -33,7 +33,17 @@ function isRateLimited(ip) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '';
+  const isAllowedOrigin = !origin ||
+    origin.includes('localhost') ||
+    origin.includes('127.0.0.1') ||
+    origin.endsWith('.vercel.app') ||
+    origin.includes('saveraparadise') ||
+    origin.includes('zarb.shop');
+
+  if (isAllowedOrigin && origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -65,6 +75,11 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Invalid coordinates' });
       }
 
+      // Security & Quota Guard: Enforce bounding box around restaurant delivery territory (Ramanagara & South Karnataka)
+      if (parsedLat < 11.0 || parsedLat > 14.5 || parsedLng < 75.0 || parsedLng > 79.0) {
+        return res.status(400).json({ error: 'Coordinates are outside the restaurant serviceable delivery region' });
+      }
+
       // Vercel Edge Cache: Cache reverse geocoded coordinates for 24 hours to preserve quota
       res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=3600, stale-while-revalidate=43200');
 
@@ -83,9 +98,9 @@ export default async function handler(req, res) {
     }
 
     if (action === 'autocomplete') {
-      const cleanInput = (input || '').toString().trim();
+      const cleanInput = (input || '').toString().trim().slice(0, 80);
       if (!cleanInput || cleanInput.length < 2) {
-        return res.status(400).json({ error: 'Search input must be at least 2 characters' });
+        return res.status(400).json({ error: 'Search input must be between 2 and 80 characters' });
       }
 
       // Cache search queries for 1 hour

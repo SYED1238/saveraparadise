@@ -51,9 +51,9 @@ public class OrderMonitorService extends Service {
     private static final int SERVICE_NOTIFICATION_ID = 1001;
 
     private static final String SUPABASE_ENDPOINT = 
-        "https://jsqpwkgcmcfidtprvhzm.supabase.co/rest/v1/orders?select=id,status,customer_name,total,pickup_code,delivery_address,created_at&order=created_at.desc&limit=8";
+        "https://zrgkglwqkdxmwrgepnqh.supabase.co/rest/v1/orders?select=id,status,customer_name,total,pickup_code,delivery_address,created_at&order=created_at.desc&limit=8";
     private static final String SUPABASE_KEY = 
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzcXB3a2djbWNmaWR0cHJ2aHptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDI1NTgsImV4cCI6MjEwNzcxODU1OH0.5r_MguBZrvwouUSBiOd4sYj-V6Ty2SOC8eX6FgS_rOg";
+        "sb_publishable_obyAWrTPc2oIxF3V9Bp23Q_cd_WxEZk";
 
     private static final Set<String> knownOrderIds = Collections.synchronizedSet(new HashSet<>());
     private static final Set<String> notifiedReadyIds = Collections.synchronizedSet(new HashSet<>());
