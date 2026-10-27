@@ -3852,21 +3852,15 @@ label.btn-file-upload i {
     height: 18px;
   }
 
-  /* Toast Notification positioning on mobile */
+  /* Samsung One UI Toast Notification positioning */
   .toast-container {
-    bottom: 74px !important;
-    left: 14px !important;
-    right: 14px !important;
-    width: auto !important;
+    top: max(12px, env(safe-area-inset-top, 12px)) !important;
+    bottom: auto !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: calc(100vw - 24px) !important;
+    max-width: 440px !important;
     align-items: center;
-  }
-
-  .toast {
-    width: 100%;
-    justify-content: center;
-    padding: 12px 16px;
-    font-size: 0.85rem;
-    border-radius: var(--radius-full);
   }
 }
 

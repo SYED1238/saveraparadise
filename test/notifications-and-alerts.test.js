@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 
 test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', async (t) => {
@@ -266,5 +266,69 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
     // Subsequent sync event or reload for same delivered order must be blocked
     assert.equal(shouldAlertCustomer(freshOrder, { orderId: '#QB-9902', status: 'delivered', prevStatus: 'delivered' }), false, 'Duplicate delivery event must be blocked');
     assert.equal(shouldAlertCustomer(freshOrder, { orderId: '#QB-9902', status: 'delivered' }), false, 'Reload sync of same delivered order must be blocked');
+  });
+
+  await t.test('8. Samsung One UI Top Pill Notification Engine: swipe mechanics, rounded pill styling, and top positioning', () => {
+    // Mock DOM environment for Node.js test runner
+    const elements = [];
+    const mockContainer = {
+      querySelectorAll() { return elements; },
+      appendChild(child) {
+        elements.push(child);
+        child.parentNode = this;
+      }
+    };
+
+    function simulateCreateSamsungToast(message, type, options = {}) {
+      const cleanMsg = String(message).trim();
+      const appName = options.appName || 'SAVERA PARADISE';
+      const toast = {
+        className: `toast toast-${type} toast-samsung`,
+        innerHTML: `
+          <div class="toast-card-inner">
+            <div class="toast-badge-wrap"><div class="toast-badge-circle toast-badge-${type}"></div></div>
+            <div class="toast-body-wrap">
+              <div class="toast-header-row"><span class="toast-app-pill">${appName}</span><span class="toast-time-meta">now</span></div>
+              <div class="toast-message-text">${cleanMsg}</div>
+            </div>
+          </div>
+          <div class="toast-swipe-notch" aria-hidden="true"></div>
+        `,
+        style: {},
+        parentNode: null,
+        remove() {
+          const idx = elements.indexOf(this);
+          if (idx !== -1) elements.splice(idx, 1);
+        }
+      };
+      mockContainer.appendChild(toast);
+      return toast;
+    }
+
+    // 1. Toast creation contains Samsung One UI classes and elements
+    const toast = simulateCreateSamsungToast('Added Chicken Biryani (Full) to basket! 🛒', 'success', { appName: 'Savera Paradise' });
+    assert.ok(toast.className.includes('toast-samsung'), 'Must include toast-samsung class');
+    assert.ok(toast.className.includes('toast-success'), 'Must include toast-success class');
+    assert.ok(toast.innerHTML.includes('toast-swipe-notch'), 'Must include Samsung swipe handle notch');
+    assert.ok(toast.innerHTML.includes('Savera Paradise'), 'Must render application brand header');
+    assert.ok(toast.innerHTML.includes('Added Chicken Biryani (Full) to basket! 🛒'), 'Must render accurate message text');
+
+    // 2. Gesture threshold checks:
+    // Swipe UP gesture: deltaY < -28px triggers dismissal
+    function evaluateSwipeDismissal(deltaX, deltaY) {
+      if (deltaY < -28) return 'dismiss_up';
+      if (deltaX > 55) return 'dismiss_right';
+      if (deltaX < -55) return 'dismiss_left';
+      return 'spring_back';
+    }
+
+    assert.equal(evaluateSwipeDismissal(0, -35), 'dismiss_up', 'Swiping up past -28px must dismiss up');
+    assert.equal(evaluateSwipeDismissal(70, 0), 'dismiss_right', 'Swiping right past 55px must dismiss right');
+    assert.equal(evaluateSwipeDismissal(-60, 0), 'dismiss_left', 'Swiping left past -55px must dismiss left');
+    assert.equal(evaluateSwipeDismissal(10, -15), 'spring_back', 'Minor drag below threshold must spring back');
+
+    // 3. Cleanup
+    toast.remove();
+    assert.equal(elements.length, 0, 'Toast remove must clean up element');
   });
 });

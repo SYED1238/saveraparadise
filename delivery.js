@@ -12,7 +12,8 @@ import {
   flashTabTitle,
   requestSystemNotificationPermission,
   getSystemNotificationPermission,
-  updateAppBadge
+  updateAppBadge,
+  showSamsungToast
 } from './notificationService.js';
 import { createBackNavigationManager } from './navigationBackService.js';
 import {
@@ -348,46 +349,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // ========================================================
   // TOAST NOTIFICATION HELPER
   // ========================================================
-  const recentRiderToasts = new Map();
-
+  // TOAST NOTIFICATION ENGINE (Samsung One UI Top Floating Pill)
+  // ========================================================
   function showToast(message, type = 'info') {
-    if (!toastContainer || !message) return;
-
-    const cleanMsg = String(message).trim();
-    const key = `${type}:${cleanMsg}`;
-    const now = Date.now();
-    const lastShown = recentRiderToasts.get(key) || 0;
-
-    if (now - lastShown < 2000) {
-      return;
-    }
-    recentRiderToasts.set(key, now);
-    setTimeout(() => recentRiderToasts.delete(key), 4000);
-
-    const existingToasts = toastContainer.querySelectorAll('.toast');
-    for (const t of existingToasts) {
-      if (t.textContent.includes(cleanMsg)) {
-        return;
-      }
-    }
-
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    
-    let icon = 'ℹ️';
-    if (type === 'success') icon = '✅';
-    if (type === 'error') icon = '⚠️';
-
-    toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(cleanMsg)}</span>`;
-    toastContainer.appendChild(toast);
-
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(10px)';
-      toast.style.transition = 'all 0.3s ease';
-      setTimeout(() => toast.remove(), 300);
-    }, 4000);
+    return showSamsungToast(message, type, {
+      container: toastContainer,
+      appName: 'Delivery Fleet',
+      duration: 3800
+    });
   }
+  window.showToast = showToast;
 
   // ========================================================
   // DUTY TOGGLE

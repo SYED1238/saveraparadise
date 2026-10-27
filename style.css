@@ -5599,38 +5599,209 @@ body.pwa-customer-installed .header-pwa-dock {
 }
 
 /* ==========================================================================
-   Toast Notifications
+   Samsung One UI Notification System (Top Banner, Floating Pill, Swipeable)
    ========================================================================== */
 .toast-container {
-  position: fixed;
-  bottom: 24px;
-  left: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 3000;
-  pointer-events: none;
+  position: fixed !important;
+  top: max(14px, env(safe-area-inset-top, 14px)) !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  bottom: auto !important;
+  right: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 10px !important;
+  z-index: 999999 !important;
+  pointer-events: none !important;
+  width: calc(100vw - 28px) !important;
+  max-width: 440px !important;
 }
 
 .toast {
-  background: #181512;
-  color: #FFF;
-  padding: 14px 20px;
-  border-radius: var(--radius-full);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.92rem;
-  font-weight: 600;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  animation: toast-slide 0.3s var(--ease-spring);
-  pointer-events: auto;
+  position: relative !important;
+  pointer-events: auto !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  background: rgba(22, 22, 26, 0.92) !important;
+  backdrop-filter: blur(28px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+  border-radius: 28px !important;
+  padding: 10px 14px 8px 14px !important;
+  color: #FFFFFF !important;
+  cursor: grab !important;
+  touch-action: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 
+    0 16px 38px -6px rgba(0, 0, 0, 0.45),
+    0 4px 16px rgba(0, 0, 0, 0.25),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25) !important;
+  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease !important;
+  will-change: transform, opacity !important;
 }
 
-@keyframes toast-slide {
-  from { transform: translateY(20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+.toast:active {
+  cursor: grabbing !important;
+}
+
+/* Edge Lighting Ring & Status Accents */
+.toast.toast-success, .toast.success {
+  border-color: rgba(16, 185, 129, 0.38) !important;
+  box-shadow: 
+    0 16px 38px -6px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(16, 185, 129, 0.3),
+    0 0 24px -2px rgba(16, 185, 129, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25) !important;
+}
+
+.toast.toast-error, .toast.error {
+  border-color: rgba(239, 68, 68, 0.38) !important;
+  box-shadow: 
+    0 16px 38px -6px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(239, 68, 68, 0.3),
+    0 0 24px -2px rgba(239, 68, 68, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25) !important;
+}
+
+.toast.toast-warning, .toast.warning {
+  border-color: rgba(245, 158, 11, 0.38) !important;
+  box-shadow: 
+    0 16px 38px -6px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(245, 158, 11, 0.3),
+    0 0 24px -2px rgba(245, 158, 11, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25) !important;
+}
+
+.toast.toast-info, .toast.info {
+  border-color: rgba(255, 90, 38, 0.38) !important;
+  box-shadow: 
+    0 16px 38px -6px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 90, 38, 0.3),
+    0 0 24px -2px rgba(255, 90, 38, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25) !important;
+}
+
+/* Card Internal Layout */
+.toast-card-inner {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+
+.toast-badge-wrap {
+  flex-shrink: 0 !important;
+}
+
+.toast-badge-circle {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 1.15rem !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2) !important;
+}
+
+.toast-badge-success {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.28), rgba(5, 150, 105, 0.45)) !important;
+  border-color: rgba(16, 185, 129, 0.5) !important;
+  color: #34D399 !important;
+}
+
+.toast-badge-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.28), rgba(220, 38, 38, 0.45)) !important;
+  border-color: rgba(239, 68, 68, 0.5) !important;
+  color: #F87171 !important;
+}
+
+.toast-badge-warning {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.28), rgba(217, 119, 6, 0.45)) !important;
+  border-color: rgba(245, 158, 11, 0.5) !important;
+  color: #FBBF24 !important;
+}
+
+.toast-badge-info {
+  background: linear-gradient(135deg, rgba(255, 90, 38, 0.28), rgba(234, 88, 12, 0.45)) !important;
+  border-color: rgba(255, 90, 38, 0.5) !important;
+  color: #FF8A50 !important;
+}
+
+.toast-body-wrap {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+
+.toast-header-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.toast-app-pill {
+  font-size: 0.68rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.7px !important;
+  text-transform: uppercase !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+.toast-time-meta {
+  font-size: 0.65rem !important;
+  color: rgba(255, 255, 255, 0.42) !important;
+  margin-left: auto !important;
+  padding-right: 4px !important;
+}
+
+.toast-message-text {
+  font-size: 0.88rem !important;
+  font-weight: 600 !important;
+  color: #FFFFFF !important;
+  line-height: 1.32 !important;
+  word-break: break-word !important;
+}
+
+.toast-close-btn {
+  flex-shrink: 0 !important;
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: none !important;
+  color: rgba(255, 255, 255, 0.55) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  transition: all 0.15s ease !important;
+}
+
+.toast-close-btn:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #FFFFFF !important;
+}
+
+.toast-swipe-notch {
+  width: 32px !important;
+  height: 3.5px !important;
+  border-radius: 99px !important;
+  background: rgba(255, 255, 255, 0.25) !important;
+  margin: 6px auto 0 auto !important;
+}
+
+@keyframes samsungToastPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+  100% { transform: scale(1); }
 }
 
 /* ==========================================================================

@@ -12,7 +12,8 @@ import {
   flashTabTitle,
   requestSystemNotificationPermission,
   getSystemNotificationPermission,
-  updateAppBadge
+  updateAppBadge,
+  showSamsungToast
 } from './notificationService.js';
 import { createBackNavigationManager } from './navigationBackService.js';
 import {
@@ -3085,49 +3086,16 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch {}
 
   // ========================================================
-  // 5. TOAST NOTIFICATION ENGINE
+  // 5. TOAST NOTIFICATION ENGINE (Samsung One UI Top Floating Pill)
   // ========================================================
-  const recentAdminToasts = new Map();
-
   function showToast(message, type = 'info') {
-    if (!toastContainer || !message) return;
-
-    const cleanMsg = String(message).trim();
-    const key = `${type}:${cleanMsg}`;
-    const now = Date.now();
-    const lastShown = recentAdminToasts.get(key) || 0;
-
-    if (now - lastShown < 2000) {
-      return;
-    }
-    recentAdminToasts.set(key, now);
-    setTimeout(() => recentAdminToasts.delete(key), 4000);
-
-    const existingToasts = toastContainer.querySelectorAll('.toast');
-    for (const t of existingToasts) {
-      if (t.textContent.includes(cleanMsg)) {
-        return;
-      }
-    }
-
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-      <div class="toast-content">${escapeHtml(cleanMsg)}</div>
-      <button class="toast-close">✕</button>
-    `;
-    toastContainer.appendChild(toast);
-
-    setTimeout(() => toast.classList.add('show'), 10);
-
-    const removeToast = () => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 300);
-    };
-
-    toast.querySelector('.toast-close').addEventListener('click', removeToast);
-    setTimeout(removeToast, 4000);
+    return showSamsungToast(message, type, {
+      container: toastContainer,
+      appName: 'Kitchen Admin',
+      duration: 3800
+    });
   }
+  window.showToast = showToast;
 
   // ========================================================
   // 6. STORE TIMINGS & KITCHEN RUSH CONTROL

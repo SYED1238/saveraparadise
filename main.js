@@ -10,7 +10,8 @@ import {
   flashTabTitle,
   requestSystemNotificationPermission,
   getSystemNotificationPermission,
-  updateAppBadge
+  updateAppBadge,
+  showSamsungToast
 } from './notificationService.js';
 import { setupAppDownloadButton } from './pwaInstallService.js';
 import { createBackNavigationManager } from './navigationBackService.js';
@@ -26,6 +27,20 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
+
+// Module-level Samsung One UI Toast Notification Dispatcher
+export function showToast(message, type = 'info', options = {}) {
+  return showSamsungToast(message, type, {
+    appName: 'Savera Paradise',
+    duration: 3800,
+    ...options
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.showToast = showToast;
+  window.showSamsungToast = showSamsungToast;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   // Navigation Back Stack Controller (Single-step back navigation for storefront)
@@ -4464,54 +4479,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ==========================================
-  // TOAST NOTIFICATION ENGINE (With Anti-Spam & Deduplication)
+  // TOAST NOTIFICATION ENGINE (Samsung One UI Top Floating Pill)
   // ==========================================
-  const recentToasts = new Map();
-
   function showToast(message, type = 'info') {
-    if (!toastContainer || !message) return;
-
-    const cleanMsg = String(message).trim();
-    const key = `${type}:${cleanMsg}`;
-    const now = Date.now();
-    const lastShown = recentToasts.get(key) || 0;
-
-    // 1. Debounce rapid identical messages within 2 seconds
-    if (now - lastShown < 2000) {
-      return;
-    }
-    recentToasts.set(key, now);
-    setTimeout(() => recentToasts.delete(key), 4000);
-
-    // 2. Prevent stacking identical toasts if one is already currently visible
-    const existingToasts = toastContainer.querySelectorAll('.toast');
-    for (const t of existingToasts) {
-      if (t.textContent.includes(cleanMsg)) {
-        t.style.animation = 'none';
-        void t.offsetHeight;
-        t.style.animation = 'toast-slide 0.3s var(--ease-spring)';
-        return;
-      }
-    }
-
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    
-    let icon = '🔔';
-    if (type === 'success') icon = '✅';
-    if (type === 'warning') icon = '⚠️';
-    if (type === 'error') icon = '❌';
-
-    toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(cleanMsg)}</span>`;
-    toastContainer.appendChild(toast);
-
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(10px)';
-      toast.style.transition = 'all 0.3s ease';
-      setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    return showSamsungToast(message, type, {
+      container: toastContainer,
+      appName: 'Savera Paradise',
+      duration: 3800
+    });
   }
+  window.showToast = showToast;
 
   // ==========================================
   // GOOGLE & SUPABASE AUTHENTICATION ENGINE
