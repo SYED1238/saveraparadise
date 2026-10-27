@@ -75,6 +75,7 @@ export const DEFAULT_OWNER_PIN_HASH = 'abcb00b12750a6e83eef857f2b2f5809864ced8e2
 const STORAGE_KEYS = {
   ADMIN_AUTH: 'quickbite_admin_session_auth',
   RIDER_AUTH: 'quickbite_rider_session_auth',
+  OWNER_AUTH: 'quickbite_owner_session_auth',
   ADMIN_CUSTOM_HASH: 'quickbite_admin_custom_pin_hash',
   RIDER_CUSTOM_HASH: 'quickbite_rider_custom_pin_hash'
 };
@@ -181,11 +182,7 @@ export async function hashPasscode(pin) {
 export function isStaffSessionActive(role) {
   try {
     if (typeof sessionStorage === 'undefined') return false;
-    if (role === 'owner') {
-      return sessionStorage.getItem('savera_owner_authenticated') === 'true' ||
-        (typeof window !== 'undefined' && window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview'));
-    }
-    const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : STORAGE_KEYS.RIDER_AUTH;
+    const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : (role === 'rider' ? STORAGE_KEYS.RIDER_AUTH : STORAGE_KEYS.OWNER_AUTH);
     const token = sessionStorage.getItem(key);
     return Boolean(token && token.startsWith('qb_sess_') && token.length > 24);
   } catch {
@@ -235,12 +232,12 @@ export async function ensureAdminToken() {
 
 /**
  * Stores an authenticated staff session token for this browser tab.
- * @param {'admin' | 'rider'} role
+ * @param {'admin' | 'rider' | 'owner'} role
  */
 export function setStaffSessionActive(role) {
   try {
     if (typeof sessionStorage === 'undefined') return;
-    const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : STORAGE_KEYS.RIDER_AUTH;
+    const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : (role === 'rider' ? STORAGE_KEYS.RIDER_AUTH : STORAGE_KEYS.OWNER_AUTH);
     const arr = new Uint8Array(24);
     crypto.getRandomValues(arr);
     const token = 'qb_sess_' + Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
@@ -250,12 +247,12 @@ export function setStaffSessionActive(role) {
 
 /**
  * Clears the authenticated staff session (locks portal).
- * @param {'admin' | 'rider'} role
+ * @param {'admin' | 'rider' | 'owner'} role
  */
 export function clearStaffSession(role) {
   try {
     if (typeof sessionStorage === 'undefined') return;
-    const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : STORAGE_KEYS.RIDER_AUTH;
+    const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : (role === 'rider' ? STORAGE_KEYS.RIDER_AUTH : STORAGE_KEYS.OWNER_AUTH);
     sessionStorage.removeItem(key);
     if (role === 'admin') {
       sessionStorage.removeItem('quickbite_admin_token');

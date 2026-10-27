@@ -3437,16 +3437,18 @@ function initStorefrontApp() {
         const id = btn.getAttribute('data-reorder-id');
         const orderToReorder = allUserOrders.find(o => o.id === id);
         if (orderToReorder && orderToReorder.items) {
+          const catalogDishes = dataService.getDishes() || [];
           orderToReorder.items.forEach(item => {
             const foundInCart = cart.find(c => c.name === item.name);
             if (foundInCart) {
               foundInCart.quantity += (item.quantity || 1);
             } else {
+              const matchedCatalog = catalogDishes.find(d => d.name === item.name || d.id === item.id);
               cart.push({
-                id: 'reorder-' + Math.random().toString(36).substr(2, 6),
+                id: matchedCatalog ? matchedCatalog.id : ('reorder-' + Math.random().toString(36).substr(2, 6)),
                 name: item.name,
-                price: parseFloat(item.price) || 150,
-                image: '/images/crispy-chicken.jpg',
+                price: parseFloat(item.price) || (matchedCatalog ? parseFloat(matchedCatalog.price) : 150),
+                image: (matchedCatalog && matchedCatalog.image) ? matchedCatalog.image : (item.image || '/images/crispy-chicken.jpg'),
                 quantity: item.quantity || 1
               });
             }
@@ -4047,7 +4049,8 @@ function initStorefrontApp() {
         const itemsSummary = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
         const cartSubtotal = cart.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
         let calculatedTotal = cartSubtotal;
-        if (appliedPromo && settings.offerActive !== false) {
+        const offerMinOrder = Number(settings.offerMinOrder || 0);
+        if (appliedPromo && settings.offerActive !== false && (offerMinOrder <= 0 || cartSubtotal >= offerMinOrder)) {
           const discountType = settings.offerDiscountType || 'percent';
           const discountVal = discountType === 'flat' 
             ? Number(settings.offerDiscountAmount || 50) 
@@ -4108,6 +4111,29 @@ function initStorefrontApp() {
           try {
             requestSystemNotificationPermission().catch(() => {});
           } catch {}
+        }
+
+        // Server-side verification & anti-price tampering check via /api/checkout
+        try {
+          const catalogDishes = dataService.getDishes() || [];
+          const checkoutRes = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: cart.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price })),
+              promoCode: appliedPromo ? (settings.offerPromoCode || 'SAVE10') : null,
+              catalogDishes
+            })
+          });
+          if (checkoutRes.ok) {
+            const checkoutData = await checkoutRes.json();
+            if (checkoutData && typeof checkoutData.total === 'number') {
+              newOrder.checkoutSignature = checkoutData.signature;
+              newOrder.total = `₹${Math.round(checkoutData.total)}`;
+            }
+          }
+        } catch (checkoutApiErr) {
+          console.warn('[Checkout] /api/checkout verification fallback:', checkoutApiErr);
         }
 
         // Add new order to dataService & Supabase Cloud
@@ -5388,8 +5414,6 @@ function initStorefrontApp() {
       if (btnDetectGpsText) {
         btnDetectGpsText.textContent = 'Current location';
       }
-      if (swiggyInputFlat) swiggyInputFlat.value = '';
-      if (swiggyInputFloor) swiggyInputFloor.value = '';
       if (swiggyInputStreet) swiggyInputStreet.value = '';
       if (swiggySaveAsInput) swiggySaveAsInput.value = 'House';
       detectedAddressDetails = {
@@ -5443,7 +5467,13 @@ function initStorefrontApp() {
   function closeAddressModalInternal() {
     if (modalAddressBackdrop) {
       modalAddressBackdrop.classList.remove('open');
-      document.body.style.overflow = '';
+      const anyModalOpen = (authModalBackdrop && authModalBackdrop.classList.contains('open')) ||
+                           (cartDrawerBackdrop && cartDrawerBackdrop.classList.contains('open')) ||
+                           (cartDrawer && cartDrawer.classList.contains('open')) ||
+                           (modalCheckoutBackdrop && modalCheckoutBackdrop.classList.contains('open'));
+      if (!anyModalOpen) {
+        document.body.style.overflow = '';
+      }
     }
     activeEditingAddressId = null;
   }

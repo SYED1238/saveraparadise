@@ -69,15 +69,44 @@ function clearRateLimitCookie(res) {
   res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/api/admin-auth; Max-Age=0`);
 }
 
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000'
+];
+
+function isOriginAllowed(origin) {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    if (url.hostname.endsWith('.vercel.app') || url.hostname.endsWith('foodbliz.in') || url.hostname.endsWith('saveraparadise.foodbliz.in')) return true;
+  } catch {}
+  return false;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
+  const origin = req.headers.origin;
+  if (origin && isOriginAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
+    res.setHeader('Allow', 'POST, OPTIONS');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const rawIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  const rawIp = req.headers['x-real-ip'] || req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   const clientIp = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : 'unknown';
 
   const rateRecord = getRateLimitRecord(req, clientIp);

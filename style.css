@@ -7525,7 +7525,7 @@ body.food-modal-open .mobile-floating-bar {
   background: rgba(18, 15, 12, 0.48);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  z-index: 2500;
+  z-index: 2600;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8284,16 +8284,26 @@ body.food-modal-open .mobile-floating-bar {
   color: #FFFFFF;
   border: none;
   border-radius: var(--radius-full);
-  padding: 5px 12px;
-  font-size: 0.78rem;
+  padding: 7px 14px;
+  font-size: 0.8rem;
   font-weight: 800;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  touch-action: manipulation;
   transition: all 0.2s var(--ease-spring);
 }
 
 .btn-profile-add-addr:hover {
   background: var(--brand-primary-hover);
   transform: translateY(-1px);
+}
+
+.btn-profile-add-addr:active {
+  transform: scale(0.96);
 }
 
 .profile-addresses-list {
@@ -9819,7 +9829,7 @@ body.food-modal-open .mobile-floating-bar {
   flex-direction: column !important;
   overflow: hidden !important;
   background: #F4F5F7 !important;
-  z-index: 2501 !important;
+  z-index: 2601 !important;
 }
 
 .modal-address-backdrop.open .modal-address-card.swiggy-address-modal {

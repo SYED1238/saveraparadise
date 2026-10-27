@@ -367,10 +367,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Update order count badges
+  // Update order count badges (strictly active orders in kitchen pipeline)
   function updateOrderBadges() {
     const orders = dataService.getOrders();
-    const activeCount = orders.filter(o => o.status !== 'delivered').length;
+    const activeCount = orders.filter(o => ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way'].includes(o.status)).length;
     if (topOrderCounter) topOrderCounter.textContent = activeCount;
     if (capsuleOrderBadge) capsuleOrderBadge.textContent = activeCount;
     updateAppBadge(activeCount);
@@ -1481,23 +1481,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const ready = orders.filter(o => o.status === 'ready_for_pickup').length;
     const outForDelivery = orders.filter(o => o.status === 'on_the_way').length;
     const delivered = orders.filter(o => o.status === 'delivered').length;
+    const undelivered = orders.filter(o => o.status === 'undelivered').length;
     const cancelled = orders.filter(o => o.status === 'cancelled').length;
 
     let revenue = 0;
     orders.forEach(o => {
-      if (o.status !== 'cancelled') {
+      // Exclude cancelled and undelivered returned orders from revenue
+      if (o.status !== 'cancelled' && o.status !== 'undelivered') {
         const num = parseFloat((o.total || '₹0').replace(/[^0-9.]/g, ''));
         if (!isNaN(num)) revenue += num;
       }
     });
 
     const kpiCancelledOrders = document.getElementById('kpi-cancelled-orders');
+    const kpiUndeliveredOrders = document.getElementById('kpi-undelivered-orders');
     if (kpiTotalOrders) kpiTotalOrders.textContent = total;
     if (kpiAcceptedOrders) kpiAcceptedOrders.textContent = accepted;
     if (kpiCookingOrders) kpiCookingOrders.textContent = cooking;
     if (kpiReadyOrders) kpiReadyOrders.textContent = ready;
     if (kpiOutOrders) kpiOutOrders.textContent = outForDelivery;
     if (kpiDeliveredOrders) kpiDeliveredOrders.textContent = delivered;
+    if (kpiUndeliveredOrders) kpiUndeliveredOrders.textContent = undelivered;
     if (kpiCancelledOrders) kpiCancelledOrders.textContent = cancelled;
     if (kpiTotalRevenue) kpiTotalRevenue.textContent = `₹${Math.round(revenue)}`;
 

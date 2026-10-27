@@ -365,6 +365,14 @@
           </div>
         </div>
 
+        <div class="kpi-card undelivered" data-filter="undelivered" title="Click to view customer unreachable / returned orders">
+          <div class="kpi-icon">↩️</div>
+          <div class="kpi-data">
+            <div class="kpi-label">UNDELIVERED</div>
+            <div class="kpi-value" id="kpi-undelivered-orders">0</div>
+          </div>
+        </div>
+
         <div class="kpi-card cancelled" data-filter="cancelled" title="Click to view cancelled orders">
           <div class="kpi-icon">❌</div>
           <div class="kpi-data">
@@ -398,6 +406,7 @@
           <button class="order-filter-tab" data-filter="ready_for_pickup">Ready to Dispatch</button>
           <button class="order-filter-tab" data-filter="on_the_way">Dispatched</button>
           <button class="order-filter-tab" data-filter="delivered">Delivered</button>
+          <button class="order-filter-tab" data-filter="undelivered" style="color: #EA580C;">↩️ Undelivered</button>
           <button class="order-filter-tab" data-filter="cancelled" style="color: #DC2626;">❌ Cancelled</button>
         </div>
 

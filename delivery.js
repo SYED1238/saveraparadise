@@ -529,15 +529,11 @@ document.addEventListener('DOMContentLoaded', () => {
     );
     const activeOrders = orders.filter(o => {
       if (o.status !== 'on_the_way') return false;
-      if (!o.assignedRiderPin || o.assignedRiderPin === currentRider.pin) return true;
-      const hasSpecificOrders = orders.some(x => x.status === 'on_the_way' && x.assignedRiderPin === currentRider.pin);
-      return !hasSpecificOrders;
+      return o.assignedRiderPin === currentRider.pin;
     });
     const deliveredOrders = orders.filter(o => {
       if (o.status !== 'delivered' && o.status !== 'undelivered') return false;
-      if (!o.assignedRiderPin || o.assignedRiderPin === currentRider.pin) return true;
-      const hasSpecificOrders = orders.some(x => (x.status === 'delivered' || x.status === 'undelivered') && x.assignedRiderPin === currentRider.pin);
-      return !hasSpecificOrders;
+      return o.assignedRiderPin === currentRider.pin;
     });
 
     // Get rider-specific segregated COD cash in hand
@@ -926,6 +922,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Attach Bag Claim Input Listeners on current tab (Pending & Active)
     attachBagInputListeners();
+
+    // Ensure live ticker runs for any active doorstep waiting cards even when modal is closed
+    if (riderOrdersList.querySelectorAll('.btn-action-unreachable.is-waiting').length > 0) {
+      if (!cardCountdownInterval) {
+        cardCountdownInterval = setInterval(updateCardWaitingCountdowns, 1000);
+      }
+    } else if (cardCountdownInterval) {
+      clearInterval(cardCountdownInterval);
+      cardCountdownInterval = null;
+    }
+  }
+
+  let cardCountdownInterval = null;
+
+  function updateCardWaitingCountdowns() {
+    const waitingButtons = document.querySelectorAll('.btn-action-unreachable.is-waiting');
+    if (waitingButtons.length === 0) {
+      if (cardCountdownInterval) {
+        clearInterval(cardCountdownInterval);
+        cardCountdownInterval = null;
+      }
+      return;
+    }
+
+    waitingButtons.forEach(btn => {
+      const orderId = btn.getAttribute('data-id');
+      if (!orderId) return;
+      const cleanId = String(orderId).trim().replace(/^#/, '');
+      const cnrKey = `quickbite_cnr_start_${cleanId}`;
+      const cnrStartTime = localStorage.getItem(cnrKey);
+      if (!cnrStartTime) return;
+
+      const elapsedSecs = Math.floor((Date.now() - Number(cnrStartTime)) / 1000);
+      const remSecs = Math.max(0, 600 - elapsedSecs);
+      const m = Math.floor(remSecs / 60);
+      const s = remSecs % 60;
+      const formatted = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+      const textSpan = btn.querySelector('span');
+      if (textSpan) textSpan.textContent = `⏱️ ${formatted}`;
+
+      const parentArticle = btn.closest('article');
+      if (parentArticle) {
+        const strongEl = parentArticle.querySelector('.cnr-waiting-indicator strong');
+        if (strongEl) strongEl.textContent = `${formatted} remaining`;
+      }
+    });
   }
 
   // ========================================================

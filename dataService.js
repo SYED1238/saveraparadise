@@ -2221,19 +2221,6 @@ class QuickBiteDataService {
     }
     this.portalType = path.includes('admin') ? 'admin' : (path.includes('delivery') ? 'delivery' : (path.includes('owner') ? 'owner' : 'customer'));
 
-  }
-
-  /**
-   * Evaluates if the current portal session is actively unlocked with valid credentials.
-   * Prevents leaking live orders and delivery fleet data to unauthorized visitors.
-   * @returns {boolean}
-   */
-  isStaffAuthorized() {
-    if (this.portalType === 'admin') return isStaffSessionActive('admin');
-    if (this.portalType === 'delivery') return isStaffSessionActive('rider');
-    if (this.portalType === 'owner') return isStaffSessionActive('owner');
-    return false;
-
     // Memory Caches & In-Flight Request Deduplication to prevent excessive Supabase egress
     this._isSyncingCategories = null;
     this._lastCategoriesSyncTime = 0;
@@ -2270,6 +2257,18 @@ class QuickBiteDataService {
     } catch (err) {
       console.warn('[DataService] constructor error fallback:', err);
     }
+  }
+
+  /**
+   * Evaluates if the current portal session is actively unlocked with valid credentials.
+   * Prevents leaking live orders and delivery fleet data to unauthorized visitors.
+   * @returns {boolean}
+   */
+  isStaffAuthorized() {
+    if (this.portalType === 'admin') return isStaffSessionActive('admin');
+    if (this.portalType === 'delivery') return isStaffSessionActive('rider');
+    if (this.portalType === 'owner') return isStaffSessionActive('owner');
+    return false;
   }
 
   init() {
@@ -4116,14 +4115,14 @@ class QuickBiteDataService {
 
   getCustomerActiveOrders(userId = null, userEmail = null, userPhone = null) {
     const customerOrders = this.getCustomerOrders(userId, userEmail, userPhone);
-    const activeOrders = customerOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
+    const activeOrders = customerOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered');
     activeOrders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     return activeOrders;
   }
 
   getCustomerPastOrders(userId = null, userEmail = null, userPhone = null) {
     const customerOrders = this.getCustomerOrders(userId, userEmail, userPhone);
-    return customerOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled');
+    return customerOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.status === 'undelivered');
   }
 
   saveOrders(orders, extra = {}) {
@@ -5393,28 +5392,6 @@ class QuickBiteDataService {
         this.notifyChange('riders', { action: 'sync_riders', source: 'supabase' });
         return mapped;
       }
-
-      // Schema-resilient Cloud Fallback: Load from store_settings row 'riders_roster'
-      const { data: rosterRow } = await supabase
-        .from('store_settings')
-        .select('settings')
-        .eq('id', 'riders_roster')
-        .maybeSingle();
-
-      if (rosterRow && rosterRow.settings && Array.isArray(rosterRow.settings.roster) && rosterRow.settings.roster.length > 0) {
-        const localList = this.getRiders();
-        const localMap = new Map(localList.map(r => [r.pin, r]));
-        rosterRow.settings.roster.forEach(r => {
-          if (!r || !r.pin) return;
-          const pin = String(r.pin).trim();
-          const existing = localMap.get(pin);
-          localMap.set(pin, { ...(existing || {}), ...r });
-        });
-        const mapped = Array.from(localMap.values());
-        localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
-        this.notifyChange('riders', { action: 'sync_riders', source: 'supabase_settings' });
-        return mapped;
-      }
     } catch (err) {
       console.warn('[DataService] syncRidersFromSupabase error:', err);
     }
@@ -5426,14 +5403,8 @@ class QuickBiteDataService {
       localStorage.setItem('quickbite_riders', JSON.stringify(riders));
       this.notifyChange('riders', { action: 'update_riders', timestamp: Date.now() });
 
-      // Two-way Cloud Backup to Supabase store_settings
-      if (supabase && Array.isArray(riders)) {
-        supabase.from('store_settings').upsert({
-          id: 'riders_roster',
-          settings: { roster: riders, updatedAt: Date.now() },
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' }).then(() => {}, () => {});
-      }
+      // SECURITY HARDENING: Never write plaintext rider PINs or personal phone numbers
+      // into public store_settings table. Riders roster is maintained locally or in private riders table.
     } catch (e) {
       console.warn('Could not save riders:', e);
     }
@@ -5804,6 +5775,34 @@ class QuickBiteDataService {
         timestamp: Date.now()
       }));
     } catch {}
+
+    // Resilient Supabase sync & Realtime Broadcast to notify kitchen tablet and customer
+    try {
+      if (typeof supabase !== 'undefined' && supabase) {
+        const cleanId = String(order.id || '').replace(/^#/, '');
+        const hashId = `#${cleanId}`;
+        const doSync = async (tid) => {
+          try {
+            await supabase.from('orders').update({
+              cancellation_reason: `[DOORSTEP_WAIT] Rider waiting since ${new Date(waitingStartedAt).toLocaleTimeString()}`
+            }).eq('id', tid);
+          } catch {}
+        };
+        doSync(order.id);
+        if (order.id !== cleanId) doSync(cleanId);
+        if (order.id !== hashId) doSync(hashId);
+
+        if (this.sharedBroadcastChannel) {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'rider_waiting_doorstep',
+            payload: { orderId: order.id, riderPin, waitingStartedAt }
+          }).catch(() => {});
+        }
+      }
+    } catch (syncErr) {
+      console.warn('[DataService] riderWaitingAtDoorstep remote sync fallback:', syncErr);
+    }
 
     return order;
   }

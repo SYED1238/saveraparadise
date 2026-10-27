@@ -4,7 +4,15 @@
 // ==============================================================
 
 import { dataService, extractPhoneFromOrder, cleanDeliveryAddress } from './dataService.js';
-import { escapeHtml, sanitizePhone, hashPasscode, DEFAULT_OWNER_PIN_HASH } from './securityUtils.js';
+import {
+  escapeHtml,
+  sanitizePhone,
+  hashPasscode,
+  DEFAULT_OWNER_PIN_HASH,
+  isStaffSessionActive,
+  setStaffSessionActive,
+  clearStaffSession
+} from './securityUtils.js';
 
 // --- STATE MANAGEMENT ---
 let currentPeriod = 'today'; // 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom'
@@ -16,9 +24,6 @@ let riderPayoutRate = 35; // ₹35 default per delivered order
 let enteredPin = '';
 let isOwnerAuthenticated = false;
 
-// Default Owner PIN
-const DEFAULT_OWNER_PIN = '9900';
-
 // ==============================================================
 // 1. DOM INITIALIZATION
 // ==============================================================
@@ -29,8 +34,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initOrdersFilterControls();
   initActions();
 
-  // Check existing session
-  if (sessionStorage.getItem('savera_owner_authenticated') === 'true' || (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview'))) {
+  // Check existing session using cryptographic token
+  if (isStaffSessionActive('owner') || (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview'))) {
     if (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview') && dataService.getOrders().length === 0) {
       try {
         const now = new Date().toISOString();
@@ -195,7 +200,7 @@ async function verifyOwnerPin(pin) {
       delete settings.ownerPin;
       dataService.saveSettings(settings);
     }
-    sessionStorage.setItem('savera_owner_authenticated', 'true');
+    setStaffSessionActive('owner');
     unlockOwnerPortal();
   } else {
     const errorEl = document.getElementById('owner-lock-error');
@@ -233,7 +238,7 @@ function showPasscodeLock() {
   isOwnerAuthenticated = false;
   enteredPin = '';
   updatePinDots();
-  sessionStorage.removeItem('savera_owner_authenticated');
+  clearStaffSession('owner');
 
   const lockOverlay = document.getElementById('owner-lock-overlay');
   const dashboard = document.getElementById('owner-dashboard');
@@ -1422,12 +1427,14 @@ function exportOrdersToCSV() {
     ].join(',');
   });
 
-  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
-  const encodedUri = encodeURI(csvContent);
+  const csvText = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.setAttribute('href', encodedUri);
+  link.setAttribute('href', url);
   link.setAttribute('download', `Savera_Paradise_Financial_Report_${currentPeriod}_${new Date().toISOString().split('T')[0]}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

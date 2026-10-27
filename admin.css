@@ -1326,6 +1326,18 @@
   background: #FAF5FF;
 }
 
+.kpi-card.undelivered {
+  border-left: 3.5px solid #F97316;
+}
+
+.kpi-card.undelivered .kpi-icon {
+  background: #FFEDD5;
+}
+
+.kpi-card.undelivered .kpi-value {
+  color: #EA580C;
+}
+
 .kpi-card.cancelled {
   border-left: 3.5px solid #DC2626;
 }
@@ -1660,6 +1672,18 @@
   background: #FEE2E2;
   color: #DC2626;
   border: 1px solid #FECACA;
+}
+
+.kpi-card.undelivered {
+  border-left: 3.5px solid #F97316;
+}
+
+.kpi-card.undelivered .kpi-icon {
+  background: #FFEDD5;
+}
+
+.kpi-card.undelivered .kpi-value {
+  color: #EA580C;
 }
 
 .kpi-card.cancelled {

@@ -21,7 +21,15 @@ function getSigningSecret() {
 }
 
 function getAdminPin() {
-  return process.env.ADMIN_PIN || '8899';
+  const envPin = process.env.ADMIN_PIN || process.env.OWNER_PIN;
+  if (envPin && String(envPin).trim()) {
+    return String(envPin).trim();
+  }
+  // In non-production test/development environments, permit default PIN
+  if (process.env.NODE_ENV !== 'production') {
+    return '8899';
+  }
+  return '';
 }
 
 const TOKEN_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours

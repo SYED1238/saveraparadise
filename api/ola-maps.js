@@ -32,17 +32,44 @@ function isRateLimited(ip) {
   return entry.count > MAX_REQUESTS_PER_WINDOW;
 }
 
+const ALLOWED_ORIGINS = [
+  'https://foodbliz.in',
+  'https://www.foodbliz.in',
+  'https://saveraparadise.com',
+  'https://www.saveraparadise.com',
+  'https://sascrispychicken.com',
+  'https://www.sascrispychicken.com',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000'
+];
+
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.endsWith('.vercel.app') ||
+      host === 'foodbliz.in' ||
+      host.endsWith('.foodbliz.in') ||
+      host === 'saveraparadise.com' ||
+      host.endsWith('.saveraparadise.com')
+    ) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin || '';
-  const isAllowedOrigin = !origin ||
-    origin.includes('localhost') ||
-    origin.includes('127.0.0.1') ||
-    origin.endsWith('.vercel.app') ||
-    origin.includes('foodbliz.in') ||
-    origin.includes('saveraparadise') ||
-    origin.includes('zarb.shop');
+  const allowed = isOriginAllowed(origin);
 
-  if (isAllowedOrigin && origin) {
+  if (allowed && origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');

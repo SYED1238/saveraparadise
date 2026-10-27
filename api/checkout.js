@@ -83,8 +83,8 @@ export default async function handler(req, res) {
     const dish = catalogMap.get(String(item.id || '')) || catalogMap.get(String(item.name || '').toLowerCase());
     const unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : Math.max(0, Number(item.price) || 0);
 
-    if (unitPrice <= 0) {
-      return res.status(400).json({ error: `Item '${item.name || 'Unknown'}' has an invalid price` });
+    if (unitPrice < 10) {
+      return res.status(400).json({ error: `Item '${item.name || 'Unknown'}' has an invalid price (must be at least ₹10)` });
     }
 
     const rawQty = Number(item.quantity);

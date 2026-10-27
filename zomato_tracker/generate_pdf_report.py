@@ -1,4 +1,4 @@
-import json, os, re, sys
+import json, os, re, sys, html
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 
@@ -101,18 +101,25 @@ for i, o in enumerate(orders, 1):
     area = loc.split('(')[0].strip() if '(' in loc else loc
     items = o.get('items_summary', '—')
     
+    safe_id = html.escape(str(o.get('order_id', '')))
+    safe_cust = html.escape(str(o.get('customer_name', 'Customer')))
+    safe_area = html.escape(str(area))
+    safe_dist = html.escape(str(dist_text))
+    safe_items = html.escape(str(items))
+    safe_bill = html.escape(str(bill_str))
+
     row = f"""
     <tr>
         <td class="col-rank">{i}</td>
-        <td class="col-id"><strong>#{o.get('order_id')}</strong></td>
-        <td class="col-cust">{o.get('customer_name', 'Customer')}</td>
+        <td class="col-id"><strong>#{safe_id}</strong></td>
+        <td class="col-cust">{safe_cust}</td>
         <td class="col-phone">{phone_html}</td>
         <td class="col-loc">
-            <div class="area-text">{area}</div>
-            <div class="dist-pill">{dist_text}</div>
+            <div class="area-text">{safe_area}</div>
+            <div class="dist-pill">{safe_dist}</div>
         </td>
-        <td class="col-items">{items}</td>
-        <td class="col-bill"><strong>{bill_str}</strong></td>
+        <td class="col-items">{safe_items}</td>
+        <td class="col-bill"><strong>{safe_bill}</strong></td>
     </tr>
     """
     rows_html.append(row)
@@ -129,15 +136,23 @@ for o in over_2km_orders:
     dist_text = dist_m.group(1) if dist_m else "Far"
     area = loc.split('(')[0].strip() if '(' in loc else loc
     contact_html = format_contact_html(o.get('customer_phone'))
+
+    safe_2k_id = html.escape(str(o.get('order_id', '')))
+    safe_2k_cust = html.escape(str(o.get('customer_name', 'Customer')))
+    safe_2k_dist = html.escape(str(dist_text))
+    safe_2k_area = html.escape(str(area))
+    safe_2k_items = html.escape(str(o.get('items_summary', '—')))
+    safe_2k_bill = html.escape(str(b_str))
+
     over_2km_rows.append(f"""
     <tr>
-        <td><strong>#{o.get('order_id')}</strong></td>
-        <td><strong>{o.get('customer_name')}</strong></td>
+        <td><strong>#{safe_2k_id}</strong></td>
+        <td><strong>{safe_2k_cust}</strong></td>
         <td>{contact_html}</td>
-        <td><span class="dist-pill red">{dist_text}</span></td>
-        <td>{area}</td>
-        <td>{o.get('items_summary')}</td>
-        <td style="text-align: right; font-weight: 700; color: #047857;">{b_str}</td>
+        <td><span class="dist-pill red">{safe_2k_dist}</span></td>
+        <td>{safe_2k_area}</td>
+        <td>{safe_2k_items}</td>
+        <td style="text-align: right; font-weight: 700; color: #047857;">{safe_2k_bill}</td>
     </tr>
     """)
 over_2km_table_html = "\n".join(over_2km_rows)
