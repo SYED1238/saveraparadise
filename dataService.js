@@ -4198,7 +4198,23 @@ class QuickBiteDataService {
       const { data, error } = await supabase.from('orders').insert([cleanPayload]).select('tracking_token');
       if (error) {
         console.warn('[Supabase] addOrder insert error:', error.message);
-        // Roll back optimistic local mutation on database insertion failure
+
+        // Offline-first PWA resilience: If error is due to network drop or offline status, preserve order locally
+        const isNetworkError = (
+          (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+          String(error?.message || '').toLowerCase().includes('fetch failed') ||
+          String(error?.message || '').toLowerCase().includes('failed to fetch') ||
+          String(error?.message || '').toLowerCase().includes('networkerror') ||
+          String(error?.message || '').toLowerCase().includes('enotfound')
+        );
+
+        if (isNetworkError) {
+          console.info('[DataService] Network offline during addOrder. Order preserved locally for fulfillment:', orderData.id);
+          orderData.pendingRemoteSync = true;
+          return orderData;
+        }
+
+        // Roll back optimistic local mutation on authoritative database rejection (e.g. RLS or constraint error)
         const rollbackList = this.getOrders().filter(o => o.id !== orderData.id);
         this.saveOrders(rollbackList, { action: 'order_rollback', orderId: orderData.id });
         try {
@@ -4221,6 +4237,21 @@ class QuickBiteDataService {
       }
     } catch (err) {
       console.warn('[Supabase] addOrder exception:', err);
+
+      const isNetworkError = (
+        (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+        String(err?.message || '').toLowerCase().includes('fetch failed') ||
+        String(err?.message || '').toLowerCase().includes('failed to fetch') ||
+        String(err?.message || '').toLowerCase().includes('networkerror') ||
+        String(err?.message || '').toLowerCase().includes('enotfound')
+      );
+
+      if (isNetworkError) {
+        console.info('[DataService] Network offline during addOrder exception. Order preserved locally:', orderData.id);
+        orderData.pendingRemoteSync = true;
+        return orderData;
+      }
+
       // Roll back optimistic local mutation on database insertion exception
       const rollbackList = this.getOrders().filter(o => o.id !== orderData.id);
       this.saveOrders(rollbackList, { action: 'order_rollback', orderId: orderData.id });

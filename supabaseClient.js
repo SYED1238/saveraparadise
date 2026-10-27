@@ -12,8 +12,12 @@ try {
     envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
     envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
   }
+  if (!envUrl && typeof process !== 'undefined' && process.env) {
+    envUrl = (process.env.VITE_SUPABASE_URL || '').trim();
+    envKey = (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+  }
 } catch (e) {
-  console.warn('[SupabaseClient] Could not read import.meta.env:', e);
+  console.warn('[SupabaseClient] Could not read environment variables:', e);
 }
 
 // Strictly validate URL format and security (HTTPS only, valid hostname)
