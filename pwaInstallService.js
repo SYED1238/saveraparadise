@@ -137,57 +137,43 @@ export function isAppAlreadyInstalled() {
 
 export function hideAllInstallButtons() {
   if (typeof document === 'undefined') return;
-  const type = getCurrentPortalType();
-
-  if (type === 'admin') {
-    document.documentElement.classList.add('pwa-admin-installed');
-    document.body.classList.add('pwa-admin-installed');
-    const adminBtns = document.querySelectorAll('#btn-admin-download-app, .admin-pwa-dock');
-    adminBtns.forEach(el => el.style.setProperty('display', 'none', 'important'));
-  } else if (type === 'delivery') {
-    document.documentElement.classList.add('pwa-rider-installed');
-    document.body.classList.add('pwa-rider-installed');
-    const riderBtns = document.querySelectorAll('#btn-rider-download-app, .rider-pwa-dock');
-    riderBtns.forEach(el => el.style.setProperty('display', 'none', 'important'));
-  } else {
-    document.documentElement.classList.add('pwa-customer-installed');
-    document.body.classList.add('pwa-customer-installed');
-    const customerBtns = document.querySelectorAll('#btn-download-app, #btn-mobile-download-app, .header-pwa-dock, .mobile-download-item');
-    customerBtns.forEach(el => el.style.setProperty('display', 'none', 'important'));
-  }
+  document.documentElement.classList.add('pwa-customer-installed');
+  document.body.classList.add('pwa-customer-installed');
+  const allBtns = document.querySelectorAll(
+    '#btn-download-app, #btn-mobile-download-app, #btn-admin-download-app, #btn-rider-download-app, .header-pwa-dock, .admin-pwa-dock, .rider-pwa-dock, .mobile-download-item'
+  );
+  allBtns.forEach(el => el.style.setProperty('display', 'none', 'important'));
 }
 
 export function showAllInstallButtons() {
   if (typeof document === 'undefined') return;
   const type = getCurrentPortalType();
-
-  if (type === 'admin') {
-    document.documentElement.classList.remove('pwa-admin-installed');
-    document.body.classList.remove('pwa-admin-installed');
-    const adminBtns = document.querySelectorAll('#btn-admin-download-app, .admin-pwa-dock');
-    adminBtns.forEach(el => el.style.removeProperty('display'));
-  } else if (type === 'delivery') {
-    document.documentElement.classList.remove('pwa-rider-installed');
-    document.body.classList.remove('pwa-rider-installed');
-    const riderBtns = document.querySelectorAll('#btn-rider-download-app, .rider-pwa-dock');
-    riderBtns.forEach(el => el.style.removeProperty('display'));
-  } else {
-    document.documentElement.classList.remove('pwa-customer-installed');
-    document.body.classList.remove('pwa-customer-installed');
-    const customerBtns = document.querySelectorAll('#btn-download-app, #btn-mobile-download-app, .header-pwa-dock, .mobile-download-item');
-    customerBtns.forEach(el => el.style.removeProperty('display'));
+  // Only the main customer storefront displays install/download buttons
+  if (type !== 'customer') {
+    hideAllInstallButtons();
+    return;
   }
+
+  document.documentElement.classList.remove('pwa-customer-installed');
+  document.body.classList.remove('pwa-customer-installed');
+  const customerBtns = document.querySelectorAll('#btn-download-app, #btn-mobile-download-app, .header-pwa-dock, .mobile-download-item');
+  customerBtns.forEach(el => el.style.removeProperty('display'));
 }
 
 export function autoBindDownloadButtons() {
   if (typeof document === 'undefined') return;
+  const type = getCurrentPortalType();
+  if (type !== 'customer') {
+    hideAllInstallButtons();
+    return;
+  }
   if (isAppAlreadyInstalled()) {
     hideAllInstallButtons();
     return;
   }
   showAllInstallButtons();
   const btns = document.querySelectorAll(
-    '.btn-app-download-compact, .btn-download-app, #btn-download-app, #btn-mobile-download-app, #btn-admin-download-app, #btn-rider-download-app, .mobile-download-item'
+    '.btn-app-download-compact, .btn-download-app, #btn-download-app, #btn-mobile-download-app, .mobile-download-item'
   );
   btns.forEach(btn => setupAppDownloadButton(btn));
 }

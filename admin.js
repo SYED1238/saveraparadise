@@ -14,7 +14,6 @@ import {
   getSystemNotificationPermission,
   updateAppBadge
 } from './notificationService.js';
-import { setupAppDownloadButton } from './pwaInstallService.js';
 import { createBackNavigationManager } from './navigationBackService.js';
 import {
   escapeHtml,
@@ -2673,10 +2672,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-
-  // Admin App Download / Installation Button
-  const btnAdminDownloadApp = document.getElementById('btn-admin-download-app');
-  if (btnAdminDownloadApp) setupAppDownloadButton(btnAdminDownloadApp);
 
   // Unlock audio on any user gesture across the admin portal
   const unlockAudioOnGesture = () => {

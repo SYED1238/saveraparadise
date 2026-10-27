@@ -14,7 +14,6 @@ import {
   getSystemNotificationPermission,
   updateAppBadge
 } from './notificationService.js';
-import { setupAppDownloadButton } from './pwaInstallService.js';
 import { createBackNavigationManager } from './navigationBackService.js';
 import {
   escapeHtml,
@@ -1158,10 +1157,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-
-  // Rider App Download / Installation Button
-  const btnRiderDownloadApp = document.getElementById('btn-rider-download-app');
-  if (btnRiderDownloadApp) setupAppDownloadButton(btnRiderDownloadApp);
 
   // ========================================================
   // REAL-TIME SYNC & NOTIFICATION LISTENERS
