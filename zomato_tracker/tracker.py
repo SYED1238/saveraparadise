@@ -64,6 +64,13 @@ def sync_to_json(order_data):
 
     existing_idx = next((i for i, o in enumerate(orders) if str(o.get("order_id")) == str(order_data["Order ID"])), None)
     
+    bill_str = str(order_data.get("Total Bill", ""))
+    bill_digits = re.findall(r"[\d.]+", bill_str)
+    try:
+        price_num = float(bill_digits[0]) if bill_digits else 0.0
+    except Exception:
+        price_num = 0.0
+
     entry = {
         "order_id": order_data["Order ID"],
         "customer_name": order_data["Customer Name"],
@@ -73,6 +80,7 @@ def sync_to_json(order_data):
         "placed_time": order_data["Placed Time"],
         "items_summary": order_data["Items"],
         "total_bill": order_data["Total Bill"],
+        "price_num": price_num,
         "payment_status": order_data["Payment"],
         "order_status": order_data["Status"],
         "delivery_partner": order_data["Delivery Partner"],

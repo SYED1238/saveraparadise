@@ -206,6 +206,50 @@ body.rider-body {
   color: #FDE047;
 }
 
+.rider-payout-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #064E3B, #022C22);
+  border: 1.5px solid #10B981;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.25);
+}
+
+.rider-payout-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+  background: #064E3B;
+}
+
+.payout-icon {
+  font-size: 1.2rem;
+}
+
+.payout-pill-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.payout-pill-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: #6EE7B7;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.payout-pill-amount {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #A7F3D0;
+}
+
 .btn-rider-aux {
   display: inline-flex;
   align-items: center;
@@ -700,9 +744,9 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  width: clamp(210px, 62vw, 250px);
-  height: 52px;
-  padding: 0 8px;
+  width: clamp(280px, 92vw, 360px);
+  height: 54px;
+  padding: 0 4px;
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(28px) saturate(200%);
   -webkit-backdrop-filter: blur(28px) saturate(200%);
@@ -775,13 +819,13 @@ input:checked + .slider:before {
   background: var(--rider-brand);
   color: #FFFFFF;
   border-radius: 10px;
-  padding: 1px 6px;
-  font-size: 0.65rem;
+  padding: 1px 5px;
+  font-size: 0.60rem;
   font-weight: 800;
   line-height: 1.1;
   position: absolute;
-  top: 3px;
-  right: 14px;
+  top: 2px;
+  right: clamp(2px, 10%, 10px);
   box-shadow: 0 2px 6px rgba(255, 90, 38, 0.4);
 }
 
@@ -1533,6 +1577,36 @@ input:checked + .slider:before {
     white-space: nowrap;
   }
 
+  .rider-payout-pill {
+    height: 34px !important;
+    padding: 0 10px !important;
+    gap: 5px !important;
+    border-radius: 999px !important;
+    flex-shrink: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+  }
+
+  .rider-payout-pill .payout-icon {
+    font-size: 0.95rem;
+  }
+
+  .rider-payout-pill .payout-pill-info {
+    display: flex;
+    align-items: center;
+  }
+
+  .rider-payout-pill .payout-pill-label {
+    display: none !important;
+  }
+
+  .rider-payout-pill .payout-pill-amount {
+    font-size: 0.92rem;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
   /* Compact round Lock button on mobile */
   .btn-admin-lock {
     width: 36px !important;
@@ -1981,6 +2055,202 @@ input:checked + .slider:before {
   margin-bottom: 18px;
   border: 1px solid var(--rider-border);
   font-size: 0.85rem;
+}
+
+/* Doorstep Payment Mode Selector */
+.doorstep-pay-selector {
+  margin-bottom: 14px;
+}
+
+.doorstep-pay-label {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748B;
+  margin-bottom: 8px;
+}
+
+.doorstep-pay-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.btn-pay-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid #CBD5E1;
+  background: #F8FAFC;
+  color: #475569;
+  font-family: var(--font-heading);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-pay-option:hover {
+  background: #F1F5F9;
+  border-color: #94A3B8;
+}
+
+.btn-pay-option.active {
+  background: #FFFFFF;
+  border-color: #10B981;
+  color: #065F46;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+}
+
+.btn-pay-option[data-mode="cash"].active {
+  border-color: #F59E0B;
+  color: #92400E;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
+}
+
+/* Doorstep Dynamic UPI QR Box */
+.doorstep-upi-qr-box {
+  background: linear-gradient(135deg, #F0FDF4, #ECFDF5);
+  border: 2px solid #10B981;
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.upi-qr-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.upi-brand-icons {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.brand-chip {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.brand-phonepe {
+  background: #6739B7;
+  color: #FFFFFF;
+}
+
+.brand-gpay {
+  background: #1A73E8;
+  color: #FFFFFF;
+}
+
+.brand-paytm {
+  background: #00B9F1;
+  color: #FFFFFF;
+}
+
+.brand-bhim {
+  background: #005A9C;
+  color: #FFFFFF;
+}
+
+.upi-qr-amount-badge {
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: #047857;
+}
+
+.upi-qr-display-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.upi-qr-frame {
+  width: 190px;
+  height: 190px;
+  background: #FFFFFF;
+  border: 1.5px solid #A7F3D0;
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
+  position: relative;
+}
+
+.doorstep-qr-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.upi-qr-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #059669;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.upi-qr-loader i {
+  font-size: 1.5rem;
+}
+
+.upi-qr-info {
+  text-align: center;
+}
+
+.upi-scan-hint {
+  display: block;
+  font-size: 0.8rem;
+  color: #065F46;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.upi-vpa-text {
+  font-family: monospace;
+  font-size: 0.88rem;
+  color: #0F172A;
+  background: #FFFFFF;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px dashed #A7F3D0;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+.upi-security-note {
+  font-size: 0.74rem;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+  padding: 6px 10px;
+  border-radius: 6px;
+  line-height: 1.3;
+}
+
+.doorstep-upi-check-row {
+  color: #065F46 !important;
+}
+
+.doorstep-upi-check-row input {
+  accent-color: #10B981 !important;
 }
 
 .confirm-cash-box {
@@ -3717,6 +3987,315 @@ input:checked + .slider:before {
 }
 
 /* ==========================================================================
+   PERMANENT PARCEL PICKUP BAR (Always Visible On-Screen for Riders)
+   ========================================================================== */
+.parcel-pickup-banner-section {
+  margin: 16px 0 20px 0;
+}
+
+.parcel-pickup-card {
+  background: #FFFFFF;
+  border-radius: 16px;
+  border: 1.5px solid var(--rider-border, #E2E8F0);
+  border-left: 6px solid #FF5A26;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
+  padding: 20px 24px;
+  transition: all 0.2s ease;
+}
+
+.parcel-pickup-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.parcel-pickup-icon {
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, #FFF7ED, #FFEDD5);
+  border: 2px solid #FDBA74;
+  border-radius: 14px;
+  color: #EA580C;
+  font-size: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.15);
+}
+
+.parcel-pickup-titles {
+  flex: 1;
+}
+
+.parcel-pickup-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FDE68A;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.parcel-pickup-title {
+  font-family: var(--font-heading, inherit);
+  font-size: 1.25rem;
+  font-weight: 900;
+  color: #0F172A;
+  margin: 0 0 4px 0;
+}
+
+.parcel-pickup-sub {
+  font-size: 0.88rem;
+  color: #64748B;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.parcel-pickup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.parcel-input-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.parcel-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  background: #F8FAFC;
+  border: 2px solid #CBD5E1;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.parcel-input-wrap:focus-within {
+  border-color: #FF5A26;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(255, 90, 38, 0.18);
+}
+
+.parcel-hash-symbol {
+  padding: 0 14px;
+  font-size: 1.25rem;
+  font-weight: 900;
+  color: #FF5A26;
+  background: #FFF7ED;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  border-right: 1.5px solid #FDBA74;
+}
+
+.parcel-input-field {
+  border: none;
+  background: transparent;
+  padding: 12px 16px;
+  font-family: 'Outfit', monospace, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0F172A;
+  letter-spacing: 2px;
+  width: 240px;
+  outline: none;
+}
+
+.parcel-input-field::placeholder {
+  color: #94A3B8;
+  font-size: 0.92rem;
+  letter-spacing: normal;
+  font-weight: 600;
+}
+
+.btn-claim-parcel {
+  background: linear-gradient(135deg, #FF5A26 0%, #EA580C 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 12px;
+  padding: 13px 24px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(255, 90, 38, 0.35);
+  transition: all 0.2s ease;
+  min-height: 48px;
+}
+
+.btn-claim-parcel:hover {
+  background: linear-gradient(135deg, #FF6E3D 0%, #FF5A26 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(255, 90, 38, 0.45);
+}
+
+.btn-claim-parcel:active {
+  transform: translateY(1px);
+}
+
+.parcel-pickup-hint {
+  font-size: 0.78rem;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .parcel-pickup-card {
+    padding: 16px;
+  }
+  .parcel-pickup-header {
+    gap: 12px;
+  }
+  .parcel-pickup-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 1.2rem;
+  }
+  .parcel-pickup-title {
+    font-size: 1.1rem;
+  }
+  .parcel-input-group {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .parcel-input-wrap {
+    width: 100%;
+  }
+  .parcel-input-field {
+    width: 100%;
+    font-size: 1.15rem;
+  }
+  .btn-claim-parcel {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.parcel-ready-chips-container {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #E2E8F0;
+}
+
+.kitchen-waiting-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  transition: all 0.25s ease;
+}
+
+.kitchen-waiting-notice.active {
+  background: #FFFBEB;
+  border: 1.5px solid #FCD34D;
+  border-left: 4px solid #F59E0B;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08);
+}
+
+.kitchen-waiting-notice.clear {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-left: 4px solid #10B981;
+}
+
+.kitchen-waiting-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: #FEF3C7;
+  color: #B45309;
+  font-weight: 800;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.kitchen-waiting-badge.clear {
+  background: #DCFCE7;
+  color: #15803D;
+  min-width: 34px;
+  height: 34px;
+  font-size: 1rem;
+}
+
+.kitchen-waiting-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.kitchen-waiting-title {
+  font-size: 0.85rem;
+  color: #92400E;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kitchen-waiting-notice.clear .kitchen-waiting-title {
+  color: #1E293B;
+}
+
+.kitchen-waiting-sub {
+  font-size: 0.76rem;
+  color: #78350F;
+  line-height: 1.35;
+}
+
+.kitchen-waiting-notice.clear .kitchen-waiting-sub {
+  color: #64748B;
+}
+
+.btn-create-demo-order {
+  background: #EFF6FF;
+  border: 1.5px solid #93C5FD;
+  color: #1D4ED8;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-create-demo-order:hover {
+  background: #DBEAFE;
+  border-color: #3B82F6;
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
    KITCHEN PENDING STATUS CARD (REPLACES INDIVIDUAL ORDER QUEUE)
    ========================================================================== */
 .kitchen-pending-card {
@@ -4122,6 +4701,848 @@ input:checked + .slider:before {
   background: rgba(255, 255, 255, 0.25);
   color: #FFFFFF;
 }
+
+/* ============================================================== */
+/* RIDER SHIFT EARNINGS & PAYOUT SYSTEM STYLES                     */
+/* ============================================================== */
+
+/* Rider Shift Earnings & Payout Compensation Strip */
+.rider-earnings-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #E2E8F0;
+  cursor: pointer;
+}
+
+.earnings-card-item {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.earnings-card-item:hover {
+  transform: translateY(-1px);
+  border-color: #CBD5E1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.earnings-card-item.card-balance {
+  background: linear-gradient(135deg, #ECFDF5, #F0FDF4);
+  border-color: #A7F3D0;
+}
+
+.earnings-card-item.card-distance {
+  background: linear-gradient(135deg, #EFF6FF, #F8FAFC);
+  border-color: #BFDBFE;
+}
+
+.earnings-card-item.card-model {
+  background: linear-gradient(135deg, #FAF5FF, #FDF4FF);
+  border-color: #E9D5FF;
+}
+
+.earnings-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.earnings-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-balance .earnings-label {
+  color: #065F46;
+}
+
+.card-distance .earnings-label {
+  color: #1E40AF;
+}
+
+.card-model .earnings-label {
+  color: #6B21A8;
+}
+
+.earnings-main-val {
+  font-family: var(--font-heading);
+  font-size: 1.55rem;
+  font-weight: 900;
+  color: #0F172A;
+  line-height: 1.1;
+  margin: 2px 0;
+}
+
+.card-balance .earnings-main-val {
+  color: #047857;
+}
+
+.card-distance .earnings-main-val {
+  color: #1D4ED8;
+}
+
+.earnings-model-title {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #581C87;
+  line-height: 1.2;
+}
+
+.earnings-model-formula {
+  font-size: 0.76rem;
+  color: #7E22CE;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.earnings-sub-text {
+  font-size: 0.74rem;
+  color: #64748B;
+  font-weight: 500;
+}
+
+.earnings-status-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.earnings-status-badge.badge-unpaid {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FCD34D;
+}
+
+.earnings-status-badge.badge-paid {
+  background: #D1FAE5;
+  color: #065F46;
+  border: 1px solid #6EE7B7;
+}
+
+.earnings-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #DBEAFE;
+  color: #1E40AF;
+}
+
+.earnings-model-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #F3E8FF;
+  color: #7E22CE;
+}
+
+/* Row Finance Badges (Both Cash to Collect + Rider Payout) */
+.row-finance-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.row-payout-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 12px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  min-width: 90px;
+  text-align: center;
+  background: linear-gradient(135deg, #ECFDF5, #F0FDF4);
+  border: 1.5px solid #10B981;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.15);
+}
+
+.payout-badge-label {
+  font-size: 0.60rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #065F46;
+}
+
+.payout-badge-val {
+  font-family: var(--font-heading);
+  font-size: 1.22rem;
+  font-weight: 900;
+  color: #047857;
+  line-height: 1.1;
+}
+
+.row-payout-badge.delivered {
+  background: linear-gradient(135deg, #F0FDF4, #ECFDF5);
+  border-color: #34D399;
+}
+
+.row-payout-calc-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #F8FAFC;
+  border: 1px dashed #CBD5E1;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: #334155;
+  margin-top: 6px;
+}
+
+.row-payout-calc-strip.delivered {
+  background: #F0FDF4;
+  border-color: #A7F3D0;
+  color: #166534;
+}
+
+.row-payout-calc-strip .payout-calc-icon {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.row-payout-calc-strip .payout-calc-text {
+  line-height: 1.3;
+}
+
+/* Confirm Delivery Modal Payout Box */
+.confirm-payout-box {
+  background: linear-gradient(135deg, #ECFDF5, #F0FDF4);
+  border: 1.5px solid #10B981;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-top: 10px;
+  margin-bottom: 12px;
+}
+
+.payout-check-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.payout-check-label {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #065F46;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.payout-check-value {
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: #047857;
+}
+
+.confirm-payout-sub {
+  font-size: 0.75rem;
+  color: #059669;
+  margin-top: 4px;
+}
+
+/* Bag Preview Modal Payout Row */
+.highlight-payout {
+  background: #F0FDF4 !important;
+  border-left: 3px solid #10B981 !important;
+}
+
+.payout-row-val-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.payout-formula-tag {
+  font-size: 0.72rem;
+  color: #059669;
+  font-weight: 600;
+}
+
+/* Shift Payout & Earnings Modal */
+.payout-modal-card {
+  max-width: 520px !important;
+}
+
+.payout-big-kpi {
+  text-align: center;
+  background: linear-gradient(135deg, #ECFDF5, #F0FDF4);
+  border: 1.5px solid #10B981;
+  border-radius: var(--radius-md);
+  padding: 20px;
+  margin-bottom: 14px;
+}
+
+.payout-big-kpi .kpi-caption {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #065F46;
+  letter-spacing: 0.04em;
+}
+
+.payout-big-kpi h1 {
+  font-family: var(--font-heading);
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #047857;
+  margin: 4px 0;
+}
+
+.payout-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #D1FAE5;
+  color: #065F46;
+  margin-bottom: 6px;
+}
+
+.payout-status-pill .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10B981;
+}
+
+.payout-big-kpi p {
+  font-size: 0.85rem;
+  color: #047857;
+  font-weight: 600;
+  margin: 0;
+}
+
+.payout-scheme-info-card {
+  background: #FAF5FF;
+  border: 1px solid #E9D5FF;
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.payout-scheme-info-card .scheme-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.payout-scheme-info-card .scheme-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #F3E8FF;
+  color: #7E22CE;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.payout-scheme-info-card .scheme-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.payout-scheme-info-card strong {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  color: #581C87;
+}
+
+.payout-scheme-info-card span {
+  font-size: 0.78rem;
+  color: #7E22CE;
+}
+
+.payout-breakdown-heading {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #334155;
+  margin: 0 0 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.payout-orders-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-bottom: 18px;
+}
+
+.payout-breakdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: #F8FAFC;
+  border: 1px solid var(--rider-border);
+  font-size: 0.85rem;
+}
+
+.payout-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.payout-item-id {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  color: #0F172A;
+}
+
+.payout-item-sub {
+  font-size: 0.72rem;
+  color: #64748B;
+}
+
+.payout-item-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.payout-item-amount {
+  font-family: var(--font-heading);
+  font-weight: 900;
+  font-size: 1.05rem;
+  color: #047857;
+}
+
+@media (max-width: 600px) {
+  .rider-earnings-strip {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .row-finance-badges {
+    gap: 5px;
+  }
+  .row-payout-badge {
+    min-width: 75px;
+    padding: 4px 8px;
+  }
+  .payout-badge-label {
+    font-size: 0.55rem;
+  }
+  .payout-badge-val {
+    font-size: 1.05rem;
+  }
+}
+
+/* ==========================================================================
+   Dedicated Rider Shift Earnings & Payout Section View
+   ========================================================================== */
+.rider-earnings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: riderFadeIn 0.25s ease-out;
+  margin-bottom: 24px;
+}
+
+.earnings-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.earnings-header-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FEF2F2;
+  color: #DC2626;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.earnings-header-title {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0 0 4px 0;
+}
+
+.earnings-header-sub {
+  font-size: 0.82rem;
+  color: #64748B;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.btn-refresh-earnings {
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  color: #334155;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-refresh-earnings:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.btn-refresh-earnings.spinning i {
+  animation: spin 0.6s linear infinite;
+}
+
+.standalone-earnings-strip {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  border-top: none !important;
+}
+
+/* Cash Collection & Kitchen Handover Settlement Banner */
+.earnings-cash-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #FFFBEB, #FEF3C7);
+  border: 1px solid #FDE68A;
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.08);
+}
+
+.cash-card-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cash-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #D97706;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.cash-card-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #92400E;
+}
+
+.cash-card-val {
+  font-family: var(--font-heading);
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #78350F;
+  margin: 2px 0 0 0;
+}
+
+.cash-card-sub {
+  font-size: 0.72rem;
+  color: #A16207;
+  margin: 0;
+}
+
+.btn-earnings-handover {
+  background: #D97706;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.25);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-earnings-handover:hover {
+  background: #B45309;
+  transform: translateY(-1px);
+}
+
+/* Detailed Shift Trip-by-Trip Payout Breakdown Ledger */
+.earnings-trips-section {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.earnings-trips-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.earnings-trips-header h3 {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.earnings-trips-tag {
+  background: #EFF6FF;
+  color: #2563EB;
+  font-weight: 700;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 12px;
+}
+
+.earnings-trips-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.earnings-trip-card {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  transition: all 0.2s ease;
+}
+
+.earnings-trip-card:hover {
+  border-color: #CBD5E1;
+  background: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.trip-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.trip-id-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trip-index {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #94A3B8;
+}
+
+.trip-order-id {
+  font-weight: 800;
+  color: #0F172A;
+  font-size: 0.95rem;
+}
+
+.trip-surge-badge {
+  background: #FEE2E2;
+  color: #DC2626;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.trip-payout-val {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trip-amount {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #059669;
+}
+
+.trip-credit-tag {
+  font-size: 0.68rem;
+  color: #059669;
+  font-weight: 700;
+  background: #ECFDF5;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.trip-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trip-address {
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trip-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #64748B;
+}
+
+.trip-dot {
+  color: #CBD5E1;
+}
+
+.trip-pay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.trip-pay-badge.cod {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.trip-pay-badge.online {
+  background: #E0E7FF;
+  color: #3730A3;
+}
+
+.trip-formula-box {
+  font-size: 0.72rem;
+  color: #64748B;
+  background: #F1F5F9;
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: monospace;
+}
+
+.earnings-empty-trips {
+  text-align: center;
+  padding: 32px 16px;
+  color: #64748B;
+}
+
+.empty-icon-wrap {
+  font-size: 2.2rem;
+  color: #CBD5E1;
+  margin-bottom: 8px;
+}
+
+.earnings-empty-trips h4 {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #334155;
+  margin: 0 0 4px 0;
+}
+
+.earnings-empty-trips p {
+  font-size: 0.82rem;
+  color: #64748B;
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .earnings-cash-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .btn-earnings-handover {
+    width: 100%;
+    justify-content: center;
+  }
+  .earnings-trips-list {
+    gap: 8px;
+  }
+  .trip-meta-row {
+    gap: 4px;
+    font-size: 0.72rem;
+  }
+}
+
 
 
 

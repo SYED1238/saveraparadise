@@ -30,6 +30,7 @@ let deferredInstallPrompt = null;
 export function getCurrentPortalType() {
   if (typeof window === 'undefined') return 'storefront';
   const path = window.location.pathname.toLowerCase();
+  if (path.includes('owner')) return 'owner';
   if (path.includes('admin')) return 'admin';
   if (path.includes('delivery')) return 'delivery';
   return 'storefront';
@@ -86,6 +87,29 @@ export function getPortalConfig() {
         { icon: '📞', label: 'Direct Call' }
       ]
     };
+  } else if (type === 'owner') {
+    return {
+      type: 'owner',
+      name: 'Savera Paradise Owner',
+      fullName: 'Savera Paradise Owner Portal',
+      shortName: 'Savera Owner',
+      subtitle: 'Executive overview, live revenue, rider cash settlements & fleet payouts',
+      icon: '/icon-admin-192.svg',
+      themeColor: '#4338CA',
+      installToast: '🎉 Savera Paradise Owner Portal Installed Successfully!',
+      welcomeTitle: '👑 Savera Paradise Owner Portal Active!',
+      welcomeBody: 'Live sales, cash settlements, and fleet payouts active on your device.',
+      welcomeTag: 'savera-owner-welcome',
+      startUrl: '/owner.html',
+      notifPromptTitle: 'Turn on Owner Live Alerts',
+      notifPromptDesc: 'Get instant alerts when cash handovers or orders are placed.',
+      featurePills: [
+        { icon: '📊', label: 'Live Sales' },
+        { icon: '💵', label: 'COD Cash' },
+        { icon: '🛵', label: 'Rider Fleet' },
+        { icon: '🔒', label: 'PIN Safe' }
+      ]
+    };
   } else {
     return {
       type: 'storefront',
@@ -126,13 +150,16 @@ export function isAppAlreadyInstalled() {
 
   const type = getCurrentPortalType();
   const path = window.location.pathname.toLowerCase();
+  if (type === 'owner') {
+    return path.includes('owner');
+  }
   if (type === 'admin') {
     return path.includes('admin');
   }
   if (type === 'delivery') {
     return path.includes('delivery');
   }
-  return !path.includes('admin') && !path.includes('delivery');
+  return !path.includes('admin') && !path.includes('delivery') && !path.includes('owner');
 }
 
 export function hideAllInstallButtons() {
@@ -149,7 +176,7 @@ export function showAllInstallButtons() {
   if (typeof document === 'undefined') return;
   const type = getCurrentPortalType();
   // Only the main customer storefront displays install/download buttons
-  if (type !== 'customer') {
+  if (type !== 'storefront' && type !== 'customer') {
     hideAllInstallButtons();
     return;
   }
@@ -163,7 +190,7 @@ export function showAllInstallButtons() {
 export function autoBindDownloadButtons() {
   if (typeof document === 'undefined') return;
   const type = getCurrentPortalType();
-  if (type !== 'customer') {
+  if (type !== 'storefront' && type !== 'customer') {
     hideAllInstallButtons();
     return;
   }

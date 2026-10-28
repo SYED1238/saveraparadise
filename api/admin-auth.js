@@ -6,7 +6,7 @@
  * Implements persistent serverless rate limiting using both in-memory caching
  * and signed cryptographic state cookies to withstand container cold starts.
  */
-import { verifyAdminPin, createAdminToken, signPayload, verifySignedPayload } from './_auth.js';
+import { verifyAdminPin, createAdminToken, signPayload, verifySignedPayload, signData, safeEqual } from './_auth.js';
 
 // Fast in-memory rate limiting layer for active container lifetime
 const FAILED_ATTEMPTS = new Map();
@@ -128,6 +128,36 @@ export default async function handler(req, res) {
     } catch {
       body = {};
     }
+  }
+
+  const isRefresh = body?.action === 'refresh' || Boolean(body?.refreshToken);
+  if (isRefresh) {
+    const rawToken = body?.token || body?.refreshToken || (req.headers['authorization']?.startsWith('Bearer ') ? req.headers['authorization'].slice(7) : null);
+    if (rawToken && typeof rawToken === 'string' && rawToken.includes('.')) {
+      const parts = rawToken.split('.');
+      if (parts.length === 2) {
+        const [payloadB64, signature] = parts;
+        const expectedSignature = signData(payloadB64);
+        if (safeEqual(signature, expectedSignature)) {
+          try {
+            const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+            if (payload && payload.role === 'admin') {
+              const maxRefreshAge = 24 * 60 * 60 * 1000;
+              if (Date.now() - (payload.iat || 0) < maxRefreshAge) {
+                const refreshedToken = createAdminToken();
+                return res.status(200).json({
+                  success: true,
+                  token: refreshedToken,
+                  role: 'admin',
+                  expiresIn: 43200
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+    return res.status(401).json({ error: 'Invalid or expired session. Please re-authenticate.' });
   }
 
   const pin = body?.pin;

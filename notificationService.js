@@ -322,6 +322,9 @@ export function triggerDeviceVibration(pattern = [180, 90, 180, 90, 240]) {
 export function getDefaultPortalMeta() {
   if (typeof window !== 'undefined') {
     const path = window.location.pathname.toLowerCase();
+    if (path.includes('owner')) {
+      return { icon: '/icon-admin-192.svg', url: '/owner.html', title: 'Savera Paradise Owner' };
+    }
     if (path.includes('admin')) {
       return { icon: '/icon-admin-192.svg', url: '/admin.html', title: 'Savera Paradise Kitchen' };
     }

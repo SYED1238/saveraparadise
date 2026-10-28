@@ -4270,10 +4270,6 @@ document.addEventListener('DOMContentLoaded', () => {
     close: () => closeCategoryDetailInternal()
   });
   backNav.registerFallbackChecker({
-    isOpen: () => modalAdminRiderBackdrop && modalAdminRiderBackdrop.classList.contains('open'),
-    close: () => closeAdminRiderModal()
-  });
-  backNav.registerFallbackChecker({
     isOpen: () => activeView && activeView !== 'view-menu',
     close: () => switchView('view-menu', false)
   });

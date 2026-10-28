@@ -37,7 +37,7 @@ const TOKEN_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
 /**
  * Constant-time string comparison to prevent timing attacks
  */
-function safeEqual(a, b) {
+export function safeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -48,7 +48,7 @@ function safeEqual(a, b) {
 /**
  * Computes HMAC-SHA256 signature for data string
  */
-function signData(data) {
+export function signData(data) {
   return crypto.createHmac('sha256', getSigningSecret()).update(data).digest('hex');
 }
 

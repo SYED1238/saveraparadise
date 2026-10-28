@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { sanitizeCategoryImageUrl } from '../dataService.js';
 
 test('ORDER INTEGRITY & SCHEMA SPECIFICATION', async (t) => {

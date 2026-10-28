@@ -2785,6 +2785,462 @@ body.owner-body .lock-footer-info {
   color: #B45309;
 }
 
+/* ============================================================== */
+/* 3 PAYOUT COMPENSATION MODELS & INTERACTIVE STEPPERS           */
+/* ============================================================== */
+
+.active-model-pill {
+  background: #EEF2FF;
+  border: 1px solid #C7D2FE;
+  color: #4338CA;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.08);
+}
+
+.payout-methods-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.payout-method-card {
+  background: #FFFFFF;
+  border: 2px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.payout-method-card:hover {
+  border-color: #94A3B8;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+.payout-method-card.active {
+  border-color: #6366F1;
+  background: #FAF8FF;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), 0 6px 20px rgba(99, 102, 241, 0.08);
+}
+
+.pm-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.pm-badge {
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-green {
+  background: #DCFCE7;
+  color: #15803D;
+  border: 1px solid #86EFAC;
+}
+
+.badge-purple {
+  background: #EDE9FE;
+  color: #6D28D9;
+  border: 1px solid #C4B5FD;
+}
+
+.badge-amber {
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FCD34D;
+}
+
+.pm-radio {
+  color: #CBD5E1;
+  font-size: 1.15rem;
+  transition: all 0.15s ease;
+}
+
+.payout-method-card.active .pm-radio {
+  color: #6366F1;
+}
+
+.pm-title {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0 0 6px 0;
+}
+
+.pm-desc {
+  font-size: 0.8rem;
+  color: #64748B;
+  line-height: 1.45;
+  margin: 0 0 12px 0;
+  flex: 1;
+}
+
+.pm-formula-tag {
+  background: #F1F5F9;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.payout-method-card.active .pm-formula-tag {
+  background: #EEF2FF;
+  color: #4338CA;
+  border: 1px solid #C7D2FE;
+}
+
+.pm-example-row {
+  font-size: 0.78rem;
+  color: #64748B;
+  border-top: 1px dashed #E2E8F0;
+  padding-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pm-highlight {
+  color: #059669;
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.pm-highlight-purple {
+  color: #7C3AED;
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+/* SETTINGS PANEL & STEPPERS */
+.payout-settings-panel {
+  background: #FFFFFF;
+  border: 1px solid var(--owner-border);
+  border-radius: 14px;
+  padding: 22px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.panel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #F1F5F9;
+  flex-wrap: wrap;
+}
+
+.panel-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0 0 3px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-subtitle {
+  font-size: 0.8rem;
+  color: #64748B;
+  margin: 0;
+}
+
+.btn-save-payout-config {
+  background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%);
+  color: #FFF;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-save-payout-config:hover {
+  background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+  transform: translateY(-1px);
+}
+
+.stepper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.stepper-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stepper-item label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.stepper-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
+  padding: 4px;
+  transition: border-color 0.15s ease;
+}
+
+.stepper-control:focus-within {
+  border-color: #6366F1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.btn-step {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  color: #334155;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn-step:hover {
+  background: #0F172A;
+  color: #FFFFFF;
+  border-color: #0F172A;
+}
+
+.stepper-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.stepper-input-wrap input {
+  width: 55px;
+  text-align: center;
+  border: none;
+  background: transparent;
+  font-weight: 800;
+  font-size: 0.98rem;
+  color: #0F172A;
+  font-family: inherit;
+  outline: none;
+  padding: 4px 2px;
+}
+
+.step-unit-prefix, .step-unit-suffix {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #64748B;
+}
+
+.stepper-hint {
+  font-size: 0.72rem;
+  color: #94A3B8;
+  line-height: 1.3;
+}
+
+.fl-presets-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+
+.btn-fl-preset {
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334155;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-fl-preset:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.btn-fl-preset.active {
+  background: #FEF3C7;
+  border-color: #F59E0B;
+  color: #B45309;
+}
+
+/* LIVE SIMULATOR CARD */
+.live-calc-card {
+  background: linear-gradient(135deg, #F8FAFC 0%, #F5F3FF 100%);
+  border: 1px solid #DDD6FE;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-top: 14px;
+}
+
+.calc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.calc-input-block label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #4B5563;
+  margin-bottom: 6px;
+}
+
+.sim-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  padding: 4px 6px;
+}
+
+.btn-sim-step {
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #334155;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.btn-sim-step:hover {
+  background: #0F172A;
+  color: #FFF;
+}
+
+.sim-input-wrap input {
+  width: 65px;
+  text-align: center;
+  border: none;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #0F172A;
+  font-family: inherit;
+  outline: none;
+}
+
+.sim-unit {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #64748B;
+  padding-right: 4px;
+}
+
+.calc-result-block {
+  text-align: right;
+  flex: 1;
+  min-width: 200px;
+}
+
+.calc-result-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.calc-result-val {
+  font-size: 1.45rem;
+  font-weight: 900;
+  color: #6D28D9;
+  line-height: 1.2;
+}
+
+.calc-breakdown-text {
+  font-size: 0.78rem;
+  color: #4B5563;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .calc-result-block {
+    text-align: left;
+  }
+}
+
+.payout-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rider-payout-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.rider-payout-card-actions button {
+  flex: 1;
+  justify-content: center;
+}
+
 .btn-mark-payout-paid {
   background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%);
   color: #FFF;
@@ -2801,11 +3257,43 @@ body.owner-body .lock-footer-info {
   box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
   transition: all 0.2s ease;
   min-height: 36px;
+  white-space: nowrap;
 }
 
 .btn-mark-payout-paid:hover {
   background: linear-gradient(135deg, #A78BFA 0%, #8B5CF6 100%);
   transform: translateY(-1px);
+}
+
+.btn-payout-upi {
+  background: linear-gradient(135deg, #0D9488 0%, #0F766E 100%);
+  color: #FFF;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.35);
+  transition: all 0.2s ease;
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.btn-payout-upi:hover {
+  background: linear-gradient(135deg, #14B8A6 0%, #0D9488 100%);
+  transform: translateY(-1px);
+}
+
+.btn-payout-upi:disabled,
+.btn-mark-payout-paid:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .badge-payout-paid {

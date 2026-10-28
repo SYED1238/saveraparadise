@@ -112,7 +112,7 @@
       </div>
 
       <div class="ios-passcode-hint" id="rider-passcode-hint">
-        <i class="fa-solid fa-lock"></i> Enter your assigned 4-digit Rider PIN
+        <i class="fa-solid fa-lock"></i> Enter your assigned 4-digit Rider PIN (Default: 2233)
       </div>
     </div>
   </div>
@@ -137,6 +137,14 @@
           <div class="cash-pill-info">
             <span class="cash-pill-label hide-mobile">Cash in Hand</span>
             <strong class="cash-pill-amount" id="top-cash-amount">₹0</strong>
+          </div>
+        </div>
+
+        <div class="rider-payout-pill" id="btn-rider-payout-summary" title="Click to view shift payout & earnings">
+          <span class="payout-icon">💰</span>
+          <div class="payout-pill-info">
+            <span class="payout-pill-label hide-mobile">Payout Balance</span>
+            <strong class="payout-pill-amount" id="top-payout-amount">₹0.00</strong>
           </div>
         </div>
 
@@ -167,9 +175,9 @@
               <span class="rider-phone-badge" id="rider-phone-badge">
                 <i class="fa-solid fa-phone"></i> <span id="rider-phone-display">--</span>
               </span>
-              <span class="gps-status-pill acquiring" id="rider-gps-pill">
+              <span class="gps-status-pill active" id="rider-gps-pill" title="Click to refresh GPS location fix">
                 <span class="gps-dot"></span>
-                <span id="gps-status-text">Acquiring Live GPS...</span>
+                <span id="gps-status-text">📍 Ramanagara Hub (Live)</span>
               </span>
             </div>
             <p class="rider-sub-info">
@@ -187,7 +195,68 @@
       </div>
     </section>
 
+    <!-- ============================================================== -->
+    <!-- PERMANENT PARCEL PICKUP BAR: Always Accessible for Riders      -->
+    <!-- ============================================================== -->
+    <section class="parcel-pickup-banner-section" id="parcel-pickup-banner-section">
+      <div class="parcel-pickup-card">
+        <div class="parcel-pickup-header">
+          <div class="parcel-pickup-icon">
+            <i class="fa-solid fa-box-open"></i>
+          </div>
+          <div class="parcel-pickup-titles">
+            <div class="parcel-pickup-badge">
+              <i class="fa-solid fa-kitchen-set"></i> Kitchen Counter Pick Up
+            </div>
+            <h3 class="parcel-pickup-title">Enter Parcel Number to Start Delivery</h3>
+            <p class="parcel-pickup-sub">Enter the 4-digit code written on the food bag seal (e.g. #1042) to claim and start GPS delivery</p>
+          </div>
+        </div>
 
+        <form class="parcel-pickup-form" id="bag-pickup-form" autocomplete="off" onsubmit="event.preventDefault(); return false;">
+          <div class="parcel-input-group">
+            <div class="parcel-input-wrap">
+              <span class="parcel-hash-symbol">#</span>
+              <input
+                type="text"
+                id="input-bag-code"
+                class="parcel-input-field"
+                maxlength="4"
+                pattern="[0-9]*"
+                placeholder="4-Digit Code (e.g. 1001)"
+                inputmode="numeric"
+                aria-label="4-digit parcel number"
+                autocomplete="off"
+              />
+            </div>
+            <button type="submit" class="btn-claim-parcel" id="btn-claim-bag">
+              <i class="fa-solid fa-bolt"></i>
+              <span>Get Parcel & Start Delivery</span>
+            </button>
+          </div>
+          <div class="parcel-pickup-hint">
+            <i class="fa-solid fa-circle-info"></i> Collect your packed bag from Counter 1 • Verify the 4-digit number on the bag seal
+          </div>
+        </form>
+
+        <!-- Live Kitchen Orders Waiting Status -->
+        <div class="parcel-ready-chips-container" id="parcel-ready-chips-container">
+          <div class="kitchen-waiting-notice clear">
+            <div class="kitchen-waiting-badge clear">
+              <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <div class="kitchen-waiting-content">
+              <div class="kitchen-waiting-title">
+                <strong>Kitchen Counter is Clear</strong>
+              </div>
+              <div class="kitchen-waiting-sub">
+                No orders waiting right now. When food is packed, enter the 4-digit bag seal number above.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- Delivery Orders List Container -->
     <section class="rider-orders-section">
@@ -196,10 +265,83 @@
         <!-- Dynamically rendered order delivery cards -->
       </div>
     </section>
+
+    <!-- ============================================================== -->
+    <!-- DEDICATED RIDER SHIFT EARNINGS & PAYOUT SECTION                -->
+    <!-- Displayed when 'Earnings' tab is selected in bottom nav        -->
+    <!-- ============================================================== -->
+    <section class="rider-earnings-section" id="rider-earnings-section" style="display: none;">
+      <div class="earnings-section-header">
+        <div class="earnings-header-titles">
+          <span class="earnings-header-tag"><i class="fa-solid fa-wallet"></i> Shift Financials</span>
+          <h2 class="earnings-header-title">Shift Earnings & Payout</h2>
+          <p class="earnings-header-sub">Live road distance calculations, compensation plan, and delivery payout breakdown</p>
+        </div>
+        <button type="button" class="btn-refresh-earnings" id="btn-refresh-earnings" title="Refresh Live Shift Earnings">
+          <i class="fa-solid fa-arrows-rotate"></i>
+        </button>
+      </div>
+
+      <!-- 3 Summary KPI Cards (Exact IDs preserved for backward compatibility and test suite) -->
+      <div class="rider-earnings-strip standalone-earnings-strip" id="rider-earnings-strip" title="Click to view full earnings & payout breakdown">
+        <div class="earnings-card-item card-balance">
+          <div class="earnings-card-top">
+            <span class="earnings-label"><i class="fa-solid fa-wallet"></i> Payout Balance</span>
+            <span class="earnings-status-badge badge-unpaid" id="hero-payout-status">Unsettled</span>
+          </div>
+          <div class="earnings-main-val" id="hero-payout-amount">₹0.00</div>
+          <div class="earnings-sub-text" id="hero-payout-sub">From 0 completed deliveries</div>
+        </div>
+
+        <div class="earnings-card-item card-distance">
+          <div class="earnings-card-top">
+            <span class="earnings-label"><i class="fa-solid fa-route"></i> Distance Driven</span>
+            <span class="earnings-tag" id="hero-delivery-count">0 Deliveries</span>
+          </div>
+          <div class="earnings-main-val" id="hero-payout-kms">0.0 km</div>
+          <div class="earnings-sub-text">Total drop distance today</div>
+        </div>
+
+        <div class="earnings-card-item card-model">
+          <div class="earnings-card-top">
+            <span class="earnings-label"><i class="fa-solid fa-calculator"></i> Compensation Plan</span>
+            <span class="earnings-model-pill" id="hero-model-pill">Tiered</span>
+          </div>
+          <div class="earnings-model-title" id="hero-model-title">Tiered Base Pay</div>
+          <div class="earnings-model-formula" id="hero-model-formula">₹25 base (1.0 km) + ₹10/km extra</div>
+        </div>
+      </div>
+
+      <!-- Cash Collection & Kitchen Handover Settlement Banner -->
+      <div class="earnings-cash-card" id="earnings-cash-card">
+        <div class="cash-card-left">
+          <div class="cash-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+          <div class="cash-card-info">
+            <span class="cash-card-tag">Doorstep COD Collections</span>
+            <h4 class="cash-card-val" id="earnings-cash-amount">₹0.00</h4>
+            <p class="cash-card-sub" id="earnings-cash-sub">Total cash in hand owed to kitchen cash drawer</p>
+          </div>
+        </div>
+        <button type="button" class="btn-earnings-handover" id="btn-earnings-handover">
+          <i class="fa-solid fa-cash-register"></i> Handover Cash
+        </button>
+      </div>
+
+      <!-- Detailed Shift Trip-by-Trip Payout Breakdown Ledger -->
+      <div class="earnings-trips-section">
+        <div class="earnings-trips-header">
+          <h3><i class="fa-solid fa-route"></i> Today's Trip Breakdown</h3>
+          <span class="earnings-trips-tag" id="earnings-trips-count">0 Trips</span>
+        </div>
+        <div class="earnings-trips-list" id="earnings-trips-list">
+          <!-- Dynamically populated per-order road km and calculated earnings -->
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- ============================================================== -->
-  <!-- SIGNATURE 3-BUTTON FLOATING NAVIGATION BAR                     -->
+  <!-- SIGNATURE 4-BUTTON FLOATING NAVIGATION BAR                     -->
   <!-- Navigation bar matching Main Page & Admin Page                 -->
   <!-- ============================================================== -->
   <nav class="mobile-floating-bar rider-floating-bar" id="rider-floating-bar" aria-label="Rider Navigation">
@@ -223,15 +365,25 @@
         <span class="capsule-badge-pill" id="capsule-active-badge">0</span>
       </button>
 
-    </div>
+      <!-- BUTTON 3: Delivered Today (THIRD) -->
+      <button class="capsule-nav-btn rider-nav-btn" id="capsule-btn-delivered" data-tab="delivered" aria-label="Delivered Today">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1 15-5-5 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z"/>
+        </svg>
+        <span class="capsule-label">Delivered</span>
+        <span class="capsule-badge-pill" id="capsule-delivered-badge">0</span>
+      </button>
 
-    <!-- Quick action circle button: Delivered Today (Round Button) -->
-    <button type="button" class="floating-circle-action rider-delivered-circle rider-nav-btn" id="capsule-btn-delivered" data-tab="delivered" title="Delivered Today" aria-label="Delivered Today">
-      <svg class="cart-action-svg" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1 15-5-5 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z"/>
-      </svg>
-      <span class="circle-badge-pill" id="capsule-delivered-badge">0</span>
-    </button>
+      <!-- BUTTON 4: Shift Earnings & Payout (FOURTH) -->
+      <button class="capsule-nav-btn rider-nav-btn" id="capsule-btn-earnings" data-tab="earnings" aria-label="Shift Earnings">
+        <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+        </svg>
+        <span class="capsule-label">Earnings</span>
+        <span class="capsule-badge-pill" id="capsule-earnings-badge" style="display: none;">0</span>
+      </button>
+
+    </div>
   </nav>
 
   <!-- Modal: Confirm Delivery & Cash Collection -->
@@ -251,7 +403,23 @@
 
       <form id="form-confirm-delivered" class="form-confirm-delivered">
         <input type="hidden" id="confirm-order-id">
+
+        <!-- Doorstep Payment Collection Mode Toggle (Cash vs PhonePe/UPI) -->
+        <div class="doorstep-pay-selector" id="doorstep-pay-selector">
+          <label class="doorstep-pay-label"><i class="fa-solid fa-cash-register"></i> Doorstep Collection Mode:</label>
+          <div class="doorstep-pay-options">
+            <button type="button" class="btn-pay-option active" id="btn-doorstep-mode-cash" data-mode="cash">
+              <i class="fa-solid fa-money-bill-wave"></i>
+              <span>Cash in Hand</span>
+            </button>
+            <button type="button" class="btn-pay-option" id="btn-doorstep-mode-upi" data-mode="upi">
+              <i class="fa-solid fa-qrcode"></i>
+              <span>PhonePe / UPI QR</span>
+            </button>
+          </div>
+        </div>
         
+        <!-- Mode A: Physical Cash Collection Box -->
         <div class="confirm-cash-box" id="confirm-cash-box">
           <div class="cash-check-row">
             <span class="cash-check-label">Total Cash to Collect:</span>
@@ -262,6 +430,51 @@
             <span class="checkmark"></span>
             <span class="check-text">I have collected full cash amount from customer</span>
           </label>
+        </div>
+
+        <!-- Mode B: Cashfree Doorstep Dynamic UPI QR Box (Active when customer offers PhonePe) -->
+        <div class="doorstep-upi-qr-box" id="doorstep-upi-qr-box" style="display: none;">
+          <div class="upi-qr-card-header">
+            <div class="upi-brand-icons">
+              <span class="brand-chip brand-phonepe">PhonePe</span>
+              <span class="brand-chip brand-gpay">GPay</span>
+              <span class="brand-chip brand-paytm">Paytm</span>
+              <span class="brand-chip brand-bhim">UPI</span>
+            </div>
+            <span class="upi-qr-amount-badge" id="doorstep-upi-amount-badge">₹0</span>
+          </div>
+
+          <div class="upi-qr-display-wrap">
+            <div class="upi-qr-frame">
+              <img id="doorstep-qr-img" alt="Cashfree Doorstep UPI QR" class="doorstep-qr-img" src="" style="display: none;" />
+              <div class="upi-qr-loader" id="doorstep-qr-loader">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <span>Generating Cashfree QR...</span>
+              </div>
+            </div>
+            <div class="upi-qr-info">
+              <span class="upi-scan-hint"><i class="fa-solid fa-qrcode"></i> Ask customer to scan with PhonePe, GPay, or Paytm</span>
+              <strong class="upi-vpa-text" id="doorstep-vpa-display">saveraparadise@okhdfcbank</strong>
+              <div class="upi-security-note">
+                <i class="fa-solid fa-shield-halved"></i> Money deposits directly to Restaurant Bank Account. Rider Cash Liability remains <strong>₹0</strong>.
+              </div>
+            </div>
+          </div>
+
+          <label class="custom-checkbox-row doorstep-upi-check-row">
+            <input type="checkbox" id="check-upi-verified">
+            <span class="checkmark"></span>
+            <span class="check-text">Customer showed successful PhonePe / UPI payment screen</span>
+          </label>
+        </div>
+
+        <!-- Rider Payout Credited Box -->
+        <div class="confirm-payout-box" id="confirm-payout-box">
+          <div class="payout-check-row">
+            <span class="payout-check-label"><i class="fa-solid fa-coins"></i> Rider Payout to Add:</span>
+            <strong class="payout-check-value" id="confirm-payout-value">+₹0.00</strong>
+          </div>
+          <div class="confirm-payout-sub" id="confirm-payout-sub">Trip distance: 0.0 km • Credited to your payout balance upon delivery</div>
         </div>
 
         <div class="confirm-actions-row">
@@ -299,6 +512,52 @@
         <button type="button" class="btn-handover-cash" id="btn-handover-cash">
           <i class="fa-solid fa-hand-holding-dollar"></i> Deposit Cash to Kitchen Manager
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Shift Payout & Earnings Breakdown -->
+  <div class="rider-modal-backdrop" id="modal-payout-summary-backdrop">
+    <div class="rider-modal-card payout-modal-card">
+      <button type="button" class="rider-modal-close" id="modal-payout-close">✕</button>
+      
+      <div class="confirm-modal-header">
+        <div class="confirm-icon-bubble">💰</div>
+        <h3>Shift Payout & Earnings</h3>
+        <p id="modal-payout-rider-sub">Delivery partner earnings breakdown</p>
+      </div>
+
+      <div class="payout-summary-content">
+        <div class="payout-big-kpi">
+          <span class="kpi-caption">Current Payout Balance:</span>
+          <h1 id="modal-payout-large-total">₹0.00</h1>
+          <div class="payout-status-pill" id="modal-payout-status-pill">
+            <span class="status-dot"></span>
+            <span id="modal-payout-status-text">Unsettled Balance</span>
+          </div>
+          <p id="modal-payout-orders-count">From 0 completed deliveries • 0.0 km total</p>
+        </div>
+
+        <div class="payout-scheme-info-card">
+          <div class="scheme-header">
+            <span class="scheme-icon"><i class="fa-solid fa-calculator"></i></span>
+            <div class="scheme-info">
+              <strong id="modal-scheme-title">Tiered Standard Base Pay</strong>
+              <span id="modal-scheme-desc">₹25 base (first 1.0 km) + ₹10/km for extra distance</span>
+            </div>
+          </div>
+        </div>
+
+        <h4 class="payout-breakdown-heading"><i class="fa-solid fa-receipt"></i> Per-Delivery Payout History</h4>
+        <div class="payout-orders-breakdown-list" id="payout-orders-breakdown-list">
+          <!-- Dynamically injected itemized order payout cards -->
+        </div>
+
+        <div class="payout-modal-footer">
+          <button type="button" class="btn-cancel-modal" id="btn-close-payout-modal" style="width: 100%;">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -350,6 +609,13 @@
           <div class="preview-row highlight-payment">
             <span class="row-label"><i class="fa-solid fa-money-bill-wave"></i> Payment Mode:</span>
             <strong class="row-val payment-val" id="preview-payment-pill">💵 COD: ₹0</strong>
+          </div>
+          <div class="preview-row highlight-payout">
+            <span class="row-label"><i class="fa-solid fa-coins"></i> Rider Payout:</span>
+            <div class="payout-row-val-wrap">
+              <strong class="row-val payout-val" id="preview-payout-pill">+₹0.00</strong>
+              <span class="payout-formula-tag" id="preview-payout-formula">₹25 base + ₹10/km</span>
+            </div>
           </div>
         </div>
 

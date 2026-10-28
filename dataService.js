@@ -51,6 +51,25 @@ export const STATUS_TO_LABEL_MAP = {
   'cancelled': 'Cancelled'
 };
 
+export const DEFAULT_PAYOUT_CONFIG = {
+  activeMethod: 'tiered_standard', // 'tiered_standard' | 'tiered_milestone' | 'flat_linear'
+  tieredStandard: {
+    basePay: 25,         // ₹25 guaranteed for first baseKm
+    baseKm: 1.0,         // first 1.0 km
+    extraKmRate: 10      // ₹10 per km beyond baseKm
+  },
+  tieredMilestone: {
+    basePay: 25,         // ₹25 guaranteed for first baseKm
+    baseKm: 1.0,         // first 1.0 km
+    extraKmRate: 10,     // ₹10 per km for first milestoneOrders
+    milestoneOrders: 10, // 10 completed orders milestone
+    surgeExtraKmRate: 15 // ₹15 per km from order 11+
+  },
+  flatLinear: {
+    ratePerKm: 30        // ₹30 per road km driven
+  }
+};
+
 // ========================================================
 // INDEXEDDB RESILIENT PERSISTENCE LAYER (No 5MB Quota Limits)
 // ========================================================
@@ -181,7 +200,48 @@ export const DEFAULT_SETTINGS = {
 // ========================================================
 export const DEFAULT_ORDERS = [];
 
-export const DEFAULT_RIDERS = [];
+export const DEFAULT_RIDERS = [
+  {
+    id: 'rider-2233',
+    pin: '2233',
+    name: 'Zaid Khan',
+    phone: '+91 98451 22334',
+    vehicle: '🏍️ Bike',
+    avatar: '🏍️',
+    avatarImg: '/avatars/rider-1.svg',
+    status: 'online'
+  },
+  {
+    id: 'rider-4422',
+    pin: '4422',
+    name: 'Tanveer Ahmed',
+    phone: '+91 97777 66666',
+    vehicle: '🏍️ Bike',
+    avatar: '🏍️',
+    avatarImg: '/avatars/rider-2.svg',
+    status: 'online'
+  },
+  {
+    id: 'rider-4455',
+    pin: '4455',
+    name: 'Salman Ahmed',
+    phone: '+91 96666 55555',
+    vehicle: '🛵 Scooter',
+    avatar: '🛵',
+    avatarImg: '/avatars/rider-1.svg',
+    status: 'online'
+  },
+  {
+    id: 'rider-8811',
+    pin: '8811',
+    name: 'Arif Khan',
+    phone: '+91 95555 44444',
+    vehicle: '🏍️ Bike',
+    avatar: '🏍️',
+    avatarImg: '/avatars/rider-2.svg',
+    status: 'online'
+  }
+];
 
 export const CANONICAL_CATEGORY_IMAGES = {
   'all': '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png',
@@ -2828,7 +2888,7 @@ class QuickBiteDataService {
           this.notifyChange('addresses');
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'riders' }, () => {
-          if (this.portalType === 'admin' || this.portalType === 'delivery') {
+          if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
             this.syncRidersFromSupabase();
           }
         });
@@ -3097,15 +3157,15 @@ class QuickBiteDataService {
           sessionIds.forEach(id => {
             if (!id) return;
             const strId = String(id).trim();
-            const clean = strId.replace(/^#/, '');
+            const clean = strId.replace(/^#/, '').trim();
             if (clean) {
-              allVariantIds.add(`"${clean}"`);
-              allVariantIds.add(`"#${clean}"`);
+              allVariantIds.add(encodeURIComponent(clean));
+              allVariantIds.add(encodeURIComponent(`#${clean}`));
             }
           });
           const idList = Array.from(allVariantIds).slice(0, 40);
           if (idList.length > 0) {
-            filterParts.push(`id.in.(${idList.join(',')})`);
+            filterParts.push(`id.in.(${idList.map(i => `"${i}"`).join(',')})`);
           }
         }
 
@@ -3522,14 +3582,21 @@ class QuickBiteDataService {
     }
   }
 
-  subscribeToChanges(callback) {
+  subscribeToChanges(arg1, arg2) {
+    if (typeof arg1 === 'string' && typeof arg2 === 'function') {
+      return this.on(arg1, arg2);
+    }
+    const callback = typeof arg1 === 'function' ? arg1 : arg2;
     const handler = (e) => {
       if (typeof callback === 'function') {
         callback(e.detail?.type, e.detail);
       }
     };
-    window.addEventListener('quickbite_data_changed', handler);
-    return () => window.removeEventListener('quickbite_data_changed', handler);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('quickbite_data_changed', handler);
+      return () => window.removeEventListener('quickbite_data_changed', handler);
+    }
+    return () => {};
   }
 
   on(eventName, callback) {
@@ -4668,7 +4735,8 @@ class QuickBiteDataService {
       'cooking': 1,
       'ready_for_pickup': 2,
       'on_the_way': 3,
-      'delivered': 4
+      'delivered': 4,
+      'undelivered': 4
     };
 
     if (updatedOrderData.status) {
@@ -4697,17 +4765,23 @@ class QuickBiteDataService {
         list[idx].stepIndex = 0;
         list[idx].statusLabel = 'Pending Approval';
       } else if (s === 'accepted') {
-        list[idx].stepIndex = 1;
+        list[idx].stepIndex = 0;
         list[idx].statusLabel = 'Accepted';
       } else if (s === 'cooking') {
-        list[idx].stepIndex = 2;
+        list[idx].stepIndex = 1;
         list[idx].statusLabel = 'Preparing';
+      } else if (s === 'ready_for_pickup' || s === 'ready') {
+        list[idx].stepIndex = 2;
+        list[idx].statusLabel = 'Ready to Dispatch';
       } else if (s === 'on_the_way') {
         list[idx].stepIndex = 3;
         list[idx].statusLabel = 'On the way';
       } else if (s === 'delivered') {
         list[idx].stepIndex = 4;
         list[idx].statusLabel = 'Delivered';
+      } else if (s === 'undelivered') {
+        list[idx].stepIndex = 4;
+        list[idx].statusLabel = 'Delivery Attempt Failed';
       }
     }
 
@@ -4897,14 +4971,33 @@ class QuickBiteDataService {
       Math.cos(numLat * (Math.PI / 180)) *
       Math.sin(dLng / 2) * Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return Math.round(R * c * 10) / 10;
+    return Math.round(R * c * 1000) / 1000;
   }
 
-  // Synchronous road network distance in KM using calibrated urban street routing factor (1.35x)
+  // Synchronous road network distance in KM using actual OSRM cached street routing or calibrated factor (1.55x)
   calculateRoadDistanceSync(userLat, userLng) {
+    const numLat = Number(userLat);
+    const numLng = Number(userLng);
+    if (!Number.isFinite(numLat) || !Number.isFinite(numLng) || (numLat === 0 && numLng === 0)) return null;
+
+    // 1. Check if real OSRM street route distance was already measured and cached
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        const cacheKey = `sb_road_route_${numLat.toFixed(4)}_${numLng.toFixed(4)}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed.distanceMeters === 'number' && parsed.distanceMeters > 0) {
+            return Math.round((parsed.distanceMeters / 1000) * 100) / 100;
+          }
+        }
+      }
+    } catch {}
+
     const straight = this.calculateStraightDistance(userLat, userLng);
     if (straight === null) return null;
-    return Math.round(straight * 1.35 * 10) / 10;
+    // Calibrated urban street routing factor for Ramanagara grid: 1.55x with 2-decimal precision (prevents truncating 850m to 700m)
+    return Math.round(straight * 1.55 * 100) / 100;
   }
 
   // Main distance calculation: returns actual road network distance (matching Google Maps driving routes)
@@ -4934,8 +5027,8 @@ class QuickBiteDataService {
       }
     } catch {}
 
-    const straightKm = this.calculateStraightDistance(numLat, numLng) || 0.7;
-    const syncRoadKm = Math.round(straightKm * 1.35 * 10) / 10;
+    const straightKm = this.calculateStraightDistance(numLat, numLng) || 0.55;
+    const syncRoadKm = Math.round(straightKm * 1.55 * 100) / 100;
     const syncMeters = Math.round(syncRoadKm * 1000);
     const syncDurationMins = Math.max(3, Math.round(syncRoadKm * 3.5));
 
@@ -4962,7 +5055,7 @@ class QuickBiteDataService {
           if (data && data.code === 'Ok' && Array.isArray(data.routes) && data.routes.length > 0) {
             const route = data.routes[0];
             const roadMeters = Math.round(route.distance);
-            const roadKm = Math.round((roadMeters / 1000) * 10) / 10;
+            const roadKm = Math.round((roadMeters / 1000) * 100) / 100;
             // Realistic two-wheeler duration including road turns / intersections
             const durationMins = Math.max(3, Math.round(route.duration / 60) + 1);
 
@@ -4970,7 +5063,7 @@ class QuickBiteDataService {
               distanceKm: roadKm,
               distanceMeters: roadMeters,
               durationMins: durationMins,
-              distanceDisplay: roadMeters < 1000 ? `${Math.round(roadMeters / 10) * 10} m` : `${roadKm} km`,
+              distanceDisplay: roadMeters < 1000 ? `${roadMeters} m` : `${roadKm} km`,
               source: 'osrm_live_road'
             };
 
@@ -5065,6 +5158,13 @@ class QuickBiteDataService {
   }
 
   // --- USER ADDRESSES & LOCATION ENGINE ---
+  getSavedAddresses(userId = null, userEmail = null) {
+    if (userId || userEmail) {
+      return this.getUserAddresses(userId, userEmail);
+    }
+    return this.getAllAddressesRaw();
+  }
+
   getAllAddressesRaw() {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.ADDRESSES);
@@ -5166,7 +5266,8 @@ class QuickBiteDataService {
     const id = addressData.id || `addr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const lat = Number(addressData.lat) || RESTAURANT_COORDINATES.lat;
     const lng = Number(addressData.lng) || RESTAURANT_COORDINATES.lng;
-    const distanceKm = this.calculateDistanceToRestaurant(lat, lng) ?? 0;
+    const explicitDist = addressData.distanceKm ? Number(addressData.distanceKm) : null;
+    const distanceKm = (explicitDist && explicitDist > 0) ? explicitDist : (this.calculateDistanceToRestaurant(lat, lng) ?? 0);
 
     const userAddresses = this.getUserAddresses(addressData.userId, addressData.userEmail);
     const isFirst = userAddresses.length === 0;
@@ -5384,28 +5485,16 @@ class QuickBiteDataService {
 
   getRiders() {
     try {
-      const raw = localStorage.getItem('quickbite_riders');
+      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_riders') : null;
       let riders = [];
       if (!raw) {
-        riders = [];
-        localStorage.setItem('quickbite_riders', JSON.stringify([]));
+        riders = DEFAULT_RIDERS.map(r => ({ ...r }));
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('quickbite_riders', JSON.stringify(riders));
+        }
       } else {
         const parsed = JSON.parse(raw);
-        riders = Array.isArray(parsed) ? parsed : [];
-      }
-
-      // Purge legacy hardcoded default dummy riders (2233, 4455, 8811 from initial seed)
-      const purgeKey = localStorage.getItem('quickbite_riders_version');
-      if (purgeKey !== 'savera_paradise_fleet_v2') {
-        riders = riders.filter(r => {
-          const pin = String(r?.pin || '').trim();
-          const isLegacyDummy = (pin === '2233' && r?.name === 'Syed Imran') ||
-                                (pin === '4455' && r?.name === 'Rahul Kumar') ||
-                                (pin === '8811' && r?.name === 'Arif Khan');
-          return !isLegacyDummy;
-        });
-        localStorage.setItem('quickbite_riders', JSON.stringify(riders));
-        localStorage.setItem('quickbite_riders_version', 'savera_paradise_fleet_v2');
+        riders = Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_RIDERS.map(r => ({ ...r }));
       }
 
       // Sanitize riders (clean broken image URLs mistakenly saved as name/avatar)
@@ -5430,16 +5519,17 @@ class QuickBiteDataService {
           avatar,
           avatarImg,
           phone: r.phone || '',
-          vehicle: r.vehicle || '🏍️ Bike'
+          vehicle: r.vehicle || '🏍️ Bike',
+          pin: String(r.pin || '').trim()
         };
       });
 
-      if (needsResave) {
+      if (needsResave && typeof localStorage !== 'undefined') {
         localStorage.setItem('quickbite_riders', JSON.stringify(riders));
       }
       return riders;
     } catch {
-      return [];
+      return DEFAULT_RIDERS.map(r => ({ ...r }));
     }
   }
 
@@ -5497,7 +5587,9 @@ class QuickBiteDataService {
     if (!pin) return null;
     const cleanPin = String(pin).trim();
     const riders = this.getRiders();
-    return riders.find(r => String(r.pin || '').trim() === cleanPin) || null;
+    const found = riders.find(r => String(r.pin || '').trim() === cleanPin);
+    if (found) return found;
+    return DEFAULT_RIDERS.find(r => String(r.pin || '').trim() === cleanPin) || null;
   }
 
   saveOrUpdateRider(riderData) {
@@ -5587,25 +5679,28 @@ class QuickBiteDataService {
 
   getActiveRider() {
     try {
-      const activeId = localStorage.getItem('quickbite_active_rider_id');
+      const activeId = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_active_rider_id') : null;
+      const riders = this.getRiders();
       if (activeId) {
-        const riders = this.getRiders();
-        const found = riders.find(r => r.id === activeId || r.pin === activeId);
+        const found = riders.find(r => r.id === activeId || r.pin === activeId) ||
+                      DEFAULT_RIDERS.find(r => r.id === activeId || r.pin === activeId);
         if (found) return found;
       }
       // Migrate legacy plaintext PIN storage if present and remove it
-      const legacyPin = localStorage.getItem('quickbite_active_rider_pin');
+      const legacyPin = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_active_rider_pin') : null;
       if (legacyPin) {
         const rider = this.getRiderByPin(legacyPin);
         if (rider) {
-          localStorage.setItem('quickbite_active_rider_id', rider.id);
-          localStorage.removeItem('quickbite_active_rider_pin');
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('quickbite_active_rider_id', rider.id);
+            localStorage.removeItem('quickbite_active_rider_pin');
+          }
           return rider;
         }
       }
-      return null;
+      return (riders && riders[0]) || DEFAULT_RIDERS[0] || null;
     } catch {
-      return null;
+      return DEFAULT_RIDERS[0] || null;
     }
   }
 
@@ -5688,6 +5783,18 @@ class QuickBiteDataService {
 
     // Atomic Claim Guards: Prevent claiming already claimed, delivered, or cancelled orders
     if (order.status === 'on_the_way') {
+      const cleanPin = riderPin ? String(riderPin).trim() : null;
+      if (!order.assignedRiderPin || order.assignedRiderPin === cleanPin) {
+        order.assignedRiderPin = cleanPin;
+        const currentRider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider() || DEFAULT_RIDERS[0];
+        if (currentRider) {
+          order.assignedRiderName = currentRider.name;
+          order.assignedRiderPhone = currentRider.phone;
+          order.assignedRiderVehicle = currentRider.vehicle;
+        }
+        this.saveOrders(this.getOrders(), { action: 'rider_claimed_order', orderId: order.id, riderPin: cleanPin });
+        return { success: true, order, rider: currentRider };
+      }
       const riderName = order.assignedRiderName ? `by ${order.assignedRiderName}` : 'by another rider';
       return { success: false, reason: 'already_claimed', message: `Order ${order.id} is already out for delivery ${riderName}.` };
     }
@@ -5699,7 +5806,7 @@ class QuickBiteDataService {
     }
 
     const cleanPin = riderPin ? String(riderPin).trim() : null;
-    const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider();
+    const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider() || DEFAULT_RIDERS[0];
     if (!rider) {
       return { success: false, reason: 'no_rider', message: 'No active delivery rider session found. Please log in with your Rider PIN.' };
     }
@@ -5922,11 +6029,258 @@ class QuickBiteDataService {
     return { success: false };
   }
 
+  getPayoutConfig() {
+    try {
+      const raw = localStorage.getItem('quickbite_payout_config');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            activeMethod: parsed.activeMethod || 'tiered_standard',
+            tieredStandard: { ...DEFAULT_PAYOUT_CONFIG.tieredStandard, ...(parsed.tieredStandard || {}) },
+            tieredMilestone: { ...DEFAULT_PAYOUT_CONFIG.tieredMilestone, ...(parsed.tieredMilestone || {}) },
+            flatLinear: { ...DEFAULT_PAYOUT_CONFIG.flatLinear, ...(parsed.flatLinear || {}) }
+          };
+        }
+      }
+    } catch {}
+
+    const cfg = JSON.parse(JSON.stringify(DEFAULT_PAYOUT_CONFIG));
+    try {
+      const legacyRaw = localStorage.getItem('quickbite_owner_km_rate');
+      const legacyVal = parseFloat(legacyRaw);
+      if (!isNaN(legacyVal) && legacyVal > 0) {
+        cfg.flatLinear.ratePerKm = legacyVal;
+      }
+    } catch {}
+    return cfg;
+  }
+
+  savePayoutConfig(config) {
+    if (!config || typeof config !== 'object') return DEFAULT_PAYOUT_CONFIG;
+    const parseNum = (val, fallback, min = 0) => {
+      const n = Number(val);
+      return (val !== undefined && val !== null && !isNaN(n)) ? Math.max(min, n) : fallback;
+    };
+
+    const cleanConfig = {
+      activeMethod: ['tiered_standard', 'tiered_milestone', 'flat_linear'].includes(config.activeMethod) 
+        ? config.activeMethod 
+        : 'tiered_standard',
+      tieredStandard: {
+        basePay: parseNum(config.tieredStandard?.basePay, 25, 0),
+        baseKm: parseNum(config.tieredStandard?.baseKm, 1.0, 0.1),
+        extraKmRate: parseNum(config.tieredStandard?.extraKmRate, 10, 0)
+      },
+      tieredMilestone: {
+        basePay: parseNum(config.tieredMilestone?.basePay, 25, 0),
+        baseKm: parseNum(config.tieredMilestone?.baseKm, 1.0, 0.1),
+        extraKmRate: parseNum(config.tieredMilestone?.extraKmRate, 10, 0),
+        milestoneOrders: Math.round(parseNum(config.tieredMilestone?.milestoneOrders, 10, 1)),
+        surgeExtraKmRate: parseNum(config.tieredMilestone?.surgeExtraKmRate, 15, 0)
+      },
+      flatLinear: {
+        ratePerKm: parseNum(config.flatLinear?.ratePerKm, 30, 1)
+      }
+    };
+
+    try {
+      localStorage.setItem('quickbite_payout_config', JSON.stringify(cleanConfig));
+      localStorage.setItem('quickbite_owner_km_rate', String(cleanConfig.flatLinear.ratePerKm));
+    } catch {}
+
+    this.notifyChange('payout_config_updated', cleanConfig);
+    this.notifyChange('km_rate_updated', { rate: cleanConfig.flatLinear.ratePerKm });
+    return cleanConfig;
+  }
+
+  calculateOrderPayout(order, orderIndex = 1, config = null) {
+    const cfg = config || this.getPayoutConfig();
+    let distanceKm = parseFloat(order?.addressDetails?.distanceKm || order?.distance_km || order?.distanceKm || 0);
+    const lat = Number(order?.addressDetails?.lat || order?.lat || 0);
+    const lng = Number(order?.addressDetails?.lng || order?.lng || 0);
+
+    // If order has coordinates, dynamically refine with calibrated/cached street routing
+    if (lat && lng) {
+      const roadSync = this.calculateRoadDistanceSync(lat, lng);
+      if (roadSync && (!distanceKm || distanceKm <= 0.7 || Math.abs(roadSync - distanceKm) > 0.05)) {
+        distanceKm = roadSync;
+      }
+    } else if ((!distanceKm || isNaN(distanceKm) || distanceKm <= 0) && order) {
+      distanceKm = 1.0;
+    }
+    distanceKm = Math.max(0, Math.round(distanceKm * 100) / 100);
+
+    if (cfg.activeMethod === 'tiered_milestone') {
+      const { basePay, baseKm, extraKmRate, milestoneOrders, surgeExtraKmRate } = cfg.tieredMilestone;
+      const isSurge = orderIndex > milestoneOrders;
+      const activeExtraRate = isSurge ? surgeExtraKmRate : extraKmRate;
+      const extraKm = Math.max(0, distanceKm - baseKm);
+      const amount = basePay + (extraKm * activeExtraRate);
+      return {
+        amount: Math.round(amount * 100) / 100,
+        distanceKm: Math.round(distanceKm * 100) / 100,
+        basePay,
+        baseKm,
+        extraKm: Math.round(extraKm * 100) / 100,
+        extraKmRate: activeExtraRate,
+        isSurge,
+        orderIndex,
+        method: 'tiered_milestone',
+        formula: isSurge
+          ? `₹${basePay} (first ${baseKm}km) + ₹${(extraKm * activeExtraRate).toFixed(2)} (${extraKm.toFixed(2)}km × ₹${activeExtraRate}/km surge 🔥)`
+          : `₹${basePay} (first ${baseKm}km) + ₹${(extraKm * activeExtraRate).toFixed(2)} (${extraKm.toFixed(2)}km × ₹${activeExtraRate}/km)`
+      };
+    }
+
+    if (cfg.activeMethod === 'flat_linear') {
+      const { ratePerKm } = cfg.flatLinear;
+      const amount = distanceKm * ratePerKm;
+      return {
+        amount: Math.round(amount * 100) / 100,
+        distanceKm: Math.round(distanceKm * 100) / 100,
+        basePay: 0,
+        baseKm: 0,
+        extraKm: Math.round(distanceKm * 100) / 100,
+        ratePerKm,
+        isSurge: false,
+        orderIndex,
+        method: 'flat_linear',
+        formula: `${distanceKm.toFixed(2)}km × ₹${ratePerKm}/km`
+      };
+    }
+
+    // Default: tiered_standard
+    const { basePay, baseKm, extraKmRate } = cfg.tieredStandard;
+    const extraKm = Math.max(0, distanceKm - baseKm);
+    const amount = basePay + (extraKm * extraKmRate);
+    return {
+      amount: Math.round(amount * 100) / 100,
+      distanceKm: Math.round(distanceKm * 100) / 100,
+      basePay,
+      baseKm,
+      extraKm: Math.round(extraKm * 100) / 100,
+      extraKmRate,
+      isSurge: false,
+      orderIndex,
+      method: 'tiered_standard',
+      formula: `₹${basePay} (first ${baseKm}km) + ₹${(extraKm * extraKmRate).toFixed(2)} (${extraKm.toFixed(2)}km × ₹${extraKmRate}/km)`
+    };
+  }
+
+  calculateRiderPayout(riderOrders, config = null) {
+    const cfg = config || this.getPayoutConfig();
+    const sorted = [...(riderOrders || [])].sort((a, b) => {
+      const tA = Number(a.deliveredAt || a.delivered_at || a.createdAt || 0);
+      const tB = Number(b.deliveredAt || b.delivered_at || b.createdAt || 0);
+      return tA - tB;
+    });
+
+    let totalPayout = 0;
+    let totalKms = 0;
+    let surgeCount = 0;
+    const details = sorted.map((order, idx) => {
+      const item = this.calculateOrderPayout(order, idx + 1, cfg);
+      totalPayout += item.amount;
+      totalKms += item.distanceKm;
+      if (item.isSurge) surgeCount++;
+      return item;
+    });
+
+    return {
+      totalPayout: Math.round(totalPayout),
+      exactPayout: Math.round(totalPayout * 100) / 100,
+      totalKms: Math.round(totalKms * 100) / 100,
+      orderCount: sorted.length,
+      surgeCount,
+      method: cfg.activeMethod,
+      details
+    };
+  }
+
+  getRiderPayoutSummary(riderPin) {
+    const cleanPin = String(riderPin || '').trim();
+    const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider();
+    const cfg = this.getPayoutConfig();
+    if (!rider) {
+      return {
+        rider: null,
+        payoutBalance: 0,
+        exactBalance: 0,
+        totalEarnings: 0,
+        exactEarnings: 0,
+        totalKms: 0,
+        deliveredCount: 0,
+        surgeCount: 0,
+        isPaidToday: false,
+        paidAmount: 0,
+        paidTime: '',
+        method: cfg.activeMethod,
+        config: cfg,
+        details: []
+      };
+    }
+
+    const parseTs = (val) => {
+      if (!val) return 0;
+      if (typeof val === 'number') return val;
+      const parsed = Date.parse(val);
+      return isNaN(parsed) ? (Number(val) || 0) : parsed;
+    };
+
+    const orders = this.getOrders();
+    const riderPinStr = String(rider.pin || '').trim();
+    const delivered = orders.filter(o => {
+      if (!o || String(o.status || '').toLowerCase() !== 'delivered') return false;
+      const oPin = String(o.assignedRiderPin || '').trim();
+      const matchesPin = oPin && oPin === riderPinStr;
+      const matchesName = !oPin && o.assignedRiderName && rider.name && o.assignedRiderName.trim().toLowerCase() === rider.name.trim().toLowerCase();
+      return matchesPin || matchesName;
+    });
+
+    const payoutResult = this.calculateRiderPayout(delivered, cfg);
+
+    const paidTs = parseTs(rider.payoutPaidAt);
+    const paidDate = paidTs ? new Date(paidTs) : null;
+    const isPaidToday = Boolean(paidDate && !isNaN(paidDate.getTime()) && paidDate.toDateString() === new Date().toDateString());
+    const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+    const paidAmount = Number(rider.payoutAmountPaid) || 0;
+
+    // Filter orders delivered AFTER last payout payment
+    const unpaidOrders = delivered.filter(o => {
+      if (!isPaidToday || !paidTs) return true;
+      const deliveredTime = parseTs(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
+      return deliveredTime > paidTs;
+    });
+
+    const unpaidPayout = this.calculateRiderPayout(unpaidOrders, cfg);
+    const payoutBalance = isPaidToday ? unpaidPayout.exactPayout : payoutResult.exactPayout;
+    const exactBalance = payoutBalance;
+
+    return {
+      rider,
+      payoutBalance,
+      exactBalance,
+      totalEarnings: payoutResult.totalPayout,
+      exactEarnings: payoutResult.exactPayout,
+      totalKms: payoutResult.totalKms,
+      deliveredCount: payoutResult.orderCount,
+      surgeCount: payoutResult.surgeCount,
+      isPaidToday,
+      paidAmount,
+      paidTime,
+      method: cfg.activeMethod,
+      config: cfg,
+      details: payoutResult.details
+    };
+  }
+
   getKmPayoutRate() {
     try {
       const raw = localStorage.getItem('quickbite_owner_km_rate');
       const val = parseFloat(raw);
-      return !isNaN(val) && val > 0 ? val : 15; // Default ₹15 / km
+      if (!isNaN(val) && val > 0) return val;
+      return 15;
     } catch {
       return 15;
     }
@@ -5937,6 +6291,11 @@ class QuickBiteDataService {
     const num = (!isNaN(parsed) && parsed > 0) ? parsed : 15;
     try {
       localStorage.setItem('quickbite_owner_km_rate', String(num));
+      const cfg = this.getPayoutConfig();
+      if (cfg.activeMethod === 'flat_linear') {
+        cfg.flatLinear.ratePerKm = num;
+        localStorage.setItem('quickbite_payout_config', JSON.stringify(cfg));
+      }
     } catch {}
     this.notifyChange('km_rate_updated', { rate: num });
     return num;

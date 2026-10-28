@@ -23,6 +23,16 @@ if os.path.exists(JSON_PATH):
 else:
     orders = []
 
+# Fallback parse price_num for any legacy or freshly recorded entries
+for o in orders:
+    if 'price_num' not in o or not isinstance(o.get('price_num'), (int, float)):
+        bill_str = str(o.get('total_bill') or o.get('price') or o.get('total') or '')
+        digits = re.findall(r"[\d.]+", bill_str)
+        try:
+            o['price_num'] = float(digits[0]) if digits else 0.0
+        except Exception:
+            o['price_num'] = 0.0
+
 # Sort highest to lowest
 orders.sort(key=lambda x: x.get('price_num', 0.0), reverse=True)
 
@@ -30,7 +40,9 @@ orders.sort(key=lambda x: x.get('price_num', 0.0), reverse=True)
 total_orders = len(orders)
 total_revenue = sum(o.get('price_num', 0.0) for o in orders)
 aov = total_revenue / total_orders if total_orders > 0 else 0.0
-highest_order = max(o.get('price_num', 0.0) for o in orders) if orders else 0.0
+highest_order_obj = orders[0] if orders else None
+highest_order = highest_order_obj.get('price_num', 0.0) if highest_order_obj else 0.0
+highest_order_id = str(highest_order_obj.get('order_id', '')) if highest_order_obj else ''
 lowest_order = min((o.get('price_num', 0.0) for o in orders if o.get('price_num', 0.0) > 0), default=0.0)
 
 phones_captured = sum(1 for o in orders if str(o.get('customer_phone', '')).startswith('+91'))
@@ -510,7 +522,7 @@ html_content = f"""
     <div class="kpi-card">
         <div class="kpi-label">Highest Ticket</div>
         <div class="kpi-value" style="color: #2563eb;">₹{highest_order:.2f}</div>
-        <div class="kpi-sub">Order #{highest_order:.0f}</div>
+        <div class="kpi-sub">{f"Order #{highest_order_id}" if highest_order_id else "Top Ticket"}</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-label">Customer Contacts</div>
@@ -669,7 +681,7 @@ html_content = f"""
 </html>
 """
 
-HTML_PATH = r'C:\Users\DELL\Desktop\Zomato_Tracker\orders_report.html'
+HTML_PATH = os.environ.get('ZOMATO_HTML_PATH') or os.path.join(BASE_DIR, 'orders_report.html')
 with open(HTML_PATH, 'w', encoding='utf-8') as f:
     f.write(html_content)
 

@@ -225,6 +225,29 @@ export async function ensureAdminToken() {
         }
       } catch {}
     }
+
+    // Token is missing or expired. Attempt to refresh via /api/admin-auth if staff session is active
+    if (isStaffSessionActive('admin') && typeof fetch !== 'undefined') {
+      try {
+        const res = await fetch('/api/admin-auth', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ action: 'refresh', token: token || null })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.token) {
+            sessionStorage.setItem('quickbite_admin_token', data.token);
+            return data.token;
+          }
+        }
+      } catch (err) {
+        console.warn('[Security] ensureAdminToken refresh error:', err);
+      }
+    }
   }
 
   return null;
@@ -295,8 +318,17 @@ export async function verifyStaffPin(role, inputPin) {
     return false;
   }
 
-  // 2. Rider verification (strictly registered riders created by Admin)
+  // 2. Rider verification (strictly registered riders created by Admin or default fleet)
   if (role === 'rider') {
+    if (typeof localStorage === 'undefined') {
+      return false; // Safely fail in non-browser Node.js environments
+    }
+
+    // Check if cleanPin matches any default fleet rider PIN hashes
+    if (DEFAULT_RIDER_PIN_HASHES.includes(inputHash)) {
+      return true;
+    }
+
     // Check Admin-registered rider fleet in localStorage
     try {
       const rawRiders = localStorage.getItem('quickbite_riders');
@@ -308,7 +340,8 @@ export async function verifyStaffPin(role, inputPin) {
       }
     } catch {}
 
-    return false;
+    const defaultPins = ['2233', '4422', '4455', '8811'];
+    return defaultPins.includes(cleanPin);
   }
 
   return false;

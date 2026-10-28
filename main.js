@@ -2675,7 +2675,9 @@ function initStorefrontApp() {
       return { lat: Number(order.lat), lng: Number(order.lng) };
     }
     try {
-      const addrs = dataService.getSavedAddresses();
+      const addrs = (typeof dataService.getSavedAddresses === 'function')
+        ? dataService.getSavedAddresses(currentUser?.id, currentUser?.email)
+        : (typeof dataService.getAllAddressesRaw === 'function' ? dataService.getAllAddressesRaw() : []);
       if (Array.isArray(addrs) && addrs.length > 0) {
         const found = addrs.find(a => order.deliveryAddress && a.address && order.deliveryAddress.includes(a.address)) || addrs[0];
         if (found && !isNaN(Number(found.lat)) && !isNaN(Number(found.lng))) {
@@ -3567,8 +3569,8 @@ function initStorefrontApp() {
     const userEmail = currentUser?.email || '';
     const allUserOrders = dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone);
 
-    const activeList = allUserOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
-    const deliveredList = allUserOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled');
+    const activeList = allUserOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered');
+    const deliveredList = allUserOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.status === 'undelivered');
 
     if (myOrdersCountAll) myOrdersCountAll.textContent = allUserOrders.length;
     if (myOrdersCountActive) myOrdersCountActive.textContent = activeList.length;
@@ -4399,7 +4401,9 @@ function initStorefrontApp() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               items: cart.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price })),
-              promoCode: appliedPromo ? (settings.offerPromoCode || 'SAVE10') : null,
+              promoCode: appliedPromo || (settings && settings.offerActive ? settings.offerCode : null) || null,
+              appliedPromo: appliedPromo || (settings && settings.offerActive ? settings.offerCode : null) || null,
+              storeSettings: settings,
               catalogDishes
             })
           });

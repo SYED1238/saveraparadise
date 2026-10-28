@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const { items, promoCode, catalogDishes } = body || {};
+  const { items, promoCode, appliedPromo, storeSettings, catalogDishes } = body || {};
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Order must contain at least one item' });
@@ -108,14 +108,49 @@ export default async function handler(req, res) {
     });
   }
 
-  // Delivery calculation (Standard ₹40, free if subtotal >= ₹250)
-  const deliveryFee = computedSubtotal >= 250 ? 0 : 40;
+  const settings = (storeSettings && typeof storeSettings === 'object') ? storeSettings : {};
+  const activePromo = appliedPromo || promoCode || null;
 
-  // Coupon discount validation
+  // Minimum Order Value (MOV) validation
+  const minOrderValue = Number(settings.minOrderValue) || 0;
+  if (minOrderValue > 0 && computedSubtotal < minOrderValue) {
+    return res.status(400).json({
+      error: `Minimum order amount is ₹${minOrderValue}. Current order subtotal: ₹${computedSubtotal}.`
+    });
+  }
+
+  // Delivery calculation (Dynamic store settings with ₹40 / ₹250 threshold fallback)
+  const isFreeDeliveryEnabled = settings.freeDeliveryEnabled !== false;
+  const threshold = (typeof settings.freeDeliveryThreshold === 'number' || (settings.freeDeliveryThreshold !== undefined && !Number.isNaN(Number(settings.freeDeliveryThreshold))))
+    ? Number(settings.freeDeliveryThreshold)
+    : 250;
+  const standardFee = (typeof settings.deliveryFeeStandard === 'number' || (settings.deliveryFeeStandard !== undefined && !Number.isNaN(Number(settings.deliveryFeeStandard))))
+    ? Number(settings.deliveryFeeStandard)
+    : 40;
+  let deliveryFee = (isFreeDeliveryEnabled && threshold > 0 && computedSubtotal >= threshold) ? 0 : standardFee;
+
+  // Coupon discount validation matching dataService.addOrder()
   let discount = 0;
-  if (promoCode) {
-    const cleanCode = String(promoCode).trim().toUpperCase();
-    if (cleanCode === 'SAVERA20' && computedSubtotal >= 199) {
+  if (activePromo) {
+    const cleanCode = String(activePromo).trim().toUpperCase();
+    const hasCustomSettings = Boolean(storeSettings && typeof storeSettings === 'object' && (storeSettings.offerCode || storeSettings.offerMinOrder !== undefined || storeSettings.offerDiscountPercent !== undefined));
+    const configCode = String(settings.offerCode || 'SAVERA20').trim().toUpperCase();
+    const isOfferActive = settings.offerActive !== false;
+
+    if (hasCustomSettings && isOfferActive && cleanCode === configCode) {
+      const minOrder = (settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
+      if (computedSubtotal >= minOrder) {
+        if (settings.offerDiscountType === 'fixed' || settings.offerDiscountType === 'amount') {
+          discount = Number(settings.offerDiscountAmount) || 50;
+        } else {
+          const pct = Number(settings.offerDiscountPercent) || 20;
+          discount = Math.round((computedSubtotal * pct) / 100);
+        }
+        if (settings.offerFreeDelivery) {
+          deliveryFee = 0;
+        }
+      }
+    } else if (cleanCode === 'SAVERA20' && computedSubtotal >= 199) {
       discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 20) / 100));
     } else if (cleanCode === 'SAVE10' && computedSubtotal >= 149) {
       discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 10) / 100));
@@ -123,6 +158,8 @@ export default async function handler(req, res) {
       discount = Math.min(computedSubtotal, 50);
     }
   }
+
+  discount = Math.min(discount, computedSubtotal);
 
   const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee);
   const authoritativeTotal = `₹${Math.round(calculatedTotal)}`;
