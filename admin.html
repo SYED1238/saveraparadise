@@ -1004,22 +1004,22 @@
       </div>
 
       <!-- ========================================================== -->
-      <!-- SECTION 2: DELIVERY BOY FLEET & LOGIN PIN CODES            -->
+      <!-- SECTION 2: DELIVERY BOY FLEET DIRECTORY                    -->
       <!-- ========================================================== -->
       <div class="admin-card-section rider-fleet-section" id="admin-rider-fleet-section" style="margin-top: 24px;">
         <div class="section-title-bar" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
           <div>
             <div class="title-with-count">
               <span class="section-icon">🏍️</span>
-              <h2>Delivery Boy Fleet & Login PINs</h2>
+              <h2>Delivery Boy Fleet Directory</h2>
               <span class="count-badge" id="admin-riders-count-badge">0 Active</span>
             </div>
-            <span class="section-hint">Create delivery boy profiles with Name and Mobile Phone. The system automatically generates a unique 4-digit login PIN for each rider.</span>
+            <span class="section-hint">Delivery fleet onboarding and secret login PINs are managed securely in the Owner Portal. Kitchen staff can contact riders directly below to coordinate food pickups.</span>
           </div>
 
-          <button type="button" class="btn btn-brand-primary" id="btn-admin-add-rider">
-            <i class="fa-solid fa-user-plus"></i> Add Delivery Boy
-          </button>
+          <div class="owner-managed-pill" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 9999px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #F59E0B; font-size: 0.82rem; font-weight: 700;">
+            <i class="fa-solid fa-shield-halved"></i> Managed by Owner Portal
+          </div>
         </div>
 
         <!-- Rider Fleet Grid -->
@@ -1493,64 +1493,6 @@
 
   <!-- Hidden Printable Thermal Receipt (KOT) Container -->
   <div id="kot-print-area" class="kot-print-area" aria-hidden="true"></div>
-
-  <!-- ============================================================== -->
-  <!-- MODAL: ADD / EDIT DELIVERY BOY PROFILE PER PIN CODE            -->
-  <!-- ============================================================== -->
-  <div class="admin-modal-backdrop" id="modal-admin-rider-backdrop">
-    <div class="admin-modal-card">
-      <div class="sheet-drag-handle-bar"><div class="sheet-drag-pill"></div></div>
-      <button class="admin-modal-close" id="modal-admin-rider-close">✕</button>
-
-      <div class="modal-card-header">
-        <h3 id="admin-rider-modal-title">Add Delivery Boy</h3>
-        <p id="admin-rider-modal-desc">Create profile by adding Name & Mobile Phone. A unique 4-digit PIN is generated for login.</p>
-      </div>
-
-      <form id="form-admin-rider" class="admin-form-sheet" autocomplete="off">
-        <input type="hidden" id="admin-rider-original-pin" value="" />
-
-        <div class="form-group">
-          <label for="admin-rider-input-name"><i class="fa-solid fa-user"></i> Delivery Boy Full Name *</label>
-          <input type="text" id="admin-rider-input-name" placeholder="e.g. Salman Ahmed" required />
-        </div>
-
-        <div class="form-group">
-          <label for="admin-rider-input-phone"><i class="fa-solid fa-phone"></i> Mobile Phone Number (10 digits) *</label>
-          <input type="tel" id="admin-rider-input-phone" placeholder="e.g. 9876543210" maxlength="15" required />
-          <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem;">Customer and kitchen will contact the rider on this mobile number.</small>
-        </div>
-
-        <div class="form-group">
-          <label for="admin-rider-input-vehicle"><i class="fa-solid fa-motorcycle"></i> Vehicle Type</label>
-          <select id="admin-rider-input-vehicle" class="admin-select-input" style="background: var(--admin-input-bg, #1E293B); color: var(--admin-text-main, #FFFFFF); border: 1px solid var(--admin-border, rgba(255,255,255,0.15)); padding: 10px 14px; border-radius: 8px; width: 100%;">
-            <option value="🏍️ Bike">🏍️ Bike</option>
-            <option value="🛵 Scooter">🛵 Scooter</option>
-            <option value="🚲 Bicycle">🚲 Bicycle</option>
-            <option value="🚗 Car">🚗 Car</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label><i class="fa-solid fa-key"></i> Generated 4-Digit Login PIN</label>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <input type="text" id="admin-rider-input-pin" readonly maxlength="4" class="lock-pin-input" style="letter-spacing: 4px; font-weight: 800; font-size: 1.25rem; text-align: center; background: rgba(255,255,255,0.06); color: #10B981; border: 1px solid rgba(16,185,129,0.4); width: 130px;" />
-            <button type="button" class="btn btn-secondary" id="btn-admin-regen-pin" title="Generate New PIN" style="padding: 9px 14px; font-size: 0.85rem; white-space: nowrap; border-radius: 8px;">
-              <i class="fa-solid fa-arrows-rotate"></i> Regenerate PIN
-            </button>
-          </div>
-          <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem;">Only by entering this PIN can the delivery boy log in and ride with their name and number.</small>
-        </div>
-
-        <div class="modal-card-actions">
-          <button type="button" class="btn btn-modal-cancel" id="btn-admin-rider-cancel">Cancel</button>
-          <button type="submit" class="btn btn-brand-primary" id="btn-admin-rider-submit">
-            <i class="fa-solid fa-check"></i> Save Delivery Boy
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
 
   <!-- Notification Toast Container -->
   <div class="toast-container" id="toast-container"></div>

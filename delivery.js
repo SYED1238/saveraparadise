@@ -1459,14 +1459,23 @@ document.addEventListener('DOMContentLoaded', () => {
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
       const cashSummary = dataService.getRiderCashSummary(currentRider.pin);
       const amount = cashSummary.cashInHand;
-      const res = dataService.settleRiderCash(currentRider.pin);
+      if (amount <= 0) {
+        showToast('ℹ️ No cash in hand to submit.', 'info');
+        return;
+      }
+      const res = dataService.requestRiderCashHandover(currentRider.pin);
       if (res.success) {
-        showToast(`💵 Cash of ₹${amount.toLocaleString('en-IN')} handed over to Kitchen Cashier! Shift settled.`, 'success');
+        showToast(`💵 Handover of ₹${amount.toLocaleString('en-IN')} submitted to Kitchen/Owner! Awaiting verification.`, 'success');
         closeCashSummaryModal();
         renderPortal();
       }
     });
   }
+
+  // Realtime notification when Owner confirms cash taken
+  dataService.subscribeToChanges('cash_settled', () => {
+    renderPortal();
+  });
 
   // ========================================================
   // TABS & NAVIGATION BAR

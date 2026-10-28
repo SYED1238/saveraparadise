@@ -29,6 +29,28 @@ export const ORDER_STATUS_RANKS = {
   'cancelled': -1
 };
 
+export const STATUS_TO_STEP_INDEX = {
+  'pending': 0,
+  'accepted': 0,
+  'cooking': 1,
+  'ready_for_pickup': 2,
+  'on_the_way': 3,
+  'delivered': 4,
+  'undelivered': 4,
+  'cancelled': -1
+};
+
+export const STATUS_TO_LABEL_MAP = {
+  'pending': 'Pending',
+  'accepted': 'Accepted',
+  'cooking': 'Preparing',
+  'ready_for_pickup': 'Ready to Dispatch',
+  'on_the_way': 'Dispatched',
+  'delivered': 'Delivered',
+  'undelivered': 'Undelivered (Returned)',
+  'cancelled': 'Cancelled'
+};
+
 // ========================================================
 // INDEXEDDB RESILIENT PERSISTENCE LAYER (No 5MB Quota Limits)
 // ========================================================
@@ -2638,11 +2660,13 @@ class QuickBiteDataService {
             if (remote.status !== 'cancelled' && localRank > remoteRank) {
               effectiveStatus = local.status;
             }
-            const effectiveStepIndex = typeof remote.step_index === 'number'
-              ? remote.step_index
-              : (ORDER_STATUS_RANKS[effectiveStatus] !== undefined ? ORDER_STATUS_RANKS[effectiveStatus] : (local?.stepIndex || 0));
-            const effectiveStatusLabel = remote.status_label || local?.statusLabel || 'Accepted';
-            const effectiveEta = remote.eta || local?.eta || '20 - 30 Minutes';
+            const effectiveStepIndex = (localRank > remoteRank && local && typeof local.stepIndex === 'number')
+              ? local.stepIndex
+              : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : 0));
+            const effectiveStatusLabel = (localRank > remoteRank && local?.statusLabel)
+              ? local.statusLabel
+              : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted');
+            const effectiveEta = (localRank > remoteRank && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
 
             const mergedOrder = {
               ...(local || {}),
@@ -2786,7 +2810,7 @@ class QuickBiteDataService {
                 this.syncOrdersFromSupabase(true);
               }
             } else {
-              this.syncCustomerActiveOrders();
+              this.syncCustomerActiveOrders(true);
             }
           }, 400);
         })
@@ -2887,6 +2911,29 @@ class QuickBiteDataService {
             }
           }
         })
+        .on('broadcast', { event: 'order_status_updated' }, (event) => {
+          const payload = event?.payload || {};
+          if (payload.orderId && payload.status) {
+            const orders = this.getOrders();
+            const norm = (id) => String(id || '').trim().replace(/^#/, '');
+            const targetNorm = norm(payload.orderId);
+            const idx = orders.findIndex(o => o && norm(o.id) === targetNorm);
+            if (idx !== -1) {
+              const prevStatus = orders[idx].status;
+              orders[idx].status = payload.status;
+              orders[idx].statusLabel = payload.statusLabel || STATUS_TO_LABEL_MAP[payload.status] || orders[idx].statusLabel;
+              orders[idx].stepIndex = payload.stepIndex !== undefined ? payload.stepIndex : (STATUS_TO_STEP_INDEX[payload.status] ?? orders[idx].stepIndex);
+              orders[idx].eta = payload.eta || orders[idx].eta;
+              if (payload.order && typeof payload.order === 'object') {
+                Object.assign(orders[idx], payload.order);
+              }
+              this.saveOrders(orders, { action: 'status_updated', orderId: payload.orderId, order: orders[idx], prevStatus, source: 'supabase_broadcast', timestamp: payload.timestamp || Date.now() });
+            } else if (payload.order) {
+              orders.unshift(payload.order);
+              this.saveOrders(orders, { action: 'status_updated', orderId: payload.orderId, order: payload.order, prevStatus: payload.prevStatus, source: 'supabase_broadcast', timestamp: payload.timestamp || Date.now() });
+            }
+          }
+        })
         .on('broadcast', { event: 'rider_location' }, (event) => {
           const payload = event?.payload || {};
           if (payload.lat && payload.lng) {
@@ -2911,7 +2958,7 @@ class QuickBiteDataService {
   /**
    * Sync active orders relevant to this customer in real time.
    */
-  async syncCustomerActiveOrders() {
+  async syncCustomerActiveOrders(force = false) {
     try {
       let userId = null;
       let email = null;
@@ -2952,7 +2999,7 @@ class QuickBiteDataService {
         } catch {}
       }
 
-      await this.syncCustomerOrdersFromSupabase(userId, email, phone);
+      await this.syncCustomerOrdersFromSupabase(userId, email, phone, force);
     } catch (e) {
       console.warn('[DataService] syncCustomerActiveOrders error:', e);
     }
@@ -3046,9 +3093,19 @@ class QuickBiteDataService {
         if (email && typeof email === 'string' && email.includes('@')) filterParts.push(`customer_email.eq.${email}`);
         if (phone) filterParts.push(`customer_phone.eq.${phone}`);
         if (sessionIds && sessionIds.length > 0) {
-          const cleanIds = sessionIds.filter(id => id && !String(id).includes(',') && !String(id).includes(' ')).slice(0, 30);
-          if (cleanIds.length > 0) {
-            filterParts.push(`id.in.(${cleanIds.join(',')})`);
+          const allVariantIds = new Set();
+          sessionIds.forEach(id => {
+            if (!id) return;
+            const strId = String(id).trim();
+            const clean = strId.replace(/^#/, '');
+            if (clean) {
+              allVariantIds.add(`"${clean}"`);
+              allVariantIds.add(`"#${clean}"`);
+            }
+          });
+          const idList = Array.from(allVariantIds).slice(0, 40);
+          if (idList.length > 0) {
+            filterParts.push(`id.in.(${idList.join(',')})`);
           }
         }
 
@@ -3064,10 +3121,11 @@ class QuickBiteDataService {
         const rawAddrs = this.getAllAddressesRaw();
         let changed = false;
 
+        const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
         const remoteMap = new Map();
         data.forEach(remote => {
           if (remote && remote.id) {
-            remoteMap.set(String(remote.id), remote);
+            remoteMap.set(normalizeId(remote.id), remote);
           }
         });
 
@@ -3077,7 +3135,7 @@ class QuickBiteDataService {
         localList.forEach(lo => {
           if (!lo || !this.isOrderForCustomer(lo, userId, email, phone)) return;
 
-          const remote = remoteMap.get(String(lo.id));
+          const remote = remoteMap.get(normalizeId(lo.id));
           if (remote) {
             const recoveredPhone = extractPhoneFromOrder(remote, rawAddrs) || lo.customerPhone || remote.customer_phone || '';
             const mappedRemote = {
@@ -3087,10 +3145,14 @@ class QuickBiteDataService {
               phone: recoveredPhone || lo.phone,
               customer_phone: recoveredPhone || lo.customer_phone,
               deliveryAddress: remote.delivery_address || lo.deliveryAddress,
-              stepIndex: typeof remote.step_index === 'number' ? remote.step_index : lo.stepIndex,
+              stepIndex: ((ORDER_STATUS_RANKS[lo.status] || 0) > (ORDER_STATUS_RANKS[remote.status] || 0) && typeof lo.stepIndex === 'number')
+                ? lo.stepIndex
+                : (STATUS_TO_STEP_INDEX[remote.status || lo.status] !== undefined ? STATUS_TO_STEP_INDEX[remote.status || lo.status] : (typeof remote.step_index === 'number' ? remote.step_index : lo.stepIndex)),
               status: (remote.status !== 'cancelled' && (ORDER_STATUS_RANKS[lo.status] || 0) > (ORDER_STATUS_RANKS[remote.status] || 0)) ? lo.status : (remote.status || lo.status),
-              statusLabel: remote.status_label || lo.statusLabel,
-              eta: remote.eta || lo.eta,
+              statusLabel: ((ORDER_STATUS_RANKS[lo.status] || 0) > (ORDER_STATUS_RANKS[remote.status] || 0) && lo.statusLabel)
+                ? lo.statusLabel
+                : (STATUS_TO_LABEL_MAP[remote.status || lo.status] || remote.status_label || lo.statusLabel || 'Accepted'),
+              eta: ((ORDER_STATUS_RANKS[lo.status] || 0) > (ORDER_STATUS_RANKS[remote.status] || 0) && lo.eta) ? lo.eta : (remote.eta || lo.eta),
               itemsSummary: remote.items_summary || lo.itemsSummary,
               pickupCode: remote.pickup_code || lo.pickupCode,
               assignedRiderPin: remote.assigned_rider_pin || lo.assignedRiderPin,
@@ -4527,6 +4589,27 @@ class QuickBiteDataService {
       }));
     } catch {}
 
+    // Broadcast across all connected devices via Supabase Realtime channel
+    try {
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'order_status_updated',
+          payload: {
+            orderId: order.id,
+            status: order.status,
+            prevStatus: prevStatus,
+            statusLabel: order.statusLabel,
+            stepIndex: order.stepIndex,
+            eta: order.eta,
+            order: order,
+            source: source,
+            timestamp: Date.now()
+          }
+        }).catch(() => {});
+      }
+    } catch {}
+
     // Resilient Supabase database update
     try {
       const cleanId = String(orderId || '').replace(/^#/, '');
@@ -4558,9 +4641,9 @@ class QuickBiteDataService {
       };
 
       const doUpdate = async (targetId) => {
-        const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
+        const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId);
         if (error) {
-          await supabase.from('orders').update(basePayload).eq('id', targetId).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
+          await supabase.from('orders').update(basePayload).eq('id', targetId);
         }
       };
 
@@ -5414,7 +5497,7 @@ class QuickBiteDataService {
     if (!pin) return null;
     const cleanPin = String(pin).trim();
     const riders = this.getRiders();
-    return riders.find(r => r.pin === cleanPin) || null;
+    return riders.find(r => String(r.pin || '').trim() === cleanPin) || null;
   }
 
   saveOrUpdateRider(riderData) {
@@ -5545,6 +5628,7 @@ class QuickBiteDataService {
     const existing = this.getRiders();
     const usedPins = new Set(existing.map(r => String(r.pin).trim()));
     usedPins.add('8899'); // Reserved for admin
+    usedPins.add('9900'); // Reserved for master owner
     usedPins.add('0000');
 
     let attempts = 0;
@@ -5662,6 +5746,26 @@ class QuickBiteDataService {
       }));
     } catch {}
 
+    try {
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'order_status_updated',
+          payload: {
+            orderId: order.id,
+            status: 'on_the_way',
+            prevStatus: prevStatus,
+            statusLabel: 'Dispatched for Delivery',
+            stepIndex: 3,
+            eta: '5 - 10 Minutes',
+            order: order,
+            source: 'rider',
+            timestamp: Date.now()
+          }
+        }).catch(() => {});
+      }
+    } catch {}
+
     // Resilient Supabase update: try exact ID, then alternate with/without '#' prefix
     try {
       const cleanId = normalizeId(order.id);
@@ -5702,16 +5806,28 @@ class QuickBiteDataService {
   }
 
   getRiderCashSummary(riderPin) {
-    const rider = this.getRiderByPin(riderPin);
+    const cleanPin = String(riderPin || '').trim();
+    const rider = this.getRiderByPin(cleanPin);
     if (!rider) return { cashInHand: 0, deliveredCount: 0, orders: [], codOrders: [] };
 
-    const orders = this.getOrders();
-    const settledAt = rider.cashSettledAt ? Number(rider.cashSettledAt) : 0;
+    const parseTs = (val) => {
+      if (!val) return 0;
+      if (typeof val === 'number') return val;
+      const parsed = Date.parse(val);
+      return isNaN(parsed) ? (Number(val) || 0) : parsed;
+    };
 
+    const orders = this.getOrders();
+    const settledAt = parseTs(rider.cashSettledAt);
+
+    const riderPinStr = String(rider.pin || '').trim();
     const riderDelivered = orders.filter(o => {
-      if (!o || o.status !== 'delivered') return false;
-      if (o.assignedRiderPin !== rider.pin) return false;
-      const deliveredTime = o.deliveredAt ? Number(o.deliveredAt) : (o.updatedAt ? Number(o.updatedAt) : (o.claimedAt ? Number(o.claimedAt) : 0));
+      if (!o || String(o.status || '').toLowerCase() !== 'delivered') return false;
+      const oPin = String(o.assignedRiderPin || '').trim();
+      const matchesPin = oPin && oPin === riderPinStr;
+      const matchesName = !oPin && o.assignedRiderName && rider.name && o.assignedRiderName.trim().toLowerCase() === rider.name.trim().toLowerCase();
+      if (!matchesPin && !matchesName) return false;
+      const deliveredTime = parseTs(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
       return deliveredTime > settledAt;
     });
 
@@ -5737,14 +5853,106 @@ class QuickBiteDataService {
   }
 
   settleRiderCash(riderPin) {
+    const cleanPin = String(riderPin || '').trim();
     const riders = this.getRiders();
-    const idx = riders.findIndex(r => r.pin === riderPin);
+    const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
     if (idx >= 0) {
       const settledTime = Date.now();
       riders[idx].cashSettledAt = settledTime;
+      riders[idx].cashHandoverStatus = 'taken';
+      riders[idx].cashTakenAt = settledTime;
+      riders[idx].cashHandoverAmount = 0;
       this.saveRiders(riders);
-      this.notifyChange('cash_settled', { riderPin, settledAt: settledTime });
+      this.notifyChange('cash_settled', { riderPin: cleanPin, settledAt: settledTime });
       return { success: true, settledAt: settledTime, rider: riders[idx] };
+    }
+    return { success: false };
+  }
+
+  requestRiderCashHandover(riderPin) {
+    const cleanPin = String(riderPin || '').trim();
+    const riders = this.getRiders();
+    const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
+    if (idx >= 0) {
+      const summary = this.getRiderCashSummary(cleanPin);
+      const amount = summary.cashInHand;
+      const requestedAt = Date.now();
+      riders[idx].cashHandoverStatus = 'pending_owner_approval';
+      riders[idx].cashHandoverAmount = amount;
+      riders[idx].cashHandoverRequestedAt = requestedAt;
+      this.saveRiders(riders);
+      this.notifyChange('cash_handover_requested', { riderPin: cleanPin, amount, requestedAt });
+      return { success: true, amount, requestedAt, rider: riders[idx] };
+    }
+    return { success: false };
+  }
+
+  confirmRiderCashTaken(riderPin) {
+    const cleanPin = String(riderPin || '').trim();
+    const riders = this.getRiders();
+    const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
+    if (idx >= 0) {
+      const summary = this.getRiderCashSummary(cleanPin);
+      const amount = Number(riders[idx].cashHandoverAmount || summary.cashInHand || 0);
+      const settledTime = Date.now();
+      riders[idx].cashSettledAt = settledTime;
+      riders[idx].cashHandoverStatus = 'taken';
+      riders[idx].cashTakenAt = settledTime;
+      riders[idx].cashHandoverAmount = 0;
+      riders[idx].lastCashCollectedAmount = amount;
+      this.saveRiders(riders);
+
+      // Audit log into drawer transaction records
+      try {
+        const rawAudit = localStorage.getItem('quickbite_drawer_audit') || '[]';
+        const auditLog = JSON.parse(rawAudit);
+        auditLog.unshift({
+          type: 'COD_TAKEN',
+          riderPin: cleanPin,
+          riderName: riders[idx].name,
+          amount,
+          timestamp: settledTime
+        });
+        localStorage.setItem('quickbite_drawer_audit', JSON.stringify(auditLog.slice(0, 100)));
+      } catch {}
+
+      this.notifyChange('cash_settled', { riderPin: cleanPin, settledAt: settledTime, amount });
+      return { success: true, settledAt: settledTime, amount, rider: riders[idx] };
+    }
+    return { success: false };
+  }
+
+  getKmPayoutRate() {
+    try {
+      const raw = localStorage.getItem('quickbite_owner_km_rate');
+      const val = parseFloat(raw);
+      return !isNaN(val) && val > 0 ? val : 15; // Default ₹15 / km
+    } catch {
+      return 15;
+    }
+  }
+
+  setKmPayoutRate(rate) {
+    const parsed = parseFloat(rate);
+    const num = (!isNaN(parsed) && parsed > 0) ? parsed : 15;
+    try {
+      localStorage.setItem('quickbite_owner_km_rate', String(num));
+    } catch {}
+    this.notifyChange('km_rate_updated', { rate: num });
+    return num;
+  }
+
+  markRiderPayoutPaid(riderPin, amount) {
+    const cleanPin = String(riderPin || '').trim();
+    const riders = this.getRiders();
+    const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
+    if (idx >= 0) {
+      const paidTime = Date.now();
+      riders[idx].payoutPaidAt = paidTime;
+      riders[idx].payoutAmountPaid = Number(amount) || 0;
+      this.saveRiders(riders);
+      this.notifyChange('payout_paid', { riderPin: cleanPin, paidAt: paidTime, amount });
+      return { success: true, paidAt: paidTime, amount, rider: riders[idx] };
     }
     return { success: false };
   }

@@ -722,6 +722,12 @@ function initStorefrontApp() {
     });
 
     pillsWrap.innerHTML = html;
+    if (typeof updateStorefrontPlatesRotation === 'function') {
+      try { updateStorefrontPlatesRotation(); } catch (_) {}
+    }
+    if (typeof window.refreshCategoryViewAll === 'function') {
+      try { window.refreshCategoryViewAll(); } catch (_) {}
+    }
   }
 
   // ==========================================
@@ -822,6 +828,39 @@ function initStorefrontApp() {
     });
   }
 
+  // ==========================================
+  // STOREFRONT CATEGORY BAR KINETIC ROTATION
+  // ==========================================
+  let pillsScrollTicking = false;
+  function updateStorefrontPlatesRotation() {
+    if (!pillsWrap) return;
+    const scrollLeft = pillsWrap.scrollLeft || 0;
+    const windowY = window.scrollY || 0;
+    const imgs = pillsWrap.querySelectorAll('.cuisine-circle-img');
+    imgs.forEach((img, idx) => {
+      // Rotation driven by horizontal swipe/scroll + subtle vertical page scroll
+      const deg = (scrollLeft * 1.35) + (windowY * 0.12) + (idx * 26);
+      img.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+    });
+    pillsScrollTicking = false;
+  }
+
+  if (pillsWrap) {
+    pillsWrap.addEventListener('scroll', () => {
+      if (!pillsScrollTicking) {
+        window.requestAnimationFrame(updateStorefrontPlatesRotation);
+        pillsScrollTicking = true;
+      }
+    }, { passive: true });
+
+    window.addEventListener('scroll', () => {
+      if (!pillsScrollTicking) {
+        window.requestAnimationFrame(updateStorefrontPlatesRotation);
+        pillsScrollTicking = true;
+      }
+    }, { passive: true });
+  }
+
   filterDishes('all');
   syncStorefrontCategories();
   if (typeof dataService.on === 'function') {
@@ -834,6 +873,232 @@ function initStorefrontApp() {
   window.addEventListener('load', () => {
     try { syncStorefrontCategories(); } catch {}
   });
+
+  // ==========================================
+  // CATEGORY VIEW ALL MODAL & ROTATING PLATES
+  // ==========================================
+  function initCategoryViewAll() {
+    const btnViewAll = document.getElementById('btn-category-view-all');
+    const modal = document.getElementById('cat-viewall-modal');
+    const backdrop = document.getElementById('cat-viewall-backdrop');
+    const closeBtn = document.getElementById('cat-viewall-close-btn');
+    const scrollEl = document.getElementById('cat-viewall-scroll');
+    const listEl = document.getElementById('cat-viewall-list');
+
+    if (!btnViewAll || !modal || !scrollEl || !listEl) return;
+
+    let isModalOpen = false;
+    let ticking = false;
+
+    // Helper: Compute dishes count per category
+    function getDishCount(slug) {
+      const allDishes = (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function')
+        ? (dataService.getDishes() || [])
+        : [];
+      if (slug === 'all') {
+        return allDishes.length || document.querySelectorAll('.recipe-card').length;
+      }
+      if (allDishes.length > 0) {
+        return allDishes.filter(d => (d.category === slug || (d.categoryName && d.categoryName.toLowerCase().replace(/[^a-z0-9]/g, '-') === slug))).length;
+      }
+      return document.querySelectorAll(`.recipe-card[data-category*="${slug}"]`).length;
+    }
+
+    // Helper: Render category items with accurate counts and active state
+    function renderCategoryViewAllList() {
+      const categories = (typeof dataService !== 'undefined' && typeof dataService.getCategories === 'function')
+        ? dataService.getCategories()
+        : [];
+
+      // Find current active filter
+      const activePill = pillsWrap ? pillsWrap.querySelector('.category-pill.active') : null;
+      const currentFilter = activePill ? (activePill.getAttribute('data-filter') || 'all') : 'all';
+
+      const allImg = (typeof dataService.getAllCategoryImage === 'function')
+        ? dataService.getAllCategoryImage()
+        : '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png';
+
+      let itemsHtml = `
+        <div class="cat-viewall-item ${currentFilter === 'all' ? 'active' : ''}" data-filter="all" role="button" tabindex="0">
+          <div class="cat-viewall-info">
+            <div class="cat-viewall-name-row">
+              <span class="cat-viewall-name">All Cuisines</span>
+              <span class="cat-viewall-active-pill">Selected</span>
+            </div>
+            <span class="cat-viewall-count"><i class="fa-solid fa-utensils"></i> ${getDishCount('all')} Dishes</span>
+          </div>
+          <div class="cat-viewall-img-pod">
+            <div class="cat-viewall-img-glow"></div>
+            <img src="${escapeHtml(allImg)}" alt="All Cuisines" class="cat-viewall-img" loading="eager" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+            <span class="cat-viewall-fallback" style="display:none;">🍽️</span>
+          </div>
+        </div>
+      `;
+
+      categories.forEach(cat => {
+        const slug = cat.slug || cat.id.replace(/^cat-/, '');
+        const isActive = currentFilter === slug;
+        const count = getDishCount(slug);
+        const rawImg = (cat.image || '').trim();
+        const imgUrl = (typeof dataService.sanitizeCategoryImageUrl === 'function')
+          ? dataService.sanitizeCategoryImageUrl(rawImg)
+          : ((rawImg.startsWith('categories/') || rawImg.startsWith('dishes/'))
+            ? `/api/r2-image?key=${encodeURIComponent(rawImg)}`
+            : rawImg);
+        const emoji = cat.emoji || '🍽️';
+        const safeName = escapeHtml(cat.name);
+
+        itemsHtml += `
+          <div class="cat-viewall-item ${isActive ? 'active' : ''}" data-filter="${slug}" role="button" tabindex="0">
+            <div class="cat-viewall-info">
+              <div class="cat-viewall-name-row">
+                <span class="cat-viewall-name">${safeName}</span>
+                <span class="cat-viewall-active-pill">Selected</span>
+              </div>
+              <span class="cat-viewall-count"><i class="fa-solid fa-bowl-food"></i> ${count} Dishes</span>
+            </div>
+            <div class="cat-viewall-img-pod">
+              <div class="cat-viewall-img-glow"></div>
+              ${imgUrl ? `
+                <img src="${escapeHtml(imgUrl)}" alt="${safeName}" class="cat-viewall-img" loading="eager" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+                <span class="cat-viewall-fallback" style="display:none;">${emoji}</span>
+              ` : `
+                <span class="cat-viewall-fallback">${emoji}</span>
+              `}
+            </div>
+          </div>
+        `;
+      });
+
+      listEl.innerHTML = itemsHtml;
+      updatePlatesRotation();
+    }
+
+    // Kinetic rotating plates update function
+    function updatePlatesRotation() {
+      const scrollOffset = scrollEl.scrollTop;
+      const items = listEl.querySelectorAll('.cat-viewall-item');
+      items.forEach((item, idx) => {
+        const img = item.querySelector('.cat-viewall-img');
+        if (img) {
+          // Dynamic kinetic rotation: scroll delta + offset per plate index
+          const deg = (scrollOffset * 0.5) + (idx * 28);
+          img.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+        }
+      });
+      ticking = false;
+    }
+
+    // Scroll listener on category container
+    scrollEl.addEventListener('scroll', () => {
+      if (!ticking) {
+        window.requestAnimationFrame(updatePlatesRotation);
+        ticking = true;
+      }
+    }, { passive: true });
+
+    // Open Modal
+    function openCategoryModal() {
+      renderCategoryViewAllList();
+      modal.hidden = false;
+      requestAnimationFrame(() => {
+        modal.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        isModalOpen = true;
+
+        // Auto-scroll to selected category if any
+        const activeItem = listEl.querySelector('.cat-viewall-item.active');
+        if (activeItem) {
+          activeItem.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+        }
+        updatePlatesRotation();
+      });
+    }
+
+    // Close Modal
+    function closeCategoryModal() {
+      if (!isModalOpen) return;
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+      isModalOpen = false;
+      setTimeout(() => {
+        if (!isModalOpen) {
+          modal.hidden = true;
+        }
+      }, 350);
+      try { btnViewAll.focus(); } catch (_) {}
+    }
+
+    btnViewAll.addEventListener('click', openCategoryModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeCategoryModal);
+    if (backdrop) backdrop.addEventListener('click', closeCategoryModal);
+
+    // Escape key listener
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isModalOpen) {
+        closeCategoryModal();
+      }
+    });
+
+    // Delegated Category Click in Modal
+    listEl.addEventListener('click', (e) => {
+      const item = e.target.closest('.cat-viewall-item');
+      if (!item) return;
+
+      const filter = item.getAttribute('data-filter') || 'all';
+
+      // Mark active in modal
+      listEl.querySelectorAll('.cat-viewall-item').forEach(el => el.classList.remove('active'));
+      item.classList.add('active');
+
+      // Update main page filter
+      filterDishes(filter);
+
+      // Update horizontal pills in storefront
+      if (pillsWrap) {
+        pillsWrap.querySelectorAll('.category-pill').forEach(p => {
+          const isMatch = p.getAttribute('data-filter') === filter;
+          p.classList.toggle('active', isMatch);
+          if (isMatch) {
+            try {
+              p.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            } catch (_) {}
+          }
+        });
+      }
+
+      // Close modal smoothly
+      closeCategoryModal();
+
+      // Smooth scroll main view down to categories if needed
+      const catWrap = document.getElementById('category-header-row') || document.getElementById('category-sticky-wrapper');
+      if (catWrap) {
+        const rect = catWrap.getBoundingClientRect();
+        if (rect.top < -10) {
+          window.scrollTo({
+            top: Math.max(0, window.scrollY + rect.top - 16),
+            behavior: 'smooth'
+          });
+        }
+      }
+    });
+
+    // Support keyboard Enter/Space on items
+    listEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        const item = e.target.closest('.cat-viewall-item');
+        if (item) {
+          e.preventDefault();
+          item.click();
+        }
+      }
+    });
+
+    // Expose refresh function to storefront sync
+    window.refreshCategoryViewAll = renderCategoryViewAllList;
+  }
+
+  initCategoryViewAll();
 
   // Recipe Live Search Input
   if (recipeSearchInput) {
@@ -3067,7 +3332,19 @@ function initStorefrontApp() {
     }
 
     // Update 5-step Timeline (Pending -> Accepted -> Cooking -> Dispatched -> Delivered)
-    const stepIndex = typeof order.stepIndex === 'number' ? order.stepIndex : 0;
+    const STATUS_TO_STEP_INDEX = {
+      'pending': 0,
+      'accepted': 0,
+      'cooking': 1,
+      'ready_for_pickup': 2,
+      'on_the_way': 3,
+      'delivered': 4,
+      'undelivered': 4,
+      'cancelled': -1
+    };
+    const stepIndex = STATUS_TO_STEP_INDEX[order.status] !== undefined
+      ? STATUS_TO_STEP_INDEX[order.status]
+      : (typeof order.stepIndex === 'number' ? order.stepIndex : 0);
     const stepElements = [
       document.getElementById('track-step-0'),
       document.getElementById('track-step-1'),
@@ -4292,12 +4569,14 @@ function initStorefrontApp() {
   // Real-time synchronization when Admin updates orders, statuses, or settings
   function handleStorefrontOrderStatusSync(updatedData) {
     orders = dataService.getOrders();
+    const norm = (id) => String(id || '').trim().replace(/^#/, '');
     const orderId = updatedData?.orderId || updatedData?.order?.id;
-    const order = orders.find(o => o.id === orderId);
+    const targetNorm = norm(orderId);
+    const order = orders.find(o => o && norm(o.id) === targetNorm);
 
     if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) {
-      if (activeOrderId === orderId) {
-        renderOrderTracker(activeOrderId);
+      if (!activeOrderId || norm(activeOrderId) === targetNorm) {
+        renderOrderTracker(order ? order.id : activeOrderId);
       }
     }
 

@@ -1649,17 +1649,15 @@ document.addEventListener('DOMContentLoaded', () => {
     ordersContainer.innerHTML = filtered.map(order => {
       const timeAgo = formatTimeAgo(order.createdAt);
       const statusClass = `status-${order.status || 'accepted'}`;
-      let statusLabel = order.statusLabel;
-      if (!statusLabel) {
-        if (order.status === 'cancelled') statusLabel = 'Cancelled';
-        else if (order.status === 'undelivered') statusLabel = 'Undelivered (Returned)';
-        else if (order.status === 'accepted' || order.status === 'pending') statusLabel = 'Accepted';
-        else if (order.status === 'cooking') statusLabel = 'Preparing';
-        else if (order.status === 'ready_for_pickup') statusLabel = 'Ready to Dispatch';
-        else if (order.status === 'on_the_way') statusLabel = 'Dispatched';
-        else if (order.status === 'delivered') statusLabel = 'Delivered';
-        else statusLabel = 'Accepted';
-      }
+      let statusLabel = '';
+      if (order.status === 'cancelled') statusLabel = 'Cancelled';
+      else if (order.status === 'undelivered') statusLabel = 'Undelivered (Returned)';
+      else if (order.status === 'cooking') statusLabel = 'Preparing';
+      else if (order.status === 'ready_for_pickup') statusLabel = 'Ready to Dispatch';
+      else if (order.status === 'on_the_way') statusLabel = 'Dispatched';
+      else if (order.status === 'delivered') statusLabel = 'Delivered';
+      else if (order.status === 'accepted' || order.status === 'pending') statusLabel = 'Accepted';
+      else statusLabel = order.statusLabel || 'Accepted';
 
       // Check if order has been waiting without cooking for > 5 minutes
       const isUnstarted = (order.status || 'accepted') === 'accepted' || order.status === 'pending';
@@ -1729,19 +1727,56 @@ document.addEventListener('DOMContentLoaded', () => {
       const whatsappText = `Hello ${order.customerName || 'Customer'}, regarding your Savera Paradise order ${order.id}.`;
       const whatsappUrl = hasRealPhone ? `https://wa.me/91${dialerPhone}?text=${encodeURIComponent(whatsappText)}` : '#';
 
-      const riderTagHtml = order.assignedRiderName ? `
-        <div class="order-rider-status-bar">
-          <span class="rider-assigned-chip" title="Claimed by ${escapeHtml(order.assignedRiderName)}">
-            <i class="fa-solid fa-motorcycle"></i> Assigned Rider: <strong>${escapeHtml(order.assignedRiderName)}</strong>
-          </span>
-        </div>
-      ` : `
-        <div class="order-rider-status-bar">
-          <span class="rider-unassigned-chip">
-            <i class="fa-solid fa-box-open"></i> Kitchen Shelf • Awaiting Rider Pickup
-          </span>
-        </div>
-      `;
+      let riderTagHtml = '';
+      if (order.assignedRiderName) {
+        riderTagHtml = `
+          <div class="order-rider-status-bar">
+            <span class="rider-assigned-chip" title="Claimed by ${escapeHtml(order.assignedRiderName)}">
+              <i class="fa-solid fa-motorcycle"></i> Assigned Rider: <strong>${escapeHtml(order.assignedRiderName)}</strong>
+            </span>
+          </div>
+        `;
+      } else if (order.status === 'ready_for_pickup') {
+        riderTagHtml = `
+          <div class="order-rider-status-bar">
+            <span class="rider-unassigned-chip ready-shelf">
+              <i class="fa-solid fa-box-open"></i> Kitchen Shelf • Awaiting Rider Pickup
+            </span>
+          </div>
+        `;
+      } else if (order.status === 'cooking') {
+        riderTagHtml = `
+          <div class="order-rider-status-bar">
+            <span class="rider-unassigned-chip kitchen-cooking" style="background:#FEF3C7; color:#B45309; border:1px solid #FDE68A;">
+              <i class="fa-solid fa-fire-burner"></i> Chef Preparing • Cooking in Kitchen
+            </span>
+          </div>
+        `;
+      } else if (order.status === 'accepted' || order.status === 'pending') {
+        riderTagHtml = `
+          <div class="order-rider-status-bar">
+            <span class="rider-unassigned-chip order-accepted" style="background:#EFF6FF; color:#1D4ED8; border:1px solid #BFDBFE;">
+              <i class="fa-solid fa-clock"></i> Order Accepted • Awaiting Kitchen Cooking
+            </span>
+          </div>
+        `;
+      } else if (order.status === 'cancelled') {
+        riderTagHtml = `
+          <div class="order-rider-status-bar">
+            <span class="rider-unassigned-chip order-cancelled" style="background:#FEF2F2; color:#DC2626; border:1px solid #FECACA;">
+              <i class="fa-solid fa-circle-xmark"></i> Order Cancelled
+            </span>
+          </div>
+        `;
+      } else if (order.status === 'undelivered') {
+        riderTagHtml = `
+          <div class="order-rider-status-bar">
+            <span class="rider-unassigned-chip order-undelivered" style="background:#FFF7ED; color:#C2410C; border:1px solid #FFEDD5;">
+              <i class="fa-solid fa-box-archive"></i> Returned to Kitchen
+            </span>
+          </div>
+        `;
+      }
 
       const isDoorstepWaiting = order.status === 'on_the_way' && order.riderWaitingAtDoorstep;
       const doorstepWaitingBadgeHtml = isDoorstepWaiting ? `
@@ -1988,15 +2023,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateModalStatusUI(order) {
     const status = order.status || 'accepted';
-    let statusLabel = order.statusLabel;
-    if (!statusLabel) {
-      if (status === 'accepted' || status === 'pending') statusLabel = 'Accepted';
-      else if (status === 'cooking') statusLabel = 'Preparing';
-      else if (status === 'ready_for_pickup') statusLabel = 'Ready to Dispatch';
-      else if (status === 'on_the_way') statusLabel = 'Dispatched';
-      else if (status === 'delivered') statusLabel = 'Delivered';
-      else statusLabel = status;
-    }
+    let statusLabel = '';
+    if (status === 'cancelled') statusLabel = 'Cancelled';
+    else if (status === 'undelivered') statusLabel = 'Undelivered (Returned)';
+    else if (status === 'cooking') statusLabel = 'Preparing';
+    else if (status === 'ready_for_pickup') statusLabel = 'Ready to Dispatch';
+    else if (status === 'on_the_way') statusLabel = 'Dispatched';
+    else if (status === 'delivered') statusLabel = 'Delivered';
+    else if (status === 'accepted' || status === 'pending') statusLabel = 'Accepted';
+    else statusLabel = order.statusLabel || status;
 
     if (orderModalStatusBadge) {
       orderModalStatusBadge.className = `order-modal-status-badge status-${status}`;
@@ -4085,30 +4120,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ========================================================
-  // DELIVERY BOY FLEET & LOGIN PIN CODES CONTROLLER
+  // DELIVERY BOY FLEET DIRECTORY CONTROLLER (Read-Only)
+  // Fleet onboarding and PIN management are securely isolated in Owner Portal
   // ========================================================
   const adminRidersGrid = document.getElementById('admin-riders-grid');
   const adminRidersCountBadge = document.getElementById('admin-riders-count-badge');
-  const btnAdminAddRider = document.getElementById('btn-admin-add-rider');
-  const modalAdminRiderBackdrop = document.getElementById('modal-admin-rider-backdrop');
-  const modalAdminRiderClose = document.getElementById('modal-admin-rider-close');
-  const btnAdminRiderCancel = document.getElementById('btn-admin-rider-cancel');
-  const adminRiderModalTitle = document.getElementById('admin-rider-modal-title');
-  const formAdminRider = document.getElementById('form-admin-rider');
-  const adminRiderOriginalPin = document.getElementById('admin-rider-original-pin');
-  const adminRiderInputPin = document.getElementById('admin-rider-input-pin');
-  const adminRiderInputName = document.getElementById('admin-rider-input-name');
-  const adminRiderInputPhone = document.getElementById('admin-rider-input-phone');
-  const adminRiderInputVehicle = document.getElementById('admin-rider-input-vehicle');
-  const btnAdminRegenPin = document.getElementById('btn-admin-regen-pin');
-
-  if (btnAdminRegenPin) {
-    btnAdminRegenPin.addEventListener('click', () => {
-      if (adminRiderInputPin) {
-        adminRiderInputPin.value = dataService.generateUniqueRiderPin();
-      }
-    });
-  }
 
   function renderAdminRidersFleet() {
     if (!adminRidersGrid) return;
@@ -4123,7 +4139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="grid-column: 1 / -1; padding: 30px; text-align: center; background: rgba(255,255,255,0.03); border: 1px dashed var(--admin-border); border-radius: 12px; color: var(--admin-text-muted);">
           <i class="fa-solid fa-motorcycle" style="font-size: 2rem; margin-bottom: 8px; opacity: 0.5;"></i>
           <p style="margin: 0; font-weight: 700;">No delivery boys registered yet.</p>
-          <p style="margin: 4px 0 0 0; font-size: 0.85rem;">Click "Add Delivery Boy" above to create a profile by adding Name & Mobile Phone.</p>
+          <p style="margin: 4px 0 0 0; font-size: 0.85rem;">Delivery boys and their secret login PINs are onboarded and managed securely in the Owner Portal.</p>
         </div>
       `;
       return;
@@ -4151,157 +4167,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${phone ? `<a href="${callLink}" class="admin-rider-phone-link"><i class="fa-solid fa-phone"></i> ${phone}</a>` : `<span style="color: var(--admin-text-muted); font-size: 0.82rem;"><i class="fa-solid fa-phone-slash"></i> No phone added</span>`}
               </div>
             </div>
-            <div class="admin-rider-pin-badge">
-              <small>Login PIN</small>
-              <span>${pin}</span>
+            <div class="admin-rider-pin-badge" style="background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12);" title="Secret login PIN is protected and managed in the Owner Portal">
+              <small style="color: var(--admin-text-muted);"><i class="fa-solid fa-lock" style="font-size:0.65rem;"></i> Login PIN</small>
+              <span style="letter-spacing: 2px; color: #94A3B8;">••••</span>
             </div>
           </div>
 
           <div class="admin-rider-card-footer">
             <span class="admin-rider-status-tag">
               <span class="status-dot"></span>
-              <span>Active • Passcode Ready</span>
+              <span>Active • Fleet Ready</span>
             </span>
             <div class="admin-rider-actions">
-              <button type="button" class="btn-rider-action-edit" data-pin="${pin}" title="Edit Name, Phone, or Vehicle">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-                Edit
-              </button>
-              <button type="button" class="btn-rider-action-del" data-pin="${pin}" title="Delete Delivery Boy">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              </button>
+              ${phone ? `<a href="${callLink}" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; border-radius: 8px;"><i class="fa-solid fa-phone"></i> Call Rider</a>` : ''}
             </div>
           </div>
         </div>
       `;
     }).join('');
-
-    // Attach Edit button listeners
-    adminRidersGrid.querySelectorAll('.btn-rider-action-edit').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const pin = btn.getAttribute('data-pin');
-        if (pin) openAdminRiderModal(pin);
-      });
-    });
-
-    // Attach Delete button listeners
-    adminRidersGrid.querySelectorAll('.btn-rider-action-del').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const pin = btn.getAttribute('data-pin');
-        if (!pin) return;
-        const rider = dataService.getRiderByPin(pin);
-        const riderName = rider ? rider.name : `PIN ${pin}`;
-        if (confirm(`Are you sure you want to delete delivery boy "${riderName}" (PIN: ${pin})? This will immediately remove their access.`)) {
-          dataService.deleteRider(pin);
-          renderAdminRidersFleet();
-          showToast(`🗑️ Delivery boy "${riderName}" deleted.`, 'info');
-        }
-      });
-    });
-  }
-
-  function openAdminRiderModal(pin = null) {
-    if (!modalAdminRiderBackdrop) return;
-    const modalDesc = document.getElementById('admin-rider-modal-desc');
-
-    if (pin) {
-      // Edit mode
-      const rider = dataService.getRiderByPin(pin);
-      if (!rider) return;
-      if (adminRiderModalTitle) adminRiderModalTitle.textContent = `Edit Delivery Boy: ${rider.name}`;
-      if (modalDesc) modalDesc.textContent = 'Update profile details or regenerate the login PIN code.';
-      if (adminRiderOriginalPin) adminRiderOriginalPin.value = rider.pin;
-      if (adminRiderInputPin) adminRiderInputPin.value = rider.pin;
-      if (adminRiderInputName) adminRiderInputName.value = rider.name;
-      if (adminRiderInputPhone) adminRiderInputPhone.value = rider.phone || '';
-      if (adminRiderInputVehicle) adminRiderInputVehicle.value = rider.vehicle || '🏍️ Bike';
-    } else {
-      // Add mode - auto-generate fresh unique PIN
-      const generatedPin = dataService.generateUniqueRiderPin();
-      if (adminRiderModalTitle) adminRiderModalTitle.textContent = 'Add Delivery Boy';
-      if (modalDesc) modalDesc.textContent = 'Create profile by adding Name & Mobile Phone. A unique 4-digit PIN is generated for login.';
-      if (adminRiderOriginalPin) adminRiderOriginalPin.value = '';
-      if (adminRiderInputPin) adminRiderInputPin.value = generatedPin;
-      if (adminRiderInputName) adminRiderInputName.value = '';
-      if (adminRiderInputPhone) adminRiderInputPhone.value = '';
-      if (adminRiderInputVehicle) adminRiderInputVehicle.value = '🏍️ Bike';
-    }
-
-    modalAdminRiderBackdrop.classList.add('open');
-    backNav.pushStep('admin-modal-rider', closeAdminRiderModal);
-  }
-
-  function closeAdminRiderModal() {
-    if (!modalAdminRiderBackdrop) return;
-    modalAdminRiderBackdrop.classList.remove('open');
-    backNav.removeStep('admin-modal-rider');
-  }
-
-  if (btnAdminAddRider) btnAdminAddRider.addEventListener('click', () => openAdminRiderModal());
-  if (modalAdminRiderClose) modalAdminRiderClose.addEventListener('click', closeAdminRiderModal);
-  if (btnAdminRiderCancel) btnAdminRiderCancel.addEventListener('click', closeAdminRiderModal);
-  if (modalAdminRiderBackdrop) {
-    modalAdminRiderBackdrop.addEventListener('click', (e) => {
-      if (e.target === modalAdminRiderBackdrop) closeAdminRiderModal();
-    });
-  }
-
-  const btnAdminRiderSubmit = document.getElementById('btn-admin-rider-submit');
-
-  function handleAdminRiderSubmit() {
-    const originalPin = (adminRiderOriginalPin?.value || '').trim();
-    let pin = (adminRiderInputPin?.value || '').trim();
-    const name = (adminRiderInputName?.value || '').trim();
-    const phone = (adminRiderInputPhone?.value || '').trim();
-    const vehicle = adminRiderInputVehicle?.value || '🏍️ Bike';
-
-    if (!name) {
-      showToast('⚠️ Please enter delivery boy full name.', 'warning');
-      return;
-    }
-    const cleanDigits = phone.replace(/\D/g, '');
-    if (!phone || cleanDigits.length < 10) {
-      showToast('⚠️ Please enter a valid 10-digit mobile phone number.', 'warning');
-      return;
-    }
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-      pin = dataService.generateUniqueRiderPin();
-    }
-
-    // If changing PIN or adding new, check collision
-    if ((!originalPin || originalPin !== pin) && dataService.getRiderByPin(pin)) {
-      pin = dataService.generateUniqueRiderPin();
-    }
-
-    // If changing PIN, remove old PIN entry
-    if (originalPin && originalPin !== pin) {
-      dataService.deleteRider(originalPin);
-    }
-
-    const formattedPhone = phone.startsWith('+') ? phone : (cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : phone);
-    const saved = dataService.saveOrUpdateRider({ pin, name, phone: formattedPhone, vehicle });
-    closeAdminRiderModal();
-    renderAdminRidersFleet();
-    showToast(`✅ Delivery boy "${saved.name}" profile saved! Login PIN: ${saved.pin}`, 'success');
-  }
-
-  if (formAdminRider) {
-    formAdminRider.addEventListener('submit', (e) => {
-      e.preventDefault();
-      handleAdminRiderSubmit();
-    });
-  }
-  if (btnAdminRiderSubmit) {
-    btnAdminRiderSubmit.addEventListener('click', (e) => {
-      e.preventDefault();
-      handleAdminRiderSubmit();
-    });
   }
 
   // Subscribe to rider fleet changes across tabs/portals

@@ -626,9 +626,13 @@
           </div>
         </div>
 
-        <!-- Popular Cuisines Header (Exact matching reference layout) -->
-        <div class="popular-cuisines-header">
-          <h2 class="popular-cuisines-title">Popular Cuisines</h2>
+        <!-- Category Header Row with Small View All -->
+        <div class="category-header-row" id="category-header-row">
+          <span class="category-header-title">Categories</span>
+          <button type="button" class="btn-category-view-all" id="btn-category-view-all" aria-label="View all categories" aria-haspopup="dialog">
+            <span>View All</span>
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
         </div>
 
         <!-- Sticky Category Filter Bar Wrapper (Preserves layout when pinned) -->
@@ -4546,6 +4550,45 @@
       </button>
     </div>
   </aside>
+
+  <!-- CATEGORY VIEW ALL MODAL / IMMERSIVE GLASS DRAWER -->
+  <div class="cat-viewall-overlay" id="cat-viewall-modal" role="dialog" aria-modal="true" aria-labelledby="cat-viewall-heading" hidden>
+    <div class="cat-viewall-backdrop" id="cat-viewall-backdrop" aria-label="Close categories backdrop"></div>
+    <div class="cat-viewall-panel" id="cat-viewall-panel">
+      <!-- Mobile Drag Bar -->
+      <div class="cat-viewall-drag-bar">
+        <span class="cat-viewall-drag-pill"></span>
+      </div>
+
+      <!-- Header -->
+      <div class="cat-viewall-header">
+        <div class="cat-viewall-title-wrap">
+          <span class="cat-viewall-badge"><i class="fa-solid fa-utensils"></i> Menu Explorer</span>
+          <h3 class="cat-viewall-heading" id="cat-viewall-heading">All Categories</h3>
+        </div>
+        <button type="button" class="cat-viewall-close-btn" id="cat-viewall-close-btn" aria-label="Close categories dialog">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Scrollable Categories Container (Exact 5-Item Viewport) -->
+      <div class="cat-viewall-scroll" id="cat-viewall-scroll" tabindex="0" role="region" aria-label="Category list">
+        <div class="cat-viewall-list" id="cat-viewall-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- Footer Info / Hint -->
+      <div class="cat-viewall-footer">
+        <span class="cat-viewall-hint">
+          <i class="fa-solid fa-rotate"></i> Scroll to rotate dishes • Tap to select
+        </span>
+      </div>
+    </div>
+  </div>
 
   <!-- INTERACTIVE FOOD ITEM DETAIL BOTTOM SHEET / MODAL -->
   <div class="food-modal-backdrop" id="food-detail-backdrop">

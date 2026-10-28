@@ -100,7 +100,7 @@ test('STAGE 1: Server Authentication Helper (_auth.js)', async (t) => {
   await t.test('verifyAdminToken detects tampered signatures', () => {
     const token = createAdminToken();
     const [payload, sig] = token.split('.');
-    const tamperedToken = `${payload}.${sig.slice(0, -2)}ff`;
+    const tamperedToken = `${payload}.${sig[0] === 'a' ? 'b' : 'a'}${sig.slice(1)}`;
     const result = verifyAdminToken({ headers: { authorization: `Bearer ${tamperedToken}` } });
     assert.strictEqual(result.valid, false);
     assert.strictEqual(result.error, 'Invalid token signature');

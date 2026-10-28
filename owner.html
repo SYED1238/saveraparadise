@@ -83,8 +83,8 @@
             <span class="owner-sub">Executive Intelligence & Financial Audit Hub</span>
           </div>
         </div>
-        <div class="owner-readonly-chip">
-          <i class="fa-solid fa-lock"></i> READ-ONLY MODE
+        <div class="owner-verified-chip" style="display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:9999px; background:#FEF3C7; border:1px solid #FDE68A; color:#B45309; font-size:0.75rem; font-weight:700;">
+          <i class="fa-solid fa-shield-halved"></i> MASTER PROPRIETOR
         </div>
       </div>
 
@@ -127,18 +127,60 @@
     <!-- Main Content Area -->
     <main class="owner-main">
 
-      <!-- Mobile Fast-Jump Navigation Tabs (Mobile Only) -->
-      <nav class="owner-mobile-tabs" id="owner-mobile-tabs" aria-label="Executive Section Jump">
-        <button type="button" class="owner-tab-btn active" data-target="owner-kpi-grid">
-          <i class="fa-solid fa-chart-pie"></i> Financials
-        </button>
-        <button type="button" class="owner-tab-btn" data-target="section-riders">
-          <i class="fa-solid fa-motorcycle"></i> Riders
-        </button>
-        <button type="button" class="owner-tab-btn" data-target="section-orders">
-          <i class="fa-solid fa-clipboard-list"></i> Orders
-        </button>
+      <!-- ========================================================== -->
+      <!-- OWNER CAPSULE NAVIGATION BAR (Kitchen-Style Master Bar)    -->
+      <!-- ========================================================== -->
+      <nav class="owner-floating-bar" id="owner-floating-bar" aria-label="Owner Executive Navigation">
+        <div class="owner-floating-capsule">
+          <!-- 1. OVERVIEW -->
+          <button type="button" class="owner-nav-btn active" id="owner-nav-overview" data-target="view-overview" aria-label="Financial Overview">
+            <div class="owner-icon-bubble">
+              <i class="fa-solid fa-chart-pie"></i>
+            </div>
+            <span class="owner-nav-label">Overview</span>
+          </button>
+
+          <!-- 2. LIVE ORDERS -->
+          <button type="button" class="owner-nav-btn" id="owner-nav-orders" data-target="view-orders" aria-label="Live Orders Stream">
+            <div class="owner-icon-bubble">
+              <i class="fa-solid fa-clipboard-list"></i>
+              <span class="owner-nav-badge" id="nav-badge-orders">0</span>
+            </div>
+            <span class="owner-nav-label">Orders</span>
+          </button>
+
+          <!-- 3. CASH SETTLEMENT -->
+          <button type="button" class="owner-nav-btn" id="owner-nav-cash" data-target="view-cash" aria-label="COD Cash Settlement">
+            <div class="owner-icon-bubble">
+              <i class="fa-solid fa-money-bill-transfer"></i>
+              <span class="owner-nav-badge alert" id="nav-badge-cash" style="display: none;">!</span>
+            </div>
+            <span class="owner-nav-label">Cash</span>
+          </button>
+
+          <!-- 4. KM PAYOUTS -->
+          <button type="button" class="owner-nav-btn" id="owner-nav-payouts" data-target="view-payouts" aria-label="KM Rates & Payouts">
+            <div class="owner-icon-bubble">
+              <i class="fa-solid fa-calculator"></i>
+            </div>
+            <span class="owner-nav-label">Payouts</span>
+          </button>
+
+          <!-- 5. DELIVERY FLEET -->
+          <button type="button" class="owner-nav-btn" id="owner-nav-fleet" data-target="view-fleet" aria-label="Delivery Fleet Directory">
+            <div class="owner-icon-bubble">
+              <i class="fa-solid fa-motorcycle"></i>
+              <span class="owner-nav-badge" id="nav-badge-fleet">0</span>
+            </div>
+            <span class="owner-nav-label">Fleet</span>
+          </button>
+        </div>
       </nav>
+
+      <!-- ========================================================== -->
+      <!-- VIEW 1: EXECUTIVE FINANCIAL OVERVIEW                       -->
+      <!-- ========================================================== -->
+      <div class="owner-view-tab active" id="view-overview">
 
       <!-- ========================================================== -->
       <!-- SECTION A: DATE HORIZON FILTER & PAYOUT SETTINGS BAR       -->
@@ -351,19 +393,185 @@
           <span><strong>How this works:</strong> Delivery boys collect cash from customers. They keep their delivery commission (<span id="drawer-note-rate">₹35</span>/order), and hand over the remaining balance directly into your counter drawer.</span>
         </div>
       </section>
+      </div><!-- End #view-overview -->
 
       <!-- ========================================================== -->
-      <!-- SECTION C: DELIVERY BOYS PERFORMANCE, KMS & CASH PAYOUTS   -->
+      <!-- VIEW 2: LIVE ORDERS AUDIT & REVENUE STREAM                 -->
       <!-- ========================================================== -->
-      <section class="owner-section" id="section-riders">
-        <div class="section-header-row">
-          <div>
-            <h2 class="section-title"><i class="fa-solid fa-person-biking"></i> Delivery Boys Performance & Cash Settlement</h2>
-            <p class="section-sub">Audit how many orders each rider delivered, their exact road kilometers driven, COD cash in hand to collect, and rider earnings reconciliation.</p>
+      <div class="owner-view-tab" id="view-orders" style="display: none;">
+        <section class="owner-section" id="section-orders">
+          <div class="section-header-row">
+            <div>
+              <h2 class="section-title"><i class="fa-solid fa-clipboard-list"></i> Live Orders Stream & Audit Log</h2>
+              <p class="section-sub">Read-only real-time stream of all orders in this period. View complete item breakdown, customer address, payment details, and assigned delivery boy.</p>
+            </div>
+
+            <!-- Order Sub-Filters & Search -->
+            <div class="orders-filter-controls">
+              <div class="search-input-wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="order-search-input" placeholder="Search order ID, customer, rider, phone...">
+              </div>
+
+              <div class="orders-view-and-filters">
+                <div class="status-pills-row" id="order-status-filter-pills">
+                  <button type="button" class="order-filter-pill active" data-status="all">All (<span id="count-all">0</span>)</button>
+                  <button type="button" class="order-filter-pill" data-status="active">Live (<span id="count-active">0</span>)</button>
+                  <button type="button" class="order-filter-pill" data-status="delivered">Delivered (<span id="count-delivered">0</span>)</button>
+                  <button type="button" class="order-filter-pill" data-status="cash">Cash (COD)</button>
+                  <button type="button" class="order-filter-pill" data-status="online">Online (Paid)</button>
+                  <button type="button" class="order-filter-pill" data-status="cancelled">Cancelled (<span id="count-cancelled">0</span>)</button>
+                </div>
+
+                <!-- View Toggle: Cards vs Table -->
+                <div class="view-toggle-wrap" id="orders-view-toggle">
+                  <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
+                    <i class="fa-solid fa-table-cells-large"></i> Cards
+                  </button>
+                  <button type="button" class="btn-view-toggle" data-view="table" title="Show Spreadsheet Table View">
+                    <i class="fa-solid fa-table"></i> Table
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="section-badge-info">
-            <!-- View Toggle: Cards vs Table -->
-            <div class="view-toggle-wrap" id="rider-view-toggle">
+
+          <!-- Mobile Orders Cards (Clean & easy to browse on phones) -->
+          <div class="owner-cards-grid" id="orders-cards-container">
+            <!-- Populated dynamically -->
+          </div>
+
+          <!-- Orders Table (Spreadsheet view) -->
+          <div class="owner-table-wrapper" id="orders-table-wrapper">
+            <table class="owner-table" id="owner-orders-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Time</th>
+                  <th>Customer & Phone</th>
+                  <th>Delivery Location</th>
+                  <th>Items Ordered</th>
+                  <th>Payment Mode</th>
+                  <th>Assigned Delivery Boy</th>
+                  <th class="text-right">Total Amount</th>
+                  <th class="text-center">Status</th>
+                  <th class="text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="orders-table-body">
+                <!-- Dynamically populated -->
+                <tr>
+                  <td colspan="10" class="table-loading">
+                    <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading orders stream...</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div><!-- End #view-orders -->
+
+      <!-- ========================================================== -->
+      <!-- VIEW 3: COD CASH COLLECTIONS & HANDOVER                     -->
+      <!-- ========================================================== -->
+      <div class="owner-view-tab" id="view-cash" style="display: none;">
+        <!-- Live Handover Alert Banner -->
+        <div class="cash-alert-banner" id="cash-alert-banner" style="display: none;">
+          <div class="cash-alert-icon"><i class="fa-solid fa-bell fa-shake"></i></div>
+          <div class="cash-alert-content">
+            <h4 id="cash-alert-title">Pending COD Cash Handover!</h4>
+            <p id="cash-alert-desc">A delivery boy has submitted cash collected from orders. Please receive cash and click "Mark as Taken".</p>
+          </div>
+        </div>
+
+        <section class="owner-section" id="section-cash">
+          <div class="section-header-row">
+            <div>
+              <h2 class="section-title"><i class="fa-solid fa-money-bill-transfer"></i> COD Cash Collections & Handover</h2>
+              <p class="section-sub">Collect and verify physical Cash on Delivery (COD) brought by riders. When a rider submits cash, audit their orders and click "Mark as Taken" to deposit into your counter drawer.</p>
+            </div>
+            <div class="section-badge-info">
+              <!-- View Toggle: Cards vs Table -->
+              <div class="view-toggle-wrap" id="cash-view-toggle">
+                <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
+                  <i class="fa-solid fa-table-cells-large"></i> Cards
+                </button>
+                <button type="button" class="btn-view-toggle" data-view="table" title="Show Spreadsheet Table View">
+                  <i class="fa-solid fa-table"></i> Table
+                </button>
+              </div>
+              <span class="info-pill hide-mobile"><i class="fa-solid fa-vault"></i> Physical Counter Cash Drawer</span>
+            </div>
+          </div>
+
+          <!-- Mobile Cash Cards Grid -->
+          <div class="owner-cards-grid" id="cash-cards-container">
+            <!-- Populated dynamically via owner.js -->
+          </div>
+
+          <!-- Cash Settlements Table (Desktop) -->
+          <div class="owner-table-wrapper" id="cash-table-wrapper">
+            <table class="owner-table" id="owner-cash-table">
+              <thead>
+                <tr>
+                  <th>Delivery Boy</th>
+                  <th>Vehicle</th>
+                  <th class="text-center">COD Orders</th>
+                  <th class="text-right">COD Cash in Hand</th>
+                  <th>Handover Status</th>
+                  <th class="text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="cash-table-body">
+                <!-- Populated dynamically via owner.js -->
+                <tr>
+                  <td colspan="6" class="table-loading">
+                    <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading cash records...</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div><!-- End #view-cash -->
+
+      <!-- ========================================================== -->
+      <!-- VIEW 4: KM RATES & DAILY RIDER PAYOUTS                     -->
+      <!-- ========================================================== -->
+      <div class="owner-view-tab" id="view-payouts" style="display: none;">
+        <section class="owner-section" id="section-payouts">
+          <div class="section-header-row">
+            <div>
+              <h2 class="section-title"><i class="fa-solid fa-calculator"></i> KM Payouts & Fuel Settlement</h2>
+              <p class="section-sub">Configure pay rate per road kilometer driven. The system automatically computes daily earnings from delivered trip distances and allows marking payouts as paid.</p>
+            </div>
+            <div class="section-badge-info">
+              <!-- KM Rate Config Box -->
+              <div class="km-rate-config-box">
+                <label for="input-km-rate"><i class="fa-solid fa-route"></i> Rate per KM:</label>
+                <div class="km-input-row">
+                  <span class="km-curr">₹</span>
+                  <input type="number" id="input-km-rate" min="1" max="100" step="1" value="15" title="Payout rate in INR per road kilometer" />
+                  <span class="km-unit">/ km</span>
+                  <button type="button" class="btn-save-km-rate" id="btn-save-km-rate"><i class="fa-solid fa-check"></i> Save Rate</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Rate Preset Chips -->
+          <div class="km-presets-row">
+            <span class="km-presets-label"><i class="fa-solid fa-sliders"></i> Quick KM Presets:</span>
+            <button type="button" class="km-preset-chip" data-rate="10">₹10/km</button>
+            <button type="button" class="km-preset-chip" data-rate="12">₹12/km</button>
+            <button type="button" class="km-preset-chip active" data-rate="15">₹15/km</button>
+            <button type="button" class="km-preset-chip" data-rate="18">₹18/km</button>
+            <button type="button" class="km-preset-chip" data-rate="20">₹20/km</button>
+          </div>
+
+          <!-- Payout View Toggle -->
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+            <div class="view-toggle-wrap" id="payout-view-toggle">
               <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
                 <i class="fa-solid fa-table-cells-large"></i> Cards
               </button>
@@ -371,84 +579,58 @@
                 <i class="fa-solid fa-table"></i> Table
               </button>
             </div>
-            <span class="info-pill hide-mobile"><i class="fa-solid fa-calculator"></i> Net Settlement = Cash in Hand − Rider Payout</span>
-          </div>
-        </div>
-
-        <!-- Mobile Delivery Boy Cards (Clean & readable on phones) -->
-        <div class="owner-cards-grid" id="rider-cards-container">
-          <!-- Populated dynamically -->
-        </div>
-
-        <!-- Rider Analytics Table (Desktop / Spreadsheet view) -->
-        <div class="owner-table-wrapper" id="rider-table-wrapper">
-          <table class="owner-table" id="owner-rider-table">
-            <thead>
-              <tr>
-                <th>Delivery Boy</th>
-                <th>Status / Vehicle</th>
-                <th class="text-center">Orders Delivered</th>
-                <th class="text-center">Total KMs Driven</th>
-                <th class="text-center">Avg KM / Trip</th>
-                <th class="text-right">COD Cash in Hand</th>
-                <th class="text-right">Online Orders</th>
-                <th class="text-right">Rider Payout</th>
-                <th class="text-right">Net Cash to Drawer</th>
-              </tr>
-            </thead>
-            <tbody id="rider-table-body">
-              <!-- Dynamically populated -->
-              <tr>
-                <td colspan="9" class="table-loading">
-                  <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading delivery fleet data...</div>
-                </td>
-              </tr>
-            </tbody>
-            <tfoot id="rider-table-footer" style="display: none;">
-              <tr class="table-totals-row">
-                <td colspan="2"><strong>FLEET TOTALS</strong></td>
-                <td class="text-center" id="foot-total-deliveries">0</td>
-                <td class="text-center" id="foot-total-kms">0.0 km</td>
-                <td class="text-center" id="foot-avg-km">0.0 km</td>
-                <td class="text-right num-amber" id="foot-total-cash">₹0</td>
-                <td class="text-right" id="foot-total-online">0</td>
-                <td class="text-right num-purple" id="foot-total-payouts">₹0</td>
-                <td class="text-right num-emerald" id="foot-total-net-deposit">₹0</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </section>
-
-      <!-- ========================================================== -->
-      <!-- SECTION D: LIVE ORDERS AUDIT & REVENUE STREAM              -->
-      <!-- ========================================================== -->
-      <section class="owner-section" id="section-orders">
-        <div class="section-header-row">
-          <div>
-            <h2 class="section-title"><i class="fa-solid fa-clipboard-list"></i> Live Orders Stream & Audit Log</h2>
-            <p class="section-sub">Read-only real-time stream of all orders in this period. View complete item breakdown, customer address, payment details, and assigned delivery boy.</p>
           </div>
 
-          <!-- Order Sub-Filters & Search -->
-          <div class="orders-filter-controls">
-            <div class="search-input-wrap">
-              <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="order-search-input" placeholder="Search order ID, customer, rider, phone...">
+          <!-- Mobile Payout Cards Grid -->
+          <div class="owner-cards-grid" id="payout-cards-container">
+            <!-- Populated dynamically via owner.js -->
+          </div>
+
+          <!-- Payout Table (Desktop) -->
+          <div class="owner-table-wrapper" id="payout-table-wrapper">
+            <table class="owner-table" id="owner-payout-table">
+              <thead>
+                <tr>
+                  <th>Delivery Boy</th>
+                  <th>Vehicle</th>
+                  <th class="text-center">Orders Delivered</th>
+                  <th class="text-center">Total KMs Driven</th>
+                  <th class="text-center">Rate / KM</th>
+                  <th class="text-right">Calculated Payout</th>
+                  <th class="text-right">COD Cash in Hand</th>
+                  <th class="text-center">Payout Status</th>
+                  <th class="text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="payout-table-body">
+                <!-- Populated dynamically via owner.js -->
+                <tr>
+                  <td colspan="9" class="table-loading">
+                    <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading payout records...</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div><!-- End #view-payouts -->
+
+      <!-- ========================================================== -->
+      <!-- VIEW 5: DELIVERY BOY FLEET DIRECTORY & PASSCODES           -->
+      <!-- ========================================================== -->
+      <div class="owner-view-tab" id="view-fleet" style="display: none;">
+        <section class="owner-section" id="section-riders">
+          <div class="section-header-row">
+            <div>
+              <h2 class="section-title"><i class="fa-solid fa-motorcycle"></i> Delivery Boy Fleet Directory & Passcodes</h2>
+              <p class="section-sub">Add or remove delivery boys, manage phone contacts, view secret login PINs, and update vehicle types.</p>
             </div>
-
-            <div class="orders-view-and-filters">
-              <div class="status-pills-row" id="order-status-filter-pills">
-                <button type="button" class="order-filter-pill active" data-status="all">All (<span id="count-all">0</span>)</button>
-                <button type="button" class="order-filter-pill" data-status="active">Live (<span id="count-active">0</span>)</button>
-                <button type="button" class="order-filter-pill" data-status="delivered">Delivered (<span id="count-delivered">0</span>)</button>
-                <button type="button" class="order-filter-pill" data-status="cash">Cash (COD)</button>
-                <button type="button" class="order-filter-pill" data-status="online">Online (Paid)</button>
-                <button type="button" class="order-filter-pill" data-status="cancelled">Cancelled (<span id="count-cancelled">0</span>)</button>
-              </div>
-
+            <div class="section-badge-info">
+              <button type="button" class="btn-owner-add-rider" id="btn-owner-add-rider" title="Onboard New Delivery Boy">
+                <i class="fa-solid fa-user-plus"></i> Add Delivery Boy
+              </button>
               <!-- View Toggle: Cards vs Table -->
-              <div class="view-toggle-wrap" id="orders-view-toggle">
+              <div class="view-toggle-wrap" id="rider-view-toggle">
                 <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
                   <i class="fa-solid fa-table-cells-large"></i> Cards
                 </button>
@@ -458,41 +640,55 @@
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Mobile Orders Cards (Clean & easy to browse on phones) -->
-        <div class="owner-cards-grid" id="orders-cards-container">
-          <!-- Populated dynamically -->
-        </div>
+          <!-- Mobile Delivery Boy Cards -->
+          <div class="owner-cards-grid" id="rider-cards-container">
+            <!-- Populated dynamically via owner.js -->
+          </div>
 
-        <!-- Orders Table (Spreadsheet view) -->
-        <div class="owner-table-wrapper" id="orders-table-wrapper">
-          <table class="owner-table" id="owner-orders-table">
-            <thead>
-              <tr>
-                <th>Order ID</th>
-                <th>Time</th>
-                <th>Customer & Phone</th>
-                <th>Delivery Location</th>
-                <th>Items Ordered</th>
-                <th>Payment Mode</th>
-                <th>Assigned Delivery Boy</th>
-                <th class="text-right">Total Amount</th>
-                <th class="text-center">Status</th>
-                <th class="text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody id="orders-table-body">
-              <!-- Dynamically populated -->
-              <tr>
-                <td colspan="10" class="table-loading">
-                  <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading orders stream...</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+          <!-- Rider Fleet Table -->
+          <div class="owner-table-wrapper" id="rider-table-wrapper">
+            <table class="owner-table" id="owner-rider-table">
+              <thead>
+                <tr>
+                  <th>Delivery Boy</th>
+                  <th>Vehicle</th>
+                  <th>Login PIN</th>
+                  <th class="text-center">Orders Delivered</th>
+                  <th class="text-center">Total KMs Driven</th>
+                  <th class="text-center">Avg KM / Trip</th>
+                  <th class="text-right">COD Cash in Hand</th>
+                  <th class="text-right">Online Orders</th>
+                  <th class="text-right">Rider Payout</th>
+                  <th class="text-right">Net Cash to Drawer</th>
+                  <th class="text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="rider-table-body">
+                <!-- Dynamically populated -->
+                <tr>
+                  <td colspan="11" class="table-loading">
+                    <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading delivery fleet data...</div>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot id="rider-table-footer" style="display: none;">
+                <tr class="table-totals-row">
+                  <td colspan="3"><strong>FLEET TOTALS</strong></td>
+                  <td class="text-center" id="foot-total-deliveries">0</td>
+                  <td class="text-center" id="foot-total-kms">0.0 km</td>
+                  <td class="text-center" id="foot-avg-km">0.0 km</td>
+                  <td class="text-right num-amber" id="foot-total-cash">₹0</td>
+                  <td class="text-right" id="foot-total-online">0</td>
+                  <td class="text-right num-purple" id="foot-total-payouts">₹0</td>
+                  <td class="text-right num-emerald" id="foot-total-net-deposit">₹0</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+      </div><!-- End #view-fleet -->
 
     </main>
 
@@ -537,6 +733,67 @@
         </button>
         <button type="button" class="btn-modal-close" id="btn-modal-close-trigger">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- ADD / EDIT DELIVERY BOY MODAL (Owner Fleet Control)            -->
+  <!-- ============================================================== -->
+  <div class="owner-modal-backdrop" id="owner-rider-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="owner-rider-modal-title">
+    <div class="owner-modal-card" style="max-width: 480px;">
+      <div class="owner-modal-header">
+        <div class="modal-header-brand">
+          <i class="fa-solid fa-motorcycle" style="color: var(--owner-gold, #F59E0B);"></i>
+          <div>
+            <h3 class="modal-order-id" id="owner-rider-modal-title" style="font-family: inherit; font-size: 1.1rem; color: var(--owner-text, #0F172A);">Add Delivery Boy</h3>
+            <span class="modal-order-time" id="owner-rider-modal-subtitle">Proprietor Fleet Onboarding & Secret Passcode Management</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" id="btn-close-rider-modal" aria-label="Close modal">&times;</button>
+      </div>
+
+      <form id="owner-rider-form" class="owner-modal-body" autocomplete="off">
+        <input type="hidden" id="owner-rider-original-pin" value="" />
+
+        <div class="owner-form-group">
+          <label for="owner-rider-name" class="owner-form-label"><i class="fa-solid fa-user"></i> Full Name <span class="req">*</span></label>
+          <input type="text" id="owner-rider-name" class="owner-form-input" placeholder="e.g. Salman Ahmed" required />
+        </div>
+
+        <div class="owner-form-group">
+          <label for="owner-rider-phone" class="owner-form-label"><i class="fa-solid fa-phone"></i> Mobile Phone (10 digits) <span class="req">*</span></label>
+          <input type="tel" id="owner-rider-phone" class="owner-form-input" placeholder="e.g. 9876543210" maxlength="15" required />
+          <span class="owner-field-hint">Used by kitchen & customers to contact the rider during delivery.</span>
+        </div>
+
+        <div class="owner-form-group">
+          <label for="owner-rider-vehicle" class="owner-form-label"><i class="fa-solid fa-bicycle"></i> Vehicle Type</label>
+          <select id="owner-rider-vehicle" class="owner-form-select">
+            <option value="🏍️ Bike">🏍️ Bike</option>
+            <option value="🛵 Scooter">🛵 Scooter</option>
+            <option value="🚲 Bicycle">🚲 Bicycle</option>
+            <option value="🚗 Car">🚗 Car</option>
+          </select>
+        </div>
+
+        <div class="owner-form-group">
+          <label class="owner-form-label"><i class="fa-solid fa-key"></i> Secret 4-Digit Login PIN</label>
+          <div class="owner-pin-input-row">
+            <input type="text" id="owner-rider-pin" readonly maxlength="4" class="owner-pin-display" />
+            <button type="button" class="btn-regen-pin" id="btn-owner-regen-pin" title="Generate New Unique PIN">
+              <i class="fa-solid fa-arrows-rotate"></i> Regenerate PIN
+            </button>
+          </div>
+          <span class="owner-field-hint">The delivery boy uses this 4-digit PIN to log into the Rider Portal. Kept confidential under Owner control.</span>
+        </div>
+
+        <div class="owner-modal-footer" style="padding: 16px 0 0 0; margin-top: 8px; border-top: 1px solid var(--owner-border, #E2E8F0);">
+          <button type="button" class="btn-modal-close" id="btn-cancel-rider-modal">Cancel</button>
+          <button type="submit" class="btn-owner-save-rider" id="btn-save-rider-submit">
+            <i class="fa-solid fa-check"></i> Save Delivery Boy
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
