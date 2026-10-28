@@ -899,7 +899,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     } else {
       if (riderEarningsSec) riderEarningsSec.style.display = 'none';
-      if (parcelPickupBannerSec) parcelPickupBannerSec.style.display = 'block';
+      // Enter parcel number option is strictly and ONLY available in the Pending ('ready') tab
+      if (parcelPickupBannerSec) {
+        parcelPickupBannerSec.style.display = (activeTab === 'ready') ? 'block' : 'none';
+      }
       if (riderOrdersSec) riderOrdersSec.style.display = 'block';
     }
 

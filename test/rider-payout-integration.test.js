@@ -275,4 +275,12 @@ describe('RIDER PORTAL PAYOUT & BALANCE INTEGRATION SUITE', () => {
     // Verification: delivery.js handles earnings tab persistence
     assert.ok(js.includes("saved === 'earnings'"), 'delivery.js must persist earnings tab');
   });
+
+  test('9. Enter Parcel Number option is strictly and ONLY available on Pending tab', () => {
+    const js = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf-8');
+    assert.ok(
+      js.includes("parcelPickupBannerSec.style.display = (activeTab === 'ready') ? 'block' : 'none'"),
+      'Parcel pickup banner must only be displayed when activeTab is ready (Pending)'
+    );
+  });
 });
