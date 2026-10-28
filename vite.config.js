@@ -612,7 +612,14 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         admin: resolve(__dirname, 'admin.html'),
         delivery: resolve(__dirname, 'delivery.html'),
-        owner: resolve(__dirname, 'owner.html')
+        owner: resolve(__dirname, 'owner.html'),
+        contact: resolve(__dirname, 'contact.html'),
+        pricing: resolve(__dirname, 'pricing.html'),
+        terms: resolve(__dirname, 'terms.html'),
+        privacy: resolve(__dirname, 'privacy.html'),
+        refund: resolve(__dirname, 'refund.html'),
+        shipping: resolve(__dirname, 'shipping.html'),
+        about: resolve(__dirname, 'about.html')
       }
     }
   }

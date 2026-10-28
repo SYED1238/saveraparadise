@@ -12,6 +12,34 @@
     {
       "source": "/owner",
       "destination": "/owner.html"
+    },
+    {
+      "source": "/contact",
+      "destination": "/contact.html"
+    },
+    {
+      "source": "/pricing",
+      "destination": "/pricing.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/refund",
+      "destination": "/refund.html"
+    },
+    {
+      "source": "/shipping",
+      "destination": "/shipping.html"
+    },
+    {
+      "source": "/about",
+      "destination": "/about.html"
     }
   ],
   "headers": [
