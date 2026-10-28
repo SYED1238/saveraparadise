@@ -263,13 +263,13 @@ function r2DevMiddlewarePlugin() {
           });
 
           r2Req.on('error', (err) => {
-            if (!res.headersSent && !res.writableEnded) {
-              try {
+            try {
+              if (!res.headersSent && !res.writableEnded) {
                 res.statusCode = 502;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ error: err.message }));
-              } catch {}
-            }
+              }
+            } catch {}
           });
 
           req.on('close', () => {

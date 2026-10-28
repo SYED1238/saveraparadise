@@ -81,7 +81,12 @@ function isOriginAllowed(origin) {
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   try {
     const url = new URL(origin);
-    if (url.hostname.endsWith('.vercel.app') || url.hostname.endsWith('foodbliz.in') || url.hostname.endsWith('saveraparadise.foodbliz.in')) return true;
+    if (
+      url.hostname.endsWith('.vercel.app') ||
+      url.hostname.endsWith('foodbliz.in') ||
+      url.hostname === 'saveraparadise.com' ||
+      url.hostname.endsWith('.saveraparadise.com')
+    ) return true;
   } catch {}
   return false;
 }

@@ -9,6 +9,8 @@ import { signPayload } from './_auth.js';
 const ALLOWED_ORIGINS = [
   'https://foodbliz.in',
   'https://www.foodbliz.in',
+  'https://saveraparadise.com',
+  'https://www.saveraparadise.com',
   'https://sascrispychicken.com',
   'https://www.sascrispychicken.com',
   'http://localhost:5173',
@@ -21,7 +23,12 @@ function isOriginAllowed(origin) {
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   try {
     const url = new URL(origin);
-    if (url.hostname.endsWith('.vercel.app') || url.hostname.endsWith('foodbliz.in')) return true;
+    if (
+      url.hostname.endsWith('.vercel.app') ||
+      url.hostname.endsWith('foodbliz.in') ||
+      url.hostname === 'saveraparadise.com' ||
+      url.hostname.endsWith('.saveraparadise.com')
+    ) return true;
   } catch {}
   return false;
 }
@@ -110,6 +117,10 @@ export default async function handler(req, res) {
     const cleanCode = String(promoCode).trim().toUpperCase();
     if (cleanCode === 'SAVERA20' && computedSubtotal >= 199) {
       discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 20) / 100));
+    } else if (cleanCode === 'SAVE10' && computedSubtotal >= 149) {
+      discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 10) / 100));
+    } else if (cleanCode === 'FIRSTORDER' || cleanCode === 'WELCOME50') {
+      discount = Math.min(computedSubtotal, 50);
     }
   }
 
@@ -122,6 +133,7 @@ export default async function handler(req, res) {
     deliveryFee,
     discount,
     total: authoritativeTotal,
+    numericTotal: calculatedTotal,
     itemCount: verifiedItems.length,
     timestamp: Date.now()
   });
@@ -132,7 +144,9 @@ export default async function handler(req, res) {
     deliveryFee,
     discount,
     total: authoritativeTotal,
-    items: verifiedItems,
-    checkoutToken
+    numericTotal: calculatedTotal,
+    signature: checkoutToken,
+    checkoutToken,
+    items: verifiedItems
   });
 }

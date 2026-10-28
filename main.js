@@ -1668,7 +1668,8 @@ function initStorefrontApp() {
         }
         const tagText = blob.querySelector('.tag-text');
         if (tagText) {
-          tagText.textContent = `${dish.name} • ₹${Math.round(dish.price)}`;
+          const cleanDisplayName = String(dish.name || '').replace(/\s*\([Ss]tarts[^)]*\)/gi, '').trim();
+          tagText.textContent = `${cleanDisplayName} • ₹${Math.round(dish.price)}`;
         }
       }
     });
@@ -3820,8 +3821,8 @@ function initStorefrontApp() {
       // 0. Kitchen Master Store Open / Closed Check
       const settings = dataService.getSettings();
       if (settings.storeOpen === false || (typeof dataService.isStoreOpen === 'function' && !dataService.isStoreOpen())) {
-        const closedMsg = settings.storeClosedReason || '🌙 The kitchen is currently closed for the night. We will reopen tomorrow at 11:00 AM!';
-        showToast(closedMsg, 'warning');
+        const closedInfo = getStoreClosedDisplayInfo(settings);
+        showToast(closedInfo.bannerText || 'Kitchen is currently closed for orders.', 'warning');
         return;
       }
 
@@ -3930,8 +3931,8 @@ function initStorefrontApp() {
         // 0. Kitchen Master Store Open / Closed Check
         const settings = dataService.getSettings();
         if (settings.storeOpen === false || (typeof dataService.isStoreOpen === 'function' && !dataService.isStoreOpen())) {
-          const closedMsg = settings.storeClosedReason || '🌙 The kitchen is currently closed for the night. We will reopen tomorrow at 11:00 AM!';
-          showToast(closedMsg, 'warning');
+          const closedInfo = getStoreClosedDisplayInfo(settings);
+          showToast(closedInfo.bannerText || 'Kitchen is currently closed for orders.', 'warning');
           resetSubmitState();
           return;
         }
@@ -4127,9 +4128,16 @@ function initStorefrontApp() {
           });
           if (checkoutRes.ok) {
             const checkoutData = await checkoutRes.json();
-            if (checkoutData && typeof checkoutData.total === 'number') {
-              newOrder.checkoutSignature = checkoutData.signature;
-              newOrder.total = `₹${Math.round(checkoutData.total)}`;
+            if (checkoutData && (typeof checkoutData.numericTotal === 'number' || typeof checkoutData.total === 'number' || typeof checkoutData.total === 'string')) {
+              const rawNum = typeof checkoutData.numericTotal === 'number'
+                ? checkoutData.numericTotal
+                : (typeof checkoutData.total === 'number'
+                    ? checkoutData.total
+                    : parseFloat(String(checkoutData.total).replace(/[^0-9.]/g, '')));
+              if (!Number.isNaN(rawNum)) {
+                newOrder.total = `₹${Math.round(rawNum)}`;
+              }
+              newOrder.checkoutSignature = checkoutData.signature || checkoutData.checkoutToken || '';
             }
           }
         } catch (checkoutApiErr) {
@@ -4181,7 +4189,7 @@ function initStorefrontApp() {
         showToast('🎉 Order placed successfully! Paying via Cash on Delivery.', 'success');
         sendSystemNotification({
           title: `🎉 Order ${newOrderId} Confirmed!`,
-          body: `Total: ${totalAmount} • Kitchen has received your order and is reviewing it.`,
+          body: `Total: ${newOrder.total || totalAmount} • Kitchen has received your order and is reviewing it.`,
           tag: `order-${newOrderId}`,
           data: { orderId: newOrderId, url: '/' },
           onlyIfHidden: true
@@ -6795,6 +6803,72 @@ function initStorefrontApp() {
     }
   }
 
+  function getStoreClosedDisplayInfo(settings) {
+    const openTimeStr = (settings.openTime || '11:00 AM').trim();
+    const closeTimeStr = (settings.closeTime || '11:00 PM').trim();
+
+    function parseTimeToMinutes(str) {
+      if (!str) return 660; // 11:00 AM default
+      const m = String(str).match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
+      if (!m) return 660;
+      let h = parseInt(m[1], 10);
+      const min = parseInt(m[2] || '0', 10);
+      const mod = (m[3] || '').toUpperCase();
+      if (mod === 'PM' && h < 12) h += 12;
+      if (mod === 'AM' && h === 12) h = 0;
+      return h * 60 + min;
+    }
+
+    const openMinutes = parseTimeToMinutes(openTimeStr);
+    const closeMinutes = parseTimeToMinutes(closeTimeStr);
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    let headline = 'Kitchen Closed';
+    let emoji = '🌙';
+    let bannerText = '';
+    let pillText = '';
+
+    // 1. Morning before opening hours (from 4:00 AM up to scheduled openTime)
+    if (currentMinutes >= 240 && currentMinutes < openMinutes) {
+      headline = 'Kitchen Opening Soon';
+      emoji = '☀️';
+      bannerText = `The kitchen is preparing fresh food for the day! We will reopen today at ${openTimeStr}. You can still browse our menu!`;
+      pillText = `<strong>☀️ Opening Soon:</strong> Reopens Today at ${openTimeStr} • Browsing Only`;
+    }
+    // 2. Past scheduled opening time, but kitchen is still toggled closed in admin
+    else if (currentMinutes >= openMinutes && (currentMinutes < closeMinutes || closeMinutes < openMinutes)) {
+      if (currentMinutes - openMinutes <= 120) {
+        headline = 'Kitchen Opening Shortly';
+        emoji = '🍳';
+        bannerText = `Our kitchen opens at ${openTimeStr} and is finishing food prep. We will start accepting orders shortly!`;
+        pillText = `<strong>🍳 Opening Shortly:</strong> Preparation in Progress • Browsing Only`;
+      } else {
+        headline = 'Kitchen Currently Closed';
+        emoji = '🕒';
+        bannerText = (settings.storeClosedReason && !settings.storeClosedReason.includes('for the night') && !settings.storeClosedReason.includes('tomorrow'))
+          ? settings.storeClosedReason
+          : `Orders are temporarily paused. Our kitchen will resume taking orders shortly!`;
+        pillText = `<strong>🕒 Currently Closed:</strong> Resuming Shortly • Browsing Only`;
+      }
+    }
+    // 3. Late Night / After closeTime (nighttime closure)
+    else {
+      headline = 'Kitchen Closed for the Night';
+      emoji = '🌙';
+      bannerText = `The kitchen is currently closed for the night. We will reopen tomorrow at ${openTimeStr}! You can still browse our menu.`;
+      pillText = `<strong>🌙 Closed for the Night:</strong> Reopens Tomorrow at ${openTimeStr} • Browsing Only`;
+    }
+
+    // If owner explicitly set a custom reason that doesn't say "closed for the night"
+    if (settings.storeClosedReason && !settings.storeClosedReason.includes('closed for the night') && !settings.storeClosedReason.includes('reopen tomorrow')) {
+      bannerText = settings.storeClosedReason;
+    }
+
+    return { headline, emoji, bannerText, pillText, openTimeStr };
+  }
+
   function updateStoreStatusUI() {
     const settings = dataService.getSettings();
     const isClosed = settings.storeOpen === false || (typeof dataService.isStoreOpen === 'function' && !dataService.isStoreOpen());
@@ -6802,16 +6876,17 @@ function initStorefrontApp() {
 
     if (isClosed) {
       ensureStoreStatusTicker(false);
+      const closedInfo = getStoreClosedDisplayInfo(settings);
       if (storeRushBanner) {
         storeRushBanner.style.display = 'block';
         const headline = storeRushBanner.querySelector('.rush-banner-headline');
         const flame = storeRushBanner.querySelector('.rush-banner-flame');
         const countdown = storeRushBanner.querySelector('.rush-banner-countdown');
-        if (headline) headline.textContent = 'Kitchen Closed for the Night';
-        if (flame) flame.textContent = '🌙';
+        if (headline) headline.textContent = closedInfo.headline;
+        if (flame) flame.textContent = closedInfo.emoji;
         if (countdown) countdown.style.display = 'none';
         if (rushBannerReason) {
-          rushBannerReason.textContent = settings.storeClosedReason || `We are currently closed for orders. Our kitchen reopens tomorrow at ${settings.openTime || '11:00 AM'}. You can still browse our menu!`;
+          rushBannerReason.textContent = closedInfo.bannerText;
         }
       }
       if (homeStatusDot) {
@@ -6819,12 +6894,12 @@ function initStorefrontApp() {
         homeStatusDot.classList.add('closed');
       }
       if (homeStatusText) {
-        homeStatusText.innerHTML = `<strong>🌙 Closed Now:</strong> Reopens at ${settings.openTime || '11:00 AM'} • Browsing Only`;
+        homeStatusText.innerHTML = closedInfo.pillText;
       }
       if (btnCheckoutLabel) {
-        btnCheckoutLabel.textContent = '🌙 Kitchen Closed';
+        btnCheckoutLabel.textContent = `${closedInfo.emoji} Kitchen Closed`;
       } else if (btnCheckout) {
-        btnCheckout.textContent = '🌙 Kitchen Closed';
+        btnCheckout.textContent = `${closedInfo.emoji} Kitchen Closed`;
       }
       if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'none';
     } else if (isPaused) {

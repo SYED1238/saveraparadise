@@ -444,6 +444,7 @@ function renderKPICards(orders) {
   let deliveredCount = 0;
   let activeLiveCount = 0;
   let cancelledCount = 0;
+  let undeliveredCount = 0;
   let totalFleetKms = 0;
 
   orders.forEach(o => {
@@ -471,6 +472,8 @@ function renderKPICards(orders) {
       activeLiveCount++;
     } else if (status === 'cancelled') {
       cancelledCount++;
+    } else if (status === 'undelivered') {
+      undeliveredCount++;
     }
   });
 
@@ -519,12 +522,13 @@ function renderKPICards(orders) {
   const kpiCancelledCount = document.getElementById('kpi-cancelled-count');
   const kpiSuccessRate = document.getElementById('kpi-success-rate');
 
-  const totalAttempted = deliveredCount + cancelledCount;
+  const totalAttempted = deliveredCount + cancelledCount + undeliveredCount;
   const successRate = totalAttempted > 0 ? Math.round((deliveredCount / totalAttempted) * 100) : 100;
 
   if (kpiTotalOrders) kpiTotalOrders.textContent = orders.length;
   if (kpiActiveLiveTag) kpiActiveLiveTag.textContent = `${activeLiveCount} Live Right Now`;
-  if (kpiCancelledCount) kpiCancelledCount.textContent = `${cancelledCount} cancelled`;
+  const failureText = undeliveredCount > 0 ? `${cancelledCount} cancelled • ${undeliveredCount} undelivered` : `${cancelledCount} cancelled`;
+  if (kpiCancelledCount) kpiCancelledCount.textContent = failureText;
   if (kpiSuccessRate) kpiSuccessRate.textContent = `${successRate}% completion`;
 
   // Ratio Bar
@@ -864,7 +868,7 @@ function renderOrdersTable(orders) {
     const s = String(o.status || '').toLowerCase();
     if (s === 'delivered') countDelivered++;
     else if (['pending', 'accepted', 'cooking', 'ready', 'on_the_way'].includes(s)) countActive++;
-    else if (s === 'cancelled') countCancelled++;
+    else if (s === 'cancelled' || s === 'undelivered') countCancelled++;
   });
 
   const countAllEl = document.getElementById('count-all');
@@ -889,7 +893,7 @@ function renderOrdersTable(orders) {
     } else if (orderStatusFilter === 'delivered') {
       if (status !== 'delivered') return false;
     } else if (orderStatusFilter === 'cancelled') {
-      if (status !== 'cancelled') return false;
+      if (status !== 'cancelled' && status !== 'undelivered') return false;
     } else if (orderStatusFilter === 'cash') {
       if (isOnline) return false;
     } else if (orderStatusFilter === 'online') {
@@ -950,7 +954,9 @@ function renderOrdersTable(orders) {
     const riderName = o.assignedRiderName ? escapeHtml(o.assignedRiderName) : '<span style="color:#64748b;">Unassigned</span>';
 
     const status = String(o.status || 'pending').toLowerCase();
-    let statusBadge = `<span class="status-badge ${status}">${status.replace(/_/g, ' ')}</span>`;
+    let statusBadge = status === 'undelivered'
+      ? `<span class="status-badge undelivered"><i class="fa-solid fa-triangle-exclamation"></i> Undelivered</span>`
+      : `<span class="status-badge ${status}">${status.replace(/_/g, ' ')}</span>`;
 
     let payBadge = isOnline
       ? `<span class="pay-badge online"><i class="fa-solid fa-credit-card"></i> Online Paid</span>`

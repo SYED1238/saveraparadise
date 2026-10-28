@@ -26,8 +26,13 @@ function getSigningKey(secretKey, dateStamp, region, service) {
 }
 
 export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Allow', 'GET, HEAD, OPTIONS');
+    return res.status(200).end();
+  }
+
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.setHeader('Allow', 'GET, HEAD');
+    res.setHeader('Allow', 'GET, HEAD, OPTIONS');
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 

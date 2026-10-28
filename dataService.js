@@ -119,7 +119,7 @@ export const RESTAURANT_COORDINATES = Object.freeze({
 
 export const DEFAULT_SETTINGS = {
   storeOpen: true,
-  storeClosedReason: 'The kitchen is currently closed for the night. We will reopen tomorrow at 11:00 AM!',
+  storeClosedReason: 'The kitchen is currently closed for orders.',
   openTime: '11:00 AM',
   closeTime: '11:00 PM',
   statusNotice: 'Open Now: 11:00 AM – 11:00 PM • Delivery & Pickup',
@@ -4321,7 +4321,7 @@ class QuickBiteDataService {
       if (isNetworkError) {
         console.info('[DataService] Network offline during addOrder exception. Order preserved locally:', orderData.id);
         orderData.pendingRemoteSync = true;
-        return orderData;
+        return { success: true, pendingRemoteSync: true, ...orderData };
       }
 
       // Roll back optimistic local mutation on database insertion exception
@@ -5717,7 +5717,10 @@ class QuickBiteDataService {
 
     const codOrders = riderDelivered.filter(o => {
       const pay = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-      return pay.includes('cash') || pay.includes('cod') || !o.isPaidOnline;
+      if (pay.includes('online') || pay.includes('upi') || pay.includes('card') || pay.includes('prepaid') || o.isPaidOnline === true) {
+        return false;
+      }
+      return pay.includes('cash') || pay.includes('cod') || !pay;
     });
 
     const cashInHand = codOrders.reduce((sum, o) => {

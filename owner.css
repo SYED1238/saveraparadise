@@ -834,9 +834,12 @@ body.owner-body {
 
 .status-badge.delivered { background: rgba(16, 185, 129, 0.15); color: #34D399; }
 .status-badge.on_the_way { background: rgba(139, 92, 246, 0.18); color: #C4B5FD; }
+.status-badge.ready, .status-badge.ready_for_pickup { background: rgba(6, 182, 212, 0.18); color: #67E8F9; }
+.status-badge.accepted { background: rgba(99, 102, 241, 0.18); color: #A5B4FC; }
 .status-badge.cooking { background: rgba(245, 158, 11, 0.15); color: #FCD34D; }
 .status-badge.pending { background: rgba(59, 130, 246, 0.15); color: #93C5FD; }
 .status-badge.cancelled { background: rgba(239, 68, 68, 0.15); color: #FCA5A5; }
+.status-badge.undelivered { background: rgba(225, 29, 72, 0.2); color: #FDA4AF; border: 1px solid rgba(225, 29, 72, 0.4); }
 
 .btn-view-receipt {
   background: rgba(255, 255, 255, 0.08);

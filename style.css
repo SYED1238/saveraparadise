@@ -2060,6 +2060,13 @@ body.pwa-customer-installed .header-pwa-dock {
   transition: transform 0.25s var(--ease-spring), box-shadow 0.25s ease;
 }
 
+.blob-label-tag .tag-text {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .blob-label-tag:hover {
   transform: scale(1.06) translateY(-2px);
   box-shadow: 0 8px 24px rgba(255, 90, 38, 0.2), 0 2px 6px rgba(0, 0, 0, 0.06);
@@ -6425,27 +6432,41 @@ body.food-modal-open .mobile-floating-bar {
     padding: 5px 10px 5px 8px;
     font-size: 0.74rem;
     gap: 5px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
     background: #FFFFFF;
     border: 1px solid rgba(0, 0, 0, 0.08);
+    white-space: nowrap;
+    border-radius: var(--radius-full);
+  }
+
+  .blob-label-tag .tag-text {
+    max-width: 195px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 750;
+    letter-spacing: -0.2px;
   }
 
   .tag-top {
-    top: -12px;
+    top: -14px;
     bottom: auto;
     left: 50%;
     transform: translateX(-50%);
   }
 
   .tag-bottom-left {
-    bottom: -8px;
-    left: 0;
+    bottom: -16px;
+    top: auto;
+    left: -4px;
+    right: auto;
     transform: none;
   }
 
   .tag-bottom-right {
-    bottom: 14px;
-    right: 0;
+    top: 2px;
+    bottom: auto;
+    right: -8px;
     left: auto;
     transform: none;
   }

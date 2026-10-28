@@ -422,8 +422,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Determine if order is COD or Prepaid
   function isCashOnDelivery(order) {
-    const method = (order.paymentMethod || order.paymentStatus || '').toLowerCase();
-    if (method.includes('online') || method.includes('card') || method.includes('upi')) {
+    if (!order) return true;
+    const method = (order.paymentMethod || order.payment_method || order.paymentStatus || '').toLowerCase();
+    if (method.includes('online') || method.includes('card') || method.includes('upi') || method.includes('prepaid') || Boolean(order.isPaidOnline)) {
       return false;
     }
     return true; // Default to COD in QuickBite

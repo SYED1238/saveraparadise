@@ -3603,7 +3603,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const isStoreCurrentlyOpen = settings.storeOpen !== false;
     if (inputStoreOpen) inputStoreOpen.checked = isStoreCurrentlyOpen;
     if (inputStoreClosedReason) {
-      inputStoreClosedReason.value = settings.storeClosedReason || '🌙 The kitchen is currently closed for the night. We will reopen tomorrow at 11:00 AM!';
+      inputStoreClosedReason.value = settings.storeClosedReason || '';
     }
     updateStoreOpenToggleUI(isStoreCurrentlyOpen);
 
@@ -3787,7 +3787,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const noticeT = inputStatusNotice?.value?.trim() || `Open Now: ${openT} – ${closeT} • Delivery & Pickup`;
       const radiusKm = Number(deliveryRadiusSlider?.value || current.deliveryRadiusKm || 7);
       const storeIsOpen = inputStoreOpen ? inputStoreOpen.checked : (current.storeOpen !== false);
-      const storeReason = inputStoreClosedReason?.value?.trim() || '🌙 The kitchen is currently closed for the night. We will reopen tomorrow at 11:00 AM!';
+      const storeReason = inputStoreClosedReason?.value?.trim() || '';
 
       const updated = {
         ...current,
