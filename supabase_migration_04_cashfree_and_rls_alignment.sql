@@ -1,15 +1,15 @@
 -- ==============================================================================
--- SAVERA PARADISE - MIGRATION 04: CASHFREE SCHEMA & RLS ALIGNMENT
+-- SAVERA PARADISE - MIGRATION 04: CASHFREE SCHEMA & RLS ALIGNMENT (COMPLETE)
 -- ==============================================================================
 -- Resolves:
 -- 1. Webhook update failures by adding is_paid_online & Cashfree tracking columns
 -- 2. Category custom image persistence by adding categories.image column
--- 3. Rider fleet stats by ensuring earnings, trips, and payout columns exist
+-- 3. Creates public.riders table if not yet created with earnings & payout columns
 -- 4. Guest checkout .select('tracking_token') RLS failure
 -- 5. App-layer PIN-based Admin, Owner, and Rider mutation permissions
 -- ==============================================================================
 
-SET lock_timeout = '3s';
+SET lock_timeout = '5s';
 
 -- ------------------------------------------------------------------------------
 -- 1. EXTEND ORDERS TABLE WITH CASHFREE & DOORSTEP UPI COLUMNS
@@ -40,25 +40,51 @@ ALTER TABLE IF EXISTS public.categories
 COMMENT ON COLUMN public.categories.image IS 'Cloudflare R2 proxy URL or uploaded dish category icon';
 
 -- ------------------------------------------------------------------------------
--- 3. EXTEND RIDERS TABLE WITH PAYOUT & TRIP TRACKING ATTRIBUTES
+-- 3. CREATE & EXTEND RIDERS TABLE WITH PAYOUT & TRIP TRACKING
 -- ------------------------------------------------------------------------------
-ALTER TABLE IF EXISTS public.riders
+CREATE TABLE IF NOT EXISTS public.riders (
+  pin TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  vehicle TEXT DEFAULT '🏍️ Bike',
+  status TEXT DEFAULT 'online',
+  avatar TEXT DEFAULT '🏍️',
+  avatar_img TEXT,
+  earnings NUMERIC DEFAULT 0,
+  trips INTEGER DEFAULT 0,
+  upi_vpa VARCHAR(64) DEFAULT NULL,
+  bank_account_no VARCHAR(32) DEFAULT NULL,
+  bank_ifsc VARCHAR(16) DEFAULT NULL,
+  payout_method_pref VARCHAR(16) DEFAULT 'cash',
+  cash_settled_at BIGINT,
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Ensure all payout columns exist in case table was created earlier without them
+ALTER TABLE public.riders
   ADD COLUMN IF NOT EXISTS upi_vpa VARCHAR(64) DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(32) DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(16) DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS payout_method_pref VARCHAR(16) DEFAULT 'cash',
   ADD COLUMN IF NOT EXISTS earnings NUMERIC DEFAULT 0,
   ADD COLUMN IF NOT EXISTS trips INTEGER DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS cash_settled_at TIMESTAMPTZ DEFAULT NULL;
+  ADD COLUMN IF NOT EXISTS cash_settled_at BIGINT;
+
+ALTER TABLE public.riders ENABLE ROW LEVEL SECURITY;
+
+-- Seed default starter fleet roster if table is empty
+INSERT INTO public.riders (pin, id, name, phone, vehicle, status, avatar, avatar_img)
+VALUES
+  ('2233', 'rider-2233', 'Zabi', '9876543210', '🏍️ Bike', 'online', '🏍️', '/avatars/rider-1.svg'),
+  ('4422', 'rider-4422', 'Imran', '9876543211', '🛵 Scooter', 'online', '🛵', '/avatars/rider-2.svg'),
+  ('4455', 'rider-4455', 'Salman', '9876543212', '🏍️ Bike', 'online', '🏍️', '/avatars/rider-3.svg'),
+  ('8811', 'rider-8811', 'Tanveer', '9876543213', '🛵 Scooter', 'online', '🛵', '/avatars/rider-4.svg')
+ON CONFLICT (pin) DO NOTHING;
 
 -- ------------------------------------------------------------------------------
 -- 4. RLS POLICY ALIGNMENT FOR PIN-AUTHENTICATED PORTALS & GUEST CHECKOUT
 -- ------------------------------------------------------------------------------
--- Because Kitchen Admin, Restaurant Owner, and Delivery Fleet authenticate via
--- app-layer passcodes and connect to Supabase via VITE_SUPABASE_ANON_KEY,
--- policies permit app-layer operations while PostgreSQL immutability triggers
--- (prevent_status_regression, enforce_order_immutability) guarantee order integrity.
-
 -- 4.1 Orders: Preserve order placement while enabling guest tracking & updates
 DROP POLICY IF EXISTS "public_create_orders" ON public.orders;
 CREATE POLICY "public_create_orders" ON public.orders
@@ -78,23 +104,28 @@ CREATE POLICY "app_update_orders" ON public.orders
   FOR UPDATE USING (true) WITH CHECK (true);
 
 -- 4.2 Dishes & Categories: Allow admin dish updates & category photo saves
-DROP POLICY IF EXISTS "admin_manage_dishes" ON public.dishes;
-DROP POLICY IF EXISTS "app_manage_dishes" ON public.dishes;
-CREATE POLICY "app_manage_dishes" ON public.dishes 
-  FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'dishes') THEN
+    EXECUTE 'DROP POLICY IF EXISTS "admin_manage_dishes" ON public.dishes';
+    EXECUTE 'DROP POLICY IF EXISTS "app_manage_dishes" ON public.dishes';
+    EXECUTE 'CREATE POLICY "app_manage_dishes" ON public.dishes FOR ALL USING (true) WITH CHECK (true)';
+  END IF;
 
-DROP POLICY IF EXISTS "admin_manage_categories" ON public.categories;
-DROP POLICY IF EXISTS "app_manage_categories" ON public.categories;
-CREATE POLICY "app_manage_categories" ON public.categories 
-  FOR ALL USING (true) WITH CHECK (true);
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'categories') THEN
+    EXECUTE 'DROP POLICY IF EXISTS "admin_manage_categories" ON public.categories';
+    EXECUTE 'DROP POLICY IF EXISTS "app_manage_categories" ON public.categories';
+    EXECUTE 'CREATE POLICY "app_manage_categories" ON public.categories FOR ALL USING (true) WITH CHECK (true)';
+  END IF;
 
--- 4.3 Store Settings: Allow manager to toggle store open/close & MOV
-DROP POLICY IF EXISTS "admin_manage_store_settings" ON public.store_settings;
-DROP POLICY IF EXISTS "app_manage_store_settings" ON public.store_settings;
-CREATE POLICY "app_manage_store_settings" ON public.store_settings 
-  FOR ALL USING (true) WITH CHECK (true);
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'store_settings') THEN
+    EXECUTE 'DROP POLICY IF EXISTS "admin_manage_store_settings" ON public.store_settings';
+    EXECUTE 'DROP POLICY IF EXISTS "app_manage_store_settings" ON public.store_settings';
+    EXECUTE 'CREATE POLICY "app_manage_store_settings" ON public.store_settings FOR ALL USING (true) WITH CHECK (true)';
+  END IF;
+END $$;
 
--- 4.4 Riders: Allow fleet roster management
+-- 4.3 Riders: Allow fleet roster management
 DROP POLICY IF EXISTS "public_read_riders" ON public.riders;
 DROP POLICY IF EXISTS "riders_staff_only" ON public.riders;
 DROP POLICY IF EXISTS "app_manage_riders" ON public.riders;
