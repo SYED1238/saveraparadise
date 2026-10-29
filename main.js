@@ -3384,13 +3384,19 @@ function initStorefrontApp() {
       }
     }
 
-    // Animate the connecting progress bar fill
+    // Animate the connecting progress wave fill & fallback bar
+    const waveFillEl = document.getElementById('tracker-wave-fill');
+    const totalIntervals = stepElements.length - 1; // 4 segments (0%, 25%, 50%, 75%, 100%)
+    const progressPercent = (!isCancelled && stepIndex >= 0)
+      ? Math.min(100, (stepIndex / totalIntervals) * 100)
+      : 0;
+
+    if (waveFillEl) {
+      waveFillEl.style.strokeDashoffset = `${100 - progressPercent}`;
+    }
+
     const progressFillEl = document.getElementById('tracker-progress-fill');
     if (progressFillEl) {
-      const totalIntervals = stepElements.length - 1; // 4 segments (0%, 25%, 50%, 75%, 100%)
-      const progressPercent = (!isCancelled && stepIndex >= 0)
-        ? Math.min(100, (stepIndex / totalIntervals) * 100)
-        : 0;
       progressFillEl.style.width = `${progressPercent}%`;
     }
 

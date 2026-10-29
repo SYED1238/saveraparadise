@@ -4836,11 +4836,23 @@
             <span class="live-status-badge-text" id="live-status-badge-text">Order Accepted &amp; Sent to Kitchen</span>
           </div>
 
-          <!-- Connecting Progress Track & Glowing Animated Fill -->
+          <!-- Connecting Wave Track & Glowing Animated Progress Wave -->
           <div class="tracker-steps-row">
-            <div class="tracker-progress-track" aria-hidden="true">
-              <div class="tracker-progress-fill" id="tracker-progress-fill" style="width: 0%;"></div>
-            </div>
+            <!-- Dynamic Wave SVG Connector -->
+            <svg class="tracker-wave-svg" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="trackerWaveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#10B981" />
+                  <stop offset="45%" stop-color="#F59E0B" />
+                  <stop offset="100%" stop-color="#EA580C" />
+                </linearGradient>
+              </defs>
+              <!-- Background Inactive Groove Wave -->
+              <path class="tracker-wave-bg" d="M 10 20 C 15 8, 25 8, 30 20 C 35 32, 45 32, 50 20 C 55 8, 65 8, 70 20 C 75 32, 85 32, 90 20" />
+              <!-- Active Animated Glowing Progress Wave -->
+              <path class="tracker-wave-fill" id="tracker-wave-fill" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" d="M 10 20 C 15 8, 25 8, 30 20 C 35 32, 45 32, 50 20 C 55 8, 65 8, 70 20 C 75 32, 85 32, 90 20" />
+            </svg>
+            <div class="tracker-progress-fill" id="tracker-progress-fill" style="display: none;" aria-hidden="true"></div>
 
             <div class="track-step active current" id="track-step-0">
               <div class="track-circle">✓</div>

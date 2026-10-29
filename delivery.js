@@ -1143,10 +1143,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <!-- 5. Mark Delivered Button -->
                 <button type="button" class="btn-action-pill btn-action-deliver" data-action="open-delivered-modal" data-id="${safeId}" title="Mark Delivered & Collect Cash">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="#FFFFFF" aria-hidden="true" style="margin-right: 6px; flex-shrink: 0;">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="#FFFFFF" aria-hidden="true" style="margin-right: 6px; flex-shrink: 0; pointer-events: none;">
                     <path d="m18 7-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41 6 19l1.41-1.41L1.83 12 .41 13.41z"/>
                   </svg>
-                  <span>Delivered</span>
+                  <span style="pointer-events: none;">Delivered</span>
                 </button>
               </div>
             </div>
@@ -1309,10 +1309,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Rider picks up food & starts delivery
   function handleStartDelivery(orderId) {
+    if (!orderId) return;
+    const cleanId = String(orderId).trim().replace(/^#/, '');
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
     const allOrders = dataService.getOrders();
-    const order = allOrders.find(o => o.id === orderId);
-    const code = order ? (order.pickupCode || String(order.id).replace(/\D/g, '').slice(-4)) : String(orderId).replace(/\D/g, '').slice(-4);
+    const order = dataService.getOrderById(orderId) ||
+      allOrders.find(o => o && String(o.id || '').trim().replace(/^#/, '') === cleanId);
+    const code = order ? (order.pickupCode || String(order.id).replace(/\D/g, '').slice(-4)) : cleanId.slice(-4);
 
     const result = dataService.claimOrderByBagCode(code, currentRider.pin);
     if (result.success) {
@@ -1340,9 +1343,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Open confirmation modal for delivery & cash collection
   function openDeliveryConfirmModal(orderId) {
+    if (!orderId) return;
+    const cleanId = String(orderId).trim().replace(/^#/, '');
     const orders = dataService.getOrders();
-    const order = orders.find(o => o.id === orderId);
-    if (!order) return;
+    const order = dataService.getOrderById(orderId) ||
+      orders.find(o => o && String(o.id || '').trim().replace(/^#/, '') === cleanId);
+
+    if (!order) {
+      console.warn('[Delivery] Order not found for delivery confirmation:', orderId);
+      showToast('❌ Order details not found. Please refresh.', 'error');
+      return;
+    }
 
     activeConfirmOrder = order;
     confirmOrderId.value = order.id;
@@ -1507,7 +1518,47 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Delegated click listener on riderOrdersList for robust mobile touch & click handling
+  if (riderOrdersList) {
+    riderOrdersList.addEventListener('click', (e) => {
+      const deliverBtn = e.target.closest('[data-action="open-delivered-modal"]');
+      if (deliverBtn) {
+        e.preventDefault();
+        const id = deliverBtn.getAttribute('data-id');
+        openDeliveryConfirmModal(id);
+        return;
+      }
+      const unreachableBtn = e.target.closest('[data-action="open-unreachable-modal"]');
+      if (unreachableBtn) {
+        e.preventDefault();
+        const id = unreachableBtn.getAttribute('data-id');
+        openUnreachableModal(id);
+        return;
+      }
+      const startBtn = e.target.closest('[data-action="start-delivery"]');
+      if (startBtn) {
+        e.preventDefault();
+        const id = startBtn.getAttribute('data-id');
+        handleStartDelivery(id);
+        return;
+      }
+    });
+  }
+
   // Handle Delivery Form Submission
+  const btnSubmitDelivered = document.getElementById('btn-submit-delivered');
+  if (btnSubmitDelivered) {
+    btnSubmitDelivered.addEventListener('click', () => {
+      // Auto-check validation checkboxes on click to prevent mobile HTML5 validation block
+      if (checkCashReceived && !checkCashReceived.checked && currentDoorstepPaymentMode === 'cash') {
+        checkCashReceived.checked = true;
+      }
+      if (checkUpiVerified && !checkUpiVerified.checked && currentDoorstepPaymentMode === 'upi') {
+        checkUpiVerified.checked = true;
+      }
+    });
+  }
+
   if (formConfirmDelivered) {
     formConfirmDelivered.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1519,6 +1570,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const isDoorstepUpi = (isCod && currentDoorstepPaymentMode === 'upi');
       const cashCollected = isDoorstepUpi ? 0 : (isCod ? Number(cash) : 0);
       const finalPaymentMethod = isDoorstepUpi ? 'doorstep_upi' : (isCod ? 'cod' : 'online');
+
+      // Clear any active doorstep waiting countdown for this order
+      const cleanOrderId = String(orderId).trim().replace(/^#/, '');
+      localStorage.removeItem(`quickbite_cnr_start_${cleanOrderId}`);
 
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
       activeConfirmOrder.assignedRiderPin = activeConfirmOrder.assignedRiderPin || currentRider.pin;

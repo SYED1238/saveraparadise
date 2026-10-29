@@ -4184,11 +4184,17 @@ body.pwa-customer-installed .header-pwa-dock {
   background: rgba(255, 255, 255, 0.22);
 }
 
+.order-modal-card.has-video-bg .tracker-wave-bg {
+  stroke: rgba(255, 255, 255, 0.25) !important;
+}
+
 .order-modal-card.has-video-bg .track-circle {
-  background: rgba(255, 255, 255, 0.14);
-  border: 2.5px solid rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.65);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  background: #182234 !important; /* 100% OPAQUE SOLID - Strictly NO wave or line visible inside */
+  border: 2.5px solid rgba(255, 255, 255, 0.28) !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+  position: relative;
+  z-index: 5;
 }
 
 .order-modal-card.has-video-bg .track-step.active:not(.current) .track-circle {
@@ -4593,7 +4599,50 @@ body.pwa-customer-installed .header-pwa-dock {
   width: 100%;
 }
 
-/* Background Groove Line */
+/* Dynamic SVG Wave Track Container */
+.tracker-wave-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 40px;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+/* Background Inactive Wave Line */
+.tracker-wave-bg {
+  fill: none;
+  stroke: #E2E8F0;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.3s ease;
+}
+
+/* Active Glowing Progress Wave */
+.tracker-wave-fill {
+  fill: none;
+  stroke: url(#trackerWaveGradient);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(234, 88, 12, 0.65)) drop-shadow(0 0 2px rgba(255, 107, 53, 0.9));
+  transition: stroke-dashoffset 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: tracker-wave-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes tracker-wave-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgba(234, 88, 12, 0.6)) drop-shadow(0 0 2px rgba(255, 107, 53, 0.8));
+  }
+  50% {
+    filter: drop-shadow(0 0 9px rgba(234, 88, 12, 0.9)) drop-shadow(0 0 4px rgba(255, 107, 53, 1));
+  }
+}
+
+/* Fallback straight groove line & fill */
 .tracker-progress-track {
   position: absolute;
   top: 20px;
@@ -4605,9 +4654,9 @@ body.pwa-customer-installed .header-pwa-dock {
   z-index: 1;
   pointer-events: none;
   overflow: hidden;
+  display: none;
 }
 
-/* Active Glowing Progress Fill */
 .tracker-progress-fill {
   height: 100%;
   width: 0%;
@@ -4616,19 +4665,6 @@ body.pwa-customer-installed .header-pwa-dock {
   box-shadow: 0 0 10px rgba(234, 88, 12, 0.55), 0 0 3px rgba(255, 107, 53, 0.8);
   transition: width 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
   position: relative;
-}
-
-.tracker-progress-fill::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.65) 50%, transparent 100%);
-  animation: progress-beam 2.2s linear infinite;
-}
-
-@keyframes progress-beam {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
 }
 
 /* Step Items */
@@ -4643,12 +4679,12 @@ body.pwa-customer-installed .header-pwa-dock {
   text-align: center;
 }
 
-/* Step Circle Badges */
+/* Step Circle Badges - Solid opaque background hides connecting wave underneath */
 .track-circle {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #FFFFFF;
+  background: #FFFFFF !important; /* 100% OPAQUE SOLID - Strictly NO wave or line visible inside */
   color: #94A3B8;
   display: flex;
   align-items: center;
@@ -4657,6 +4693,8 @@ body.pwa-customer-installed .header-pwa-dock {
   border: 2.5px solid #E2E8F0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  z-index: 5;
 }
 
 /* Completed Steps (Emerald Glow) */
@@ -4731,6 +4769,9 @@ body.pwa-customer-installed .header-pwa-dock {
     font-size: 0.68rem;
     padding: 3px 10px 4px 8px;
     margin-bottom: 10px;
+  }
+  .tracker-wave-svg {
+    height: 34px;
   }
   .tracker-progress-track {
     top: 17px;
