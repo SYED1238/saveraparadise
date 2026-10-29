@@ -33,6 +33,28 @@ function isOriginAllowed(origin) {
   return false;
 }
 
+async function fetchAuthoritativeDishes() {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !apiKey) return null;
+  try {
+    const cleanUrl = String(supabaseUrl).replace(/\/+$/, '');
+    const res = await fetch(`${cleanUrl}/rest/v1/dishes?select=id,name,price,is_available`, {
+      headers: {
+        apikey: apiKey,
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(3000) : undefined
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
@@ -78,6 +100,17 @@ export default async function handler(req, res) {
       if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
     });
   }
+
+  // Authoritative server-side dish price verification via Supabase if configured
+  try {
+    const serverDishes = await fetchAuthoritativeDishes();
+    if (serverDishes && serverDishes.length > 0) {
+      serverDishes.forEach(d => {
+        if (d && d.id) catalogMap.set(String(d.id), d);
+        if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
+      });
+    }
+  } catch {}
 
   let computedSubtotal = 0;
   const verifiedItems = [];

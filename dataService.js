@@ -3149,9 +3149,15 @@ class QuickBiteDataService {
 
         // Server-side filter to only fetch customer's own orders (eliminates stranger data egress)
         const filterParts = [];
-        if (userId) filterParts.push(`user_id.eq.${userId}`);
-        if (email && typeof email === 'string' && email.includes('@')) filterParts.push(`customer_email.eq.${email}`);
-        if (phone) filterParts.push(`customer_phone.eq.${phone}`);
+        const safeUserId = userId ? String(userId).replace(/[^a-zA-Z0-9_\-]/g, '') : '';
+        const safeEmail = (email && typeof email === 'string' && email.includes('@'))
+          ? email.trim().replace(/[^\w@.+%-]/g, '')
+          : '';
+        const safePhone = phone ? String(phone).replace(/[^0-9+]/g, '') : '';
+
+        if (safeUserId) filterParts.push(`user_id.eq.${safeUserId}`);
+        if (safeEmail) filterParts.push(`customer_email.eq.${safeEmail}`);
+        if (safePhone) filterParts.push(`customer_phone.eq.${safePhone}`);
         if (sessionIds && sessionIds.length > 0) {
           const allVariantIds = new Set();
           sessionIds.forEach(id => {

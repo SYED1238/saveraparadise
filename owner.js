@@ -212,6 +212,25 @@ async function verifyOwnerPin(pin) {
       delete settings.ownerPin;
       dataService.saveSettings(settings);
     }
+
+    // Authenticate with server to receive signed cryptographic token for Cashfree payouts & privileged ops
+    try {
+      const authRes = await fetch('/api/admin-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: cleanPin })
+      });
+      if (authRes.ok) {
+        const authData = await authRes.json();
+        if (authData?.token) {
+          sessionStorage.setItem('quickbite_admin_token', authData.token);
+          sessionStorage.setItem('quickbite_owner_token', authData.token);
+        }
+      }
+    } catch (e) {
+      console.warn('[OwnerAuth] Server token exchange failed (offline fallback active):', e);
+    }
+
     setStaffSessionActive('owner');
     unlockOwnerPortal();
   } else {

@@ -173,13 +173,25 @@ export async function generateDoorstepUpiQr({
   }
 }
 
+function safeCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 /**
  * Cryptographically verifies Cashfree Webhook Signature
  */
 export function verifyCashfreeWebhookSignature(signature, rawBody, timestamp) {
   const cfg = getCashfreeConfig();
   if (!cfg.webhookSecret || !signature || !timestamp || !rawBody) {
-    // If webhook secret not configured yet, skip in dev/sandbox
+    // In production, strictly reject unauthenticated webhooks
+    if (process.env.NODE_ENV === 'production' || cfg.isProd) {
+      return false;
+    }
+    // In dev/test with mock config, permit if unconfigured
     return !cfg.isConfigured;
   }
 
@@ -189,7 +201,7 @@ export function verifyCashfreeWebhookSignature(signature, rawBody, timestamp) {
       .createHmac('sha256', cfg.webhookSecret)
       .update(payload)
       .digest('base64');
-    return signature === expected;
+    return safeCompare(signature, expected);
   } catch {
     return false;
   }

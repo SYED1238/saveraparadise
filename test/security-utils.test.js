@@ -575,9 +575,15 @@ test('verifyStaffPin: rejects invalid PIN formats', async (t) => {
 
 test('verifyStaffPin: admin role fails gracefully without fetch (Node.js)', async (t) => {
   await t.test('returns false for admin with valid 4-digit pin (no server)', async () => {
-    // In Node.js, fetch to /api/admin-auth will fail => returns false
-    const result = await verifyStaffPin('admin', '1234');
-    assert.strictEqual(result, false);
+    // In Node.js, fetch to /api/admin-auth without base URL fails gracefully
+    const origWarn = console.warn;
+    console.warn = () => {};
+    try {
+      const result = await verifyStaffPin('admin', '1234');
+      assert.strictEqual(result, false);
+    } finally {
+      console.warn = origWarn;
+    }
   });
 });
 

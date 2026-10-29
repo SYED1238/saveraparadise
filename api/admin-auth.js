@@ -6,7 +6,7 @@
  * Implements persistent serverless rate limiting using both in-memory caching
  * and signed cryptographic state cookies to withstand container cold starts.
  */
-import { verifyAdminPin, createAdminToken, signPayload, verifySignedPayload, signData, safeEqual } from './_auth.js';
+import { verifyAdminPin, createAdminToken, signPayload, verifySignedPayload, signData, safeEqual, getPinRole } from './_auth.js';
 
 // Fast in-memory rate limiting layer for active container lifetime
 const FAILED_ATTEMPTS = new Map();
@@ -165,8 +165,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Passcode is required' });
   }
 
-  const isValid = verifyAdminPin(pin);
-  if (!isValid) {
+  const role = getPinRole(pin);
+  if (!role) {
     const newCount = rateRecord.count + 1;
     const now = Date.now();
     const firstAttempt = rateRecord.count > 0 ? rateRecord.firstAttempt : now;
@@ -180,12 +180,12 @@ export default async function handler(req, res) {
 
   FAILED_ATTEMPTS.delete(clientIp);
   clearRateLimitCookie(res);
-  const token = createAdminToken();
+  const token = createAdminToken(undefined, role);
 
   return res.status(200).json({
     success: true,
     token,
-    role: 'admin',
+    role,
     expiresIn: 43200 // 12 hours in seconds
   });
 }

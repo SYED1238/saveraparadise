@@ -3367,14 +3367,47 @@ function initStorefrontApp() {
       }
     }
 
+    // Update live status text badge above the timeline
+    const STATUS_BADGE_MESSAGES = {
+      0: 'Order Accepted & Sent to Kitchen',
+      1: 'Chefs are Cooking Your Order Fresh',
+      2: 'Food Packed & Ready to Dispatch',
+      3: 'Rider Out for Delivery to Your Door',
+      4: 'Order Successfully Delivered!'
+    };
+    const liveBadgeTextEl = document.getElementById('live-status-badge-text');
+    if (liveBadgeTextEl) {
+      if (isCancelled) {
+        liveBadgeTextEl.textContent = 'Order Cancelled';
+      } else {
+        liveBadgeTextEl.textContent = STATUS_BADGE_MESSAGES[stepIndex] || 'Order in Progress';
+      }
+    }
+
+    // Animate the connecting progress bar fill
+    const progressFillEl = document.getElementById('tracker-progress-fill');
+    if (progressFillEl) {
+      const totalIntervals = stepElements.length - 1; // 4 segments (0%, 25%, 50%, 75%, 100%)
+      const progressPercent = (!isCancelled && stepIndex >= 0)
+        ? Math.min(100, (stepIndex / totalIntervals) * 100)
+        : 0;
+      progressFillEl.style.width = `${progressPercent}%`;
+    }
+
+    const DEFAULT_STEP_ICONS = ['✓', '🔥', '📦', '🛵', '🎉'];
     stepElements.forEach((el, idx) => {
       if (!el) return;
       el.classList.remove('active', 'current');
+      const circle = el.querySelector('.track-circle');
       if (!isCancelled) {
         if (idx < stepIndex) {
           el.classList.add('active');
+          if (circle) circle.textContent = '✓';
         } else if (idx === stepIndex) {
           el.classList.add('active', 'current');
+          if (circle) circle.textContent = DEFAULT_STEP_ICONS[idx];
+        } else {
+          if (circle) circle.textContent = DEFAULT_STEP_ICONS[idx];
         }
       }
     });

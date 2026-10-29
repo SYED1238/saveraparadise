@@ -21,13 +21,24 @@ function getSigningSecret() {
 }
 
 function getAdminPin() {
-  const envPin = process.env.ADMIN_PIN || process.env.OWNER_PIN;
+  const envPin = process.env.ADMIN_PIN;
   if (envPin && String(envPin).trim()) {
     return String(envPin).trim();
   }
   // In non-production test/development environments, permit default PIN
   if (process.env.NODE_ENV !== 'production') {
     return '8899';
+  }
+  return '';
+}
+
+function getOwnerPin() {
+  const envPin = process.env.OWNER_PIN;
+  if (envPin && String(envPin).trim()) {
+    return String(envPin).trim();
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    return '9900';
   }
   return '';
 }
@@ -71,13 +82,13 @@ export function verifySignedPayload(signedString) {
 }
 
 /**
- * Creates a signed admin session token.
+ * Creates a signed admin or owner session token.
  * Token format: <base64Payload>.<signatureHex>
  */
-export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS) {
+export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'admin') {
   const now = Date.now();
   const payload = {
-    role: 'admin',
+    role: (role === 'owner' ? 'owner' : 'admin'),
     iat: now,
     exp: now + customExpiresInMs,
     nonce: crypto.randomBytes(16).toString('hex')
@@ -89,6 +100,7 @@ export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS) {
 
 /**
  * Validates a request's admin session token from Authorization or x-admin-token header.
+ * Accepts privileged tokens from both Kitchen Admin and Restaurant Owner roles.
  * @param {object} req Incoming HTTP request
  * @returns {{ valid: boolean, error?: string, payload?: object }}
  */
@@ -124,7 +136,7 @@ export function verifyAdminToken(req) {
   try {
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
 
-    if (payload.role !== 'admin') {
+    if (payload.role !== 'admin' && payload.role !== 'owner') {
       return { valid: false, error: 'Insufficient permissions' };
     }
 
@@ -139,26 +151,45 @@ export function verifyAdminToken(req) {
 }
 
 /**
- * Verifies a submitted admin PIN against server-side configuration.
+ * Identifies the role ('owner', 'admin') for a submitted PIN.
+ * @param {string} inputPin 4-digit passcode
+ * @returns {'owner' | 'admin' | null}
  */
-export function verifyAdminPin(inputPin) {
-  if (!inputPin) return false;
+export function getPinRole(inputPin) {
+  if (!inputPin) return null;
   const cleanPin = String(inputPin).trim();
-  if (!/^\d{4}$/.test(cleanPin)) return false;
+  if (!/^\d{4}$/.test(cleanPin)) return null;
 
-  // Primary check: Direct match against configured ADMIN_PIN (defaults to 8899 if unconfigured)
-  const expectedPin = getAdminPin();
-  if (expectedPin && safeEqual(cleanPin, expectedPin)) {
-    return true;
+  // 1. Check Owner PIN
+  const expectedOwnerPin = getOwnerPin();
+  if (expectedOwnerPin && safeEqual(cleanPin, expectedOwnerPin)) {
+    return 'owner';
   }
-
-  // Secondary check: Compare with ADMIN_PIN_HASH if configured on server
-  if (process.env.ADMIN_PIN_HASH) {
+  if (process.env.OWNER_PIN_HASH) {
     const hash = crypto.createHash('sha256').update(`quickbite_salt_${cleanPin}`).digest('hex');
-    if (safeEqual(hash, process.env.ADMIN_PIN_HASH)) {
-      return true;
+    if (safeEqual(hash, process.env.OWNER_PIN_HASH)) {
+      return 'owner';
     }
   }
 
-  return false;
+  // 2. Check Admin / Kitchen PIN
+  const expectedAdminPin = getAdminPin();
+  if (expectedAdminPin && safeEqual(cleanPin, expectedAdminPin)) {
+    return 'admin';
+  }
+  if (process.env.ADMIN_PIN_HASH) {
+    const hash = crypto.createHash('sha256').update(`quickbite_salt_${cleanPin}`).digest('hex');
+    if (safeEqual(hash, process.env.ADMIN_PIN_HASH)) {
+      return 'admin';
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Verifies a submitted admin or owner PIN against server-side configuration.
+ */
+export function verifyAdminPin(inputPin) {
+  return getPinRole(inputPin) !== null;
 }

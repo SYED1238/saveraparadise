@@ -3,7 +3,7 @@ import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import https from 'https';
-import { verifyAdminToken, verifyAdminPin, createAdminToken } from './api/_auth.js';
+import { verifyAdminToken, verifyAdminPin, createAdminToken, getPinRole } from './api/_auth.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -85,11 +85,12 @@ function r2DevMiddlewarePlugin() {
             try {
               const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
               const pin = body.pin;
-              if (verifyAdminPin(pin)) {
-                const token = createAdminToken();
+              const role = getPinRole(pin);
+              if (role) {
+                const token = createAdminToken(undefined, role);
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
-                return res.end(JSON.stringify({ success: true, token, role: 'admin', expiresIn: 43200 }));
+                return res.end(JSON.stringify({ success: true, token, role, expiresIn: 43200 }));
               }
               res.statusCode = 401;
               res.setHeader('Content-Type', 'application/json');

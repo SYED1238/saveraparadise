@@ -4830,25 +4830,38 @@
 
         <!-- Live tracker progress (5 Steps: Accepted -> Preparing -> Ready to Dispatch -> Dispatched -> Delivered) -->
         <div class="order-tracker-timeline" id="order-tracker-timeline">
-          <div class="track-step active current" id="track-step-0">
-            <div class="track-circle">✓</div>
-            <div class="track-label">Accepted</div>
+          <!-- Live Status Mini-Header Badge -->
+          <div class="tracker-live-status-header" id="tracker-live-status-header">
+            <span class="live-status-dot"></span>
+            <span class="live-status-badge-text" id="live-status-badge-text">Order Accepted &amp; Sent to Kitchen</span>
           </div>
-          <div class="track-step" id="track-step-1">
-            <div class="track-circle">🔥</div>
-            <div class="track-label">Preparing</div>
-          </div>
-          <div class="track-step" id="track-step-2">
-            <div class="track-circle">📦</div>
-            <div class="track-label">Ready to Dispatch</div>
-          </div>
-          <div class="track-step" id="track-step-3">
-            <div class="track-circle">🛵</div>
-            <div class="track-label">Dispatched</div>
-          </div>
-          <div class="track-step" id="track-step-4">
-            <div class="track-circle">🎉</div>
-            <div class="track-label">Delivered</div>
+
+          <!-- Connecting Progress Track & Glowing Animated Fill -->
+          <div class="tracker-steps-row">
+            <div class="tracker-progress-track" aria-hidden="true">
+              <div class="tracker-progress-fill" id="tracker-progress-fill" style="width: 0%;"></div>
+            </div>
+
+            <div class="track-step active current" id="track-step-0">
+              <div class="track-circle">✓</div>
+              <div class="track-label">Accepted</div>
+            </div>
+            <div class="track-step" id="track-step-1">
+              <div class="track-circle">🔥</div>
+              <div class="track-label">Preparing</div>
+            </div>
+            <div class="track-step" id="track-step-2">
+              <div class="track-circle">📦</div>
+              <div class="track-label">Ready to Dispatch</div>
+            </div>
+            <div class="track-step" id="track-step-3">
+              <div class="track-circle">🛵</div>
+              <div class="track-label">Dispatched</div>
+            </div>
+            <div class="track-step" id="track-step-4">
+              <div class="track-circle">🎉</div>
+              <div class="track-label">Delivered</div>
+            </div>
           </div>
         </div>
 
