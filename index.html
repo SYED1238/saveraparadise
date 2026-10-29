@@ -344,13 +344,10 @@
             <span class="title-line">your doorstep!</span>
           </h1>
 
-          <!-- Live Delivery Distance & Fresh ETA Text (Clean Letters Only) -->
-          <div class="hero-distance-badge" id="hero-distance-badge" role="status" aria-live="polite">
+          <!-- Live Delivery Distance & Fresh ETA Text (Strictly visible only for logged-in users with a saved address) -->
+          <div class="hero-distance-badge" id="hero-distance-badge" role="status" aria-live="polite" style="display: none;">
             <div class="hero-distance-inner">
-              <span class="hero-distance-text" id="hero-distance-text">
-                <span class="hero-distance-line-1">We are just <strong class="dist-highlight">890 m</strong> away from you</span>
-                <span class="hero-distance-line-2">Get your favorite meal in <strong class="eta-highlight">10–15 mins</strong>! <span class="hero-distance-cta">Order now</span></span>
-              </span>
+              <span class="hero-distance-text" id="hero-distance-text"></span>
             </div>
           </div>
 

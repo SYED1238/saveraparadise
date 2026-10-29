@@ -1169,7 +1169,7 @@ body.pwa-customer-installed .header-pwa-dock {
 /* Hero Delivery Distance & ETA Badge (Small & Proper Fluffy Cumulus Cloud) */
 /* Hero Delivery Distance & ETA Text (Clean Letters Only - No Cloud) */
 .hero-distance-badge {
-  display: block;
+  display: none;
   margin-top: 10px;
   margin-bottom: 6px;
   background: transparent;
