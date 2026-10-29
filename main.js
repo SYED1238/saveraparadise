@@ -6595,6 +6595,7 @@ function initStorefrontApp() {
   // ==========================================
   // LIVE HERO DELIVERY DISTANCE & FRESH ETA BADGE
   // Calculates actual road route distance & bike ETA (matching Google Maps street routes)
+  // Strictly hidden before login and before adding an address
   // ==========================================
   async function updateHeroDeliveryDistanceBadge() {
     const heroDistanceBadge = document.getElementById('hero-distance-badge');
@@ -6602,34 +6603,39 @@ function initStorefrontApp() {
     const heroContent = document.querySelector('.hero-content');
     if (!heroDistanceBadge || !heroDistanceText) return;
 
-    const addresses = getCurrentAddresses();
-    if (!Array.isArray(addresses) || addresses.length === 0) {
-      const defaultDistDisplay = "890 m";
-      const defaultTimeStr = "10–15 mins";
-      heroDistanceText.innerHTML = `<span class="hero-distance-line-1">We are just <strong class="dist-highlight">${defaultDistDisplay}</strong> away from you</span><span class="hero-distance-line-2">Get your favorite meal in <strong class="eta-highlight">${defaultTimeStr}</strong>! <span class="hero-distance-cta">Order now</span></span>`;
-      heroDistanceBadge.style.display = 'inline-flex';
-      if (heroContent) heroContent.classList.add('has-distance-badge');
+    // 1. STRICT GUARD: Never show before customer login
+    if (!currentUser) {
+      heroDistanceBadge.style.display = 'none';
+      heroDistanceText.innerHTML = '';
+      if (heroContent) heroContent.classList.remove('has-distance-badge');
       return;
     }
 
-    // Determine currently active selected address
+    // 2. STRICT GUARD: Never show before adding delivery address
+    const addresses = getCurrentAddresses();
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      heroDistanceBadge.style.display = 'none';
+      heroDistanceText.innerHTML = '';
+      if (heroContent) heroContent.classList.remove('has-distance-badge');
+      return;
+    }
+
+    // 3. Determine currently active selected address
     const activeAddr = (selectedAddressId && addresses.find(a => a.id === selectedAddressId))
       || addresses.find(a => a.isDefault)
       || addresses[0];
 
-    if (!activeAddr) {
-      const defaultDistDisplay = "890 m";
-      const defaultTimeStr = "10–15 mins";
-      heroDistanceText.innerHTML = `<span class="hero-distance-line-1">We are just <strong class="dist-highlight">${defaultDistDisplay}</strong> away from you</span><span class="hero-distance-line-2">Get your favorite meal in <strong class="eta-highlight">${defaultTimeStr}</strong>! <span class="hero-distance-cta">Order now</span></span>`;
-      heroDistanceBadge.style.display = 'inline-flex';
-      if (heroContent) heroContent.classList.add('has-distance-badge');
+    const lat = Number(activeAddr?.lat);
+    const lng = Number(activeAddr?.lng);
+
+    if (!activeAddr || isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+      heroDistanceBadge.style.display = 'none';
+      heroDistanceText.innerHTML = '';
+      if (heroContent) heroContent.classList.remove('has-distance-badge');
       return;
     }
 
-    const lat = Number(activeAddr.lat);
-    const lng = Number(activeAddr.lng);
-
-    // 1. Instant synchronous road estimate (0ms delay for zero layout shift)
+    // 1. Instant synchronous road estimate for the logged-in user's actual address (0ms delay for zero layout shift)
     let syncRoadDist = (typeof dataService.calculateDistanceToRestaurant === 'function')
       ? dataService.calculateDistanceToRestaurant(lat, lng)
       : (Number(activeAddr.distanceKm) || 1.0);
@@ -6653,7 +6659,8 @@ function initStorefrontApp() {
       try {
         const roadRoute = await dataService.calculateRoadRoute(lat, lng);
         if (roadRoute && roadRoute.distanceMeters) {
-          // Verify user hasn't switched address while routing was fetching
+          // Verify user hasn't logged out or switched address while routing was fetching
+          if (!currentUser) return;
           const currentCheck = (selectedAddressId && addresses.find(a => a.id === selectedAddressId))
             || addresses.find(a => a.isDefault)
             || addresses[0];
