@@ -5613,6 +5613,39 @@ class QuickBiteDataService {
     }
   }
 
+  async verifyRiderPin(pin) {
+    if (!pin) return null;
+    const cleanPin = String(pin).trim();
+    if (!cleanPin) return null;
+
+    // 1. Try server-side RPC first (prevents downloading plaintext PINs of all fleet riders)
+    try {
+      if (supabase && typeof supabase.rpc === 'function') {
+        const { data, error } = await supabase.rpc('verify_rider_pin', { p_pin: cleanPin });
+        if (!error && data && data.success && data.rider) {
+          const verifiedRider = {
+            ...data.rider,
+            pin: cleanPin
+          };
+          this.saveOrUpdateRider(verifiedRider);
+          return verifiedRider;
+        }
+      }
+    } catch (rpcErr) {
+      console.warn('[DataService] verify_rider_pin RPC error, falling back to local roster:', rpcErr);
+    }
+
+    // 2. Local fallback if offline or RPC unconfigured
+    let rider = this.getRiderByPin(cleanPin);
+    if (!rider && Array.isArray(DEFAULT_RIDERS)) {
+      rider = DEFAULT_RIDERS.find(r => String(r.pin).trim() === cleanPin);
+      if (rider) {
+        this.saveOrUpdateRider(rider);
+      }
+    }
+    return rider || null;
+  }
+
   getRiderByPin(pin) {
     if (!pin) return null;
     const cleanPin = String(pin).trim();

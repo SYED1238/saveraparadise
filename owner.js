@@ -237,9 +237,15 @@ async function verifyOwnerPin(pin) {
     }
   }
 
-  // 2. Offline fallback if server was unreachable
+  // 2. Offline fallback ONLY if custom ownerPinHash was explicitly configured by the restaurant owner
   if (!serverHandled) {
-    isValid = inputHash === targetHash || (legacyPin && cleanPin === legacyPin);
+    if (settings.ownerPinHash) {
+      isValid = inputHash === settings.ownerPinHash;
+    } else if (legacyPin && cleanPin === legacyPin) {
+      isValid = true;
+    } else {
+      isValid = false;
+    }
   }
 
   if (isValid) {
@@ -2328,11 +2334,9 @@ function renderKmPayoutsView(orders) {
         } else {
           throw new Error(res.message || 'Payout transfer failed');
         }
-      } catch {
-        // Fallback simulation for Sandbox testing
-        dataService.markRiderPayoutPaid(pin, amount);
-        showToast(`⚡ [Sandbox] Payout of ₹${amount.toLocaleString('en-IN')} simulated successfully via Cashfree!`, 'success');
-        renderDashboard();
+      } catch (err) {
+        console.error('[OwnerPayout] Instant transfer error:', err);
+        showToast(`❌ Cashfree payout failed: ${err.message || 'Transfer could not be completed'}`, 'error');
       }
     };
   });

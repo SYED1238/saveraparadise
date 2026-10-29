@@ -183,3 +183,51 @@ test('PRODUCTION SECURITY HARDENING: Financial Calculations & Price Tampering De
     assert.strictEqual(badQtyReq.res.statusCode, 400);
   });
 });
+
+test('PRODUCTION SECURITY HARDENING: CORS Origin Boundaries & Attack Resistance', async (t) => {
+  await t.test('POST /api/checkout rejects unapproved third-party origins from CORS headers', async () => {
+    // Malicious vercel or spoofed domain
+    const badOrigins = [
+      'https://attackerfoodbliz.in',
+      'https://evil-phishing.vercel.app',
+      'https://not-savera.com'
+    ];
+
+    for (const origin of badOrigins) {
+      const { req, res } = createMockReqRes({
+        method: 'OPTIONS',
+        headers: { origin }
+      });
+      await checkoutHandler(req, res);
+      assert.strictEqual(
+        res.headers['Access-Control-Allow-Origin'],
+        undefined,
+        `Origin ${origin} must NOT be granted Access-Control-Allow-Origin`
+      );
+    }
+  });
+
+  await t.test('POST /api/checkout accepts verified Savera Paradise, Foodbliz, and local dev origins', async () => {
+    const validOrigins = [
+      'https://saveraparadise.com',
+      'https://order.saveraparadise.com',
+      'https://foodbliz.in',
+      'https://api.foodbliz.in',
+      'https://saveraparadise.vercel.app',
+      'http://localhost:5173'
+    ];
+
+    for (const origin of validOrigins) {
+      const { req, res } = createMockReqRes({
+        method: 'OPTIONS',
+        headers: { origin }
+      });
+      await checkoutHandler(req, res);
+      assert.strictEqual(
+        res.headers['Access-Control-Allow-Origin'],
+        origin,
+        `Origin ${origin} must be granted Access-Control-Allow-Origin`
+      );
+    }
+  });
+});

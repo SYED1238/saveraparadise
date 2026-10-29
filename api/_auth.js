@@ -9,11 +9,18 @@ import crypto from 'crypto';
 let devEphemeralSecret = null;
 
 function getSigningSecret() {
-  const secret = process.env.SESSION_SECRET || process.env.R2_SECRET_ACCESS_KEY;
-  if (secret && secret !== 'change_me_to_a_random_32_character_string') {
+  const secret = process.env.SESSION_SECRET;
+  if (secret && secret.length >= 32 && secret !== 'change_me_to_a_random_32_character_string') {
     return secret;
   }
+  // Secondary fallback to R2_SECRET_ACCESS_KEY if configured
+  if (process.env.R2_SECRET_ACCESS_KEY && process.env.R2_SECRET_ACCESS_KEY.length >= 16) {
+    return process.env.R2_SECRET_ACCESS_KEY;
+  }
   // In development/test without configured secret, generate an ephemeral random 32-byte key
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('[Security] CRITICAL: Dedicated SESSION_SECRET (min 32 chars) should be set in production');
+  }
   if (!devEphemeralSecret) {
     devEphemeralSecret = crypto.randomBytes(32).toString('hex');
   }
@@ -158,7 +165,7 @@ export function verifyAdminToken(req) {
 export function getPinRole(inputPin) {
   if (!inputPin) return null;
   const cleanPin = String(inputPin).trim();
-  if (!/^\d{4}$/.test(cleanPin)) return null;
+  if (!/^\d{4,8}$/.test(cleanPin)) return null;
 
   // 1. Check Owner PIN
   const expectedOwnerPin = getOwnerPin();

@@ -23,12 +23,10 @@ function isOriginAllowed(origin) {
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   try {
     const url = new URL(origin);
-    if (
-      url.hostname.endsWith('.vercel.app') ||
-      url.hostname.endsWith('foodbliz.in') ||
-      url.hostname === 'saveraparadise.com' ||
-      url.hostname.endsWith('.saveraparadise.com')
-    ) return true;
+    const host = url.hostname.toLowerCase();
+    if (host === 'saveraparadise.com' || host.endsWith('.saveraparadise.com')) return true;
+    if (host === 'foodbliz.in' || host.endsWith('.foodbliz.in')) return true;
+    if (host === 'saveraparadise.vercel.app' || (host.startsWith('saveraparadise-') && host.endsWith('.vercel.app'))) return true;
   } catch {}
   return false;
 }
@@ -51,10 +49,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // Security gate: Verify Owner / Admin signed JWT
+  // Security gate: Strictly require Owner signed JWT (kitchen admins are forbidden)
   const authCheck = verifyAdminToken(req);
   if (!authCheck.valid) {
     return res.status(401).json({ error: 'Unauthorized', message: 'Owner authorization required for payouts' });
+  }
+  if (authCheck.payload?.role !== 'owner') {
+    return res.status(403).json({ error: 'Forbidden', message: 'Strictly Executive Owner authorization required for payouts' });
   }
 
   try {

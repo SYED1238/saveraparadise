@@ -11,6 +11,9 @@ import {
   verifyCashfreeWebhookSignature,
   initiateRiderPayout
 } from '../api/_cashfree.js';
+import { createAdminToken, signPayload } from '../api/_auth.js';
+import cashfreePayoutHandler from '../api/cashfree-payout.js';
+import cashfreeCreateOrderHandler from '../api/cashfree-create-order.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -245,6 +248,89 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       // 3. Restaurant received ₹450 directly in merchant bank account
       const restaurantDigitalIncome = order.total;
       assert.strictEqual(restaurantDigitalIncome, 450, 'Restaurant received ₹450 online directly');
+    });
+  });
+
+  describe('8. Payout & Order Security Boundaries', () => {
+    function createMockReqRes({ method = 'POST', headers = {}, body = null } = {}) {
+      let statusCode = 200;
+      let responseData = null;
+      const responseHeaders = {};
+
+      const req = { method, headers: { ...headers }, body };
+      const res = {
+        status(code) { statusCode = code; return this; },
+        setHeader(key, val) { responseHeaders[key] = val; return this; },
+        json(data) { responseData = data; return this; },
+        end() { return this; },
+        get statusCode() { return statusCode; },
+        get data() { return responseData; }
+      };
+      return { req, res };
+    }
+
+    test('POST /api/cashfree-payout rejects unauthenticated requests with 401', async () => {
+      const { req, res } = createMockReqRes({
+        body: { riderPin: '2233', amount: 50, upiVpa: 'rider@upi' }
+      });
+      await cashfreePayoutHandler(req, res);
+      assert.strictEqual(res.statusCode, 401);
+    });
+
+    test('POST /api/cashfree-payout rejects kitchen admin role with 403 Forbidden', async () => {
+      const adminToken = createAdminToken(undefined, 'admin');
+      const { req, res } = createMockReqRes({
+        headers: { authorization: `Bearer ${adminToken}` },
+        body: { riderPin: '2233', amount: 50, upiVpa: 'rider@upi' }
+      });
+      await cashfreePayoutHandler(req, res);
+      assert.strictEqual(res.statusCode, 403);
+      assert.ok(res.data.message.includes('Strictly Executive Owner authorization'));
+    });
+
+    test('POST /api/cashfree-payout permits executive owner role with 200', async () => {
+      const ownerToken = createAdminToken(undefined, 'owner');
+      const { req, res } = createMockReqRes({
+        headers: { authorization: `Bearer ${ownerToken}` },
+        body: { riderPin: '2233', amount: 50, upiVpa: 'rider@upi', phone: '9876543210', name: 'Zabi' }
+      });
+      await cashfreePayoutHandler(req, res);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data.success, true);
+    });
+
+    test('POST /api/cashfree-create-order rejects tampered checkoutToken with 400', async () => {
+      const { req, res } = createMockReqRes({
+        body: {
+          orderId: 'ORD-TEST-101',
+          amount: 500,
+          customerPhone: '9876543210',
+          checkoutToken: 'invalid.tampered.token'
+        }
+      });
+      await cashfreeCreateOrderHandler(req, res);
+      assert.strictEqual(res.statusCode, 400);
+      assert.strictEqual(res.data.error, 'Invalid Token');
+    });
+
+    test('POST /api/cashfree-create-order enforces signed numericTotal when valid checkoutToken is supplied', async () => {
+      const validCheckoutToken = signPayload({
+        subtotal: 400,
+        numericTotal: 400,
+        timestamp: Date.now()
+      });
+      const { req, res } = createMockReqRes({
+        body: {
+          orderId: 'ORD-TEST-102',
+          amount: 1, // Attacker tries sending ₹1 in body
+          customerPhone: '9876543210',
+          checkoutToken: validCheckoutToken
+        }
+      });
+      await cashfreeCreateOrderHandler(req, res);
+      assert.strictEqual(res.statusCode, 200);
+      // In mock mode, order_amount in result should match the verified token (400), not the attacker body (1)
+      assert.strictEqual(res.data.orderAmount, 400);
     });
   });
 });

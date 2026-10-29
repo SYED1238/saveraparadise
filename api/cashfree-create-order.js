@@ -4,6 +4,7 @@
  * Generates Cashfree order session token for storefront checkout.
  */
 import { createPgOrder } from './_cashfree.js';
+import { verifySignedPayload } from './_auth.js';
 
 const ALLOWED_ORIGINS = [
   'https://foodbliz.in',
@@ -22,12 +23,10 @@ function isOriginAllowed(origin) {
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   try {
     const url = new URL(origin);
-    if (
-      url.hostname.endsWith('.vercel.app') ||
-      url.hostname.endsWith('foodbliz.in') ||
-      url.hostname === 'saveraparadise.com' ||
-      url.hostname.endsWith('.saveraparadise.com')
-    ) return true;
+    const host = url.hostname.toLowerCase();
+    if (host === 'saveraparadise.com' || host.endsWith('.saveraparadise.com')) return true;
+    if (host === 'foodbliz.in' || host.endsWith('.foodbliz.in')) return true;
+    if (host === 'saveraparadise.vercel.app' || (host.startsWith('saveraparadise-') && host.endsWith('.vercel.app'))) return true;
   } catch {}
   return false;
 }
@@ -60,15 +59,26 @@ export default async function handler(req, res) {
       }
     }
 
-    const { orderId, amount, customerPhone, customerName, customerEmail, returnUrl } = body || {};
+    const { orderId, amount, customerPhone, customerName, customerEmail, returnUrl, checkoutToken } = body || {};
 
     if (!orderId || !amount || Number(amount) <= 0) {
       return res.status(400).json({ error: 'Bad Request', message: 'orderId and valid amount are required' });
     }
 
+    let finalAmount = Number(amount);
+    // Anti-price tampering: if checkoutToken is provided, verify against cryptographic signature
+    if (checkoutToken) {
+      const decodedPayload = verifySignedPayload(checkoutToken);
+      if (decodedPayload && typeof decodedPayload.numericTotal === 'number' && decodedPayload.numericTotal > 0) {
+        finalAmount = Number(decodedPayload.numericTotal);
+      } else {
+        return res.status(400).json({ error: 'Invalid Token', message: 'Checkout token verification failed' });
+      }
+    }
+
     const result = await createPgOrder({
       orderId,
-      amount,
+      amount: finalAmount,
       customerPhone,
       customerName,
       customerEmail,

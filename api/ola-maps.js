@@ -53,7 +53,8 @@ function isOriginAllowed(origin) {
     if (
       host === 'localhost' ||
       host === '127.0.0.1' ||
-      host.endsWith('.vercel.app') ||
+      host === 'saveraparadise.vercel.app' ||
+      (host.startsWith('saveraparadise-') && host.endsWith('.vercel.app')) ||
       host === 'foodbliz.in' ||
       host.endsWith('.foodbliz.in') ||
       host === 'saveraparadise.com' ||

@@ -62,11 +62,13 @@ function isRateLimited(record) {
 function setRateLimitCookie(res, clientIp, newCount, firstAttempt, lockedUntil) {
   const maxAge = Math.ceil(LOCKOUT_WINDOW_MS / 1000);
   const signed = signPayload({ ip: clientIp, count: newCount, firstAttempt, lockedUntil });
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${signed}; HttpOnly; SameSite=Strict; Path=/api/admin-auth; Max-Age=${maxAge}`);
+  const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${signed}; HttpOnly; SameSite=Strict${secureFlag}; Path=/api/admin-auth; Max-Age=${maxAge}`);
 }
 
 function clearRateLimitCookie(res) {
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/api/admin-auth; Max-Age=0`);
+  const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Strict${secureFlag}; Path=/api/admin-auth; Max-Age=0`);
 }
 
 const ALLOWED_ORIGINS = [
@@ -81,12 +83,10 @@ function isOriginAllowed(origin) {
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   try {
     const url = new URL(origin);
-    if (
-      url.hostname.endsWith('.vercel.app') ||
-      url.hostname.endsWith('foodbliz.in') ||
-      url.hostname === 'saveraparadise.com' ||
-      url.hostname.endsWith('.saveraparadise.com')
-    ) return true;
+    const host = url.hostname.toLowerCase();
+    if (host === 'saveraparadise.com' || host.endsWith('.saveraparadise.com')) return true;
+    if (host === 'foodbliz.in' || host.endsWith('.foodbliz.in')) return true;
+    if (host === 'saveraparadise.vercel.app' || (host.startsWith('saveraparadise-') && host.endsWith('.vercel.app'))) return true;
   } catch {}
   return false;
 }
@@ -111,7 +111,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const rawIp = req.headers['x-real-ip'] || req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  const rawIp = req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || 'unknown';
   const clientIp = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : 'unknown';
 
   const rateRecord = getRateLimitRecord(req, clientIp);

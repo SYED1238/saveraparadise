@@ -36,24 +36,6 @@
   <script>
     (function() {
       try {
-        // Forward back to localhost if OAuth callback returned to production with return_to
-        var searchParams = new URLSearchParams(window.location.search);
-        var returnTo = searchParams.get('return_to');
-        if (returnTo) {
-          try {
-            var parsedDev = new URL(returnTo, window.location.origin);
-            var isStrictLocal = (parsedDev.hostname === 'localhost' || parsedDev.hostname === '127.0.0.1') &&
-                                (parsedDev.protocol === 'http:' || parsedDev.protocol === 'https:');
-            if (isStrictLocal) {
-              var cleanSearch = window.location.search.replace(/[\?&]return_to=[^&#]*/, '');
-              if (cleanSearch === '?') cleanSearch = '';
-              var devTarget = parsedDev.origin + window.location.pathname + cleanSearch + window.location.hash;
-              window.location.replace(devTarget);
-              return;
-            }
-          } catch(urlErr) {}
-        }
-
         if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
           document.documentElement.classList.add('pwa-customer-installed');
         } else {

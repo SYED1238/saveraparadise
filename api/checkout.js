@@ -23,12 +23,10 @@ function isOriginAllowed(origin) {
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   try {
     const url = new URL(origin);
-    if (
-      url.hostname.endsWith('.vercel.app') ||
-      url.hostname.endsWith('foodbliz.in') ||
-      url.hostname === 'saveraparadise.com' ||
-      url.hostname.endsWith('.saveraparadise.com')
-    ) return true;
+    const host = url.hostname.toLowerCase();
+    if (host === 'saveraparadise.com' || host.endsWith('.saveraparadise.com')) return true;
+    if (host === 'foodbliz.in' || host.endsWith('.foodbliz.in')) return true;
+    if (host === 'saveraparadise.vercel.app' || (host.startsWith('saveraparadise-') && host.endsWith('.vercel.app'))) return true;
   } catch {}
   return false;
 }

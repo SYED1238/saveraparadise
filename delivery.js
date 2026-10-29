@@ -242,27 +242,14 @@ document.addEventListener('DOMContentLoaded', () => {
     defaultCode: '',
     onVerify: async (pin) => {
       const cleanPin = String(pin).trim();
-      let rider = dataService.getRiderByPin(cleanPin);
-      if (!rider) {
-        await dataService.syncRidersFromSupabase();
-        rider = dataService.getRiderByPin(cleanPin);
-      }
-      if (!rider && Array.isArray(DEFAULT_RIDERS)) {
-        rider = DEFAULT_RIDERS.find(r => String(r.pin).trim() === cleanPin);
-        if (rider) {
-          dataService.saveOrUpdateRider(rider);
-        }
-      }
+      const rider = await dataService.verifyRiderPin(cleanPin);
       return !!(rider && rider.name);
     },
-    onSuccess: (pin) => {
+    onSuccess: async (pin) => {
       const cleanPin = String(pin).trim();
       let rider = dataService.getRiderByPin(cleanPin);
-      if (!rider && Array.isArray(DEFAULT_RIDERS)) {
-        rider = DEFAULT_RIDERS.find(r => String(r.pin).trim() === cleanPin);
-        if (rider) {
-          dataService.saveOrUpdateRider(rider);
-        }
+      if (!rider) {
+        rider = await dataService.verifyRiderPin(cleanPin);
       }
 
       if (rider && rider.name) {
