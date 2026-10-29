@@ -3405,15 +3405,15 @@ function initStorefrontApp() {
       if (!el) return;
       el.classList.remove('active', 'current');
       const circle = el.querySelector('.track-circle');
+      if (circle) {
+        // Retain and preserve each step emoji permanently across all order stages (never wipe on dispatch)
+        circle.textContent = DEFAULT_STEP_ICONS[idx] || circle.textContent;
+      }
       if (!isCancelled) {
         if (idx < stepIndex) {
           el.classList.add('active');
-          if (circle) circle.textContent = '✓';
         } else if (idx === stepIndex) {
           el.classList.add('active', 'current');
-          if (circle) circle.textContent = DEFAULT_STEP_ICONS[idx];
-        } else {
-          if (circle) circle.textContent = DEFAULT_STEP_ICONS[idx];
         }
       }
     });

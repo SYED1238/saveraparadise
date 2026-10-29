@@ -4198,17 +4198,21 @@ body.pwa-customer-installed .header-pwa-dock {
 }
 
 .order-modal-card.has-video-bg .track-step.active:not(.current) .track-circle {
-  background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
-  border-color: #FFFFFF !important;
-  color: #FFFFFF !important;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35), 0 4px 14px rgba(16, 185, 129, 0.5) !important;
+  background: #182234 !important;
+  border: 2.5px solid #10B981 !important;
+  color: #10B981 !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35), 0 4px 14px rgba(16, 185, 129, 0.45) !important;
+  position: relative;
+  z-index: 5;
 }
 
 .order-modal-card.has-video-bg .track-step.current .track-circle {
-  background: linear-gradient(135deg, #FF6B35 0%, #EA580C 100%) !important;
-  border-color: #FFFFFF !important;
+  background: #182234 !important;
+  border: 3px solid #FF6B35 !important;
   color: #FFFFFF !important;
   box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.7), 0 6px 18px rgba(234, 88, 12, 0.55) !important;
+  position: relative;
+  z-index: 6;
 }
 
 .order-modal-card.has-video-bg .track-label {
@@ -4697,23 +4701,27 @@ body.pwa-customer-installed .header-pwa-dock {
   z-index: 5;
 }
 
-/* Completed Steps (Emerald Glow) */
+/* Completed Steps (Keep emojis crisp and add vibrant emerald border + soft glow) */
 .track-step.active:not(.current) .track-circle {
-  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
-  color: #FFFFFF;
-  border-color: #FFFFFF;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25), 0 4px 12px rgba(16, 185, 129, 0.4);
+  background: #FFFFFF !important;
+  border: 2.5px solid #10B981 !important;
+  color: #10B981 !important;
+  box-shadow: 0 0 0 2.5px rgba(16, 185, 129, 0.22), 0 3px 10px rgba(16, 185, 129, 0.25) !important;
   font-weight: 800;
   font-size: 0.95rem;
+  position: relative;
+  z-index: 5;
 }
 
 /* Current Active Step (Vibrant Flame Glow & Radar Wave) */
 .track-step.current .track-circle {
-  background: linear-gradient(135deg, #FF6B35 0%, #EA580C 100%);
-  color: #FFFFFF;
-  border: 3px solid #FFFFFF;
+  background: #FFFFFF !important;
+  border: 3px solid #EA580C !important;
+  color: #EA580C !important;
   transform: scale(1.12);
   animation: step-radar-glow 2s cubic-bezier(0.24, 0, 0.38, 1) infinite, step-subtle-bounce 2.5s ease-in-out infinite;
+  position: relative;
+  z-index: 6;
 }
 
 @keyframes step-radar-glow {
