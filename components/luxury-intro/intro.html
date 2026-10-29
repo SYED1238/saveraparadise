@@ -1,0 +1,156 @@
+<!-- LUXURY EDITORIAL POSTER INTRO OVERLAY (TASTE PARADISE)
+     Preserved separate component. To re-enable on storefront:
+     1. Include intro.css in index.html: <link rel="stylesheet" href="/components/luxury-intro/intro.css">
+     2. Paste this markup right after <body> in index.html
+-->
+
+<div id="intro-plates-stage" class="intro-plates-overlay" role="dialog" aria-modal="true" aria-label="Welcome">
+  <!-- Dual-Tone Background Canvas -->
+  <div class="intro-bg-canvas">
+    <!-- Cream Honeycomb Linen Grid -->
+    <div class="intro-bg-honeycomb">
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="hexGrid" width="36" height="62.35" patternUnits="userSpaceOnUse">
+            <path d="M 36 0 L 18 10.39 L 0 0 L 0 20.78 L 18 31.18 L 36 20.78 Z M 0 31.18 L 18 41.57 L 0 51.96 L 0 62.35 L 18 62.35 L 36 51.96 L 36 41.57 L 18 31.18 Z" fill="none" stroke="rgba(195, 180, 150, 0.28)" stroke-width="1"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#hexGrid)" />
+      </svg>
+    </div>
+
+    <!-- Sharp Parallel Diagonal Green Paint Sash (Crossing from bottom-left to top-right) -->
+    <div class="intro-diagonal-sash"></div>
+  </div>
+
+  <!-- Top-Left Glass Headline (TASTE PARADISE) -->
+  <div class="intro-glass-header">
+    <h1 class="intro-glass-title" aria-label="Taste Paradise">
+      <span class="glass-word" data-text="TASTE">TASTE</span>
+      <span class="glass-word" data-text="PARADISE">PARADISE</span>
+    </h1>
+  </div>
+
+  <!-- Top-Right Geometric Monogram Emblem -->
+  <div class="intro-emblem-badge" aria-hidden="true">
+    <div class="emblem-lines"></div>
+    <span class="emblem-monogram">SP</span>
+    <div class="emblem-lines"></div>
+  </div>
+
+  <!-- Floating Food Plates (Arranged 1:1 with Reference Poster Positions) -->
+  <div class="intro-plates-container">
+    <!-- 1. Upper Dish: Sitting on the upper diagonal boundary -->
+    <div class="intro-plate-wrapper plate-poster-top">
+      <img src="/images/intro/plate-biryani.webp" alt="Special Rice &amp; Biryani" class="intro-plate-img" width="260" height="260" loading="eager" fetchpriority="high" decoding="async" />
+    </div>
+
+    <!-- 2. Mid-Left Item: Sitting on the left waist -->
+    <div class="intro-plate-wrapper plate-poster-left">
+      <img src="/images/intro/plate-bbq.webp" alt="BBQ &amp; Tandoori" class="intro-plate-img" width="210" height="210" loading="eager" fetchpriority="high" decoding="async" />
+    </div>
+
+    <!-- 3. Mid-Right Item: Sitting on the right waist -->
+    <div class="intro-plate-wrapper plate-poster-right">
+      <img src="/images/intro/plate-seafood.webp" alt="Seafood Specials" class="intro-plate-img" width="200" height="200" loading="eager" fetchpriority="high" decoding="async" />
+    </div>
+
+    <!-- 4. Bottom Hero Plate: Large anchor plate on the lower diagonal boundary -->
+    <div class="intro-plate-wrapper plate-poster-bottom">
+      <img src="/images/intro/plate-kebab.webp" alt="Mixed Kebab Platter" class="intro-plate-img" width="350" height="350" loading="eager" fetchpriority="high" decoding="async" />
+    </div>
+  </div>
+
+  <!-- Editorial Price & Dish Callouts (Matching Reference Layout) -->
+  <div class="intro-callouts-container">
+    <!-- Callout 1 (Top Dish - White Text on Dark Green Sash) -->
+    <div class="intro-dish-callout callout-top-dish">
+      <span class="callout-price">220.</span>
+      <h3 class="callout-name">Dum Biryani</h3>
+      <p class="callout-desc">Fragrant Basmati, Tender Meat, Saffron, Crispy Brown Onions.</p>
+    </div>
+
+    <!-- Callout 2 (Mid-Left Dish - Dark Green Text on Cream) -->
+    <div class="intro-dish-callout callout-mid-left">
+      <span class="callout-price">240.</span>
+      <h3 class="callout-name">BBQ &amp; Tandoori</h3>
+      <p class="callout-desc">Charcoal Smoked, Mint Chutney, Lemon Wedges, Spices.</p>
+    </div>
+
+    <!-- Callout 3 (Mid-Right Dish - Dark Green Text on Cream) -->
+    <div class="intro-dish-callout callout-mid-right">
+      <span class="callout-price">280.</span>
+      <h3 class="callout-name">Seafood Specials</h3>
+      <p class="callout-desc">Golden Prawns, Crispy Calamari, Herb Tartar Dip.</p>
+    </div>
+
+    <!-- Callout 4 (Bottom Hero Dish - White Text on Dark Green Sash) -->
+    <div class="intro-dish-callout callout-bottom-hero">
+      <span class="callout-price">320.</span>
+      <h3 class="callout-name">Special Kebab Platter</h3>
+      <p class="callout-desc">Seekh Kebabs, Murgh Malai Tikka, Galouti, Laccha Onions.</p>
+    </div>
+  </div>
+
+  <!-- Editorial Footer Branding (Bottom-Right) -->
+  <div class="intro-poster-footer">
+    <h4 class="intro-footer-brand">SAVERA PARADISE</h4>
+    <p class="intro-footer-address">Railway Station Road, Ramanagara</p>
+    <p class="intro-footer-contact">ORDER ONLINE &bull; 080-27271234</p>
+  </div>
+</div>
+
+<script>
+  (function() {
+    const stage = document.getElementById('intro-plates-stage');
+    if (!stage) return;
+
+    let isDismissed = false;
+    let autoDismissTimer = null;
+    let hideTimer = null;
+
+    function dismissStage() {
+      if (isDismissed) return;
+      isDismissed = true;
+      if (autoDismissTimer) clearTimeout(autoDismissTimer);
+      stage.classList.add('is-hidden');
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        stage.style.display = 'none';
+      }, 550);
+    }
+
+    // Dismiss on click/touch anywhere
+    stage.addEventListener('click', () => {
+      dismissStage();
+    });
+
+    // Auto dismiss after 5.5s
+    autoDismissTimer = setTimeout(() => {
+      dismissStage();
+    }, 5500);
+
+    // Development & Preview API
+    window.freezeIntroForTesting = function() {
+      if (autoDismissTimer) clearTimeout(autoDismissTimer);
+      if (hideTimer) clearTimeout(hideTimer);
+      isDismissed = false;
+      stage.style.display = 'block';
+      stage.classList.remove('is-hidden');
+    };
+
+    window.replayIntro = function() {
+      isDismissed = false;
+      stage.style.display = 'block';
+      stage.classList.remove('is-hidden');
+      const plates = stage.querySelectorAll('.intro-plate-wrapper');
+      plates.forEach(p => {
+        p.style.animation = 'none';
+        void p.offsetWidth;
+        p.style.animation = '';
+      });
+      if (autoDismissTimer) clearTimeout(autoDismissTimer);
+      autoDismissTimer = setTimeout(dismissStage, 5500);
+    };
+  })();
+</script>

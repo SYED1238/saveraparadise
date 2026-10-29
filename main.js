@@ -1197,10 +1197,11 @@ function initStorefrontApp() {
     }
 
     saveCart();
-    renderCart();
 
-    // Trigger visual ballistic animation
+    // Trigger visual ballistic animation before hiding triggerElement on card
     animateFlyToCart(triggerElement, item.image);
+
+    renderCart();
 
     showToast(`Added ${qty > 1 ? qty + 'x ' : ''}${item.name} to basket! 🛒`, 'success');
   }
@@ -1233,7 +1234,77 @@ function initStorefrontApp() {
   }
 
   function updateMenuCardSteppers() {
-    // Menu cards keep the clean floating .btn-glass-add button matching Cryspychiken
+    const cartQtyMap = new Map();
+    if (Array.isArray(cart)) {
+      for (let i = 0; i < cart.length; i++) {
+        const item = cart[i];
+        if (item && item.id) {
+          cartQtyMap.set(item.id, (cartQtyMap.get(item.id) || 0) + (Number(item.quantity) || 0));
+        }
+      }
+    }
+
+    const cards = document.querySelectorAll('.recipe-card');
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      const addBtn = card.querySelector('.btn-add-cart');
+      const dishId = card.getAttribute('data-id') || addBtn?.getAttribute('data-id');
+      if (!dishId) continue;
+
+      const isOutOfStock = card.classList.contains('is-out-of-stock') || addBtn?.hasAttribute('disabled');
+      const qty = isOutOfStock ? 0 : (cartQtyMap.get(dishId) || 0);
+      let stepper = card.querySelector('.dish-card-stepper');
+
+      if (qty > 0) {
+        if (addBtn && addBtn.style.display !== 'none') addBtn.style.display = 'none';
+
+        if (!stepper) {
+          stepper = document.createElement('div');
+          stepper.className = 'dish-card-stepper';
+          stepper.setAttribute('data-id', dishId);
+          stepper.setAttribute('role', 'group');
+          stepper.setAttribute('aria-label', `Quantity controls for ${addBtn?.getAttribute('data-name') || 'dish'}`);
+          stepper.innerHTML = `
+            <button type="button" class="card-stepper-btn card-stepper-minus" data-id="${dishId}" aria-label="Decrease quantity" title="Decrease">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+            <span class="card-stepper-qty" aria-live="polite">${qty}</span>
+            <button type="button" class="card-stepper-btn card-stepper-plus" data-id="${dishId}" aria-label="Increase quantity" title="Increase">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+          `;
+          if (addBtn && addBtn.parentNode) {
+            addBtn.parentNode.insertBefore(stepper, addBtn.nextSibling);
+          } else {
+            const inner = card.querySelector('.recipe-card-inner') || card;
+            inner.appendChild(stepper);
+          }
+        } else {
+          if (stepper.style.display === 'none') stepper.style.display = 'inline-flex';
+          const qtyEl = stepper.querySelector('.card-stepper-qty');
+          if (qtyEl && qtyEl.textContent !== String(qty)) {
+            qtyEl.textContent = String(qty);
+            qtyEl.classList.remove('pop-anim');
+            void qtyEl.offsetWidth;
+            qtyEl.classList.add('pop-anim');
+          }
+        }
+        if (!card.classList.contains('in-cart')) card.classList.add('in-cart');
+      } else {
+        if (stepper) {
+          stepper.remove();
+        }
+        if (addBtn && !isOutOfStock && addBtn.style.display === 'none') {
+          addBtn.style.display = '';
+        }
+        if (card.classList.contains('in-cart')) card.classList.remove('in-cart');
+      }
+    }
   }
 
   /**
@@ -1821,7 +1892,12 @@ function initStorefrontApp() {
       if (plusBtn) {
         e.stopPropagation();
         const id = plusBtn.getAttribute('data-id');
-        if (id) updateQuantity(id, 1);
+        if (id) {
+          updateQuantity(id, 1);
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try { navigator.vibrate(12); } catch (_) {}
+          }
+        }
         return;
       }
 
@@ -1830,7 +1906,18 @@ function initStorefrontApp() {
       if (minusBtn) {
         e.stopPropagation();
         const id = minusBtn.getAttribute('data-id');
-        if (id) updateQuantity(id, -1);
+        if (id) {
+          updateQuantity(id, -1);
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try { navigator.vibrate(12); } catch (_) {}
+          }
+        }
+        return;
+      }
+
+      // 4. Stepper container tapped (prevent opening detail modal)
+      if (e.target.closest('.dish-card-stepper')) {
+        e.stopPropagation();
         return;
       }
 
@@ -2021,6 +2108,7 @@ function initStorefrontApp() {
       dataService.on('change:dishes', syncStorefrontCardsWithDataService);
       dataService.on('dishes', syncStorefrontCardsWithDataService);
     }
+    updateMenuCardSteppers();
   } catch (err) {
     console.warn('syncStorefrontCardsWithDataService error:', err);
   }
