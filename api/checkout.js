@@ -31,10 +31,17 @@ function isOriginAllowed(origin) {
   return false;
 }
 
+let authoritativeDishesCache = null;
+let authoritativeDishesCachedAt = 0;
+
 async function fetchAuthoritativeDishes() {
+  const now = Date.now();
+  if (authoritativeDishesCache && (now - authoritativeDishesCachedAt < 60000)) {
+    return authoritativeDishesCache;
+  }
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !apiKey) return null;
+  if (!supabaseUrl || !apiKey) return authoritativeDishesCache;
   try {
     const cleanUrl = String(supabaseUrl).replace(/\/+$/, '');
     const res = await fetch(`${cleanUrl}/rest/v1/dishes?select=id,name,price,is_available`, {
@@ -45,11 +52,16 @@ async function fetchAuthoritativeDishes() {
       },
       signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(3000) : undefined
     });
-    if (!res.ok) return null;
+    if (!res.ok) return authoritativeDishesCache;
     const data = await res.json();
-    return Array.isArray(data) ? data : null;
+    if (Array.isArray(data) && data.length > 0) {
+      authoritativeDishesCache = data;
+      authoritativeDishesCachedAt = now;
+      return authoritativeDishesCache;
+    }
+    return authoritativeDishesCache;
   } catch {
-    return null;
+    return authoritativeDishesCache;
   }
 }
 

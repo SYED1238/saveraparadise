@@ -2297,6 +2297,8 @@ class QuickBiteDataService {
     this.heartbeatTimer = null;
     this.dishesCache = null;
     this.uploadedImagesCache = null;
+    this.ordersCache = null;
+    this.ridersCache = null;
     let path = '';
     if (typeof window !== 'undefined' && window.location) {
       path = window.location.pathname.toLowerCase();
@@ -2327,6 +2329,22 @@ class QuickBiteDataService {
             window.dispatchEvent(new CustomEvent('quickbite_data_changed', { detail: data }));
           }
         };
+      }
+    } catch {}
+
+    try {
+      if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('storage', (e) => {
+          if (!e.key || e.key === STORAGE_KEYS.ORDERS) {
+            this.ordersCache = null;
+          }
+          if (!e.key || e.key === 'quickbite_riders') {
+            this.ridersCache = null;
+          }
+          if (!e.key || e.key === STORAGE_KEYS.DISHES) {
+            this.dishesCache = null;
+          }
+        });
       }
     } catch {}
 
@@ -2819,6 +2837,7 @@ class QuickBiteDataService {
           }
 
           if (hasChanges) {
+            this.ordersCache = localList;
             localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(localList));
 
             newOrdersToNotify.forEach(no => {
@@ -3308,6 +3327,7 @@ class QuickBiteDataService {
         });
 
         if (changed) {
+          this.ordersCache = localList;
           localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(localList));
           this.notifyChange('orders');
         }
@@ -4121,19 +4141,30 @@ class QuickBiteDataService {
 
   // --- ORDERS ---
   getOrders() {
+    if (this.ordersCache && Array.isArray(this.ordersCache)) {
+      return this.ordersCache;
+    }
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.ORDERS);
-      if (!data) return [];
+      const data = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.ORDERS) : null;
+      if (!data) {
+        this.ordersCache = [];
+        return this.ordersCache;
+      }
       const list = JSON.parse(data);
-      if (!Array.isArray(list)) return [];
+      if (!Array.isArray(list)) {
+        this.ordersCache = [];
+        return this.ordersCache;
+      }
       // Clean out any legacy mock test orders (#QB-8942, #QB-7419)
       const realOrders = list.filter(o => o && o.id !== '#QB-8942' && o.id !== '#QB-7419');
 
       // Auto-heal missing coordinates & customer phone on orders by matching with saved user addresses
-      const rawAddrs = this.getAllAddressesRaw();
+      let rawAddrs = null;
       let hasHealed = false;
 
       realOrders.forEach(o => {
+        if (!o) return;
+
         // Auto-expire stale local orders older than 3 hours on customer portal so ghost orders never lock out checkout
         if (this.portalType === 'customer' && o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered' && o.createdAt) {
           const orderAgeMs = Date.now() - Number(o.createdAt);
@@ -4144,6 +4175,13 @@ class QuickBiteDataService {
             o.eta = 'Delivered 🎉';
             hasHealed = true;
           }
+        }
+
+        // Fast path: if order was already healed in this or past session, skip expensive address and regex lookups
+        if (o._healed) return;
+
+        if (!rawAddrs) {
+          rawAddrs = this.getAllAddressesRaw();
         }
 
         // Auto-heal missing or invalid phone number on order
@@ -4205,14 +4243,18 @@ class QuickBiteDataService {
           o.pickupCode = digits.length >= 4 ? digits.slice(-4) : (digits || '1001');
           hasHealed = true;
         }
+
+        o._healed = true;
       });
 
       if (hasHealed || realOrders.length !== list.length) {
         localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(realOrders));
       }
-      return realOrders;
+      this.ordersCache = realOrders;
+      return this.ordersCache;
     } catch {
-      return [];
+      this.ordersCache = [];
+      return this.ordersCache;
     }
   }
 
@@ -4273,6 +4315,7 @@ class QuickBiteDataService {
   }
 
   saveOrders(orders, extra = {}) {
+    this.ordersCache = Array.isArray(orders) ? orders : null;
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
     this.notifyChange('orders', extra);
   }
@@ -4877,6 +4920,7 @@ class QuickBiteDataService {
   }
 
   clearAllOrders() {
+    this.ordersCache = [];
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
     try {
       localStorage.removeItem('quickbite_my_order_ids');
@@ -5532,6 +5576,9 @@ class QuickBiteDataService {
   // ========================================================
 
   getRiders() {
+    if (this.ridersCache && Array.isArray(this.ridersCache)) {
+      return this.ridersCache;
+    }
     try {
       const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_riders') : null;
       let riders = [];
@@ -5575,9 +5622,11 @@ class QuickBiteDataService {
       if (needsResave && typeof localStorage !== 'undefined') {
         localStorage.setItem('quickbite_riders', JSON.stringify(riders));
       }
-      return riders;
+      this.ridersCache = riders;
+      return this.ridersCache;
     } catch {
-      return DEFAULT_RIDERS.map(r => ({ ...r }));
+      this.ridersCache = DEFAULT_RIDERS.map(r => ({ ...r }));
+      return this.ridersCache;
     }
   }
 
@@ -5609,6 +5658,7 @@ class QuickBiteDataService {
           });
         });
         const mapped = Array.from(localMap.values());
+        this.ridersCache = mapped;
         localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
         this.notifyChange('riders', { action: 'sync_riders', source: 'supabase' });
         return mapped;
@@ -5620,6 +5670,7 @@ class QuickBiteDataService {
   }
 
   saveRiders(riders) {
+    this.ridersCache = Array.isArray(riders) ? riders : null;
     try {
       localStorage.setItem('quickbite_riders', JSON.stringify(riders));
       this.notifyChange('riders', { action: 'update_riders', timestamp: Date.now() });

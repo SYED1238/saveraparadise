@@ -6350,3 +6350,27 @@ html, body, .admin-body {
     min-width: 34px;
   }
 }
+
+/* ==============================================================
+   ADMIN ORDERS LIST PAGINATION
+   ============================================================== */
+.btn-admin-pagination {
+  padding: 6px 14px;
+  background: #F3F4F6;
+  border: 1px solid #D1D5DB;
+  border-radius: 8px;
+  color: #1F2937;
+  font-weight: 600;
+  font-size: 0.82rem;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.btn-admin-pagination:hover:not(:disabled) {
+  background: #E5E7EB;
+  border-color: #9CA3AF;
+  color: #111827;
+}

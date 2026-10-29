@@ -34,6 +34,8 @@ let riderPayoutRate = 35; // ₹35 default per delivered order
 let enteredPin = '';
 let isOwnerAuthenticated = false;
 let activeView = 'view-overview'; // 'view-overview' | 'view-orders' | 'view-cash' | 'view-payouts' | 'view-fleet'
+let ownerOrdersPage = 1;
+const OWNER_ORDERS_PER_PAGE = 25;
 
 // ==============================================================
 // 1. DOM INITIALIZATION
@@ -478,22 +480,23 @@ function renderDashboard() {
 
   const orders = getFilteredOrders();
 
-  // 1. Render Financial & Operations KPIs (Overview)
+  // 1. Render Financial & Operations KPIs (Always calculated for KPI cards and header)
   renderKPICards(orders);
 
-  // 2. Render Delivery Fleet Table, KMs & Payouts (Fleet Roster)
-  renderRiderFleetTable(orders);
+  // 2. Selective View Rendering: only render DOM elements for the currently active tab
+  if (activeView === 'view-fleet') {
+    renderRiderFleetTable(orders);
+  } else if (activeView === 'view-orders') {
+    renderOrdersTable(orders);
+  } else if (activeView === 'view-cash') {
+    renderCashSettlementsView(orders);
+  } else if (activeView === 'view-payouts') {
+    renderKmPayoutsView(orders);
+  } else if (activeView === 'view-overview' || !activeView) {
+    // Overview tab is active; renderKPICards already populated the KPI metrics
+  }
 
-  // 3. Render Orders Table & Stream (Live Orders)
-  renderOrdersTable(orders);
-
-  // 4. Render Cash Handover Settlements (COD Cash & Mark as Taken)
-  renderCashSettlementsView(orders);
-
-  // 5. Render KM Rates & Daily Payouts (KM Payouts & Mark Paid)
-  renderKmPayoutsView(orders);
-
-  // 6. Update Navigation Badges
+  // 3. Update Navigation Badges
   updateNavigationBadges(orders);
 }
 
@@ -962,6 +965,7 @@ function initOrdersFilterControls() {
       btn.classList.add('active');
 
       orderStatusFilter = btn.getAttribute('data-status');
+      ownerOrdersPage = 1;
       renderOrdersTable(getFilteredOrders());
     });
   }
@@ -970,6 +974,7 @@ function initOrdersFilterControls() {
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       searchQuery = (e.target.value || '').toLowerCase().trim();
+      ownerOrdersPage = 1;
       renderOrdersTable(getFilteredOrders());
     });
   }
@@ -1042,7 +1047,15 @@ function renderOrdersTable(orders) {
     return tB - tA;
   });
 
-  if (displayedOrders.length === 0) {
+  const totalOrders = displayedOrders.length;
+  const totalPages = Math.ceil(totalOrders / OWNER_ORDERS_PER_PAGE) || 1;
+  if (ownerOrdersPage > totalPages) ownerOrdersPage = totalPages;
+  if (ownerOrdersPage < 1) ownerOrdersPage = 1;
+  const startIndex = (ownerOrdersPage - 1) * OWNER_ORDERS_PER_PAGE;
+  const endIndex = Math.min(startIndex + OWNER_ORDERS_PER_PAGE, totalOrders);
+  const pageOrders = displayedOrders.slice(startIndex, endIndex);
+
+  if (totalOrders === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="10" style="text-align: center; padding: 32px 16px; color: var(--owner-text-muted);">
@@ -1051,10 +1064,21 @@ function renderOrdersTable(orders) {
         </td>
       </tr>
     `;
+    const oldPagination = document.getElementById('owner-orders-pagination');
+    if (oldPagination) oldPagination.style.display = 'none';
+    const ordersCardsContainer = document.getElementById('orders-cards-container');
+    if (ordersCardsContainer) {
+      ordersCardsContainer.innerHTML = `
+        <div class="owner-empty-card">
+          <i class="fa-solid fa-inbox"></i>
+          <p>No orders match your filter criteria in this period.</p>
+        </div>
+      `;
+    }
     return;
   }
 
-  tbody.innerHTML = displayedOrders.map(o => {
+  tbody.innerHTML = pageOrders.map(o => {
     const rawId = String(o.id || '');
     const cleanId = o.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
     const dateStr = o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
@@ -1144,7 +1168,7 @@ function renderOrdersTable(orders) {
         </div>
       `;
     } else {
-      ordersCardsContainer.innerHTML = displayedOrders.map(o => {
+      ordersCardsContainer.innerHTML = pageOrders.map(o => {
         const rawId = String(o.id || '');
         const cleanId = o.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
         const dateStr = o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
@@ -1210,6 +1234,67 @@ function renderOrdersTable(orders) {
         });
       });
     }
+  }
+
+  // Render pagination navigation
+  renderOwnerPagination(totalOrders, totalPages, ownerOrdersPage, startIndex, endIndex);
+}
+
+function renderOwnerPagination(totalOrders, totalPages, currentPage, startIndex, endIndex) {
+  let paginationEl = document.getElementById('owner-orders-pagination');
+  if (!paginationEl) {
+    const tableWrapper = document.getElementById('orders-table-wrapper');
+    if (!tableWrapper || !tableWrapper.parentNode) return;
+    paginationEl = document.createElement('div');
+    paginationEl.id = 'owner-orders-pagination';
+    tableWrapper.parentNode.insertBefore(paginationEl, tableWrapper.nextSibling);
+  }
+
+  if (totalPages <= 1) {
+    paginationEl.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding:10px 16px; background:rgba(30,41,59,0.5); border-radius:10px; font-size:0.82rem; color:var(--owner-text-muted);">
+        <span>Showing all <strong>${totalOrders}</strong> order${totalOrders === 1 ? '' : 's'}</span>
+      </div>
+    `;
+    paginationEl.style.display = 'block';
+    return;
+  }
+
+  paginationEl.style.display = 'block';
+  paginationEl.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:16px; padding:12px 18px; background:rgba(30,41,59,0.65); border:1px solid rgba(255,255,255,0.08); border-radius:12px; font-size:0.85rem; color:var(--owner-text-muted);">
+      <div>
+        Showing <strong>${startIndex + 1}–${endIndex}</strong> of <strong>${totalOrders}</strong> orders
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button type="button" id="btn-owner-prev-page" class="btn-owner-pagination" ${currentPage <= 1 ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : 'style="cursor:pointer;"'}>
+          <i class="fa-solid fa-chevron-left"></i> Prev
+        </button>
+        <span style="font-weight:600; color:var(--owner-text); padding:0 6px;">Page ${currentPage} of ${totalPages}</span>
+        <button type="button" id="btn-owner-next-page" class="btn-owner-pagination" ${currentPage >= totalPages ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : 'style="cursor:pointer;"'}>
+          Next <i class="fa-solid fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  `;
+
+  const btnPrev = document.getElementById('btn-owner-prev-page');
+  const btnNext = document.getElementById('btn-owner-next-page');
+  if (btnPrev && currentPage > 1) {
+    btnPrev.addEventListener('click', () => {
+      ownerOrdersPage--;
+      renderOrdersTable(getFilteredOrders());
+      const wrapper = document.getElementById('orders-table-wrapper');
+      if (wrapper) wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  if (btnNext && currentPage < totalPages) {
+    btnNext.addEventListener('click', () => {
+      ownerOrdersPage++;
+      renderOrdersTable(getFilteredOrders());
+      const wrapper = document.getElementById('orders-table-wrapper');
+      if (wrapper) wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 }
 
@@ -1742,6 +1827,7 @@ function switchOwnerView(viewId) {
   });
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  renderDashboard();
 }
 
 function updateNavigationBadges(orders) {

@@ -4511,7 +4511,6 @@ function initStorefrontApp() {
 
         // Server-side verification & anti-price tampering check via /api/checkout
         try {
-          const catalogDishes = dataService.getDishes() || [];
           const checkoutRes = await fetch('/api/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -4519,8 +4518,7 @@ function initStorefrontApp() {
               items: cart.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price })),
               promoCode: appliedPromo || null,
               appliedPromo: appliedPromo || null,
-              storeSettings: settings,
-              catalogDishes
+              storeSettings: settings
             })
           });
           if (checkoutRes.ok) {

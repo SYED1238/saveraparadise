@@ -152,6 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let dishSearchQuery = '';
   let activeOrderFilter = 'accepted';
   let orderSearchQuery = '';
+  let adminOrdersPage = 1;
+  const ADMIN_ORDERS_PER_PAGE = 25;
   let currentDishGdriveFileId = '';
 
   // DOM Elements - Navigation
@@ -1640,13 +1642,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (filtered.length === 0) {
       ordersContainer.innerHTML = '';
       ordersEmptyState.style.display = 'block';
+      const oldPagination = document.getElementById('admin-orders-pagination');
+      if (oldPagination) oldPagination.style.display = 'none';
       checkOverduePendingOrders();
       return;
     }
 
     ordersEmptyState.style.display = 'none';
 
-    ordersContainer.innerHTML = filtered.map(order => {
+    // Calculate pagination (25 orders per page)
+    const totalOrders = filtered.length;
+    const totalPages = Math.ceil(totalOrders / ADMIN_ORDERS_PER_PAGE) || 1;
+    if (adminOrdersPage > totalPages) adminOrdersPage = totalPages;
+    if (adminOrdersPage < 1) adminOrdersPage = 1;
+    const startIndex = (adminOrdersPage - 1) * ADMIN_ORDERS_PER_PAGE;
+    const endIndex = Math.min(startIndex + ADMIN_ORDERS_PER_PAGE, totalOrders);
+    const pageOrders = filtered.slice(startIndex, endIndex);
+
+    ordersContainer.innerHTML = pageOrders.map(order => {
       const timeAgo = formatTimeAgo(order.createdAt);
       const statusClass = `status-${order.status || 'accepted'}`;
       let statusLabel = '';
@@ -1895,6 +1908,58 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     checkOverduePendingOrders();
+    renderAdminPagination(totalOrders, totalPages, adminOrdersPage, startIndex, endIndex);
+  }
+
+  function renderAdminPagination(totalOrders, totalPages, currentPage, startIndex, endIndex) {
+    let paginationEl = document.getElementById('admin-orders-pagination');
+    if (!paginationEl) {
+      if (!ordersContainer || !ordersContainer.parentNode) return;
+      paginationEl = document.createElement('div');
+      paginationEl.id = 'admin-orders-pagination';
+      ordersContainer.parentNode.insertBefore(paginationEl, ordersContainer.nextSibling);
+    }
+
+    if (totalPages <= 1) {
+      paginationEl.innerHTML = '';
+      paginationEl.style.display = 'none';
+      return;
+    }
+
+    paginationEl.style.display = 'block';
+    paginationEl.innerHTML = `
+      <div class="admin-pagination-bar" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:18px; padding:12px 18px; background:#FFFFFF; border:1px solid #E5E7EB; border-radius:12px; font-size:0.85rem; color:#4B5563; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <div>
+          Showing <strong>${startIndex + 1}–${endIndex}</strong> of <strong>${totalOrders}</strong> orders
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" id="btn-admin-prev-page" class="btn-admin-pagination" ${currentPage <= 1 ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : 'style="cursor:pointer;"'}>
+            <i class="fa-solid fa-chevron-left"></i> Prev
+          </button>
+          <span style="font-weight:700; color:#111827; padding:0 6px;">Page ${currentPage} of ${totalPages}</span>
+          <button type="button" id="btn-admin-next-page" class="btn-admin-pagination" ${currentPage >= totalPages ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : 'style="cursor:pointer;"'}>
+            Next <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    `;
+
+    const btnPrev = document.getElementById('btn-admin-prev-page');
+    const btnNext = document.getElementById('btn-admin-next-page');
+    if (btnPrev && currentPage > 1) {
+      btnPrev.addEventListener('click', () => {
+        adminOrdersPage--;
+        renderOrders();
+        ordersContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+    if (btnNext && currentPage < totalPages) {
+      btnNext.addEventListener('click', () => {
+        adminOrdersPage++;
+        renderOrders();
+        ordersContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
   }
 
   // ========================================================
@@ -2389,6 +2454,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setActiveOrderFilter(targetFilter) {
     activeOrderFilter = targetFilter || 'accepted';
+    adminOrdersPage = 1;
 
     // Highlight matching KPI card
     document.querySelectorAll('.orders-kpi-grid .kpi-card[data-filter]').forEach(c => {
@@ -2448,6 +2514,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   orderSearchInput.addEventListener('input', (e) => {
     orderSearchQuery = e.target.value.toLowerCase().trim();
+    adminOrdersPage = 1;
     renderOrders();
   });
 

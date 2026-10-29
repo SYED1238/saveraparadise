@@ -3340,3 +3340,27 @@ body.owner-body .lock-footer-info {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.65; }
 }
+
+/* ==============================================================
+   OWNER ORDERS STREAM PAGINATION
+   ============================================================== */
+.btn-owner-pagination {
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: #F8FAFC;
+  font-weight: 600;
+  font-size: 0.82rem;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.btn-owner-pagination:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: #F59E0B;
+  color: #FFFFFF;
+}
