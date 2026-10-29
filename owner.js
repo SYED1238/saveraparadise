@@ -663,12 +663,18 @@ function renderRiderFleetTable(orders) {
 
     const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
     const payment = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-    const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || Boolean(o.isPaidOnline);
+    const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || payment.includes('prepaid') || Boolean(o.isPaidOnline) || Boolean(o.doorstepUpi);
 
     if (isOnline) {
       stat.onlineOrdersCount++;
     } else {
-      stat.cashInHand += rawTotal;
+      const riderRecord = riders.find(r => (riderPin && String(r.pin) === String(riderPin)) || (r.name || '').toLowerCase() === (o.assignedRiderName || '').toLowerCase());
+      const settledAtRaw = riderRecord?.cashSettledAt;
+      const settledAtMs = typeof settledAtRaw === 'number' ? settledAtRaw : (settledAtRaw ? Date.parse(settledAtRaw) || 0 : 0);
+      const deliveredAtMs = Number(o.deliveredAt || o.createdAt || 0);
+      if (!settledAtMs || deliveredAtMs > settledAtMs) {
+        stat.cashInHand += rawTotal;
+      }
     }
   });
 
@@ -2311,12 +2317,15 @@ function renderKmPayoutsView(orders) {
       btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
 
       try {
+        const token = (typeof dataService.ensureAdminToken === 'function')
+          ? await dataService.ensureAdminToken()
+          : (sessionStorage.getItem('quickbite_admin_token') || '');
         const resp = await fetch('/api/cashfree-payout', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${sessionStorage.getItem('quickbite_admin_token') || ''}`,
-            'x-admin-token': sessionStorage.getItem('quickbite_admin_token') || ''
+            'Authorization': `Bearer ${token || sessionStorage.getItem('quickbite_admin_token') || ''}`,
+            'x-admin-token': token || sessionStorage.getItem('quickbite_admin_token') || ''
           },
           body: JSON.stringify({
             riderPin: pin,

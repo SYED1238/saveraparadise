@@ -2378,9 +2378,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // 3. If order not found or was previously delivered, auto-create and start delivery on the fly!
-      if (!order || order.status === 'delivered') {
-        createDemoDeliveryOrder(code);
+      // 3. Reject unknown or terminal bag codes instead of fabricating a demo order in production
+      if (!order) {
+        showToast(`❌ No active order found with 4-digit bag code #${code}. Please check the receipt code.`, 'error');
+        return;
+      }
+      if (order.status === 'delivered' || order.status === 'cancelled' || order.status === 'undelivered') {
+        showToast(`⚠️ Order ${order.id} is already marked as ${order.status}.`, 'warning');
         return;
       }
 

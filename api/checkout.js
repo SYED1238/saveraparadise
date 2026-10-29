@@ -119,6 +119,9 @@ export default async function handler(req, res) {
     }
 
     const dish = catalogMap.get(String(item.id || '')) || catalogMap.get(String(item.name || '').toLowerCase());
+    if (dish && (dish.is_available === false || dish.inStock === false)) {
+      return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' is currently sold out` });
+    }
     const unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : Math.max(0, Number(item.price) || 0);
 
     if (unitPrice < 10) {
@@ -162,13 +165,12 @@ export default async function handler(req, res) {
 
   // Coupon discount validation matching dataService.addOrder()
   let discount = 0;
-  if (activePromo) {
+  if (activePromo && settings.offerActive !== false) {
     const cleanCode = String(activePromo).trim().toUpperCase();
     const hasCustomSettings = Boolean(storeSettings && typeof storeSettings === 'object' && (storeSettings.offerCode || storeSettings.offerMinOrder !== undefined || storeSettings.offerDiscountPercent !== undefined));
     const configCode = String(settings.offerCode || 'SAVERA20').trim().toUpperCase();
-    const isOfferActive = settings.offerActive !== false;
 
-    if (hasCustomSettings && isOfferActive && cleanCode === configCode) {
+    if (hasCustomSettings && cleanCode === configCode) {
       const minOrder = (settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
       if (computedSubtotal >= minOrder) {
         if (settings.offerDiscountType === 'fixed' || settings.offerDiscountType === 'amount' || settings.offerDiscountType === 'flat') {

@@ -146,34 +146,48 @@ class CloudflareR2Service {
   /**
    * List uploaded dish images stored in the R2 bucket via server proxy
    */
-  async listImages() {
+  async listImages(prefix = 'dishes/') {
     try {
-      const proxyRes = await fetch('/api/r2-list', {
+      await ensureAdminToken();
+      let response = await fetch(`/api/r2-list?prefix=${encodeURIComponent(prefix)}`, {
         headers: {
           ...getAdminAuthHeaders()
         }
-      }).catch(() => null);
-      if (proxyRes && proxyRes.ok) {
-        const data = await proxyRes.json();
-        if (Array.isArray(data.files)) {
-          return data.files;
+      });
+      if (response.status === 401) {
+        try { sessionStorage.removeItem('quickbite_admin_token'); } catch {}
+        const refreshed = await ensureAdminToken();
+        if (refreshed) {
+          response = await fetch(`/api/r2-list?prefix=${encodeURIComponent(prefix)}`, {
+            headers: { ...getAdminAuthHeaders() }
+          });
         }
       }
-      return [];
-    } catch (err) {
-      console.warn('[R2] List images error:', err);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.files || data.items || [];
+    } catch (e) {
+      console.warn('[Cloudflare R2] List error:', e.message);
       return [];
     }
   }
 
   /**
-   * Delete an image from R2 bucket via authenticated server proxy
+   * Delete an image from Cloudflare R2 bucket by key or proxy URL
+   * @param {string} keyOrUrl - Object key or proxy URL
+   * @returns {Promise<boolean>}
    */
-  async deleteImage(key) {
-    if (!key) return false;
-
+  async deleteImage(keyOrUrl) {
+    if (!keyOrUrl) return false;
     try {
-      const res = await fetch('/api/r2-delete', {
+      let key = keyOrUrl;
+      if (keyOrUrl.includes('?key=')) {
+        const urlObj = new URL(keyOrUrl, window.location.origin);
+        key = urlObj.searchParams.get('key') || keyOrUrl;
+      }
+
+      await ensureAdminToken();
+      let response = await fetch('/api/r2-delete', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -181,11 +195,25 @@ class CloudflareR2Service {
         },
         body: JSON.stringify({ key })
       });
-      if (res.ok) return true;
+      if (response.status === 401) {
+        try { sessionStorage.removeItem('quickbite_admin_token'); } catch {}
+        const refreshed = await ensureAdminToken();
+        if (refreshed) {
+          response = await fetch('/api/r2-delete', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getAdminAuthHeaders()
+            },
+            body: JSON.stringify({ key })
+          });
+        }
+      }
+      return response.ok;
     } catch (e) {
-      console.warn('[R2] Delete image error:', e);
+      console.warn('[Cloudflare R2] Delete error:', e.message);
+      return false;
     }
-    return false;
   }
 }
 

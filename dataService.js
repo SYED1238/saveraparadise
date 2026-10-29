@@ -4351,10 +4351,10 @@ class QuickBiteDataService {
     // Validate coupon code boundaries against store settings
     let discount = 0;
     const appliedCode = String(orderData.appliedPromo || orderData.promoCode || '').trim().toUpperCase();
-    if (appliedCode) {
+    if (appliedCode && settings.offerActive !== false) {
       const settingsCode = String(settings.offerCode || 'SAVERA20').trim().toUpperCase();
       const minOrder = Number(settings.offerMinOrder) || 0;
-      if (settings.offerActive !== false && appliedCode === settingsCode) {
+      if (appliedCode === settingsCode) {
         if (computedSubtotal >= minOrder) {
           if (settings.offerDiscountType === 'fixed' || settings.offerDiscountType === 'amount' || settings.offerDiscountType === 'flat') {
             discount = Number(settings.offerDiscountAmount) || 50;
@@ -4759,8 +4759,11 @@ class QuickBiteDataService {
   }
 
   updateOrder(orderId, updatedOrderData) {
+    if (!orderId) return null;
+    const norm = (id) => String(id || '').trim().replace(/^#/, '');
+    const targetNorm = norm(orderId);
     const list = this.getOrders();
-    const idx = list.findIndex(o => o.id === orderId);
+    const idx = list.findIndex(o => o && (o.id === orderId || norm(o.id) === targetNorm));
     if (idx === -1) return null;
 
     // PIPELINE STATUS RANKINGS (Strictly monotonic & irreversible)
@@ -4792,7 +4795,7 @@ class QuickBiteDataService {
 
     // Allow rider, manager, admin, and owner to update delivery pipeline states in updateOrder
     const allowedDeliverySources = ['rider', 'admin', 'owner', 'staff', 'system'];
-    if ((updatedOrderData.status === 'on_the_way' || updatedOrderData.status === 'delivered') && updatedOrderData.source && !allowedDeliverySources.includes(updatedOrderData.source)) {
+    if ((updatedOrderData.status === 'on_the_way' || updatedOrderData.status === 'delivered' || updatedOrderData.status === 'undelivered') && updatedOrderData.source && !allowedDeliverySources.includes(updatedOrderData.source)) {
       console.warn(`[DataService] Action blocked: Order ${orderId} cannot be dispatched or delivered by source "${updatedOrderData.source}" in updateOrder.`);
       return null;
     }

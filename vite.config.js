@@ -130,8 +130,8 @@ function r2DevMiddlewarePlugin() {
           return;
         }
 
-        // 0. GET /api/r2-image?key=dishes/...
-        if (req.method === 'GET' && url === '/api/r2-image') {
+        // 0. GET/HEAD /api/r2-image?key=dishes/...
+        if ((req.method === 'GET' || req.method === 'HEAD') && url === '/api/r2-image') {
           const searchParams = new URL(req.url, 'http://localhost').searchParams;
           const key = searchParams.get('key');
           const cleanKey = key ? key.replace(/^\/+/, '') : '';
@@ -201,8 +201,8 @@ function r2DevMiddlewarePlugin() {
           return;
         }
 
-        // 0b. GET /api/r2-video
-        if (req.method === 'GET' && url === '/api/r2-video') {
+        // 0b. GET/HEAD /api/r2-video
+        if ((req.method === 'GET' || req.method === 'HEAD') && url === '/api/r2-video') {
           const defaultKey = 'Untitled design (16).mp4';
           const query = new URL(req.url, 'http://localhost').searchParams;
           let videoKey = query.get('key') || defaultKey;
@@ -618,6 +618,56 @@ function r2DevMiddlewarePlugin() {
             res.setHeader('Content-Type', 'application/json');
             return res.end(JSON.stringify({ error: 'Ola Maps dev proxy failed: ' + err.message }));
           }
+        }
+
+        // 5. Local Dev Proxy for Serverless API Handlers (/api/checkout, /api/cashfree-*)
+        const devServerlessRoutes = {
+          '/api/checkout': './api/checkout.js',
+          '/api/cashfree-generate-qr': './api/cashfree-generate-qr.js',
+          '/api/cashfree-create-order': './api/cashfree-create-order.js',
+          '/api/cashfree-payout': './api/cashfree-payout.js'
+        };
+
+        if (devServerlessRoutes[url]) {
+          const chunks = [];
+          req.on('data', c => chunks.push(c));
+          req.on('end', async () => {
+            try {
+              const rawBody = Buffer.concat(chunks).toString();
+              req.body = rawBody ? JSON.parse(rawBody) : {};
+            } catch {
+              req.body = {};
+            }
+
+            const parsedUrl = new URL(req.url, 'http://localhost');
+            req.query = Object.fromEntries(parsedUrl.searchParams.entries());
+
+            res.status = (code) => {
+              res.statusCode = code;
+              return res;
+            };
+            res.json = (data) => {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(data));
+              return res;
+            };
+            res.send = (data) => {
+              res.end(data);
+              return res;
+            };
+
+            try {
+              const routePath = resolve(__dirname, devServerlessRoutes[url]);
+              const module = await import(routePath);
+              const handler = module.default || module;
+              await handler(req, res);
+            } catch (err) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'Dev serverless handler error: ' + err.message }));
+            }
+          });
+          return;
         }
 
         next();

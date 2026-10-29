@@ -1249,6 +1249,7 @@ function initStorefrontApp() {
     if (!code || typeof code !== 'string') return null;
     const cleanCode = code.trim().toUpperCase();
     if (!cleanCode) return null;
+    if (settings && settings.offerActive === false) return null;
 
     const settingsCode = String(settings.offerCode || 'SAVERA20').trim().toUpperCase();
 
@@ -3086,10 +3087,10 @@ function initStorefrontApp() {
     const activeOrders = dataService.getCustomerActiveOrders(currentUser?.id, userEmail, userPhone);
     const allUserOrders = dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone);
 
-    // Look for target order in all user orders or store orders
-    let order = orders.find(o => o.id === orderId);
+    // Look for target order in customer's own orders (or explicit orderId)
+    let order = orderId ? (allUserOrders.find(o => o.id === orderId) || orders.find(o => o.id === orderId)) : null;
     if (!order) {
-      order = activeOrders[0] || allUserOrders[0] || orders[0];
+      order = activeOrders[0] || allUserOrders[0] || null;
     }
     if (!order) return;
     activeOrderId = order.id;
@@ -3519,8 +3520,8 @@ function initStorefrontApp() {
     const order = dataService.getOrderById(orderId);
     if (!order) return;
 
-    // Strict Rule: Customers can ONLY cancel an order while it is in "accepted" status
-    if (order.status !== 'accepted') {
+    // Strict Rule: Customers can ONLY cancel an order while it is in "pending" or "accepted" status
+    if (order.status !== 'accepted' && order.status !== 'pending') {
       if (order.status === 'cooking' || order.status === 'ready_for_pickup') {
         showToast('🍳 Food Preparation Alert: Chefs have already started cooking your order fresh! Orders in preparation cannot be cancelled online. Please slide-to-call the kitchen below.', 'warning');
       } else if (order.status === 'on_the_way') {
@@ -3580,12 +3581,13 @@ function initStorefrontApp() {
     if (trackerEmptyState) trackerEmptyState.style.display = 'none';
     if (trackerActiveContent) trackerActiveContent.style.display = 'block';
 
+    const allUserOrders = dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone);
     let targetOrder = null;
     if (orderIdToOpen) {
-      targetOrder = orders.find(o => o.id === orderIdToOpen);
+      targetOrder = allUserOrders.find(o => o.id === orderIdToOpen) || orders.find(o => o.id === orderIdToOpen);
     }
     if (!targetOrder) {
-      targetOrder = activeOrders[0] || orders.find(o => o.status !== 'delivered') || orders[0];
+      targetOrder = activeOrders[0] || allUserOrders[0] || null;
     }
 
     if (targetOrder) {
@@ -3705,11 +3707,12 @@ function initStorefrontApp() {
     myOrdersList.innerHTML = filtered.map(order => {
       const isDelivered = order.status === 'delivered';
       const isCancelled = order.status === 'cancelled';
-      const isPast = isDelivered || isCancelled;
+      const isUndelivered = order.status === 'undelivered';
+      const isPast = isDelivered || isCancelled || isUndelivered;
       const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Recent Order';
 
       let statusPillClass = `status-${order.status || 'pending'}`;
-      let statusLabel = order.statusLabel || (isCancelled ? 'Cancelled' : (isDelivered ? 'Delivered' : 'In Progress'));
+      let statusLabel = order.statusLabel || (isCancelled ? 'Cancelled' : (isUndelivered ? 'Undelivered' : (isDelivered ? 'Delivered' : 'In Progress')));
 
       const safeId = escapeHtml(order.id);
       const safeSummary = escapeHtml(order.itemsSummary || (order.items && order.items.map(i => `${i.quantity}x ${i.name}`).join(', ')) || 'Crispy Chicken Food Package');
@@ -3743,8 +3746,8 @@ function initStorefrontApp() {
         }
       }
 
-      // Strict Rule: Customers can ONLY cancel an order when it is in 'accepted' status
-      const canCancel = !isPast && order.status === 'accepted';
+      // Strict Rule: Customers can ONLY cancel an order when it is in 'pending' or 'accepted' status
+      const canCancel = !isPast && (order.status === 'accepted' || order.status === 'pending');
       const cancelBtnHtml = canCancel ? `
         <button type="button" class="btn-card-cancel-order" data-cancel-id="${safeId}" title="Cancel Order">
           <i class="fa-solid fa-xmark"></i> Cancel
@@ -3763,9 +3766,10 @@ function initStorefrontApp() {
         </button>
       `;
 
-      const reasonHtml = (isCancelled && order.cancellationReason) ? `
+      const failureReason = order.cancellationReason || order.undeliveredReason;
+      const reasonHtml = ((isCancelled || isUndelivered) && failureReason) ? `
         <div class="cancellation-reason-badge">
-          <i class="fa-solid fa-circle-exclamation"></i> Reason: ${escapeHtml(order.cancellationReason)}
+          <i class="fa-solid fa-circle-exclamation"></i> Reason: ${escapeHtml(failureReason)}
         </div>
       ` : '';
 
