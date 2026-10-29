@@ -11953,3 +11953,283 @@ body.food-modal-open .mobile-floating-bar {
     gap: 7px;
   }
 }
+
+/* ==========================================================================
+   EDITORIAL POSTER INTRO - STAGE 1: DUAL-TONE & PLATES INFLOW MOTION
+   ========================================================================== */
+
+.intro-plates-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 9999999;
+  overflow: hidden;
+  user-select: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  background: #F7F5EE;
+  opacity: 1;
+  transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, filter;
+}
+
+.intro-plates-overlay.is-hidden {
+  opacity: 0;
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+/* Dual-Tone Background Canvas */
+.intro-bg-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: #F7F5EE;
+}
+
+/* Subtle Geometric Honeycomb Pattern Overlay */
+.intro-bg-base {
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  background-image: 
+    radial-gradient(rgba(175, 160, 125, 0.3) 1.2px, transparent 1.2px),
+    radial-gradient(rgba(175, 160, 125, 0.3) 1.2px, transparent 1.2px);
+  background-size: 26px 26px;
+  background-position: 0 0, 13px 13px;
+}
+
+/* Bold Diagonal Green Paint Slash Across Canvas (Matching Reference Poster Split) */
+.intro-bg-diagonal-slash {
+  position: absolute;
+  top: -25%;
+  left: -20%;
+  width: 140%;
+  height: 150%;
+  background: linear-gradient(135deg, #02120A 0%, #062315 30%, #0A3720 65%, #02130B 100%);
+  transform: rotate(-24deg);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 120px rgba(10, 55, 32, 0.4);
+  pointer-events: none;
+}
+
+.intro-ambient-light {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.09) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+/* Skip Button */
+.intro-plates-skip-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #062315;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  transition: all 0.22s ease;
+}
+
+.intro-plates-skip-btn:hover {
+  background: #FFFFFF;
+  transform: scale(1.05);
+}
+
+/* Plates Container */
+.intro-plates-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Plate Wrappers - Responsive Floating Positions */
+.intro-plate-wrapper {
+  position: absolute;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 25px 40px rgba(0, 0, 0, 0.5)) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.3));
+}
+
+.intro-plate-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Desktop Placements */
+.plate-left-top {
+  top: 14%;
+  left: 10%;
+  width: 250px;
+  height: 250px;
+  animation: plate-slide-in-left-top 1s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+             plate-hover-float-1 4.5s ease-in-out 1s infinite alternate;
+}
+
+.plate-left-bottom {
+  bottom: 10%;
+  left: 15%;
+  width: 280px;
+  height: 280px;
+  animation: plate-slide-in-left-bottom 1.08s cubic-bezier(0.16, 1, 0.3, 1) 0.12s forwards,
+             plate-hover-float-2 4.2s ease-in-out 1.2s infinite alternate;
+}
+
+.plate-right-top {
+  top: 12%;
+  right: 12%;
+  width: 260px;
+  height: 260px;
+  animation: plate-slide-in-right-top 1.05s cubic-bezier(0.16, 1, 0.3, 1) 0.06s forwards,
+             plate-hover-float-3 4.8s ease-in-out 1.1s infinite alternate;
+}
+
+.plate-right-bottom {
+  bottom: 12%;
+  right: 10%;
+  width: 240px;
+  height: 240px;
+  animation: plate-slide-in-right-bottom 1.12s cubic-bezier(0.16, 1, 0.3, 1) 0.18s forwards,
+             plate-hover-float-4 4.4s ease-in-out 1.3s infinite alternate;
+}
+
+/* Inflow Slide-In Animations (Coming from both sides with natural rotational momentum) */
+@keyframes plate-slide-in-left-top {
+  0% {
+    opacity: 0;
+    transform: translate3d(-180%, -20%, 0) rotate(-24deg) scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+@keyframes plate-slide-in-left-bottom {
+  0% {
+    opacity: 0;
+    transform: translate3d(-180%, 25%, 0) rotate(18deg) scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+@keyframes plate-slide-in-right-top {
+  0% {
+    opacity: 0;
+    transform: translate3d(180%, -20%, 0) rotate(22deg) scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+@keyframes plate-slide-in-right-bottom {
+  0% {
+    opacity: 0;
+    transform: translate3d(180%, 25%, 0) rotate(-18deg) scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+/* Subtle Organic Hover Bobbing After Inflow */
+@keyframes plate-hover-float-1 {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  100% { transform: translate3d(5px, -12px, 0) rotate(2deg); }
+}
+
+@keyframes plate-hover-float-2 {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  100% { transform: translate3d(-7px, -9px, 0) rotate(-2deg); }
+}
+
+@keyframes plate-hover-float-3 {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  100% { transform: translate3d(6px, -14px, 0) rotate(2.5deg); }
+}
+
+@keyframes plate-hover-float-4 {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  100% { transform: translate3d(-6px, -10px, 0) rotate(-2deg); }
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .plate-left-top {
+    top: 15%;
+    left: 2%;
+    width: 150px;
+    height: 150px;
+  }
+  .plate-left-bottom {
+    bottom: 14%;
+    left: 4%;
+    width: 165px;
+    height: 165px;
+  }
+  .plate-right-top {
+    top: 13%;
+    right: 2%;
+    width: 155px;
+    height: 155px;
+  }
+  .plate-right-bottom {
+    bottom: 13%;
+    right: 3%;
+    width: 150px;
+    height: 150px;
+  }
+}
+
+@media (max-width: 480px) {
+  .plate-left-top {
+    top: 16%;
+    left: -4%;
+    width: 135px;
+    height: 135px;
+  }
+  .plate-left-bottom {
+    bottom: 15%;
+    left: -2%;
+    width: 145px;
+    height: 145px;
+  }
+  .plate-right-top {
+    top: 14%;
+    right: -4%;
+    width: 140px;
+    height: 140px;
+  }
+  .plate-right-bottom {
+    bottom: 14%;
+    right: -2%;
+    width: 135px;
+    height: 135px;
+  }
+}
