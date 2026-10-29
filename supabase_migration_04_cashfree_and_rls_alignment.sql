@@ -4,8 +4,9 @@
 -- Resolves:
 -- 1. Webhook update failures by adding is_paid_online & Cashfree tracking columns
 -- 2. Category custom image persistence by adding categories.image column
--- 3. Guest checkout .select('tracking_token') RLS failure
--- 4. App-layer PIN-based Admin, Owner, and Rider mutation permissions
+-- 3. Rider fleet stats by ensuring earnings, trips, and payout columns exist
+-- 4. Guest checkout .select('tracking_token') RLS failure
+-- 5. App-layer PIN-based Admin, Owner, and Rider mutation permissions
 -- ==============================================================================
 
 SET lock_timeout = '3s';
@@ -39,23 +40,32 @@ ALTER TABLE IF EXISTS public.categories
 COMMENT ON COLUMN public.categories.image IS 'Cloudflare R2 proxy URL or uploaded dish category icon';
 
 -- ------------------------------------------------------------------------------
--- 3. EXTEND RIDERS TABLE WITH PAYOUT ATTRIBUTES
+-- 3. EXTEND RIDERS TABLE WITH PAYOUT & TRIP TRACKING ATTRIBUTES
 -- ------------------------------------------------------------------------------
 ALTER TABLE IF EXISTS public.riders
   ADD COLUMN IF NOT EXISTS upi_vpa VARCHAR(64) DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(32) DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(16) DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS payout_method_pref VARCHAR(16) DEFAULT 'cash';
+  ADD COLUMN IF NOT EXISTS payout_method_pref VARCHAR(16) DEFAULT 'cash',
+  ADD COLUMN IF NOT EXISTS earnings NUMERIC DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS trips INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS cash_settled_at TIMESTAMPTZ DEFAULT NULL;
 
 -- ------------------------------------------------------------------------------
 -- 4. RLS POLICY ALIGNMENT FOR PIN-AUTHENTICATED PORTALS & GUEST CHECKOUT
 -- ------------------------------------------------------------------------------
 -- Because Kitchen Admin, Restaurant Owner, and Delivery Fleet authenticate via
 -- app-layer passcodes and connect to Supabase via VITE_SUPABASE_ANON_KEY,
--- policies must allow anon-role operations while PostgreSQL immutability triggers
+-- policies permit app-layer operations while PostgreSQL immutability triggers
 -- (prevent_status_regression, enforce_order_immutability) guarantee order integrity.
 
--- 4.1 Orders: Permit guest tracking_token retrieval & app-layer status updates
+-- 4.1 Orders: Preserve order placement while enabling guest tracking & updates
+DROP POLICY IF EXISTS "public_create_orders" ON public.orders;
+CREATE POLICY "public_create_orders" ON public.orders
+  FOR INSERT WITH CHECK (
+    (status IS NULL OR status IN ('accepted', 'pending'))
+  );
+
 DROP POLICY IF EXISTS "orders_select_owner_or_staff" ON public.orders;
 DROP POLICY IF EXISTS "orders_update_staff_only" ON public.orders;
 DROP POLICY IF EXISTS "app_read_orders" ON public.orders;
@@ -98,6 +108,7 @@ CREATE OR REPLACE FUNCTION public.verify_rider_pin(p_pin TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_rider RECORD;
