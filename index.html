@@ -60,43 +60,54 @@
   </script>
 </head>
 <body>
-  <!-- LUXURY EDITORIAL INTRO OVERLAY (Stage 1: Dual-Tone Canvas & Plates Inflow) -->
+  <!-- LUXURY EDITORIAL INTRO OVERLAY (Exact 1:1 Poster Composition & Plates Inflow) -->
   <div id="intro-plates-stage" class="intro-plates-overlay" role="dialog" aria-modal="true" aria-label="Welcome">
-    <!-- Dual-Tone Background Canvas with Diagonal Green Paint Slash -->
+    <!-- Dual-Tone Background Canvas -->
     <div class="intro-bg-canvas">
-      <div class="intro-bg-base"></div>
-      <div class="intro-bg-diagonal-slash"></div>
-      <div class="intro-ambient-light"></div>
+      <!-- Cream Honeycomb Linen Grid -->
+      <div class="intro-bg-honeycomb">
+        <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="hexGrid" width="36" height="62.35" patternUnits="userSpaceOnUse">
+              <path d="M 36 0 L 18 10.39 L 0 0 L 0 20.78 L 18 31.18 L 36 20.78 Z M 0 31.18 L 18 41.57 L 0 51.96 L 0 62.35 L 18 62.35 L 36 51.96 L 36 41.57 L 18 31.18 Z" fill="none" stroke="rgba(195, 180, 150, 0.28)" stroke-width="1"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#hexGrid)" />
+        </svg>
+      </div>
+
+      <!-- Sharp Parallel Diagonal Green Paint Sash (Crossing from bottom-left to top-right) -->
+      <div class="intro-diagonal-sash"></div>
     </div>
 
     <!-- Top Skip Control -->
     <button type="button" class="intro-plates-skip-btn" id="intro-plates-skip-btn" aria-label="Skip Intro">
       <span>Skip</span>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M5 12h14M12 5l7 7-7 7"/>
       </svg>
     </button>
 
-    <!-- Floating Food Plates (Category R2 transparent PNG cutouts) -->
+    <!-- Floating Food Plates (Arranged 1:1 with Reference Poster Positions) -->
     <div class="intro-plates-container">
-      <!-- Left Top: Biryani Plate -->
-      <div class="intro-plate-wrapper plate-left-top">
-        <img src="/api/r2-image?key=categories%2FGemini_Generated_Image_bm077mbm077mbm07-removebg-preview.png" alt="Rice &amp; Biryani" class="intro-plate-img" loading="eager" decoding="sync" />
+      <!-- 1. Upper Dish: Sitting on the upper diagonal boundary -->
+      <div class="intro-plate-wrapper plate-poster-top">
+        <img src="/api/r2-image?key=categories%2FGemini_Generated_Image_bm077mbm077mbm07-removebg-preview.png" alt="Special Rice &amp; Biryani" class="intro-plate-img" loading="eager" decoding="sync" />
       </div>
 
-      <!-- Left Bottom: Kebab Specials Platter -->
-      <div class="intro-plate-wrapper plate-left-bottom">
-        <img src="/api/r2-image?key=categories%2Fcategory_1792937330965_Mixed_kebab_platter_served_with_2K_20261025193820-removebg-preview.png" alt="Kebab Specials" class="intro-plate-img" loading="eager" decoding="sync" />
-      </div>
-
-      <!-- Right Top: BBQ & Tandoori Platter -->
-      <div class="intro-plate-wrapper plate-right-top">
+      <!-- 2. Mid-Left Item: Sitting on the left waist -->
+      <div class="intro-plate-wrapper plate-poster-left">
         <img src="/api/r2-image?key=categories%2Fcategory_1792937103352_BBQ_and_tandoori_chicken_platter_2K_20261025193320-removebg-preview.png" alt="BBQ &amp; Tandoori" class="intro-plate-img" loading="eager" decoding="sync" />
       </div>
 
-      <!-- Right Bottom: Sea Food Dishes -->
-      <div class="intro-plate-wrapper plate-right-bottom">
-        <img src="/api/r2-image?key=categories%2Fcategory_1792937169468_Seafood_dishes_with_lemon_wedges_2K_20261025193534-removebg-preview.png" alt="Sea Food Dishes" class="intro-plate-img" loading="eager" decoding="sync" />
+      <!-- 3. Mid-Right Item: Sitting on the right waist -->
+      <div class="intro-plate-wrapper plate-poster-right">
+        <img src="/api/r2-image?key=categories%2Fcategory_1792937169468_Seafood_dishes_with_lemon_wedges_2K_20261025193534-removebg-preview.png" alt="Seafood Specials" class="intro-plate-img" loading="eager" decoding="sync" />
+      </div>
+
+      <!-- 4. Bottom Hero Plate: Large anchor plate on the lower diagonal boundary -->
+      <div class="intro-plate-wrapper plate-poster-bottom">
+        <img src="/api/r2-image?key=categories%2Fcategory_1792937330965_Mixed_kebab_platter_served_with_2K_20261025193820-removebg-preview.png" alt="Mixed Kebab Platter" class="intro-plate-img" loading="eager" decoding="sync" />
       </div>
     </div>
   </div>
