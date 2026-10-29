@@ -39,12 +39,6 @@ pnpm-debug.log*
 __pycache__/
 *.pyc
 
-# Zomato Tracker Customer Orders PII (Protected under Privacy Regulations)
-zomato_tracker/*.csv
-zomato_tracker/*.json
-!zomato_tracker/*.csv.example
-!zomato_tracker/*.json.example
-
 # Temporary scratch media from root
 scratch/
 Gemini_Generated_Image_*.png
