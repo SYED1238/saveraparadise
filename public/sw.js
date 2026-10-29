@@ -7,7 +7,7 @@
  * 4. Background Supabase Order Polling & Sync Channel
  */
 
-const CACHE_NAME = 'crispy-pwa-v21';
+const CACHE_NAME = 'crispy-pwa-v22';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -15,6 +15,10 @@ const ASSETS_TO_CACHE = [
   '/delivery.html',
   '/owner.html',
   '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-maskable-192.png',
+  '/icon-maskable-512.png',
   '/icon-192.svg',
   '/icon-512.svg'
 ];

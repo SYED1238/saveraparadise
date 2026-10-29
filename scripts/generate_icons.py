@@ -4,56 +4,101 @@ from PIL import Image, ImageDraw, ImageFilter
 source_path = 'public/images/Logo_badge_for_Savera_Paradise_f84684f3_2K.jpg'
 img = Image.open(source_path).convert('RGBA')
 
-# Crop to centered square (214, 228, 1834, 1848) -> 1620 x 1620
-crop_box = (214, 228, 1834, 1848)
-cropped = img.crop(crop_box)
-w, h = cropped.size
+# Center of Savera Paradise emblem in 2048x2048 source
+cx, cy = 1024, 1039
+half_box = 800  # 1600 x 1600 bounding square around entire emblem
+cropped_artwork = img.crop((cx - half_box, cy - half_box, cx + half_box, cy + half_box))
+w, h = cropped_artwork.size
 
-# High-resolution circular mask with smooth anti-aliased edge
-mask = Image.new('L', (w, h), 0)
-draw = ImageDraw.Draw(mask)
-cx, cy = w // 2, h // 2
-r = (w // 2) - 4
-draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=255)
-mask = mask.filter(ImageFilter.GaussianBlur(1.2))
+# -------------------------------------------------------------
+# 1. NAVBAR / IN-APP LOGO: savera-logo.png (1024x1024)
+# Circular badge with smooth anti-aliased edge
+# -------------------------------------------------------------
+navbar_mask = Image.new('L', (w, h), 0)
+d_nav = ImageDraw.Draw(navbar_mask)
+d_nav.ellipse((cx - half_box + 20 - (cx - half_box), 
+               cy - half_box + 20 - (cy - half_box), 
+               cx + half_box - 20 - (cx - half_box), 
+               cy + half_box - 20 - (cy - half_box)), fill=255)
+# Equivalent to:
+r_nav = half_box - 20
+d_nav_clean = ImageDraw.Draw(navbar_mask)
+navbar_mask = Image.new('L', (w, h), 0)
+d_nav_clean = ImageDraw.Draw(navbar_mask)
+d_nav_clean.ellipse((w // 2 - r_nav, h // 2 - r_nav, w // 2 + r_nav, h // 2 + r_nav), fill=255)
+navbar_mask = navbar_mask.filter(ImageFilter.GaussianBlur(1.5))
 
-# Composite onto transparent background
-master_logo = cropped.copy()
-master_logo.putalpha(mask)
-
-# 1. savera-logo.png (1024x1024)
+master_logo = cropped_artwork.copy()
+master_logo.putalpha(navbar_mask)
 logo_1024 = master_logo.resize((1024, 1024), Image.Resampling.LANCZOS)
 logo_1024.save('public/savera-logo.png', format='PNG', optimize=True)
 print('Saved public/savera-logo.png (1024x1024)')
 
-# 2. icon-512.png (512x512)
-icon_512 = master_logo.resize((512, 512), Image.Resampling.LANCZOS)
-icon_512.save('public/icon-512.png', format='PNG', optimize=True)
-print('Saved public/icon-512.png (512x512)')
+# -------------------------------------------------------------
+# 2. PWA ADAPTIVE / MASKABLE ICONS (512x512 and 192x192)
+# Standard Android Adaptive Icon Safe Zone:
+# Canvas = 108dp (512px). Safe Zone circle = 72dp (341.3px).
+# Artwork bounding size = 296px (~58% of canvas, 87% of safe circle).
+# Background = Solid #FFFFFF extending to all edges.
+# Guarantees ZERO clipping on circular, squircle, or rounded-rect launchers.
+# -------------------------------------------------------------
+# 512x512
+size_512 = 512
+art_size_512 = 296
+offset_512 = (size_512 - art_size_512) // 2  # 108px
 
-# 3. icon-192.png (192x192)
-icon_192 = master_logo.resize((192, 192), Image.Resampling.LANCZOS)
-icon_192.save('public/icon-192.png', format='PNG', optimize=True)
-print('Saved public/icon-192.png (192x192)')
+icon_512_canvas = Image.new('RGBA', (size_512, size_512), (255, 255, 255, 255))
+scaled_512 = cropped_artwork.resize((art_size_512, art_size_512), Image.Resampling.LANCZOS)
+icon_512_canvas.paste(scaled_512, (offset_512, offset_512), scaled_512)
 
-# 4. apple-touch-icon.png (180x180)
-apple_icon = master_logo.resize((180, 180), Image.Resampling.LANCZOS)
-apple_icon.save('public/apple-touch-icon.png', format='PNG', optimize=True)
+icon_512_canvas.save('public/icon-512.png', format='PNG', optimize=True)
+icon_512_canvas.save('public/icon-maskable-512.png', format='PNG', optimize=True)
+print('Saved public/icon-512.png and public/icon-maskable-512.png (512x512)')
+
+# 192x192
+size_192 = 192
+art_size_192 = 110
+offset_192 = (size_192 - art_size_192) // 2  # 41px
+
+icon_192_canvas = Image.new('RGBA', (size_192, size_192), (255, 255, 255, 255))
+scaled_192 = cropped_artwork.resize((art_size_192, art_size_192), Image.Resampling.LANCZOS)
+icon_192_canvas.paste(scaled_192, (offset_192, offset_192), scaled_192)
+
+icon_192_canvas.save('public/icon-192.png', format='PNG', optimize=True)
+icon_192_canvas.save('public/icon-maskable-192.png', format='PNG', optimize=True)
+print('Saved public/icon-192.png and public/icon-maskable-192.png (192x192)')
+
+# -------------------------------------------------------------
+# 3. APPLE TOUCH ICON (180x180)
+# iOS squircle mask safe-zone on solid #FFFFFF
+# -------------------------------------------------------------
+size_180 = 180
+art_size_180 = 104
+offset_180 = (size_180 - art_size_180) // 2
+
+apple_canvas = Image.new('RGBA', (size_180, size_180), (255, 255, 255, 255))
+scaled_180 = cropped_artwork.resize((art_size_180, art_size_180), Image.Resampling.LANCZOS)
+apple_canvas.paste(scaled_180, (offset_180, offset_180), scaled_180)
+apple_canvas.save('public/apple-touch-icon.png', format='PNG', optimize=True)
 print('Saved public/apple-touch-icon.png (180x180)')
 
-# 5. favicon-32x32.png and favicon-16x16.png
+# -------------------------------------------------------------
+# 4. BROWSER FAVICONS (32x32, 16x16, favicon.ico)
+# High-contrast circular badges optimized for small browser tabs
+# -------------------------------------------------------------
 fav_32 = master_logo.resize((32, 32), Image.Resampling.LANCZOS)
 fav_32.save('public/favicon-32x32.png', format='PNG', optimize=True)
+
 fav_16 = master_logo.resize((16, 16), Image.Resampling.LANCZOS)
 fav_16.save('public/favicon-16x16.png', format='PNG', optimize=True)
-print('Saved favicons (32x32, 16x16)')
 
-# 6. favicon.ico containing (16, 32, 48)
 fav_48 = master_logo.resize((48, 48), Image.Resampling.LANCZOS)
 fav_48.save('public/favicon.ico', format='ICO', sizes=[(16, 16), (32, 32), (48, 48)])
-print('Saved public/favicon.ico')
+print('Saved favicons (32x32, 16x16, favicon.ico)')
 
-# 7. Update public/icon-192.svg and public/icon-512.svg with embedded data URI
+# -------------------------------------------------------------
+# 5. VECTOR SVG ICONS WITH EMBEDDED DATA URIs
+# -------------------------------------------------------------
 with open('public/icon-192.png', 'rb') as f:
     b64_192 = base64.b64encode(f.read()).decode('utf-8')
 
