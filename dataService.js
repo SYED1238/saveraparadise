@@ -4123,7 +4123,7 @@ class QuickBiteDataService {
 
       realOrders.forEach(o => {
         // Auto-expire stale local orders older than 3 hours on customer portal so ghost orders never lock out checkout
-        if (this.portalType === 'customer' && o.status !== 'delivered' && o.status !== 'cancelled' && o.createdAt) {
+        if (this.portalType === 'customer' && o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered' && o.createdAt) {
           const orderAgeMs = Date.now() - Number(o.createdAt);
           if (orderAgeMs > 3 * 60 * 60 * 1000) {
             o.status = 'delivered';
@@ -4338,20 +4338,31 @@ class QuickBiteDataService {
 
     // Validate coupon code boundaries against store settings
     let discount = 0;
-    if (orderData.appliedPromo || orderData.promoCode) {
-      const code = String(orderData.appliedPromo || orderData.promoCode).trim().toUpperCase();
-      if (settings.offerActive && code === String(settings.offerCode || 'SAVERA20').trim().toUpperCase()) {
-        if (computedSubtotal >= (Number(settings.offerMinOrder) || 0)) {
-          if (settings.offerDiscountType === 'percent') {
-            discount = Math.round((computedSubtotal * (Number(settings.offerDiscountPercent) || 20)) / 100);
-          } else {
+    const appliedCode = String(orderData.appliedPromo || orderData.promoCode || '').trim().toUpperCase();
+    if (appliedCode) {
+      const settingsCode = String(settings.offerCode || 'SAVERA20').trim().toUpperCase();
+      const minOrder = Number(settings.offerMinOrder) || 0;
+      if (settings.offerActive !== false && appliedCode === settingsCode) {
+        if (computedSubtotal >= minOrder) {
+          if (settings.offerDiscountType === 'fixed' || settings.offerDiscountType === 'amount' || settings.offerDiscountType === 'flat') {
             discount = Number(settings.offerDiscountAmount) || 50;
+          } else {
+            const pct = Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20;
+            discount = Math.round((computedSubtotal * pct) / 100);
           }
           if (settings.offerFreeDelivery) {
             deliveryFee = 0;
           }
         }
+      } else if (appliedCode === 'SAVERA20' && computedSubtotal >= 199) {
+        discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 20) / 100));
+      } else if (appliedCode === 'SAVE10' && computedSubtotal >= 149) {
+        discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 10) / 100));
+      } else if (appliedCode === 'FIRSTORDER' || appliedCode === 'WELCOME50') {
+        discount = Math.min(computedSubtotal, 50);
       }
+    } else if (typeof orderData.discount === 'number' && orderData.discount > 0) {
+      discount = orderData.discount;
     }
 
     discount = Math.min(discount, computedSubtotal);
@@ -4359,6 +4370,9 @@ class QuickBiteDataService {
     const authoritativeTotalString = `₹${Math.round(calculatedTotal)}`;
 
     orderData.items = sanitizedItems;
+    orderData.subtotal = computedSubtotal;
+    orderData.discount = discount;
+    orderData.deliveryFee = deliveryFee;
     orderData.total = authoritativeTotalString;
     orderData.status = 'accepted';
     orderData.statusLabel = 'Accepted';
@@ -4745,7 +4759,12 @@ class QuickBiteDataService {
       'undelivered': 4
     };
 
-    if (updatedOrderData.status) {
+    if (updatedOrderData.status === 'cancelled') {
+      if (list[idx].status === 'delivered') {
+        console.warn(`[DataService] Action blocked in updateOrder: Order ${orderId} has already been delivered.`);
+        return null;
+      }
+    } else if (updatedOrderData.status) {
       const currentRank = STATUS_RANKS[list[idx].status] !== undefined ? STATUS_RANKS[list[idx].status] : 0;
       const targetRank = STATUS_RANKS[updatedOrderData.status] !== undefined ? STATUS_RANKS[updatedOrderData.status] : -1;
 
@@ -4756,9 +4775,10 @@ class QuickBiteDataService {
       }
     }
 
-    // STRICT POLICY: Only the Delivery Boy / Rider can pick up ('on_the_way') and deliver ('delivered')!
-    if ((updatedOrderData.status === 'on_the_way' || updatedOrderData.status === 'delivered') && updatedOrderData.source !== 'rider') {
-      console.warn(`[DataService] Action blocked: Order ${orderId} cannot be dispatched or delivered by admin in updateOrder.`);
+    // Allow rider, manager, admin, and owner to update delivery pipeline states in updateOrder
+    const allowedDeliverySources = ['rider', 'admin', 'owner', 'staff', 'system'];
+    if ((updatedOrderData.status === 'on_the_way' || updatedOrderData.status === 'delivered') && updatedOrderData.source && !allowedDeliverySources.includes(updatedOrderData.source)) {
+      console.warn(`[DataService] Action blocked: Order ${orderId} cannot be dispatched or delivered by source "${updatedOrderData.source}" in updateOrder.`);
       return null;
     }
 
@@ -4788,6 +4808,10 @@ class QuickBiteDataService {
       } else if (s === 'undelivered') {
         list[idx].stepIndex = 4;
         list[idx].statusLabel = 'Delivery Attempt Failed';
+      } else if (s === 'cancelled') {
+        list[idx].stepIndex = -1;
+        list[idx].statusLabel = 'Cancelled';
+        list[idx].eta = 'Order Cancelled';
       }
     }
 
@@ -6124,6 +6148,7 @@ class QuickBiteDataService {
       const extraKm = Math.max(0, distanceKm - baseKm);
       const amount = basePay + (extraKm * activeExtraRate);
       return {
+        orderId: order?.id || null,
         amount: Math.round(amount * 100) / 100,
         distanceKm: Math.round(distanceKm * 100) / 100,
         basePay,
@@ -6143,6 +6168,7 @@ class QuickBiteDataService {
       const { ratePerKm } = cfg.flatLinear;
       const amount = distanceKm * ratePerKm;
       return {
+        orderId: order?.id || null,
         amount: Math.round(amount * 100) / 100,
         distanceKm: Math.round(distanceKm * 100) / 100,
         basePay: 0,
@@ -6161,6 +6187,7 @@ class QuickBiteDataService {
     const extraKm = Math.max(0, distanceKm - baseKm);
     const amount = basePay + (extraKm * extraKmRate);
     return {
+      orderId: order?.id || null,
       amount: Math.round(amount * 100) / 100,
       distanceKm: Math.round(distanceKm * 100) / 100,
       basePay,

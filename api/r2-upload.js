@@ -34,16 +34,20 @@ function getSigningKey(secretKey, dateStamp, region, service) {
   return kSigning;
 }
 
+function awsUriEncode(str) {
+  return encodeURIComponent(str).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase()).replace(/%2F/g, '/');
+}
+
 function generatePresignedGetUrl(key, expiresInSeconds = 604800) {
   if (R2_CONFIG.PUBLIC_DOMAIN) {
-    return `${R2_CONFIG.PUBLIC_DOMAIN}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+    return `${R2_CONFIG.PUBLIC_DOMAIN}/${awsUriEncode(key)}`;
   }
   const date = new Date();
   const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const dateStamp = amzDate.substring(0, 8);
   const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(key)}`;
   const queryParams = [
     `X-Amz-Algorithm=AWS4-HMAC-SHA256`,
     `X-Amz-Credential=${encodeURIComponent(`${R2_CONFIG.ACCESS_KEY_ID}/${credentialScope}`)}`,
@@ -143,7 +147,7 @@ export default async function handler(req, res) {
   const dateStamp = amzDate.substring(0, 8);
   const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(key)}`;
   const payloadHash = sha256Hex(buffer);
 
   const canonicalHeaders = `content-type:${mimeType}\nhost:${R2_CONFIG.HOST}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;

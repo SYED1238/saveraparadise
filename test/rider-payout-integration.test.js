@@ -283,4 +283,24 @@ describe('RIDER PORTAL PAYOUT & BALANCE INTEGRATION SUITE', () => {
       'Parcel pickup banner must only be displayed when activeTab is ready (Pending)'
     );
   });
+
+  test('10. calculateOrderPayout returns orderId and delivery.js resolves confirmCashBox without ReferenceError', () => {
+    const order = { id: '#QB-9999', addressDetails: { distanceKm: 2.5 } };
+    const payout = dataService.calculateOrderPayout(order, 1);
+    assert.equal(payout.orderId, '#QB-9999', 'calculateOrderPayout must return orderId');
+
+    const js = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf-8');
+    assert.ok(
+      js.includes("const confirmCashBox = document.getElementById('confirm-cash-box');"),
+      'delivery.js must declare confirmCashBox'
+    );
+    assert.ok(
+      js.includes("renderEarningsTrips(summary, currentRider, orders);"),
+      'delivery.js must pass orders to renderEarningsTrips instead of undeclared allOrders'
+    );
+    assert.ok(
+      js.includes("lat: 12.7245") && js.includes("lng: 77.2790"),
+      'createDemoDeliveryOrder must include lat/lng'
+    );
+  });
 });

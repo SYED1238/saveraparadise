@@ -1,6 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ORDER_STATUS_RANKS, STATUS_TO_STEP_INDEX, STATUS_TO_LABEL_MAP } from '../dataService.js';
+
+if (typeof global.localStorage === 'undefined') {
+  const store = new Map();
+  global.localStorage = {
+    getItem: (key) => store.get(String(key)) ?? null,
+    setItem: (key, val) => store.set(String(key), String(val)),
+    removeItem: (key) => store.delete(String(key)),
+    clear: () => store.clear(),
+    key: (i) => Array.from(store.keys())[i] ?? null,
+    get length() { return store.size; }
+  };
+}
+if (typeof global.sessionStorage === 'undefined') {
+  const store = new Map();
+  global.sessionStorage = {
+    getItem: (key) => store.get(String(key)) ?? null,
+    setItem: (key, val) => store.set(String(key), String(val)),
+    removeItem: (key) => store.delete(String(key)),
+    clear: () => store.clear()
+  };
+}
+
+import { dataService, ORDER_STATUS_RANKS, STATUS_TO_STEP_INDEX, STATUS_TO_LABEL_MAP } from '../dataService.js';
 
 test('ORDER STATUS PROGRESSION & LIFECYCLE SYNCHRONIZATION SUITE', async (t) => {
   await t.test('1. Status-to-StepIndex mapping aligns strictly with 5-step customer tracker timeline', () => {
@@ -186,5 +208,40 @@ test('ORDER STATUS PROGRESSION & LIFECYCLE SYNCHRONIZATION SUITE', async (t) => 
     assert.strictEqual(samplePayload.stepIndex, 1);
     assert.strictEqual(typeof samplePayload.timestamp, 'number');
     assert.ok(samplePayload.timestamp > 0);
+  });
+
+  await t.test('9. updateOrder allows cancellation and accepts admin/rider sources', () => {
+    // Setup test orders
+    const testOrders = [
+      { id: '#QB-TEST-1', status: 'accepted', total: '₹300' },
+      { id: '#QB-TEST-2', status: 'ready_for_pickup', total: '₹400' }
+    ];
+    dataService.saveOrders(testOrders);
+
+    // Cancel order in accepted state
+    const cancelled = dataService.updateOrder('#QB-TEST-1', { status: 'cancelled', source: 'admin' });
+    assert.ok(cancelled, 'updateOrder must not block cancellation');
+    assert.strictEqual(cancelled.status, 'cancelled');
+    assert.strictEqual(cancelled.stepIndex, -1);
+    assert.strictEqual(cancelled.statusLabel, 'Cancelled');
+
+    // Admin source updates ready_for_pickup to on_the_way
+    const dispatched = dataService.updateOrder('#QB-TEST-2', { status: 'on_the_way', source: 'admin' });
+    assert.ok(dispatched, 'updateOrder must permit admin source for on_the_way transition');
+    assert.strictEqual(dispatched.status, 'on_the_way');
+  });
+
+  await t.test('10. Customer portal getOrders never marks undelivered orders as delivered after 3 hours', () => {
+    const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+    const staleOrders = [
+      { id: '#QB-UNDELIV', status: 'undelivered', createdAt: fourHoursAgo },
+      { id: '#QB-CANCELLED', status: 'cancelled', createdAt: fourHoursAgo }
+    ];
+    dataService.portalType = 'customer';
+    dataService.saveOrders(staleOrders);
+
+    const orders = dataService.getOrders();
+    const undelivered = orders.find(o => o.id === '#QB-UNDELIV');
+    assert.strictEqual(undelivered.status, 'undelivered', 'Undelivered status must never mutate into delivered');
   });
 });

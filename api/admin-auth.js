@@ -141,14 +141,14 @@ export default async function handler(req, res) {
         if (safeEqual(signature, expectedSignature)) {
           try {
             const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-            if (payload && payload.role === 'admin') {
+            if (payload && (payload.role === 'admin' || payload.role === 'owner')) {
               const maxRefreshAge = 24 * 60 * 60 * 1000;
               if (Date.now() - (payload.iat || 0) < maxRefreshAge) {
-                const refreshedToken = createAdminToken();
+                const refreshedToken = createAdminToken(undefined, payload.role);
                 return res.status(200).json({
                   success: true,
                   token: refreshedToken,
-                  role: 'admin',
+                  role: payload.role,
                   expiresIn: 43200
                 });
               }

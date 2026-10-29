@@ -227,7 +227,7 @@ export async function ensureAdminToken() {
     }
 
     // Token is missing or expired. Attempt to refresh via /api/admin-auth if staff session is active
-    if (isStaffSessionActive('admin') && typeof fetch !== 'undefined') {
+    if ((isStaffSessionActive('admin') || isStaffSessionActive('owner')) && typeof fetch !== 'undefined') {
       try {
         const res = await fetch('/api/admin-auth', {
           method: 'POST',
@@ -241,6 +241,9 @@ export async function ensureAdminToken() {
           const data = await res.json();
           if (data && data.token) {
             sessionStorage.setItem('quickbite_admin_token', data.token);
+            if (data.role === 'owner') {
+              sessionStorage.setItem('quickbite_owner_token', data.token);
+            }
             return data.token;
           }
         }

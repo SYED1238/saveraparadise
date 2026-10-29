@@ -173,10 +173,10 @@ export default async function handler(req, res) {
     if (hasCustomSettings && isOfferActive && cleanCode === configCode) {
       const minOrder = (settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
       if (computedSubtotal >= minOrder) {
-        if (settings.offerDiscountType === 'fixed' || settings.offerDiscountType === 'amount') {
+        if (settings.offerDiscountType === 'fixed' || settings.offerDiscountType === 'amount' || settings.offerDiscountType === 'flat') {
           discount = Number(settings.offerDiscountAmount) || 50;
         } else {
-          const pct = Number(settings.offerDiscountPercent) || 20;
+          const pct = Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20;
           discount = Math.round((computedSubtotal * pct) / 100);
         }
         if (settings.offerFreeDelivery) {

@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const formConfirmDelivered = document.getElementById('form-confirm-delivered');
   const confirmOrderId = document.getElementById('confirm-order-id');
   const confirmOrderDetails = document.getElementById('confirm-order-details');
+  const confirmCashBox = document.getElementById('confirm-cash-box');
   const confirmCashValue = document.getElementById('confirm-cash-value');
   const confirmPayoutBox = document.getElementById('confirm-payout-box');
   const confirmPayoutValue = document.getElementById('confirm-payout-value');
@@ -895,7 +896,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (parcelPickupBannerSec) parcelPickupBannerSec.style.display = 'none';
       if (riderOrdersSec) riderOrdersSec.style.display = 'none';
       const summary = updateRiderEarningsUI(currentRider);
-      renderEarningsTrips(summary, currentRider, allOrders);
+      renderEarningsTrips(summary, currentRider, orders);
       return;
     } else {
       if (riderEarningsSec) riderEarningsSec.style.display = 'none';
@@ -2512,6 +2513,8 @@ document.addEventListener('DOMContentLoaded', () => {
       customerName: 'Local Customer',
       customerPhone: '+91 98765 43210',
       deliveryAddress: 'Aga Complex, Railway Station Road, Mandipet, Ramanagara',
+      lat: 12.7245,
+      lng: 77.2790,
       customerLat: 12.7245,
       customerLng: 77.2790,
       distanceKm: 1.31,

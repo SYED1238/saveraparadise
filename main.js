@@ -4364,13 +4364,14 @@ function initStorefrontApp() {
         const itemsSummary = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
         const cartSubtotal = cart.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
         let calculatedTotal = cartSubtotal;
+        let calculatedDiscount = 0;
         const offerMinOrder = Number(settings.offerMinOrder || 0);
         if (appliedPromo && settings.offerActive !== false && (offerMinOrder <= 0 || cartSubtotal >= offerMinOrder)) {
           const discountType = settings.offerDiscountType || 'percent';
-          const discountVal = discountType === 'flat' 
+          calculatedDiscount = (discountType === 'flat' || discountType === 'fixed' || discountType === 'amount')
             ? Number(settings.offerDiscountAmount || 50) 
-            : (cartSubtotal * Number(settings.offerDiscountPercent || 20) / 100);
-          calculatedTotal = Math.max(0, cartSubtotal - discountVal);
+            : Math.round(cartSubtotal * Number(settings.offerDiscountPercent || settings.offerDiscountAmount || 20) / 100);
+          calculatedTotal = Math.max(0, cartSubtotal - calculatedDiscount);
         }
 
         // Safe delivery fee extraction: ensure summaryDelivery / checkoutDeliveryFee is safely resolved
@@ -4398,6 +4399,10 @@ function initStorefrontApp() {
           deliveryAddress: fullAddressText,
           lat: Number(selectedAddr.lat),
           lng: Number(selectedAddr.lng),
+          appliedPromo: appliedPromo || null,
+          promoCode: appliedPromo || null,
+          discount: calculatedDiscount,
+          deliveryFee: rawDeliveryFee,
           addressDetails: {
             tag: selectedAddr.tag,
             details: customerAddressText,
@@ -4436,8 +4441,8 @@ function initStorefrontApp() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               items: cart.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price })),
-              promoCode: appliedPromo || (settings && settings.offerActive ? settings.offerCode : null) || null,
-              appliedPromo: appliedPromo || (settings && settings.offerActive ? settings.offerCode : null) || null,
+              promoCode: appliedPromo || null,
+              appliedPromo: appliedPromo || null,
               storeSettings: settings,
               catalogDishes
             })
@@ -4452,6 +4457,12 @@ function initStorefrontApp() {
                     : parseFloat(String(checkoutData.total).replace(/[^0-9.]/g, '')));
               if (!Number.isNaN(rawNum)) {
                 newOrder.total = `₹${Math.round(rawNum)}`;
+              }
+              if (typeof checkoutData.discount === 'number') {
+                newOrder.discount = checkoutData.discount;
+              }
+              if (typeof checkoutData.deliveryFee === 'number') {
+                newOrder.deliveryFee = checkoutData.deliveryFee;
               }
               newOrder.checkoutSignature = checkoutData.signature || checkoutData.checkoutToken || '';
             }

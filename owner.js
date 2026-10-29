@@ -196,24 +196,19 @@ function updatePinDots() {
 }
 
 async function verifyOwnerPin(pin) {
-  const settings = dataService.getSettings();
   const cleanPin = String(pin || '').trim();
-  const inputHash = await hashPasscode(cleanPin);
+  if (!cleanPin) return;
 
+  const settings = dataService.getSettings();
+  const inputHash = await hashPasscode(cleanPin);
   const targetHash = settings.ownerPinHash || DEFAULT_OWNER_PIN_HASH;
   const legacyPin = settings.ownerPin ? String(settings.ownerPin).trim() : null;
 
-  const isValid = inputHash === targetHash || (legacyPin && cleanPin === legacyPin);
+  let isValid = false;
+  let serverHandled = false;
 
-  if (isValid) {
-    // If legacy plaintext pin was used, migrate to salted hash and delete plaintext
-    if (settings.ownerPin) {
-      settings.ownerPinHash = inputHash;
-      delete settings.ownerPin;
-      dataService.saveSettings(settings);
-    }
-
-    // Authenticate with server to receive signed cryptographic token for Cashfree payouts & privileged ops
+  // 1. Authenticate with server first to support custom OWNER_PIN secrets and get signed token
+  if (typeof fetch !== 'undefined') {
     try {
       const authRes = await fetch('/api/admin-auth', {
         method: 'POST',
@@ -222,13 +217,33 @@ async function verifyOwnerPin(pin) {
       });
       if (authRes.ok) {
         const authData = await authRes.json();
-        if (authData?.token) {
+        if (authData?.token && (authData.role === 'owner' || authData.role === 'admin')) {
           sessionStorage.setItem('quickbite_admin_token', authData.token);
           sessionStorage.setItem('quickbite_owner_token', authData.token);
+          isValid = true;
+          serverHandled = true;
         }
+      } else if (authRes.status === 401 || authRes.status === 403) {
+        // Server definitively rejected this PIN
+        serverHandled = true;
+        isValid = false;
       }
     } catch (e) {
-      console.warn('[OwnerAuth] Server token exchange failed (offline fallback active):', e);
+      console.warn('[OwnerAuth] Server verification network error, attempting offline hash check:', e);
+    }
+  }
+
+  // 2. Offline fallback if server was unreachable
+  if (!serverHandled) {
+    isValid = inputHash === targetHash || (legacyPin && cleanPin === legacyPin);
+  }
+
+  if (isValid) {
+    // If legacy plaintext pin was used, migrate to salted hash and delete plaintext
+    if (settings.ownerPin) {
+      settings.ownerPinHash = inputHash;
+      delete settings.ownerPin;
+      dataService.saveSettings(settings);
     }
 
     setStaffSessionActive('owner');

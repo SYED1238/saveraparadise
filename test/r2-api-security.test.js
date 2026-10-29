@@ -140,6 +140,19 @@ test('STAGE 1: Serverless Admin Auth Endpoint (admin-auth.js)', async (t) => {
     const verifyResult = verifyAdminToken({ headers: { authorization: `Bearer ${res.data.token}` } });
     assert.strictEqual(verifyResult.valid, true);
   });
+
+  await t.test('POST /api/admin-auth refreshes token for owner role', async () => {
+    const ownerToken = createAdminToken(undefined, 'owner');
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: { action: 'refresh', token: ownerToken }
+    });
+    await adminAuthHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.data.success, true);
+    assert.strictEqual(res.data.role, 'owner');
+    assert.ok(res.data.token && typeof res.data.token === 'string');
+  });
 });
 
 test('STAGE 1: Storage Endpoint Authorization Guards', async (t) => {
@@ -212,6 +225,10 @@ test('STAGE 1: Public Image Delivery & Path Traversal Guards (r2-image.js)', asy
     const { req: req2, res: res2 } = createMockReqRes({ method: 'GET', query: { key: 'categories/category_123.jpg' } });
     await r2ImageHandler(req2, res2);
     assert.notStrictEqual(res2.statusCode, 400);
+
+    const { req: req3, res: res3 } = createMockReqRes({ method: 'GET', query: { key: 'dishes/crispy_chicken_(1).jpg' } });
+    await r2ImageHandler(req3, res3);
+    assert.notStrictEqual(res3.statusCode, 400);
   });
 });
 

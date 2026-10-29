@@ -27,6 +27,10 @@ function getSigningKey(secretKey, dateStamp, region, service) {
   return kSigning;
 }
 
+function awsUriEncode(str) {
+  return encodeURIComponent(str).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase()).replace(/%2F/g, '/');
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
@@ -77,7 +81,7 @@ export default async function handler(req, res) {
     const dateStamp = amzDate.substring(0, 8);
     const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-    const encodedKey = encodeURIComponent(cleanKey).replace(/%2F/g, '/');
+    const encodedKey = awsUriEncode(cleanKey);
     const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${encodedKey}`;
     const canonicalQueryString = '';
     const payloadHash = sha256Hex('');

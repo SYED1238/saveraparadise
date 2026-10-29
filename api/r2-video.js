@@ -136,56 +136,67 @@ export default async function handler(req, res) {
     headers: upstreamHeaders
   };
 
-  const r2Req = https.request(options, (r2Res) => {
-    // Clear initial socket connection timeout once response headers arrive
-    r2Req.setTimeout(0);
+  return new Promise((resolve) => {
+    const r2Req = https.request(options, (r2Res) => {
+      // Clear initial socket connection timeout once response headers arrive
+      r2Req.setTimeout(0);
 
-    const status = r2Res.statusCode;
-    if (status === 200 || status === 206) {
-      if (!res.headersSent) {
-        res.setHeader('Content-Type', r2Res.headers['content-type'] || 'video/mp4');
-        res.setHeader('Accept-Ranges', 'bytes');
-        if (r2Res.headers['content-range']) {
-          res.setHeader('Content-Range', r2Res.headers['content-range']);
+      const status = r2Res.statusCode;
+      if (status === 200 || status === 206) {
+        if (!res.headersSent) {
+          res.setHeader('Content-Type', r2Res.headers['content-type'] || 'video/mp4');
+          res.setHeader('Accept-Ranges', 'bytes');
+          if (r2Res.headers['content-range']) {
+            res.setHeader('Content-Range', r2Res.headers['content-range']);
+          }
+          if (r2Res.headers['content-length']) {
+            res.setHeader('Content-Length', r2Res.headers['content-length']);
+          }
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.statusCode = status;
         }
-        if (r2Res.headers['content-length']) {
-          res.setHeader('Content-Length', r2Res.headers['content-length']);
+        if (req.method === 'HEAD') {
+          r2Res.resume();
+          res.end();
+          return resolve();
         }
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.statusCode = status;
-      }
-      if (req.method === 'HEAD') {
+        r2Res.pipe(res);
+        r2Res.on('end', () => resolve());
+        r2Res.on('error', (err) => {
+          console.error('[R2 Video Stream Pipe Error]:', err.message);
+          resolve();
+        });
+      } else {
         r2Res.resume();
-        return res.end();
+        if (!res.headersSent) {
+          res.statusCode = status || 404;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Video not found in storage' }));
+        }
+        resolve();
       }
-      r2Res.pipe(res);
-    } else {
-      r2Res.resume();
+    });
+
+    r2Req.setTimeout(12000, () => {
+      r2Req.destroy(new Error('Cloudflare R2 video streaming timeout (12s)'));
+    });
+
+    r2Req.on('error', (err) => {
+      console.error('[R2 Video Stream Error]:', err.message);
       if (!res.headersSent) {
-        res.statusCode = status || 404;
+        res.statusCode = 502;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'Video not found in storage' }));
+        res.end(JSON.stringify({ error: 'Failed to stream video from Cloudflare R2' }));
       }
-    }
-  });
+      resolve();
+    });
 
-  r2Req.setTimeout(12000, () => {
-    r2Req.destroy(new Error('Cloudflare R2 video streaming timeout (12s)'));
-  });
+    req.on('close', () => {
+      r2Req.destroy();
+      resolve();
+    });
 
-  r2Req.on('error', (err) => {
-    console.error('[R2 Video Stream Error]:', err.message);
-    if (!res.headersSent) {
-      res.statusCode = 502;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'Failed to stream video from Cloudflare R2' }));
-    }
+    r2Req.end();
   });
-
-  req.on('close', () => {
-    r2Req.destroy();
-  });
-
-  r2Req.end();
 }

@@ -25,6 +25,14 @@ function getSigningKey(secretKey, dateStamp, region, service) {
   return hmac(kService, 'aws4_request');
 }
 
+/**
+ * AWS Signature Version 4 RFC 3986 URI encoding
+ * Requires ( to be %28 and ) to be %29, preserving forward slashes
+ */
+function awsUriEncode(str) {
+  return encodeURIComponent(str).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase()).replace(/%2F/g, '/');
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Allow', 'GET, HEAD, OPTIONS');
@@ -43,7 +51,7 @@ export default async function handler(req, res) {
 
   // Security: Prevent directory traversal or URI manipulation - only serve public dish & category images
   const cleanKey = key.replace(/^\/+/, '');
-  if ((!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/')) || cleanKey.includes('..') || !/^[a-zA-Z0-9_\-./]+$/.test(cleanKey)) {
+  if ((!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/')) || cleanKey.includes('..') || !/^[a-zA-Z0-9_\-./() %]+$/.test(cleanKey)) {
     return res.status(400).json({ error: 'Invalid image key' });
   }
 
@@ -56,13 +64,14 @@ export default async function handler(req, res) {
   const dateStamp = amzDate.substring(0, 8);
   const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${encodeURIComponent(cleanKey).replace(/%2F/g, '/')}`;
+  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(cleanKey)}`;
   const payloadHash = sha256Hex('');
 
   const canonicalHeaders = `host:${R2_CONFIG.HOST}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
   const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
 
-  const canonicalRequest = `GET\n${canonicalUri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+  const reqMethod = req.method === 'HEAD' ? 'HEAD' : 'GET';
+  const canonicalRequest = `${reqMethod}\n${canonicalUri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${sha256Hex(canonicalRequest)}`;
 
   const signingKey = getSigningKey(R2_CONFIG.SECRET_ACCESS_KEY, dateStamp, R2_CONFIG.REGION, R2_CONFIG.SERVICE);
@@ -73,7 +82,7 @@ export default async function handler(req, res) {
   const options = {
     hostname: R2_CONFIG.HOST,
     path: canonicalUri,
-    method: 'GET',
+    method: reqMethod,
     headers: {
       'host': R2_CONFIG.HOST,
       'x-amz-date': amzDate,
@@ -82,32 +91,60 @@ export default async function handler(req, res) {
     }
   };
 
-  const r2Req = https.request(options, (r2Res) => {
-    if (r2Res.statusCode >= 200 && r2Res.statusCode < 300) {
-      res.setHeader('Content-Type', r2Res.headers['content-type'] || 'image/jpeg');
-      if (r2Res.headers['content-length']) {
-        res.setHeader('Content-Length', r2Res.headers['content-length']);
+  return new Promise((resolve) => {
+    const r2Req = https.request(options, (r2Res) => {
+      if (r2Res.statusCode >= 200 && r2Res.statusCode < 300) {
+        if (!res.headersSent) {
+          res.setHeader('Content-Type', r2Res.headers['content-type'] || 'image/jpeg');
+          if (r2Res.headers['content-length']) {
+            res.setHeader('Content-Length', r2Res.headers['content-length']);
+          }
+          // Cache-Control: 1-year browser & Global Edge CDN cache
+          res.setHeader('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
+          res.setHeader('CDN-Cache-Control', 'public, s-maxage=31536000, immutable');
+          res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=31536000, immutable');
+          res.status(r2Res.statusCode);
+        }
+        if (req.method === 'HEAD') {
+          r2Res.resume();
+          res.end();
+          return resolve();
+        }
+        r2Res.pipe(res);
+        r2Res.on('end', () => resolve());
+        r2Res.on('error', (err) => {
+          console.error('[R2 Image Stream Pipe Error]:', err);
+          if (!res.headersSent) {
+            res.status(502).json({ error: 'Stream error while retrieving image' });
+          }
+          resolve();
+        });
+      } else {
+        r2Res.resume();
+        if (!res.headersSent) {
+          res.status(r2Res.statusCode || 404).json({ error: 'Image not found in storage' });
+        }
+        resolve();
       }
-      // Cache-Control: 1-year browser & Global Edge CDN cache
-      res.setHeader('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
-      res.setHeader('CDN-Cache-Control', 'public, s-maxage=31536000, immutable');
-      res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=31536000, immutable');
-      res.status(r2Res.statusCode);
-      r2Res.pipe(res);
-    } else {
-      r2Res.resume();
-      res.status(r2Res.statusCode).json({ error: 'Image not found in storage' });
-    }
-  });
+    });
 
-  r2Req.setTimeout(8000, () => {
-    r2Req.destroy(new Error('Cloudflare R2 image retrieval timeout (8s)'));
-  });
+    r2Req.setTimeout(8000, () => {
+      r2Req.destroy(new Error('Cloudflare R2 image retrieval timeout (8s)'));
+    });
 
-  r2Req.on('error', (err) => {
-    console.error('[R2 Image Proxy Error]:', err);
-    res.status(502).json({ error: 'Failed to retrieve image from storage' });
-  });
+    r2Req.on('error', (err) => {
+      console.error('[R2 Image Proxy Error]:', err);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Failed to retrieve image from storage' });
+      }
+      resolve();
+    });
 
-  r2Req.end();
+    req.on('close', () => {
+      r2Req.destroy();
+      resolve();
+    });
+
+    r2Req.end();
+  });
 }
