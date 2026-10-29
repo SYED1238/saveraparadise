@@ -31,7 +31,9 @@ try {
  */
 export function getAudioContext() {
   if (!globalAudioCtx) {
-    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+    const AudioCtxClass = typeof window !== 'undefined'
+      ? (window.AudioContext || window.webkitAudioContext)
+      : (typeof globalThis !== 'undefined' ? (globalThis.AudioContext || globalThis.webkitAudioContext) : null);
     if (AudioCtxClass) {
       globalAudioCtx = new AudioCtxClass();
     }
@@ -106,6 +108,7 @@ export function playNotificationSound(type = 'general_alert') {
 
     switch (type) {
       case 'new_order':
+      case 'order_incoming':
       case 'kitchen_alarm':
         // Piercing POS kitchen dual melody (880Hz, 1174Hz, 1760Hz twice)
         notes = [
@@ -224,15 +227,26 @@ export function playNotificationSound(type = 'general_alert') {
  * Web Desktop / System Push Notifications
  */
 
+function getNotificationClass() {
+  if (typeof window !== 'undefined' && window.Notification) {
+    return window.Notification;
+  }
+  if (typeof Notification !== 'undefined') {
+    return Notification;
+  }
+  return null;
+}
+
 export function isSystemNotificationSupported() {
   if (typeof window !== 'undefined' && window.AndroidNative) return true;
-  return typeof window !== 'undefined' && 'Notification' in window;
+  return getNotificationClass() !== null;
 }
 
 export function getSystemNotificationPermission() {
   if (typeof window !== 'undefined' && window.AndroidNative) return 'granted';
-  if (!isSystemNotificationSupported()) return 'unsupported';
-  return Notification.permission;
+  const Notif = getNotificationClass();
+  if (!Notif) return 'unsupported';
+  return Notif.permission || 'default';
 }
 
 export async function requestSystemNotificationPermission() {
@@ -242,15 +256,16 @@ export async function requestSystemNotificationPermission() {
     }
     return 'granted';
   }
-  if (!isSystemNotificationSupported()) return 'unsupported';
+  const Notif = getNotificationClass();
+  if (!Notif) return 'unsupported';
   try {
-    const perm = await Notification.requestPermission();
+    const perm = await Notif.requestPermission();
     try {
       localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS_REQUESTED, 'true');
     } catch {}
     return perm;
   } catch (e) {
-    return Notification.permission;
+    return Notif.permission || 'default';
   }
 }
 
@@ -286,7 +301,8 @@ if (typeof window !== 'undefined') {
 
 export function isNotificationGranted() {
   if (typeof window !== 'undefined' && window.AndroidNative) return true;
-  return isSystemNotificationSupported() && Notification.permission === 'granted';
+  const Notif = getNotificationClass();
+  return isSystemNotificationSupported() && Notif?.permission === 'granted';
 }
 
 /**
@@ -365,7 +381,8 @@ export function sendSystemNotification({
   }
 
   if (!isSystemNotificationSupported()) return null;
-  if (Notification.permission !== 'granted') return null;
+  const Notif = getNotificationClass();
+  if (!Notif || Notif.permission !== 'granted') return null;
 
   // If onlyIfHidden is requested, suppress OS notification if tab is actively focused
   if (onlyIfHidden && typeof document !== 'undefined' && !document.hidden && document.hasFocus && document.hasFocus()) {
@@ -397,7 +414,9 @@ export function sendSystemNotification({
 
   function fallbackWindowNotification() {
     try {
-      const notif = new Notification(title, {
+      const Notif = getNotificationClass();
+      if (!Notif) return null;
+      const notif = new Notif(title, {
         body: body || '',
         icon: effectiveIcon,
         badge: effectiveIcon,
@@ -486,18 +505,30 @@ export function sendSystemNotification({
  * Flashes browser tab title back and forth so user notices even when multitasking in another tab or application.
  */
 let activeTitleFlashTimer = null;
-let originalDocumentTitle = typeof document !== 'undefined' ? document.title : '';
+let activeFocusHandler = null;
+let activeStopTimeout = null;
+let originalDocumentTitle = '';
 
 export function flashTabTitle(alertText, durationMs = 12000) {
   if (typeof document === 'undefined') return;
 
+  // 1. Capture original title only when not currently in an active flash cycle
+  if (!activeTitleFlashTimer) {
+    originalDocumentTitle = document.title || '';
+  }
+
+  // 2. Clear any active interval, auto-stop timeout, and focus listener
   if (activeTitleFlashTimer) {
     clearInterval(activeTitleFlashTimer);
     activeTitleFlashTimer = null;
   }
-
-  if (!originalDocumentTitle) {
-    originalDocumentTitle = document.title;
+  if (activeStopTimeout) {
+    clearTimeout(activeStopTimeout);
+    activeStopTimeout = null;
+  }
+  if (activeFocusHandler && typeof window !== 'undefined') {
+    window.removeEventListener('focus', activeFocusHandler);
+    activeFocusHandler = null;
   }
 
   let toggle = false;
@@ -506,17 +537,17 @@ export function flashTabTitle(alertText, durationMs = 12000) {
     document.title = toggle ? alertText : originalDocumentTitle;
   }, 650);
 
-  // Stop flashing when window gets focused
-  const onFocus = () => {
+  // 3. Stop flashing and clean up when window regains focus
+  activeFocusHandler = () => {
     stopFlashingTabTitle();
-    window.removeEventListener('focus', onFocus);
   };
-  window.addEventListener('focus', onFocus);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', activeFocusHandler);
+  }
 
-  // Auto-stop after duration
-  setTimeout(() => {
+  // 4. Auto-stop after specified duration
+  activeStopTimeout = setTimeout(() => {
     stopFlashingTabTitle();
-    window.removeEventListener('focus', onFocus);
   }, durationMs);
 }
 
@@ -525,9 +556,18 @@ export function stopFlashingTabTitle() {
     clearInterval(activeTitleFlashTimer);
     activeTitleFlashTimer = null;
   }
+  if (activeStopTimeout) {
+    clearTimeout(activeStopTimeout);
+    activeStopTimeout = null;
+  }
+  if (activeFocusHandler && typeof window !== 'undefined') {
+    window.removeEventListener('focus', activeFocusHandler);
+    activeFocusHandler = null;
+  }
   if (originalDocumentTitle && typeof document !== 'undefined') {
     document.title = originalDocumentTitle;
   }
+  originalDocumentTitle = '';
 }
 
 /**
@@ -679,8 +719,9 @@ export function showSamsungToast(message, type = 'info', options = {}) {
   } catch {}
 
   // 5. Entrance transition: Drop down from top
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
+  const rAF = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
+  rAF(() => {
+    rAF(() => {
       toast.style.transition = 'transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease';
       toast.style.transform = 'translateY(0) scale(1)';
       toast.style.opacity = '1';
@@ -697,6 +738,12 @@ export function showSamsungToast(message, type = 'info', options = {}) {
     if (isDismissed) return;
     isDismissed = true;
     clearTimeout(dismissTimer);
+
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('pointermove', onDragMove);
+      window.removeEventListener('pointerup', onDragEnd);
+      window.removeEventListener('pointercancel', onDragEnd);
+    }
 
     toast.classList.add('toast-dismissing');
     if (direction === 'left') {
@@ -846,9 +893,11 @@ export function showSamsungToast(message, type = 'info', options = {}) {
 
   // Pointer events (Mobile Touch + Desktop Mouse)
   toast.addEventListener('pointerdown', onDragStart, { passive: true });
-  window.addEventListener('pointermove', onDragMove, { passive: true });
-  window.addEventListener('pointerup', onDragEnd, { passive: true });
-  window.addEventListener('pointercancel', onDragEnd, { passive: true });
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pointermove', onDragMove, { passive: true });
+    window.addEventListener('pointerup', onDragEnd, { passive: true });
+    window.addEventListener('pointercancel', onDragEnd, { passive: true });
+  }
 
   // Hover pause on desktop
   toast.addEventListener('mouseenter', pauseTimer);

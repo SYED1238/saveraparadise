@@ -57,6 +57,7 @@ public class OrderMonitorService extends Service {
 
     private static final Set<String> knownOrderIds = Collections.synchronizedSet(new HashSet<>());
     private static final Set<String> notifiedReadyIds = Collections.synchronizedSet(new HashSet<>());
+    private static volatile OrderMonitorService activeInstance = null;
 
     private volatile boolean isRunning = false;
     private Thread pollingThread;
@@ -64,15 +65,49 @@ public class OrderMonitorService extends Service {
     private boolean isRiderApp = false;
 
     public static void markOrderNotified(String orderId) {
-        if (orderId != null && !orderId.isEmpty()) {
-            knownOrderIds.add(orderId);
-            notifiedReadyIds.add(orderId);
+        if (orderId == null || orderId.trim().isEmpty()) {
+            return;
+        }
+        String rawTag = orderId.trim();
+        knownOrderIds.add(rawTag);
+        notifiedReadyIds.add(rawTag);
+
+        // Strip known web notification prefixes to match raw Supabase order ID
+        String normalized = rawTag;
+        String[] prefixes = new String[] {
+            "admin-order-", "admin-dispatched-", "admin-delivered-", "admin-undelivered-", "admin-overdue-",
+            "rider-ready-", "customer-accepted-", "customer-cooking-", "customer-dispatched-",
+            "customer-delivered-", "customer-cancelled-", "customer-undelivered-", "order-"
+        };
+        for (String p : prefixes) {
+            if (normalized.startsWith(p)) {
+                normalized = normalized.substring(p.length());
+                break;
+            }
+        }
+        normalized = normalized.trim();
+        if (!normalized.isEmpty()) {
+            String bareId = normalized.startsWith("#") ? normalized.substring(1) : normalized;
+            String hashId = "#" + bareId;
+
+            knownOrderIds.add(normalized);
+            knownOrderIds.add(bareId);
+            knownOrderIds.add(hashId);
+
+            notifiedReadyIds.add(normalized);
+            notifiedReadyIds.add(bareId);
+            notifiedReadyIds.add(hashId);
+        }
+
+        if (activeInstance != null) {
+            activeInstance.saveKnownOrdersToStorage();
         }
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
+        activeInstance = this;
         isRiderApp = getPackageName().toLowerCase().contains("rider");
 
         createNotificationChannels();
@@ -413,6 +448,9 @@ public class OrderMonitorService extends Service {
         isRunning = false;
         if (pollingThread != null) {
             pollingThread.interrupt();
+        }
+        if (activeInstance == this) {
+            activeInstance = null;
         }
         super.onDestroy();
     }

@@ -3044,14 +3044,19 @@ document.addEventListener('DOMContentLoaded', () => {
         (!o.createdAt || (now - Number(o.createdAt) < 15 * 60 * 1000))
       );
       if (freshAccepted) {
-        startKitchenAlarm(freshAccepted);
+        const normId = String(freshAccepted.id).trim();
+        const lastAlert = recentAlertedOrderIds.get(normId) || 0;
+        if (isStaffSessionActive('admin') && (now - lastAlert >= 5000)) {
+          recentAlertedOrderIds.set(normId, now);
+          startKitchenAlarm(freshAccepted);
 
-        sendSystemNotification({
-          title: `🚨 Savera Paradise Kitchen: New Order ${freshAccepted.id}!`,
-          body: `${freshAccepted.customerName || 'Customer'} • ${freshAccepted.itemsSummary || 'Food order'} (Total: ${freshAccepted.total || ''})`,
-          tag: `admin-order-${freshAccepted.id}`
-        });
-        flashTabTitle(`🚨 NEW ORDER ${freshAccepted.id}!`);
+          sendSystemNotification({
+            title: `🚨 Savera Paradise Kitchen: New Order ${freshAccepted.id}!`,
+            body: `${freshAccepted.customerName || 'Customer'} • ${freshAccepted.itemsSummary || 'Food order'} (Total: ${freshAccepted.total || ''})`,
+            tag: `admin-order-${freshAccepted.id}`
+          });
+          flashTabTitle(`🚨 NEW ORDER ${freshAccepted.id}!`);
+        }
       }
 
       renderOrders();
