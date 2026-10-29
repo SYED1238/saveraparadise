@@ -15,6 +15,19 @@
   <!-- FontAwesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 
+  <!-- PWA & Mobile Web App Meta -->
+  <link rel="manifest" href="/manifest-owner.json">
+  <link rel="icon" type="image/x-icon" href="/favicon-owner.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-owner-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-owner-16x16.png">
+  <link rel="icon" type="image/svg+xml" href="/icon-owner-192.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icon-owner-apple-touch.png">
+  <link rel="apple-touch-icon" href="/icon-owner-192.png">
+  <meta name="theme-color" content="#0B0F17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Savera Owner">
+
   <!-- Base & Passcode Styles -->
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/passcodeLock.css">
@@ -28,7 +41,9 @@
   <div class="portal-lock-overlay" id="owner-lock-overlay" role="dialog" aria-modal="true" aria-label="Owner Access Passcode Lock">
     <div class="lock-card">
       <div class="lock-brand-badge">
-        <div class="lock-crown-icon">👑</div>
+        <div class="logo-icon-bubble owner-lock-bubble" style="width: 72px; height: 72px; margin: 0 auto 12px; background: #FFF; border-radius: 50%; box-shadow: 0 4px 20px rgba(245, 158, 11, 0.3); padding: 3px; display: flex; align-items: center; justify-content: center;">
+          <img src="/owner-logo.png" alt="Savera Paradise Owner Portal" class="brand-logo-img" width="66" height="66" loading="eager" decoding="async" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%;" />
+        </div>
         <h2>Savera Paradise</h2>
         <span class="lock-portal-label">EXECUTIVE OWNER PORTAL</span>
       </div>
@@ -77,9 +92,14 @@
     <header class="owner-header">
       <div class="owner-header-left">
         <div class="owner-brand">
-          <span class="owner-crown-chip"><i class="fa-solid fa-crown"></i> OWNER</span>
+          <div class="logo-icon-bubble owner-header-bubble" style="width: 44px; height: 44px; background: #FFF; border-radius: 50%; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25); padding: 2px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <img src="/owner-logo.png" alt="Savera Paradise Owner" class="brand-logo-img" width="40" height="40" loading="eager" decoding="async" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%;" />
+          </div>
           <div class="owner-brand-text">
-            <h1 class="owner-title">Savera Paradise</h1>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h1 class="owner-title">Savera Paradise</h1>
+              <span class="owner-crown-chip"><i class="fa-solid fa-crown"></i> OWNER</span>
+            </div>
             <span class="owner-sub">Sales, Cash Drawer & Rider Settlements</span>
           </div>
         </div>

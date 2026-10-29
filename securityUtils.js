@@ -282,6 +282,9 @@ export function clearStaffSession(role) {
     sessionStorage.removeItem(key);
     if (role === 'admin') {
       sessionStorage.removeItem('quickbite_admin_token');
+    } else if (role === 'owner') {
+      sessionStorage.removeItem('quickbite_owner_token');
+      sessionStorage.removeItem('quickbite_admin_token');
     }
   } catch {}
 }

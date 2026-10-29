@@ -365,3 +365,57 @@ test('SIGN-IN & AUTHENTICATION AUDIT: Fleet Delivery Partner PIN Suite', async (
     assert.strictEqual(isAuthenticated, false, 'Deleted rider PIN must immediately fail authentication');
   });
 });
+
+test('SIGN-IN & AUTHENTICATION AUDIT: Staff & Executive Owner Session Management', async (t) => {
+  // Mock sessionStorage for Node environment
+  const sessionData = new Map();
+  globalThis.sessionStorage = {
+    getItem: (k) => sessionData.get(k) || null,
+    setItem: (k, v) => sessionData.set(k, String(v)),
+    removeItem: (k) => sessionData.delete(k),
+    clear: () => sessionData.clear()
+  };
+
+  await t.test('setStaffSessionActive sets respective role session and isStaffSessionActive verifies', () => {
+    sessionData.clear();
+    assert.strictEqual(isStaffSessionActive('owner'), false);
+    assert.strictEqual(isStaffSessionActive('admin'), false);
+
+    setStaffSessionActive('owner');
+    assert.strictEqual(isStaffSessionActive('owner'), true);
+    assert.strictEqual(isStaffSessionActive('admin'), false);
+
+    setStaffSessionActive('admin');
+    assert.strictEqual(isStaffSessionActive('admin'), true);
+  });
+
+  await t.test('clearStaffSession("owner") wipes owner session and both owner and admin tokens', () => {
+    sessionData.clear();
+    setStaffSessionActive('owner');
+    sessionStorage.setItem('quickbite_owner_token', 'jwt_owner_test_token');
+    sessionStorage.setItem('quickbite_admin_token', 'jwt_admin_test_token');
+
+    assert.strictEqual(isStaffSessionActive('owner'), true);
+    assert.strictEqual(sessionStorage.getItem('quickbite_owner_token'), 'jwt_owner_test_token');
+    assert.strictEqual(sessionStorage.getItem('quickbite_admin_token'), 'jwt_admin_test_token');
+
+    clearStaffSession('owner');
+
+    assert.strictEqual(isStaffSessionActive('owner'), false);
+    assert.strictEqual(sessionStorage.getItem('quickbite_owner_token'), null);
+    assert.strictEqual(sessionStorage.getItem('quickbite_admin_token'), null);
+  });
+
+  await t.test('clearStaffSession("admin") wipes admin session and quickbite_admin_token', () => {
+    sessionData.clear();
+    setStaffSessionActive('admin');
+    sessionStorage.setItem('quickbite_admin_token', 'jwt_admin_test_token');
+    sessionStorage.setItem('quickbite_owner_token', 'keep_owner_token');
+
+    clearStaffSession('admin');
+
+    assert.strictEqual(isStaffSessionActive('admin'), false);
+    assert.strictEqual(sessionStorage.getItem('quickbite_admin_token'), null);
+    assert.strictEqual(sessionStorage.getItem('quickbite_owner_token'), 'keep_owner_token');
+  });
+});

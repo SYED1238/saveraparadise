@@ -1,0 +1,39 @@
+{
+  "name": "Savera Paradise — Owner Executive Portal",
+  "short_name": "Savera Owner",
+  "start_url": "/owner.html",
+  "id": "/owner-executive-app",
+  "scope": "/owner.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B0F17",
+  "theme_color": "#F59E0B",
+  "description": "Executive financial oversight, daily revenue analytics, live drawer reconciliation, and instant rider payouts.",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-owner-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-owner-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-owner-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-owner-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

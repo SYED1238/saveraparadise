@@ -12,6 +12,8 @@ if not os.path.exists(JSON_PATH):
         JSON_PATH = desktop_fallback
 
 today_str = datetime.now().strftime('%Y-%m-%d')
+report_date_title = datetime.now().strftime('%d %b %Y')
+report_date_display = datetime.now().strftime('%A, %d %B %Y')
 PDF_FILENAME = f'Zomato_Orders_Report_{today_str}.pdf'
 TRACKER_PDF = os.path.join(BASE_DIR, PDF_FILENAME)
 desktop_dir = os.path.expanduser(r'~\Desktop')
@@ -174,7 +176,7 @@ html_content = f"""
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Daily Orders & Revenue Audit Report - 25 Oct 2026</title>
+<title>Daily Orders & Revenue Audit Report - {report_date_title}</title>
 <style>
     @page {{
         size: A4 landscape;
@@ -498,7 +500,7 @@ html_content = f"""
         <div class="subtitle">Zomato Partner Operational & Delivery Performance Report</div>
     </div>
     <div class="report-meta">
-        <div class="date">Sunday, 25 October 2026</div>
+        <div class="date">{report_date_display}</div>
         <div class="badge">Autonomously Tracked via CDP Bot</div>
     </div>
 </div>

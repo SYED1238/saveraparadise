@@ -3,7 +3,7 @@ import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import https from 'https';
-import { verifyAdminToken, verifyAdminPin, createAdminToken, getPinRole } from './api/_auth.js';
+import { verifyAdminToken, verifyAdminPin, createAdminToken, getPinRole, signData, safeEqual } from './api/_auth.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -46,7 +46,7 @@ function generatePresignedGetUrl(key, expiresInSeconds = 604800) {
   const dateStamp = amzDate.substring(0, 8);
   const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(key)}`;
   const queryParams = [
     `X-Amz-Algorithm=AWS4-HMAC-SHA256`,
     `X-Amz-Credential=${encodeURIComponent(`${R2_CONFIG.ACCESS_KEY_ID}/${credentialScope}`)}`,
@@ -84,6 +84,32 @@ function r2DevMiddlewarePlugin() {
           req.on('end', () => {
             try {
               const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+              const isRefresh = body?.action === 'refresh' || Boolean(body?.refreshToken);
+              if (isRefresh) {
+                const rawToken = body?.token || body?.refreshToken || (req.headers['authorization']?.startsWith('Bearer ') ? req.headers['authorization'].slice(7) : null);
+                if (rawToken && typeof rawToken === 'string' && rawToken.includes('.')) {
+                  const parts = rawToken.split('.');
+                  if (parts.length === 2) {
+                    const [payloadB64, signature] = parts;
+                    const expectedSignature = signData(payloadB64);
+                    if (safeEqual(signature, expectedSignature)) {
+                      try {
+                        const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+                        if (payload && (payload.role === 'admin' || payload.role === 'owner')) {
+                          const refreshedToken = createAdminToken(undefined, payload.role);
+                          res.statusCode = 200;
+                          res.setHeader('Content-Type', 'application/json');
+                          return res.end(JSON.stringify({ success: true, token: refreshedToken, role: payload.role, expiresIn: 43200 }));
+                        }
+                      } catch {}
+                    }
+                  }
+                }
+                res.statusCode = 401;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ error: 'Invalid or expired session. Please re-authenticate.' }));
+              }
+
               const pin = body.pin;
               const role = getPinRole(pin);
               if (role) {
@@ -108,7 +134,8 @@ function r2DevMiddlewarePlugin() {
         if (req.method === 'GET' && url === '/api/r2-image') {
           const searchParams = new URL(req.url, 'http://localhost').searchParams;
           const key = searchParams.get('key');
-          if (!key || (!key.startsWith('dishes/') && !key.startsWith('categories/')) || key.includes('..') || !/^[a-zA-Z0-9_\-./]+$/.test(key)) {
+          const cleanKey = key ? key.replace(/^\/+/, '') : '';
+          if (!cleanKey || (!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/')) || cleanKey.includes('..') || !/^[a-zA-Z0-9_\-./() %]+$/.test(cleanKey)) {
             res.statusCode = 400;
             res.setHeader('Content-Type', 'application/json');
             return res.end(JSON.stringify({ error: 'Invalid or missing image key' }));
@@ -125,7 +152,7 @@ function r2DevMiddlewarePlugin() {
           const dateStamp = amzDate.substring(0, 8);
           const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-          const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${key.replace(/^\/+/, '')}`;
+          const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(cleanKey)}`;
           const payloadHash = sha256Hex('');
 
           const canonicalHeaders = `host:${R2_CONFIG.HOST}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
@@ -313,7 +340,7 @@ function r2DevMiddlewarePlugin() {
               const dateStamp = amzDate.substring(0, 8);
               const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-              const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+              const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(key)}`;
               const payloadHash = sha256Hex(buffer);
 
               const canonicalHeaders = `content-type:${mimeType}\nhost:${R2_CONFIG.HOST}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
@@ -487,8 +514,7 @@ function r2DevMiddlewarePlugin() {
               const dateStamp = amzDate.substring(0, 8);
               const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-              const encodedKey = encodeURIComponent(cleanKey).replace(/%2F/g, '/');
-              const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${encodedKey}`;
+              const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(cleanKey)}`;
               const payloadHash = sha256Hex('');
 
               const canonicalHeaders = `host:${R2_CONFIG.HOST}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;

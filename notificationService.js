@@ -323,7 +323,7 @@ export function getDefaultPortalMeta() {
   if (typeof window !== 'undefined') {
     const path = window.location.pathname.toLowerCase();
     if (path.includes('owner')) {
-      return { icon: '/icon-admin-192.svg', url: '/owner.html', title: 'Savera Paradise Owner' };
+      return { icon: '/icon-owner-192.svg', url: '/owner.html', title: 'Savera Paradise Owner' };
     }
     if (path.includes('admin')) {
       return { icon: '/icon-admin-192.svg', url: '/admin.html', title: 'Savera Paradise Kitchen' };

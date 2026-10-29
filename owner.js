@@ -217,11 +217,15 @@ async function verifyOwnerPin(pin) {
       });
       if (authRes.ok) {
         const authData = await authRes.json();
-        if (authData?.token && (authData.role === 'owner' || authData.role === 'admin')) {
+        if (authData?.token && authData.role === 'owner') {
           sessionStorage.setItem('quickbite_admin_token', authData.token);
           sessionStorage.setItem('quickbite_owner_token', authData.token);
           isValid = true;
           serverHandled = true;
+        } else if (authData?.token && authData.role !== 'owner') {
+          // Reject non-owner roles (e.g. kitchen staff admin PIN 8899) on the Owner Executive Portal
+          serverHandled = true;
+          isValid = false;
         }
       } else if (authRes.status === 401 || authRes.status === 403) {
         // Server definitively rejected this PIN

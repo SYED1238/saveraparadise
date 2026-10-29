@@ -94,7 +94,7 @@ export function getPortalConfig() {
       fullName: 'Savera Paradise Owner Portal',
       shortName: 'Savera Owner',
       subtitle: 'Executive overview, live revenue, rider cash settlements & fleet payouts',
-      icon: '/icon-admin-192.svg',
+      icon: '/icon-owner-192.svg',
       themeColor: '#4338CA',
       installToast: '🎉 Savera Paradise Owner Portal Installed Successfully!',
       welcomeTitle: '👑 Savera Paradise Owner Portal Active!',

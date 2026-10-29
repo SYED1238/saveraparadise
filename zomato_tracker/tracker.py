@@ -52,6 +52,34 @@ def append_to_csv(order_data):
             writer.writeheader()
         writer.writerow(order_data)
 
+def save_or_update_csv(order_data):
+    """Save a new order or update existing order row in the CSV file without duplicating entries."""
+    if not os.path.exists(CSV_PATH):
+        append_to_csv(order_data)
+        return
+
+    rows = []
+    updated = False
+    try:
+        with open(CSV_PATH, mode="r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if str(row.get("Order ID", "")).strip() == str(order_data.get("Order ID", "")).strip():
+                    rows.append(order_data)
+                    updated = True
+                else:
+                    rows.append(row)
+    except Exception:
+        pass
+
+    if not updated:
+        rows.append(order_data)
+
+    with open(CSV_PATH, mode="w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, quoting=csv.QUOTE_ALL)
+        writer.writeheader()
+        writer.writerows(rows)
+
 def sync_to_json(order_data):
     """Sync orders to JSON format for easy programmatic access."""
     orders = []
@@ -280,7 +308,7 @@ def scan_current_view(page, recorded_orders):
             phone_now_found = existing_phone in [None, "", "Missed (auto-masked after pickup)"] and data["Phone Number"].startswith("+91")
 
             if is_new or phone_now_found:
-                append_to_csv(data)
+                save_or_update_csv(data)
                 sync_to_json(data)
                 recorded_orders[oid] = data["Phone Number"]
                 new_count += 1

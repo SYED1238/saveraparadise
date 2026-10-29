@@ -1229,30 +1229,6 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }).join('');
 
-    // Attach Pickup Button Listeners
-    riderOrdersList.querySelectorAll('[data-action="start-delivery"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-id');
-        handleStartDelivery(id);
-      });
-    });
-
-    // Attach Mark Delivered Button Listeners (Opens exact same confirmation modal in front)
-    riderOrdersList.querySelectorAll('[data-action="open-delivered-modal"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-id');
-        openDeliveryConfirmModal(id);
-      });
-    });
-
-    // Attach Customer Unreachable Button & Waiting Indicator Listeners
-    riderOrdersList.querySelectorAll('[data-action="open-unreachable-modal"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-id');
-        openUnreachableModal(id);
-      });
-    });
-
     // Attach Bag Claim Input Listeners on current tab (Pending & Active)
     attachBagInputListeners();
 
@@ -1547,19 +1523,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Handle Delivery Form Submission
-  const btnSubmitDelivered = document.getElementById('btn-submit-delivered');
-  if (btnSubmitDelivered) {
-    btnSubmitDelivered.addEventListener('click', () => {
-      // Auto-check validation checkboxes on click to prevent mobile HTML5 validation block
-      if (checkCashReceived && !checkCashReceived.checked && currentDoorstepPaymentMode === 'cash') {
-        checkCashReceived.checked = true;
-      }
-      if (checkUpiVerified && !checkUpiVerified.checked && currentDoorstepPaymentMode === 'upi') {
-        checkUpiVerified.checked = true;
-      }
-    });
-  }
-
   if (formConfirmDelivered) {
     formConfirmDelivered.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1568,6 +1531,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const orderId = activeConfirmOrder.id;
       const isCod = isCashOnDelivery(activeConfirmOrder);
       const cash = extractCashAmount(activeConfirmOrder.total);
+
+      // Explicit confirmation check: ensure rider confirmed collection
+      if (isCod) {
+        if (currentDoorstepPaymentMode === 'cash' && checkCashReceived && !checkCashReceived.checked) {
+          showToast('⚠️ Please confirm cash collection by checking the box.', 'warning');
+          return;
+        }
+        if (currentDoorstepPaymentMode === 'upi' && checkUpiVerified && !checkUpiVerified.checked) {
+          showToast('⚠️ Please verify customer showed the successful payment screen.', 'warning');
+          return;
+        }
+      }
+
       const isDoorstepUpi = (isCod && currentDoorstepPaymentMode === 'upi');
       const cashCollected = isDoorstepUpi ? 0 : (isCod ? Number(cash) : 0);
       const finalPaymentMethod = isDoorstepUpi ? 'doorstep_upi' : (isCod ? 'cod' : 'online');

@@ -1236,6 +1236,98 @@ function initStorefrontApp() {
     // Menu cards keep the clean floating .btn-glass-add button matching Cryspychiken
   }
 
+  /**
+   * Authoritative promo-code evaluator.
+   * Aligned with api/checkout.js and dataService.js:
+   * - Store configured offer code (settings.offerCode, default SAVERA20)
+   * - SAVERA20 (20% off, min order ₹199)
+   * - SAVE10 (10% off, min order ₹149)
+   * - FIRSTORDER (flat ₹50 off)
+   * - WELCOME50 (flat ₹50 off)
+   */
+  function evaluatePromoCode(code, subtotal, settings = dataService.getSettings()) {
+    if (!code || typeof code !== 'string') return null;
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) return null;
+
+    const settingsCode = String(settings.offerCode || 'SAVERA20').trim().toUpperCase();
+
+    // 1. Store configured offer code
+    if (settings.offerActive !== false && cleanCode === settingsCode) {
+      const minOrder = Number(settings.offerMinOrder || 0);
+      const discountType = settings.offerDiscountType || 'percent';
+      const discountPct = Number(settings.offerDiscountPercent || 20);
+      const discountAmt = Number(settings.offerDiscountAmount || 50);
+      const freeDeliv = settings.offerFreeDelivery !== false;
+      const meetsMinOrder = subtotal >= minOrder;
+      const discount = meetsMinOrder
+        ? (discountType === 'flat' || discountType === 'fixed' || discountType === 'amount'
+            ? Math.min(subtotal, discountAmt)
+            : Math.round((subtotal * discountPct) / 100))
+        : 0;
+      const discTag = (discountType === 'flat' || discountType === 'fixed' || discountType === 'amount')
+        ? `₹${Math.round(discountAmt)} OFF`
+        : `${discountPct}% OFF`;
+      return {
+        code: cleanCode,
+        valid: meetsMinOrder,
+        minOrder,
+        discount,
+        discTag,
+        freeDelivery: freeDeliv,
+        meetsMinOrder
+      };
+    }
+
+    // 2. SAVERA20 fallback (20% off, min order ₹199)
+    if (cleanCode === 'SAVERA20') {
+      const minOrder = 199;
+      const meetsMinOrder = subtotal >= minOrder;
+      const discount = meetsMinOrder ? Math.min(subtotal, Math.round((subtotal * 20) / 100)) : 0;
+      return {
+        code: cleanCode,
+        valid: meetsMinOrder,
+        minOrder,
+        discount,
+        discTag: '20% OFF',
+        freeDelivery: false,
+        meetsMinOrder
+      };
+    }
+
+    // 3. SAVE10 (10% off, min order ₹149)
+    if (cleanCode === 'SAVE10') {
+      const minOrder = 149;
+      const meetsMinOrder = subtotal >= minOrder;
+      const discount = meetsMinOrder ? Math.min(subtotal, Math.round((subtotal * 10) / 100)) : 0;
+      return {
+        code: cleanCode,
+        valid: meetsMinOrder,
+        minOrder,
+        discount,
+        discTag: '10% OFF',
+        freeDelivery: false,
+        meetsMinOrder
+      };
+    }
+
+    // 4. FIRSTORDER and WELCOME50 (flat ₹50 off)
+    if (cleanCode === 'FIRSTORDER' || cleanCode === 'WELCOME50') {
+      const discount = Math.min(subtotal, 50);
+      return {
+        code: cleanCode,
+        valid: true,
+        minOrder: 0,
+        discount,
+        discTag: '₹50 OFF',
+        freeDelivery: false,
+        meetsMinOrder: true
+      };
+    }
+
+    return null;
+  }
+
   function renderCart() {
     updateMenuCardSteppers();
     const totalCount = cart.reduce((acc, i) => acc + i.quantity, 0);
@@ -1336,15 +1428,9 @@ function initStorefrontApp() {
     // Calculations & Dynamic Offer Sync
     const settings = dataService.getSettings();
     const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
-    const discountType = settings.offerDiscountType || 'percent'; // 'percent' | 'flat'
-    const discountPct = Number(settings.offerDiscountPercent || 20);
-    const discountAmt = Number(settings.offerDiscountAmount || 50);
-    const minOrder = Number(settings.offerMinOrder || 0);
-
-    const isPromoEntered = Boolean(appliedPromo && appliedPromo === activeCode);
-    const isPromoActive = settings.offerActive !== false;
-    const meetsMinOrder = subtotal >= minOrder;
-    const isPromoValid = isPromoActive && isPromoEntered && meetsMinOrder;
+    const promoResult = appliedPromo ? evaluatePromoCode(appliedPromo, subtotal, settings) : null;
+    const isPromoValid = Boolean(promoResult && promoResult.valid);
+    const promoUnlockedFreeDelivery = Boolean(isPromoValid && promoResult.freeDelivery);
 
     // Free delivery calculation
     const isFreeDeliveryEnabled = settings.freeDeliveryEnabled !== false;
@@ -1352,13 +1438,12 @@ function initStorefrontApp() {
     const standardDeliveryFee = Number(settings.deliveryFeeStandard || 40);
 
     const thresholdUnlockedFreeDelivery = isFreeDeliveryEnabled && freeDeliveryThreshold > 0 && subtotal >= freeDeliveryThreshold;
-    const promoUnlockedFreeDelivery = isPromoValid && settings.offerFreeDelivery !== false;
     const freeDeliveryUnlocked = thresholdUnlockedFreeDelivery || promoUnlockedFreeDelivery;
     const deliveryFee = freeDeliveryUnlocked ? 0 : standardDeliveryFee;
 
     // Minimum Order & Free Delivery Meter
     const minOrderValue = Number(settings.minOrderValue !== undefined ? settings.minOrderValue : (settings.minOrder !== undefined ? settings.minOrder : 0));
-    const safeActiveCode = escapeHtml(activeCode);
+    const safeActiveCode = escapeHtml(promoResult ? promoResult.code : activeCode);
 
     if (minOrderValue > 0 && subtotal < minOrderValue) {
       // Step 1: Customer needs to reach Minimum Order Value first
@@ -1404,18 +1489,13 @@ function initStorefrontApp() {
     }
 
     let discount = 0;
-    if (isPromoValid) {
-      if (discountType === 'flat') {
-        discount = Math.min(subtotal, discountAmt);
-      } else {
-        discount = subtotal * (discountPct / 100);
-      }
+    if (isPromoValid && promoResult) {
+      discount = promoResult.discount;
       discountLine.style.display = 'flex';
       summaryDiscount.textContent = `-₹${Math.round(discount)}`;
       const discountLabel = document.getElementById('summary-discount-label');
       if (discountLabel) {
-        const discBadge = discountType === 'flat' ? `₹${Math.round(discountAmt)} OFF` : `${discountPct}% OFF`;
-        discountLabel.textContent = `Discount (${activeCode} - ${discBadge})`;
+        discountLabel.textContent = `Discount (${escapeHtml(promoResult.code)} - ${promoResult.discTag})`;
       }
     } else {
       discountLine.style.display = 'none';
@@ -1423,15 +1503,14 @@ function initStorefrontApp() {
 
     // Dynamic warning or status in promo message area if coupon is entered
     if (promoStatusMsg) {
-      if (isPromoEntered && isPromoActive && !meetsMinOrder) {
-        const needed = Math.round(minOrder - subtotal);
+      if (promoResult && !promoResult.meetsMinOrder) {
+        const needed = Math.round(promoResult.minOrder - subtotal);
         promoStatusMsg.style.color = '#DC2626';
-        promoStatusMsg.innerHTML = `⚠️ Coupon <strong>${safeActiveCode}</strong> requires minimum order of ₹${Math.round(minOrder)}. Add <strong>₹${needed}</strong> more to apply!`;
-      } else if (isPromoValid) {
-        const discBadge = discountType === 'flat' ? `₹${Math.round(discountAmt)} OFF` : `${discountPct}% OFF`;
+        promoStatusMsg.innerHTML = `⚠️ Coupon <strong>${escapeHtml(promoResult.code)}</strong> requires minimum order of ₹${Math.round(promoResult.minOrder)}. Add <strong>₹${needed}</strong> more to apply!`;
+      } else if (isPromoValid && promoResult) {
         promoStatusMsg.style.color = '#059669';
-        promoStatusMsg.innerHTML = `✓ Coupon <strong>${safeActiveCode}</strong> applied: ${discBadge}${promoUnlockedFreeDelivery ? ' + Free Delivery!' : ''}`;
-      } else if (!isPromoEntered) {
+        promoStatusMsg.innerHTML = `✓ Coupon <strong>${escapeHtml(promoResult.code)}</strong> applied: ${promoResult.discTag}${promoUnlockedFreeDelivery ? ' + Free Delivery!' : ''}`;
+      } else if (!appliedPromo) {
         promoStatusMsg.textContent = '';
       }
     }
@@ -2227,34 +2306,30 @@ function initStorefrontApp() {
     const cleanCode = code.trim().toUpperCase();
     const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
 
-    if (settings.offerActive === false) {
+    if (settings.offerActive === false && cleanCode === activeCode) {
       promoStatusMsg.style.color = '#DC2626';
       promoStatusMsg.textContent = 'Special promotional offers are currently paused.';
       showToast('⚠️ No active promotional offer available at this moment.', 'warning');
       return;
     }
 
-    if (cleanCode === activeCode) {
-      appliedPromo = activeCode;
-      const minOrder = Number(settings.offerMinOrder || 0);
-      const subtotal = cart.reduce((acc, it) => acc + (it.price * it.quantity), 0);
-      const discountType = settings.offerDiscountType || 'percent';
-      const discountPct = Number(settings.offerDiscountPercent || 20);
-      const discountAmt = Number(settings.offerDiscountAmount || 50);
-      const discTag = discountType === 'flat' ? `₹${Math.round(discountAmt)} OFF` : `${discountPct}% OFF`;
-      const freeDeliv = settings.offerFreeDelivery !== false;
+    const subtotal = cart.reduce((acc, it) => acc + (it.price * it.quantity), 0);
+    const promoResult = evaluatePromoCode(cleanCode, subtotal, settings);
 
-      if (minOrder > 0 && subtotal < minOrder) {
-        const needed = Math.round(minOrder - subtotal);
+    if (promoResult) {
+      appliedPromo = promoResult.code;
+
+      if (!promoResult.meetsMinOrder) {
+        const needed = Math.round(promoResult.minOrder - subtotal);
         promoStatusMsg.style.color = '#DC2626';
-        promoStatusMsg.innerHTML = `⚠️ Coupon <strong>${escapeHtml(activeCode)}</strong> requires a minimum order of ₹${Math.round(minOrder)}. Add <strong>₹${needed}</strong> more to your cart!`;
-        showToast(`⚠️ Add ₹${needed} more to unlock ${discTag}!`, 'warning');
+        promoStatusMsg.innerHTML = `⚠️ Coupon <strong>${escapeHtml(promoResult.code)}</strong> requires a minimum order of ₹${Math.round(promoResult.minOrder)}. Add <strong>₹${needed}</strong> more to your cart!`;
+        showToast(`⚠️ Add ₹${needed} more to unlock ${promoResult.discTag}!`, 'warning');
         renderCart();
         return;
       }
 
       promoStatusMsg.style.color = '#059669';
-      promoStatusMsg.innerHTML = `✓ Coupon <strong>${escapeHtml(activeCode)}</strong> applied: ${discTag}${freeDeliv ? ' + Free Delivery!' : ''}`;
+      promoStatusMsg.innerHTML = `✓ Coupon <strong>${escapeHtml(promoResult.code)}</strong> applied: ${promoResult.discTag}${promoResult.freeDelivery ? ' + Free Delivery!' : ''}`;
       renderCart();
 
       // Confetti burst!
@@ -2265,7 +2340,7 @@ function initStorefrontApp() {
         colors: ['#FF5A26', '#F59E0B', '#10B981']
       });
 
-      showToast(`🎉 ${discTag} applied to your order!`, 'success');
+      showToast(`🎉 ${promoResult.discTag} applied to your order!`, 'success');
     } else {
       promoStatusMsg.style.color = '#DC2626';
       promoStatusMsg.textContent = `Invalid promo code. Try ${activeCode}`;
@@ -4365,12 +4440,9 @@ function initStorefrontApp() {
         const cartSubtotal = cart.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
         let calculatedTotal = cartSubtotal;
         let calculatedDiscount = 0;
-        const offerMinOrder = Number(settings.offerMinOrder || 0);
-        if (appliedPromo && settings.offerActive !== false && (offerMinOrder <= 0 || cartSubtotal >= offerMinOrder)) {
-          const discountType = settings.offerDiscountType || 'percent';
-          calculatedDiscount = (discountType === 'flat' || discountType === 'fixed' || discountType === 'amount')
-            ? Number(settings.offerDiscountAmount || 50) 
-            : Math.round(cartSubtotal * Number(settings.offerDiscountPercent || settings.offerDiscountAmount || 20) / 100);
+        const promoRes = appliedPromo ? evaluatePromoCode(appliedPromo, cartSubtotal, settings) : null;
+        if (promoRes && promoRes.valid) {
+          calculatedDiscount = promoRes.discount;
           calculatedTotal = Math.max(0, cartSubtotal - calculatedDiscount);
         }
 
@@ -7423,9 +7495,9 @@ function initStorefrontApp() {
       cartPromoInput.placeholder = isActive ? `Promo code (try ${code})` : 'Promo code';
     }
 
-    // If active promo changed or disabled, re-render cart
-    if (appliedPromo && appliedPromo !== code) {
-      appliedPromo = isActive ? code : null;
+    // If active featured promo was disabled, clear it if it was the one applied
+    if (appliedPromo && appliedPromo === code && !isActive) {
+      appliedPromo = null;
     }
     renderCart();
   }

@@ -9,26 +9,30 @@
   
   <!-- Google Fonts: Plus Jakarta Sans & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/style.css">
 
   <!-- PWA & Mobile Web App Meta -->
   <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="icon" type="image/svg+xml" href="/icon-192.svg">
-  <link rel="apple-touch-icon" href="/icon-192.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <meta name="theme-color" content="#FF5A26">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Savera Paradise">
   <link rel="stylesheet" href="/pwa.css">
-  <!-- Preload Critical R2 Hero & Biryani Plates for instant delivery -->
-  <link rel="preload" as="image" href="/biryani-plate-1.png" fetchpriority="high">
-  <link rel="preload" as="image" href="/biryani-plate-2.png" fetchpriority="high">
-  <link rel="preload" as="image" href="/api/r2-image?key=dishes/crispy-chicken.jpg" fetchpriority="high">
-  <link rel="preload" as="image" href="/api/r2-image?key=dishes/hero-pizza.jpg" fetchpriority="high">
-  <link rel="preload" as="image" href="/api/r2-image?key=dishes/Fried_chicken_burger_on_plate_2K_20261018163117.jpg" fetchpriority="high">
-  <link rel="preload" as="video" href="/api/r2-video" type="video/mp4">
+  <!-- Preload Critical Poster Intro Plates (Ultra-Lightweight 50KB WebP) -->
+  <link rel="preload" as="image" href="/images/intro/plate-biryani.webp" type="image/webp" fetchpriority="high">
+  <link rel="preload" as="image" href="/images/intro/plate-bbq.webp" type="image/webp" fetchpriority="high">
+  <link rel="preload" as="image" href="/images/intro/plate-seafood.webp" type="image/webp" fetchpriority="high">
+  <link rel="preload" as="image" href="/images/intro/plate-kebab.webp" type="image/webp" fetchpriority="high">
+  <link rel="preload" as="image" href="/biryani-plate-1.png">
+  <link rel="preload" as="image" href="/biryani-plate-2.png">
   <script>
     (function() {
       try {
@@ -80,35 +84,80 @@
       <div class="intro-diagonal-sash"></div>
     </div>
 
-    <!-- Top Skip Control -->
-    <button type="button" class="intro-plates-skip-btn" id="intro-plates-skip-btn" aria-label="Skip Intro">
-      <span>Skip</span>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5 12h14M12 5l7 7-7 7"/>
-      </svg>
-    </button>
+    <!-- Top-Left Glass Headline (TASTE PARADISE) -->
+    <div class="intro-glass-header">
+      <h1 class="intro-glass-title" aria-label="Taste Paradise">
+        <span class="glass-word" data-text="TASTE">TASTE</span>
+        <span class="glass-word" data-text="PARADISE">PARADISE</span>
+      </h1>
+    </div>
+
+    <!-- Top-Right Geometric Monogram Emblem -->
+    <div class="intro-emblem-badge" aria-hidden="true">
+      <div class="emblem-lines"></div>
+      <span class="emblem-monogram">SP</span>
+      <div class="emblem-lines"></div>
+    </div>
 
     <!-- Floating Food Plates (Arranged 1:1 with Reference Poster Positions) -->
     <div class="intro-plates-container">
       <!-- 1. Upper Dish: Sitting on the upper diagonal boundary -->
       <div class="intro-plate-wrapper plate-poster-top">
-        <img src="/api/r2-image?key=categories%2FGemini_Generated_Image_bm077mbm077mbm07-removebg-preview.png" alt="Special Rice &amp; Biryani" class="intro-plate-img" loading="eager" decoding="sync" />
+        <img src="/images/intro/plate-biryani.webp" alt="Special Rice &amp; Biryani" class="intro-plate-img" width="260" height="260" loading="eager" fetchpriority="high" decoding="async" />
       </div>
 
       <!-- 2. Mid-Left Item: Sitting on the left waist -->
       <div class="intro-plate-wrapper plate-poster-left">
-        <img src="/api/r2-image?key=categories%2Fcategory_1792937103352_BBQ_and_tandoori_chicken_platter_2K_20261025193320-removebg-preview.png" alt="BBQ &amp; Tandoori" class="intro-plate-img" loading="eager" decoding="sync" />
+        <img src="/images/intro/plate-bbq.webp" alt="BBQ &amp; Tandoori" class="intro-plate-img" width="210" height="210" loading="eager" fetchpriority="high" decoding="async" />
       </div>
 
       <!-- 3. Mid-Right Item: Sitting on the right waist -->
       <div class="intro-plate-wrapper plate-poster-right">
-        <img src="/api/r2-image?key=categories%2Fcategory_1792937169468_Seafood_dishes_with_lemon_wedges_2K_20261025193534-removebg-preview.png" alt="Seafood Specials" class="intro-plate-img" loading="eager" decoding="sync" />
+        <img src="/images/intro/plate-seafood.webp" alt="Seafood Specials" class="intro-plate-img" width="200" height="200" loading="eager" fetchpriority="high" decoding="async" />
       </div>
 
       <!-- 4. Bottom Hero Plate: Large anchor plate on the lower diagonal boundary -->
       <div class="intro-plate-wrapper plate-poster-bottom">
-        <img src="/api/r2-image?key=categories%2Fcategory_1792937330965_Mixed_kebab_platter_served_with_2K_20261025193820-removebg-preview.png" alt="Mixed Kebab Platter" class="intro-plate-img" loading="eager" decoding="sync" />
+        <img src="/images/intro/plate-kebab.webp" alt="Mixed Kebab Platter" class="intro-plate-img" width="350" height="350" loading="eager" fetchpriority="high" decoding="async" />
       </div>
+    </div>
+
+    <!-- Editorial Price & Dish Callouts (Matching Reference Layout) -->
+    <div class="intro-callouts-container">
+      <!-- Callout 1 (Top Dish - White Text on Dark Green Sash) -->
+      <div class="intro-dish-callout callout-top-dish">
+        <span class="callout-price">220.</span>
+        <h3 class="callout-name">Dum Biryani</h3>
+        <p class="callout-desc">Fragrant Basmati, Tender Meat, Saffron, Crispy Brown Onions.</p>
+      </div>
+
+      <!-- Callout 2 (Mid-Left Dish - Dark Green Text on Cream) -->
+      <div class="intro-dish-callout callout-mid-left">
+        <span class="callout-price">240.</span>
+        <h3 class="callout-name">BBQ &amp; Tandoori</h3>
+        <p class="callout-desc">Charcoal Smoked, Mint Chutney, Lemon Wedges, Spices.</p>
+      </div>
+
+      <!-- Callout 3 (Mid-Right Dish - Dark Green Text on Cream) -->
+      <div class="intro-dish-callout callout-mid-right">
+        <span class="callout-price">280.</span>
+        <h3 class="callout-name">Seafood Specials</h3>
+        <p class="callout-desc">Golden Prawns, Crispy Calamari, Herb Tartar Dip.</p>
+      </div>
+
+      <!-- Callout 4 (Bottom Hero Dish - White Text on Dark Green Sash) -->
+      <div class="intro-dish-callout callout-bottom-hero">
+        <span class="callout-price">320.</span>
+        <h3 class="callout-name">Special Kebab Platter</h3>
+        <p class="callout-desc">Seekh Kebabs, Murgh Malai Tikka, Galouti, Laccha Onions.</p>
+      </div>
+    </div>
+
+    <!-- Editorial Footer Branding (Bottom-Right) -->
+    <div class="intro-poster-footer">
+      <h4 class="intro-footer-brand">SAVERA PARADISE</h4>
+      <p class="intro-footer-address">Railway Station Road, Ramanagara</p>
+      <p class="intro-footer-contact">ORDER ONLINE &bull; 080-27271234</p>
     </div>
   </div>
   <script>
@@ -116,25 +165,19 @@
       const stage = document.getElementById('intro-plates-stage');
       if (!stage) return;
 
-      const skipBtn = document.getElementById('intro-plates-skip-btn');
       let isDismissed = false;
       let autoDismissTimer = null;
+      let hideTimer = null;
 
       function dismissStage() {
         if (isDismissed) return;
         isDismissed = true;
         if (autoDismissTimer) clearTimeout(autoDismissTimer);
         stage.classList.add('is-hidden');
-        setTimeout(() => {
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
           stage.style.display = 'none';
         }, 550);
-      }
-
-      if (skipBtn) {
-        skipBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          dismissStage();
-        });
       }
 
       stage.addEventListener('click', () => {
@@ -143,7 +186,15 @@
 
       autoDismissTimer = setTimeout(() => {
         dismissStage();
-      }, 4500);
+      }, 5500);
+
+      window.freezeIntroForTesting = function() {
+        if (autoDismissTimer) clearTimeout(autoDismissTimer);
+        if (hideTimer) clearTimeout(hideTimer);
+        isDismissed = false;
+        stage.style.display = 'block';
+        stage.classList.remove('is-hidden');
+      };
 
       window.replayIntro = function() {
         isDismissed = false;
@@ -156,7 +207,7 @@
           p.style.animation = '';
         });
         if (autoDismissTimer) clearTimeout(autoDismissTimer);
-        autoDismissTimer = setTimeout(dismissStage, 4500);
+        autoDismissTimer = setTimeout(dismissStage, 5500);
       };
     })();
   </script>
