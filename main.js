@@ -46,10 +46,6 @@ function initStorefrontApp() {
   // Navigation Back Stack Controller (Single-step back navigation for storefront)
   const backNav = createBackNavigationManager('storefront');
 
-  // ==========================================
-  // CINEMATIC MOTION GRAPHICS INTRO
-  // Initialized instantly via inline compositor engine in index.html for zero latency
-  // ==========================================
 
   // ==========================================
   // IMAGE SKELETON LOADER & ALT-TEXT SYSTEM
