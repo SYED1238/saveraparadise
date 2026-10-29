@@ -28,16 +28,20 @@ function getSigningKey(secretKey, dateStamp, region, service) {
   return kSigning;
 }
 
+function awsUriEncode(str) {
+  return encodeURIComponent(str).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
 function generatePresignedGetUrl(key, expiresInSeconds = 604800) {
   if (R2_CONFIG.PUBLIC_DOMAIN) {
-    return `${R2_CONFIG.PUBLIC_DOMAIN}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+    return `${R2_CONFIG.PUBLIC_DOMAIN}/${awsUriEncode(key).replace(/%2F/g, '/')}`;
   }
   const date = new Date();
   const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const dateStamp = amzDate.substring(0, 8);
   const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
-  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(key).replace(/%2F/g, '/')}`;
   const queryParams = [
     `X-Amz-Algorithm=AWS4-HMAC-SHA256`,
     `X-Amz-Credential=${encodeURIComponent(`${R2_CONFIG.ACCESS_KEY_ID}/${credentialScope}`)}`,

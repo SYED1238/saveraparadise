@@ -265,7 +265,13 @@ export function setStaffSessionActive(role) {
     if (typeof sessionStorage === 'undefined') return;
     const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : (role === 'rider' ? STORAGE_KEYS.RIDER_AUTH : STORAGE_KEYS.OWNER_AUTH);
     const arr = new Uint8Array(24);
-    crypto.getRandomValues(arr);
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      crypto.getRandomValues(arr);
+    } else {
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = Math.floor(Math.random() * 256);
+      }
+    }
     const token = 'qb_sess_' + Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
     sessionStorage.setItem(key, token);
   } catch {}

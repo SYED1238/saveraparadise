@@ -225,7 +225,7 @@ export async function enableAppNotificationsWithWelcome() {
     const perm = await requestSystemNotificationPermission();
     if (perm === 'granted') {
       // 1. Play joyful celebratory chime or urgent kitchen chime
-      playNotificationSound(portalConfig.type === 'admin' ? 'order_incoming' : 'order_placed');
+      playNotificationSound(portalConfig.type === 'admin' ? 'new_order' : 'order_placed');
 
       // 2. Real app haptic buzz
       triggerDeviceVibration([180, 90, 180, 90, 240]);

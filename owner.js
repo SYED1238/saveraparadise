@@ -237,10 +237,10 @@ async function verifyOwnerPin(pin) {
     }
   }
 
-  // 2. Offline fallback ONLY if custom ownerPinHash was explicitly configured by the restaurant owner
+  // 2. Offline fallback if server was unreachable
   if (!serverHandled) {
-    if (settings.ownerPinHash) {
-      isValid = inputHash === settings.ownerPinHash;
+    if (targetHash && inputHash === targetHash) {
+      isValid = true;
     } else if (legacyPin && cleanPin === legacyPin) {
       isValid = true;
     } else {
@@ -2337,6 +2337,8 @@ function renderKmPayoutsView(orders) {
       } catch (err) {
         console.error('[OwnerPayout] Instant transfer error:', err);
         showToast(`❌ Cashfree payout failed: ${err.message || 'Transfer could not be completed'}`, 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Cashfree UPI';
       }
     };
   });
@@ -2359,7 +2361,8 @@ function printExecutiveReport() {
       deliveredCount++;
       const num = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
       totalRev += num;
-      const isOnline = String(o.paymentMethod || '').toLowerCase().includes('online') || Boolean(o.isPaidOnline);
+      const payStr = String(o.paymentMethod || o.payment_method || '').toLowerCase();
+      const isOnline = payStr.includes('online') || payStr.includes('upi') || payStr.includes('card') || Boolean(o.isPaidOnline) || Boolean(o.doorstepUpi);
       if (isOnline) onlineRev += num;
       else codRev += num;
 

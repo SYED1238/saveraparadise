@@ -1488,7 +1488,7 @@ document.addEventListener('DOMContentLoaded', () => {
     orders.forEach(o => {
       // Exclude cancelled and undelivered returned orders from revenue
       if (o.status !== 'cancelled' && o.status !== 'undelivered') {
-        const num = parseFloat((o.total || '₹0').replace(/[^0-9.]/g, ''));
+        const num = parseFloat(String(o.total ?? '0').replace(/[^0-9.]/g, ''));
         if (!isNaN(num)) revenue += num;
       }
     });
@@ -2046,7 +2046,8 @@ document.addEventListener('DOMContentLoaded', () => {
       'cooking': 1,
       'ready_for_pickup': 2,
       'on_the_way': 3,
-      'delivered': 4
+      'delivered': 4,
+      'undelivered': 4
     };
     const currentRank = STATUS_RANKS[status] !== undefined ? STATUS_RANKS[status] : 0;
 
@@ -2080,19 +2081,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Configure the Advance Status action button
     if (btnModalAdvanceStatus && btnModalAdvanceText) {
-      if (status === 'cancelled') {
+      if (status === 'cancelled' || status === 'undelivered') {
         btnModalAdvanceStatus.disabled = true;
         btnModalAdvanceStatus.removeAttribute('data-next');
         btnModalAdvanceStatus.style.background = '#FEE2E2';
         btnModalAdvanceStatus.style.color = '#DC2626';
         btnModalAdvanceStatus.style.border = '1px solid #FECACA';
-        btnModalAdvanceText.textContent = '❌ Order Cancelled';
+        btnModalAdvanceText.textContent = status === 'cancelled' ? '❌ Order Cancelled' : '⚠️ Undelivered (Returned)';
         if (btnModalRejectOrder) btnModalRejectOrder.style.display = 'none';
       } else {
         btnModalAdvanceStatus.style.background = '';
         btnModalAdvanceStatus.style.color = '';
         btnModalAdvanceStatus.style.border = '';
-        if (btnModalRejectOrder) btnModalRejectOrder.style.display = 'inline-flex';
+        if (btnModalRejectOrder) {
+          btnModalRejectOrder.style.display = (status === 'accepted' || status === 'pending') ? 'inline-flex' : 'none';
+        }
 
         if (status === 'accepted' || status === 'pending') {
           btnModalAdvanceStatus.disabled = false;
@@ -3419,7 +3422,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (previewOfferTitle) previewOfferTitle.textContent = isActive ? title : 'Currently No Offers • Coming Soon';
     if (previewOfferDesc) {
       if (isActive) {
-        let desc = `Use coupon code <strong class="preview-code-tag">${code}</strong> for <strong>${discountTagText}</strong>`;
+        let desc = `Use coupon code <strong class="preview-code-tag">${escapeHtml(code)}</strong> for <strong>${escapeHtml(discountTagText)}</strong>`;
         if (minOrder > 0) {
           desc += ` on orders above ₹${minOrder}`;
         }

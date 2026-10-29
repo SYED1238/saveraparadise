@@ -111,7 +111,8 @@ export default async function handler(req, res) {
   canonicalHeaders += `x-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
   signedHeaders += ';x-amz-content-sha256;x-amz-date';
 
-  const canonicalRequest = `GET\n${canonicalUri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+  const reqMethod = req.method === 'HEAD' ? 'HEAD' : 'GET';
+  const canonicalRequest = `${reqMethod}\n${canonicalUri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${sha256Hex(canonicalRequest)}`;
 
   const signingKey = getSigningKey(R2_CONFIG.SECRET_ACCESS_KEY, dateStamp, R2_CONFIG.REGION, R2_CONFIG.SERVICE);
@@ -132,7 +133,7 @@ export default async function handler(req, res) {
   const options = {
     hostname: R2_CONFIG.HOST,
     path: canonicalUri,
-    method: 'GET',
+    method: reqMethod,
     headers: upstreamHeaders
   };
 

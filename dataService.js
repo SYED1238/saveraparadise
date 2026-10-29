@@ -2353,6 +2353,14 @@ class QuickBiteDataService {
     return false;
   }
 
+  sanitizeDishImageUrl(url) {
+    return sanitizeDishImageUrl(url);
+  }
+
+  sanitizeCategoryImageUrl(url) {
+    return sanitizeCategoryImageUrl(url);
+  }
+
   init() {
     try {
       // 1. Synchronously populate dishesCache and uploadedImagesCache from localStorage
@@ -2746,7 +2754,12 @@ class QuickBiteDataService {
               itemsSummary: remote.items_summary || local?.itemsSummary || '',
               items: remote.items || local?.items || [],
               total: remote.total || local?.total || '₹0',
-              paymentMethod: remote.payment_method || local?.paymentMethod || 'Cash on Delivery (COD)',
+              claimedAt: remote.claimed_at ? Number(remote.claimed_at) : (local?.claimedAt || null),
+              deliveredAt: remote.delivered_at ? Number(remote.delivered_at) : (local?.deliveredAt || null),
+              cashCollected: remote.cash_collected !== undefined && remote.cash_collected !== null ? Number(remote.cash_collected) : local?.cashCollected,
+              isPaidOnline: Boolean(remote.is_paid_online || local?.isPaidOnline),
+              doorstepUpi: Boolean(remote.doorstep_upi || local?.doorstepUpi),
+              paymentMethod: (local?.doorstepUpi || remote.doorstep_upi) ? 'doorstep_upi' : (remote.payment_method || local?.paymentMethod || 'Cash on Delivery (COD)'),
               paymentStatus: remote.payment_status || local?.paymentStatus || 'Cash on Delivery',
               lat: remote.lat ? Number(remote.lat) : (local?.lat || local?.addressDetails?.lat || null),
               lng: remote.lng ? Number(remote.lng) : (local?.lng || local?.addressDetails?.lng || null),
@@ -2756,7 +2769,6 @@ class QuickBiteDataService {
               assignedRiderName: remote.assigned_rider_name || local?.assignedRiderName || null,
               assignedRiderPhone: remote.assigned_rider_phone || local?.assignedRiderPhone || null,
               assignedRiderVehicle: remote.assigned_rider_vehicle || local?.assignedRiderVehicle || null,
-              claimedAt: remote.claimed_at ? Number(remote.claimed_at) : (local?.claimedAt || null),
               cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
               trackingToken: remote.tracking_token || local?.trackingToken || null,
               alarmAcknowledged: local?.alarmAcknowledged || false,
@@ -4520,7 +4532,7 @@ class QuickBiteDataService {
 
     // Order Cancellation handling
     if (newStatus === 'cancelled') {
-      if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered'].includes(order.status)) {
+      if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered', 'undelivered'].includes(order.status)) {
         console.warn(`[DataService] Action blocked: Order ${orderId} cannot be cancelled once kitchen preparation has begun (current status: ${order.status}).`);
         return null;
       }
@@ -4713,6 +4725,9 @@ class QuickBiteDataService {
       if (order.assignedRiderPin) fullPayload.assigned_rider_pin = order.assignedRiderPin;
       if (order.assignedRiderName) fullPayload.assigned_rider_name = order.assignedRiderName;
       if (order.assignedRiderPhone) fullPayload.assigned_rider_phone = order.assignedRiderPhone;
+      if (order.paymentMethod) fullPayload.payment_method = order.paymentMethod;
+      if (typeof order.isPaidOnline === 'boolean') fullPayload.is_paid_online = order.isPaidOnline;
+      if (typeof order.doorstepUpi === 'boolean') fullPayload.doorstep_upi = order.doorstepUpi;
       if (typeof extraData?.cashCollected === 'number' || typeof order.cashCollected === 'number' || typeof order.cash_collected === 'number') {
         const cashAmt = typeof extraData?.cashCollected === 'number' ? extraData.cashCollected : (order.cashCollected || order.cash_collected || 0);
         fullPayload.cash_collected = cashAmt;
@@ -4760,8 +4775,8 @@ class QuickBiteDataService {
     };
 
     if (updatedOrderData.status === 'cancelled') {
-      if (list[idx].status === 'delivered') {
-        console.warn(`[DataService] Action blocked in updateOrder: Order ${orderId} has already been delivered.`);
+      if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered', 'undelivered'].includes(list[idx].status)) {
+        console.warn(`[DataService] Action blocked in updateOrder: Order ${orderId} cannot be cancelled once kitchen preparation has begun (current status: ${list[idx].status}).`);
         return null;
       }
     } else if (updatedOrderData.status) {
@@ -5622,11 +5637,11 @@ class QuickBiteDataService {
     try {
       if (supabase && typeof supabase.rpc === 'function') {
         const { data, error } = await supabase.rpc('verify_rider_pin', { p_pin: cleanPin });
-        if (!error && data && data.success && data.rider) {
-          const verifiedRider = {
-            ...data.rider,
-            pin: cleanPin
-          };
+        const rpcRider = (!error && data)
+          ? ((data.success || data.valid) && data.rider ? data.rider : (data.id && data.name ? data : null))
+          : null;
+        if (rpcRider) {
+          const verifiedRider = { ...rpcRider, pin: cleanPin };
           this.saveOrUpdateRider(verifiedRider);
           return verifiedRider;
         }
@@ -5666,6 +5681,8 @@ class QuickBiteDataService {
     const avatarEmoji = vehicle.includes('Scooter') ? '🛵' : (vehicle.includes('Car') ? '🚗' : '🏍️');
 
     const updatedRider = {
+      ...(existing || {}),
+      ...riderData,
       pin,
       id: existing?.id || `rider-${pin}`,
       name: (riderData.name || existing?.name || `Rider ${pin}`).trim(),
