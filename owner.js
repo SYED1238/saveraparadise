@@ -11,7 +11,8 @@ import {
   DEFAULT_OWNER_PIN_HASH,
   isStaffSessionActive,
   setStaffSessionActive,
-  clearStaffSession
+  clearStaffSession,
+  ensureAdminToken
 } from './securityUtils.js';
 import { showSamsungToast } from './notificationService.js';
 
@@ -2403,8 +2404,8 @@ function renderKmPayoutsView(orders) {
       btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
 
       try {
-        const token = (typeof dataService.ensureAdminToken === 'function')
-          ? await dataService.ensureAdminToken()
+        const token = (typeof ensureAdminToken === 'function')
+          ? await ensureAdminToken('owner')
           : (sessionStorage.getItem('quickbite_admin_token') || '');
         const resp = await fetch('/api/cashfree-payout', {
           method: 'POST',

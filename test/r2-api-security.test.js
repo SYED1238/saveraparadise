@@ -184,6 +184,19 @@ test('STAGE 1: Storage Endpoint Authorization Guards', async (t) => {
     assert.ok(res.data.error.includes('authorization') || res.data.error.includes('Admin session required'));
   });
 
+  await t.test('GET /api/r2-list accepts authenticated requests with custom prefix (e.g. categories/)', async () => {
+    const token = createAdminToken();
+    const { req, res } = createMockReqRes({
+      method: 'GET',
+      headers: { authorization: `Bearer ${token}` },
+      query: { prefix: 'categories/' }
+    });
+    await r2ListHandler(req, res);
+    // Reaches R2 credentials check in test environment
+    assert.strictEqual(res.statusCode, 503);
+    assert.deepStrictEqual(res.data.files, []);
+  });
+
   await t.test('POST /api/r2-delete rejects invalid key paths (directory traversal)', async () => {
     const token = createAdminToken();
     const { req, res } = createMockReqRes({

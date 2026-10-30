@@ -410,13 +410,22 @@ function r2DevMiddlewarePlugin() {
             return res.end(JSON.stringify({ error: auth.error || 'Unauthorized: Admin session required to list storage objects' }));
           }
           try {
+            const searchParams = new URL(req.url, 'http://localhost').searchParams;
+            const requestedPrefix = searchParams.get('prefix') || 'dishes/';
+            let sanitizedPrefix = String(requestedPrefix).trim().replace(/[^a-zA-Z0-9_\-\/]/g, '').replace(/^\/+/, '');
+            if (!sanitizedPrefix) {
+              sanitizedPrefix = 'dishes/';
+            } else if (!sanitizedPrefix.endsWith('/')) {
+              sanitizedPrefix += '/';
+            }
+
             const date = new Date();
             const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
             const dateStamp = amzDate.substring(0, 8);
             const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
 
             const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}`;
-            const canonicalQueryString = 'list-type=2&prefix=dishes%2F';
+            const canonicalQueryString = `list-type=2&prefix=${encodeURIComponent(sanitizedPrefix)}`;
             const payloadHash = sha256Hex('');
 
             const canonicalHeaders = `host:${R2_CONFIG.HOST}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
@@ -447,10 +456,13 @@ function r2DevMiddlewarePlugin() {
               r2Res.on('data', c => body += c);
               r2Res.on('end', () => {
                 const keys = [];
-                const regex = /<Key>(dishes\/[^<]+)<\/Key>/g;
+                const regex = /<Key>([^<]+)<\/Key>/g;
                 let match;
                 while ((match = regex.exec(body)) !== null) {
-                  keys.push(match[1]);
+                  const k = match[1];
+                  if (k.startsWith(sanitizedPrefix)) {
+                    keys.push(k);
+                  }
                 }
 
                 const files = keys.map(k => ({
