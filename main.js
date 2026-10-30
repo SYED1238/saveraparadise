@@ -3020,12 +3020,20 @@ function initStorefrontApp() {
         tap: true
       }).setView([riderLat, riderLng], 15);
 
-      const streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
-        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      // High-performance CDN street basemap (CartoDB Voyager) with OpenStreetMap tile error fallback
+      const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        subdomains: ['a', 'b', 'c', 'd'],
         maxZoom: 20,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; Google Maps'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+      });
+      streetLayer.on('tileerror', (error) => {
+        const tile = error?.tile;
+        if (tile && !tile.dataset.fallbackAttempted && error.coords) {
+          tile.dataset.fallbackAttempted = '1';
+          tile.src = `https://tile.openstreetmap.org/${error.coords.z}/${error.coords.x}/${error.coords.y}.png`;
+        }
       });
       streetLayer.addTo(trackerLiveMap);
 
@@ -5570,22 +5578,28 @@ function initStorefrontApp() {
         attributionControl: false
       }).setView([lat, lng], 16);
 
-      // 1. Google Street Map: Standard roadmap with subdomains mt0-mt3 and locale parameters
-      streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
-        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      // 1. Street Map: CartoDB Voyager with OpenStreetMap automatic tile fallback
+      streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        subdomains: ['a', 'b', 'c', 'd'],
         maxZoom: 20,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; Google Maps'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+      });
+      streetLayer.on('tileerror', (error) => {
+        const tile = error?.tile;
+        if (tile && !tile.dataset.fallbackAttempted && error.coords) {
+          tile.dataset.fallbackAttempted = '1';
+          tile.src = `https://tile.openstreetmap.org/${error.coords.z}/${error.coords.x}/${error.coords.y}.png`;
+        }
       });
 
-      // 2. Google Satellite Hybrid: High-definition aerial photography with road & locality overlays
-      satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=en&gl=IN', {
-        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-        maxZoom: 20,
+      // 2. Satellite Aerial Photography: High-definition Esri World Imagery
+      satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; Google Maps'
+        attribution: '&copy; Esri, Maxar, Earthstar Geographics'
       });
 
       // Default active layer: Street
