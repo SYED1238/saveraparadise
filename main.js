@@ -3075,19 +3075,13 @@ function initStorefrontApp() {
         tap: true
       }).setView([riderLat, riderLng], 15);
 
-      // Official Ola Maps Street Basemap via secure edge proxy (with OpenStreetMap fallback)
-      const streetLayer = L.tileLayer('/api/ola-maps?action=tile&z={z}&x={x}&y={y}', {
+      // Official Google Maps Basemap
+      const streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
         maxZoom: 20,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; <a href="https://www.olamaps.io/" target="_blank" rel="noopener noreferrer">Ola Maps</a>'
-      });
-      streetLayer.on('tileerror', (error) => {
-        const tile = error?.tile;
-        if (tile && !tile.dataset.fallbackAttempted && error.coords) {
-          tile.dataset.fallbackAttempted = '1';
-          tile.src = `https://tile.openstreetmap.org/${error.coords.z}/${error.coords.x}/${error.coords.y}.png`;
-        }
+        attribution: '&copy; Google Maps'
       });
       streetLayer.addTo(trackerLiveMap);
 
@@ -5632,27 +5626,22 @@ function initStorefrontApp() {
         attributionControl: false
       }).setView([lat, lng], 16);
 
-      // 1. Street Map: Official Ola Maps Street Basemap (with OpenStreetMap fallback)
-      streetLayer = L.tileLayer('/api/ola-maps?action=tile&z={z}&x={x}&y={y}', {
+      // 1. Street Map: Google Maps Street
+      streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
         maxZoom: 20,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; <a href="https://www.olamaps.io/" target="_blank" rel="noopener noreferrer">Ola Maps</a>'
-      });
-      streetLayer.on('tileerror', (error) => {
-        const tile = error?.tile;
-        if (tile && !tile.dataset.fallbackAttempted && error.coords) {
-          tile.dataset.fallbackAttempted = '1';
-          tile.src = `https://tile.openstreetmap.org/${error.coords.z}/${error.coords.x}/${error.coords.y}.png`;
-        }
+        attribution: '&copy; Google Maps'
       });
 
-      // 2. Satellite Aerial Photography: High-definition Esri World Imagery
-      satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19,
+      // 2. Google Satellite Hybrid: High-definition aerial photography with road & locality overlays
+      satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=en&gl=IN', {
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        maxZoom: 20,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; Esri, Maxar, Earthstar Geographics'
+        attribution: '&copy; Google Maps'
       });
 
       // Default active layer: Street
