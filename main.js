@@ -1573,6 +1573,27 @@ function initStorefrontApp() {
       discountLine.style.display = 'none';
     }
 
+    // Auto-prefill active offer code in promo input so customer only needs to press Apply
+    if (cartPromoInput) {
+      const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
+      const isOfferActive = settings.offerActive !== false;
+      if (isOfferActive && activeCode) {
+        if (!appliedPromo && (!cartPromoInput.value.trim() || cartPromoInput.value.trim().toUpperCase() === activeCode)) {
+          cartPromoInput.value = activeCode;
+        }
+      }
+    }
+
+    if (btnApplyPromo) {
+      if (appliedPromo && isPromoValid) {
+        btnApplyPromo.textContent = 'Applied ✓';
+        btnApplyPromo.classList.add('applied');
+      } else {
+        btnApplyPromo.textContent = 'Apply';
+        btnApplyPromo.classList.remove('applied');
+      }
+    }
+
     // Dynamic warning or status in promo message area if coupon is entered
     if (promoStatusMsg) {
       if (promoResult && !promoResult.meetsMinOrder) {
@@ -2139,6 +2160,17 @@ function initStorefrontApp() {
     if (cartDrawerBackdrop) cartDrawerBackdrop.classList.add('open');
     document.body.classList.add('cart-drawer-open');
     document.body.style.overflow = 'hidden';
+
+    // Auto-prefill active offer code so customer only needs to press Apply
+    const settings = dataService.getSettings();
+    const isOfferActive = settings.offerActive !== false;
+    const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
+    if (cartPromoInput && isOfferActive && activeCode) {
+      if (!appliedPromo && (!cartPromoInput.value.trim() || cartPromoInput.value.trim().toUpperCase() === activeCode)) {
+        cartPromoInput.value = activeCode;
+      }
+    }
+
     renderCartAddresses();
   }
 
@@ -2439,12 +2471,35 @@ function initStorefrontApp() {
 
   if (btnApplyPromo && cartPromoInput) {
     btnApplyPromo.addEventListener('click', () => {
-      applyPromoCode(cartPromoInput.value);
+      const codeVal = cartPromoInput.value.trim().toUpperCase();
+      if (!codeVal) {
+        showToast('Please enter or select a promo code to apply', 'warning');
+        return;
+      }
+      if (appliedPromo && codeVal === appliedPromo) {
+        showToast(`Coupon ${appliedPromo} is already applied!`, 'info');
+        return;
+      }
+      applyPromoCode(codeVal);
     });
 
     cartPromoInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
-        applyPromoCode(cartPromoInput.value);
+        const codeVal = cartPromoInput.value.trim().toUpperCase();
+        if (!codeVal) return;
+        if (appliedPromo && codeVal === appliedPromo) {
+          showToast(`Coupon ${appliedPromo} is already applied!`, 'info');
+          return;
+        }
+        applyPromoCode(codeVal);
+      }
+    });
+
+    cartPromoInput.addEventListener('input', () => {
+      if (!cartPromoInput.value.trim() && appliedPromo) {
+        appliedPromo = null;
+        if (promoStatusMsg) promoStatusMsg.textContent = '';
+        renderCart();
       }
     });
   }
@@ -7616,9 +7671,12 @@ function initStorefrontApp() {
       if (offersModalTimer) offersModalTimer.style.display = 'none';
     }
 
-    // 4. Cart promo input placeholder
+    // 4. Cart promo input placeholder & automatic prefill
     if (cartPromoInput) {
-      cartPromoInput.placeholder = isActive ? `Promo code (try ${code})` : 'Promo code';
+      cartPromoInput.placeholder = isActive ? `Promo code (${code})` : 'Promo code';
+      if (isActive && code && !appliedPromo && (!cartPromoInput.value.trim() || cartPromoInput.value.trim().toUpperCase() === code)) {
+        cartPromoInput.value = code;
+      }
     }
 
     // If active featured promo was disabled, clear it if it was the one applied

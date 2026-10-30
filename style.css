@@ -4039,6 +4039,15 @@ body.pwa-customer-installed .header-pwa-dock {
   background: #111827;
 }
 
+.btn-apply-promo.applied {
+  background: #059669;
+  color: #FFF;
+}
+
+.btn-apply-promo.applied:hover {
+  background: #047857;
+}
+
 .promo-status-msg {
   font-size: 0.8rem;
   margin-bottom: 12px;
