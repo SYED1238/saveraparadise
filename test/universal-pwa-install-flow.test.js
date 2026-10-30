@@ -7,9 +7,11 @@ import {
   isAppAlreadyInstalled,
   getCurrentPortalType,
   getPortalConfig,
+  openInChrome,
   openDirectlyInChrome,
   hasAutoInstallParam,
   cleanAutoInstallParam,
+  waitForPrompt,
   triggerAppDownload
 } from '../pwaInstallService.js';
 
@@ -120,53 +122,65 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
   });
 
   // =========================================================================
-  // 4. Direct Chrome Activity, Hash Routing & IntentDispatcher Component
+  // 4. Opera Anti-Hijack Pure Package Intent & Dynamic <a> Navigation
   // =========================================================================
-  await t.test('4. openDirectlyInChrome preserves hash routes before ?autoInstall=true and forces IntentDispatcher component', () => {
+  await t.test('4. openInChrome strips fallback_url & action, preserves hash routes before ?autoInstall=true and clicks dynamic anchor', () => {
     const originalWindow = globalThis.window;
-    let redirectedUrl = '';
+    const originalDocument = globalThis.document;
+
+    let clickedAnchorHref = '';
+    let clickedCalled = false;
+
+    globalThis.document = {
+      createElement: (tag) => {
+        if (tag === 'a') {
+          return {
+            set href(val) {
+              clickedAnchorHref = val;
+            },
+            get href() {
+              return clickedAnchorHref;
+            },
+            click: () => {
+              clickedCalled = true;
+            },
+            remove: () => {}
+          };
+        }
+        return {};
+      },
+      body: {
+        appendChild: () => {}
+      }
+    };
 
     globalThis.window = {
       location: {
         host: 'saveraparadise.foodbliz.in',
         pathname: '/',
-        hash: '#/dilvery.html',
-        set href(val) {
-          redirectedUrl = val;
-        },
-        get href() {
-          return redirectedUrl;
-        }
+        hash: '#/dilvery.html'
       }
     };
 
-    openDirectlyInChrome();
+    openInChrome();
 
     // Verify ?autoInstall=true is placed BEFORE hash #/dilvery.html
     assert.ok(
-      redirectedUrl.includes('saveraparadise.foodbliz.in/?autoInstall=true#/dilvery.html'),
-      `Target path must place ?autoInstall=true before hash. Got: ${redirectedUrl}`
+      clickedAnchorHref.includes('saveraparadise.foodbliz.in/?autoInstall=true#/dilvery.html'),
+      `Target path must place ?autoInstall=true before hash. Got: ${clickedAnchorHref}`
     );
 
-    // Verify explicit action and IntentDispatcher component to prevent "Choose activity" dialog
+    // Verify pure package intent without fallback_url or action so Opera cannot hijack
     assert.ok(
-      redirectedUrl.includes('action=android.intent.action.VIEW;'),
-      `Intent must include VIEW action. Got: ${redirectedUrl}`
+      clickedAnchorHref.includes('intent://saveraparadise.foodbliz.in/?autoInstall=true#/dilvery.html#Intent;scheme=https;package=com.android.chrome;end'),
+      `Intent must be pure package intent without fallback_url or action. Got: ${clickedAnchorHref}`
     );
-    assert.ok(
-      redirectedUrl.includes('package=com.android.chrome;'),
-      `Intent must target com.android.chrome package. Got: ${redirectedUrl}`
-    );
-    assert.ok(
-      redirectedUrl.includes('component=com.android.chrome/com.google.android.apps.chrome.IntentDispatcher;'),
-      `Intent must target Chrome IntentDispatcher component. Got: ${redirectedUrl}`
-    );
-    assert.ok(
-      redirectedUrl.includes('S.browser_fallback_url=https%3A%2F%2Fsaveraparadise.foodbliz.in%2F%3FautoInstall%3Dtrue%23%2Fdilvery.html;end'),
-      `Intent must include properly encoded fallback URL. Got: ${redirectedUrl}`
-    );
+    assert.strictEqual(clickedAnchorHref.includes('S.browser_fallback_url'), false, 'Must NOT contain S.browser_fallback_url');
+    assert.strictEqual(clickedAnchorHref.includes('action=android.intent.action.VIEW'), false, 'Must NOT contain action=android.intent.action.VIEW');
+    assert.strictEqual(clickedCalled, true, 'Must trigger redirect via dynamic anchor click');
 
     globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
   });
 
   // =========================================================================
@@ -211,18 +225,16 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
   });
 
   // =========================================================================
-  // 6. Native Prompt Priority (Brave, Opera, Samsung Internet)
+  // 6. 1st-Tap Race Condition Resolution via waitForPrompt (Brave, Chrome)
   // =========================================================================
-  await t.test('6. triggerAppDownload prompts natively if beforeinstallprompt exists without redirecting', async () => {
+  await t.test('6. waitForPrompt and triggerAppDownload catch 1st-tap delayed beforeinstallprompt within 500ms', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
 
     let promptCalled = false;
-    let redirected = false;
 
-    // Simulate Opera on Android with native beforeinstallprompt available
     const mockNavigator = {
-      userAgent: 'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36 OPR/74.0.3922.70977',
+      userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
       standalone: false
     };
 
@@ -232,29 +244,42 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
       getElementById: () => null
     };
 
+    let beforeInstallHandler = null;
+
     globalThis.window = {
       matchMedia: () => ({ matches: false }),
       navigator: mockNavigator,
-      __deferredPwaPrompt: {
-        prompt: () => {
-          promptCalled = true;
-        },
-        userChoice: Promise.resolve({ outcome: 'accepted' })
+      __deferredPwaPrompt: null,
+      addEventListener: (evt, handler) => {
+        if (evt === 'beforeinstallprompt') {
+          beforeInstallHandler = handler;
+        }
       },
+      removeEventListener: () => {},
       location: {
         host: 'saveraparadise.foodbliz.in',
         pathname: '/',
         hash: '',
-        set href(_val) {
-          redirected = true;
-        }
+        set href(_val) {}
       }
     };
 
+    // Simulate Chromium firing beforeinstallprompt 60ms after 1st user tap
+    setTimeout(() => {
+      if (beforeInstallHandler) {
+        beforeInstallHandler({
+          preventDefault: () => {},
+          prompt: () => {
+            promptCalled = true;
+          },
+          userChoice: Promise.resolve({ outcome: 'accepted' })
+        });
+      }
+    }, 60);
+
     const outcome = await triggerAppDownload();
 
-    assert.strictEqual(promptCalled, true, 'Must call prompt() directly when deferredPrompt exists');
-    assert.strictEqual(redirected, false, 'Must NOT redirect when native install is supported in current browser');
+    assert.strictEqual(promptCalled, true, 'Must call prompt() on 1st tap even if event fires with slight delay');
     assert.strictEqual(outcome, 'accepted');
 
     globalThis.window = originalWindow;
@@ -262,28 +287,28 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
   });
 
   // =========================================================================
-  // 7. Elimination of Old Chrome Guide Modal & Redirect Loop
+  // 7. Complete Elimination of 3-Dots Toast and Old Dark Modal
   // =========================================================================
-  await t.test('7. Old Chrome guide modal and redirect loop are completely eliminated', () => {
-    // Verify that the old Chrome 3-dots step modal html does not exist in pwaServiceJs
+  await t.test('7. Three-dots toast and old dark modal are completely deleted from codebase', () => {
+    // 1. Verify three dots toast message is completely absent
     assert.doesNotMatch(
       pwaServiceJs,
-      /Tap the <strong>three dots menu<\/strong>.*in Google Chrome/,
-      'Old Chrome guide steps must be removed from install modal'
+      /Tap the three dots \(⋮\) in Chrome and select/,
+      'Three dots toast must be completely deleted from pwaInstallService.js'
     );
 
-    // Verify modal primary button does not contain the old intent:// redirect
+    // 2. Verify old dark modal button "I Understand / Add to Home Screen" is completely absent
     assert.doesNotMatch(
       pwaServiceJs,
-      /primaryBtn\.addEventListener\('click'[\s\S]*intent:\/\/[\s\S]*package=com\.android\.chrome/,
-      'Modal primary button must NOT trigger intent redirect loop'
+      /I Understand \/ Add to Home Screen/,
+      'Old dark modal button "I Understand / Add to Home Screen" must be completely deleted'
     );
 
-    // Verify Android Chrome without prompt provides menu toast feedback rather than looping
+    // 3. Verify auto-install popup uses single button "Install Savera Paradise App"
     assert.match(
       pwaServiceJs,
-      /return 'chrome_menu_toast'/,
-      'Android Chrome without prompt must return chrome_menu_toast rather than redirecting'
+      /Install Savera Paradise App/,
+      'Auto-install popup must feature button with text "Install Savera Paradise App"'
     );
   });
 

@@ -365,16 +365,34 @@ export function checkAndPromptAppNotifications() {
 
 /**
  * Direct Chrome Activity & Hash URL Routing:
- * Places ?autoInstall=true BEFORE any hash route (e.g. domain.com/?autoInstall=true#/dilvery.html)
- * and sets explicit IntentDispatcher component & VIEW action to prevent the Android "Choose activity" dialog.
+ * Redirects Android non-Chrome browsers (like Opera, Samsung, or in-app browsers) to Chrome.
+ * Strips S.browser_fallback_url and action completely so Opera cannot intercept it or show "Choose activity".
+ * Navigates via a dynamic <a href="intent://..."> click for reliable gesture navigation.
  */
-export const openDirectlyInChrome = () => {
+export const openInChrome = () => {
   if (typeof window === 'undefined') return;
   const { host, pathname, hash } = window.location;
-  const targetPath = `${host}${pathname}?autoInstall=true${hash || ''}`;
-  const fallbackUrl = encodeURIComponent(`https://${targetPath}`);
-  window.location.href = `intent://${targetPath}#Intent;scheme=https;action=android.intent.action.VIEW;package=com.android.chrome;component=com.android.chrome/com.google.android.apps.chrome.IntentDispatcher;S.browser_fallback_url=${fallbackUrl};end`;
+  const targetUrl = `${host}${pathname}?autoInstall=true${hash || ''}`;
+  // Pure package intent without fallback_url so Opera cannot intercept it
+  const intentUrl = `intent://${targetUrl}#Intent;scheme=https;package=com.android.chrome;end`;
+
+  if (typeof document !== 'undefined' && document.createElement) {
+    const a = document.createElement('a');
+    a.href = intentUrl;
+    a.rel = 'noopener';
+    if (document.body) {
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } else {
+      a.click();
+    }
+  } else {
+    window.location.href = intentUrl;
+  }
 };
+
+export const openDirectlyInChrome = openInChrome;
 
 /**
  * Detects if ?autoInstall=true is present in location.search OR location.hash
@@ -472,8 +490,8 @@ export function showAutoInstallBanner() {
           <span class="pwa-verified-badge" style="width: 18px; height: 18px; font-size: 0.6rem;"><i class="fa-solid fa-check"></i></span>
         </div>
         <div class="pwa-autoinstall-info">
-          <h4>Tap below to finish installing the app</h4>
-          <p>Add ${portalConfig.name} to your Home Screen for instant 1-tap launch &amp; live orders.</p>
+          <h4>Install Savera Paradise App</h4>
+          <p>Add to your Home Screen for instant 1-tap launch &amp; live orders.</p>
         </div>
       </div>
       <div class="pwa-autoinstall-actions">
@@ -483,7 +501,7 @@ export function showAutoInstallBanner() {
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
-          <span>Install ${portalConfig.shortName} Now</span>
+          <span>Install Savera Paradise App</span>
         </button>
       </div>
     </div>
@@ -504,7 +522,7 @@ export function showAutoInstallBanner() {
   const confirmBtn = banner.querySelector('#btn-pwa-autoinstall-confirm');
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
-      const promptEvent = deferredInstallPrompt || (typeof window !== 'undefined' ? window.__deferredPwaPrompt : null);
+      const promptEvent = (typeof window !== 'undefined' && window.__deferredPwaPrompt) || deferredInstallPrompt;
       if (promptEvent) {
         try {
           promptEvent.prompt();
@@ -521,7 +539,6 @@ export function showAutoInstallBanner() {
         }
       } else {
         hideAutoInstallBanner();
-        showPwaToast(`Tap the three dots (⋮) in Chrome and select "Install app" or "Add to Home Screen"`, 'info');
       }
     });
   }
@@ -612,10 +629,46 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * Waits up to 500ms to see if beforeinstallprompt fires from user tap.
+ * Chromium browsers (Brave, Chrome) sometimes only fire beforeinstallprompt after the 1st user tap.
+ */
+export const waitForPrompt = () => new Promise((resolve) => {
+  if (typeof window === 'undefined') return resolve(null);
+  if (window.__deferredPwaPrompt) return resolve(window.__deferredPwaPrompt);
+  if (deferredInstallPrompt) return resolve(deferredInstallPrompt);
+
+  let timer = null;
+
+  const handler = (e) => {
+    if (timer) clearTimeout(timer);
+    try {
+      e.preventDefault();
+    } catch {}
+    window.__deferredPwaPrompt = e;
+    deferredInstallPrompt = e;
+    if (typeof window !== 'undefined' && window.removeEventListener) {
+      window.removeEventListener('beforeinstallprompt', handler);
+    }
+    resolve(e);
+  };
+
+  if (window.addEventListener) {
+    window.addEventListener('beforeinstallprompt', handler);
+  }
+
+  timer = setTimeout(() => {
+    if (typeof window !== 'undefined' && window.removeEventListener) {
+      window.removeEventListener('beforeinstallprompt', handler);
+    }
+    resolve((typeof window !== 'undefined' && window.__deferredPwaPrompt) || deferredInstallPrompt || null);
+  }, 500);
+});
+
+/**
  * Main trigger function called when any "Install App" / "Download App" button is clicked
  * Implements 3-Way Routing:
- * - Case A: Native 1-Click Install Available (deferredPrompt exists)
- * - Case B: Android Non-Chrome or In-App Browser (Auto-redirect to Chrome via intent://)
+ * - Case A: Native 1-Click Install Available (promptEvent exists or captured within 500ms tap wait)
+ * - Case B: Android Non-Chrome or In-App Browser (Auto-redirect to Chrome via dynamic <a> intent://)
  * - Case C: iPhone / iPad (Smart tailored iOS bottom sheet guide)
  */
 export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
@@ -628,8 +681,8 @@ export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
     return 'already_installed';
   }
 
-  // Case A — Native 1-Click Install Available (deferredPrompt exists)
-  const promptEvent = deferredInstallPrompt || (typeof window !== 'undefined' ? window.__deferredPwaPrompt : null);
+  // Case A — Native 1-Click Install Available (wait up to 500ms for 1st tap race condition)
+  const promptEvent = await waitForPrompt();
   if (promptEvent) {
     try {
       promptEvent.prompt();
@@ -662,35 +715,31 @@ export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
     return 'ios_modal_opened';
   }
 
-  // Case B — Android environments without native prompt:
-  // If already inside Google Chrome on Android, DO NOT loop/redirect to Chrome via intent
-  if (env === 'android-chrome') {
-    showPwaToast(`Tap the three dots (⋮) in Chrome and select "Install app" or "Add to Home Screen"`, 'info');
-    return 'chrome_menu_toast';
-  }
-
-  // If on Android inside an in-app browser (Instagram/WhatsApp/FB) or non-Chrome browser without prompt:
-  // Open directly in Google Chrome with explicit component to prevent "Choose activity" dialog
+  // Case B — Android non-Chrome / in-app browsers without native prompt:
+  // Pure package intent without fallback_url or action so Opera cannot intercept it
   if (env === 'android-other') {
-    openDirectlyInChrome();
+    openInChrome();
     return 'android_redirected';
   }
 
-  // Desktop or generic browser without deferredPrompt
-  openPwaInstallModal('desktop');
-  return 'desktop_modal_opened';
+  // Android Chrome or desktop without prompt:
+  // Never show the "Tap the three dots (⋮)" toast. Never show the old dark modal.
+  return 'unsupported';
 }
 
 /**
- * Creates and opens the PWA Installation Guide Modal tailored to the platform and browser
+ * Creates and opens the PWA Installation Guide Modal for iOS
  */
 export function openPwaInstallModal(forcedEnv) {
   if (typeof document === 'undefined') return;
+  const env = forcedEnv || detectPlatformEnvironment();
+  // Only iOS gets the smart guide modal; old desktop/android dark modal is deleted
+  if (!env.startsWith('ios-')) return;
+
   let modal = document.getElementById('pwa-install-modal-backdrop');
   if (modal) {
     modal.remove();
   }
-  const env = forcedEnv || detectPlatformEnvironment();
   modal = createPwaInstallModalElement(env);
   document.body.appendChild(modal);
 
@@ -725,7 +774,7 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
     </div>
   `).join('');
 
-  // Tailored steps based on platform environment
+  // Tailored steps based on iOS browser environment
   let stepsHtml = '';
   let subtitleText = portalConfig.subtitle;
 
@@ -807,7 +856,8 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
         </div>
       </div>
     `;
-  } else if (env === 'ios-inapp') {
+  } else {
+    // Default iOS in-app or other iOS webviews
     subtitleText = 'Open in Safari to add to your iPhone Home Screen';
     stepsHtml = `
       <div class="install-step-item">
@@ -837,33 +887,7 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
         </div>
       </div>
     `;
-  } else {
-    stepsHtml = `
-      <div class="install-step-item">
-        <span class="step-num">1</span>
-        <div class="step-desc">
-          Click the <strong>Install icon</strong> <i class="fa-solid fa-download"></i> in your browser's address bar.
-        </div>
-      </div>
-      <div class="install-step-item">
-        <span class="step-num">2</span>
-        <div class="step-desc">
-          Or click the <strong>3-dots browser menu</strong> ➔ <strong>"Install ${portalConfig.name}"</strong>.
-        </div>
-      </div>
-      <div class="install-step-item">
-        <span class="step-num">3</span>
-        <div class="step-desc">
-          Confirm <strong>"Install"</strong> to launch in standalone window mode!
-        </div>
-      </div>
-    `;
   }
-
-  const promptAvailable = !!(deferredInstallPrompt || (typeof window !== 'undefined' && window.__deferredPwaPrompt));
-  const primaryBtnText = isIOS
-    ? 'Got It / Close'
-    : (promptAvailable ? `Download & Install ${portalConfig.shortName}` : 'I Understand / Add to Home Screen');
 
   container.innerHTML = `
     <div class="pwa-install-modal ${isIOS ? 'pwa-modal-ios-sheet' : ''}" role="dialog" aria-modal="true" aria-labelledby="pwa-modal-title">
@@ -876,7 +900,7 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
           <span class="pwa-verified-badge"><i class="fa-solid fa-check"></i></span>
         </div>
         <div class="pwa-modal-title-group">
-          <h3 id="pwa-modal-title">Install ${portalConfig.fullName}</h3>
+          <h3 id="pwa-modal-title">Install ${portalConfig.name}</h3>
           <p class="pwa-modal-subtitle">${subtitleText}</p>
         </div>
       </div>
@@ -891,8 +915,8 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
 
       <div class="pwa-modal-footer">
         <button type="button" class="btn btn-pwa-primary" id="btn-pwa-modal-primary">
-          <i class="fa-solid fa-cloud-arrow-down"></i>
-          <span>${primaryBtnText}</span>
+          <i class="fa-solid fa-check"></i>
+          <span>Got It / Close</span>
         </button>
       </div>
     </div>
@@ -907,25 +931,8 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
 
   const primaryBtn = container.querySelector('#btn-pwa-modal-primary');
   if (primaryBtn) {
-    primaryBtn.addEventListener('click', async () => {
-      const promptEvent = deferredInstallPrompt || (typeof window !== 'undefined' ? window.__deferredPwaPrompt : null);
-      if (promptEvent && !isIOS) {
-        try {
-          promptEvent.prompt();
-          const choice = await promptEvent.userChoice;
-          if (choice && choice.outcome === 'accepted') {
-            hideAllInstallButtons();
-            closePwaInstallModal();
-            setTimeout(() => {
-              enableAppNotificationsWithWelcome();
-            }, 1200);
-          }
-          deferredInstallPrompt = null;
-          if (typeof window !== 'undefined') window.__deferredPwaPrompt = null;
-        } catch {}
-      } else {
-        closePwaInstallModal();
-      }
+    primaryBtn.addEventListener('click', () => {
+      closePwaInstallModal();
     });
   }
 
