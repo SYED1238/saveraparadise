@@ -5939,6 +5939,9 @@ function initStorefrontApp() {
     addrTagPills.forEach(p => {
       p.classList.toggle('active', p.getAttribute('data-tag') === tagToSet);
     });
+    document.querySelectorAll('.swiggy-tag-chip').forEach(p => {
+      p.classList.toggle('active', p.getAttribute('data-tag') === tagToSet);
+    });
 
     const lat = existing ? existing.lat : RESTAURANT_COORDINATES.lat;
     const lng = existing ? existing.lng : RESTAURANT_COORDINATES.lng;
