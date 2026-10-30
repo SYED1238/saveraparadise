@@ -83,13 +83,60 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  const { action, lat, lng, input, z, x, y } = req.query;
+
   const rawIp = req.headers['x-real-ip'] || req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   const clientIp = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : 'unknown';
-  if (isRateLimited(clientIp)) {
+  if (action !== 'tile' && isRateLimited(clientIp)) {
     return res.status(429).json({ error: 'Too many requests. Please slow down.' });
   }
 
-  const { action, lat, lng, input } = req.query;
+  // 1. Action: Raster Map Tile Proxy (Secures API key on server & edge-caches tiles)
+  if (action === 'tile') {
+    const parsedZ = parseInt(z, 10);
+    const parsedX = parseInt(x, 10);
+    const parsedY = parseInt(y, 10);
+    if (isNaN(parsedZ) || isNaN(parsedX) || isNaN(parsedY) || parsedZ < 0 || parsedZ > 22 || parsedX < 0 || parsedY < 0) {
+      return res.status(400).json({ error: 'Invalid tile coordinates' });
+    }
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    if (OLA_API_KEY) {
+      try {
+        const tileUrl = `https://api.olamaps.io/tiles/vector/v1/styles/default-light-standard/${parsedZ}/${parsedX}/${parsedY}.png?api_key=${encodeURIComponent(OLA_API_KEY)}`;
+        const response = await fetch(tileUrl, {
+          headers: { 'Accept': 'image/png' },
+          signal: AbortSignal.timeout(5000)
+        });
+        if (response.ok) {
+          const buf = Buffer.from(await response.arrayBuffer());
+          res.statusCode = 200;
+          return res.end(buf);
+        }
+      } catch (tileErr) {
+        console.warn('[Ola Maps Tile Proxy] Primary tile fetch failed, using fallback:', tileErr.message);
+      }
+    }
+
+    // High-res fallback to OpenStreetMap if Ola Maps is unreachable or quota exhausted
+    try {
+      const fallbackRes = await fetch(`https://tile.openstreetmap.org/${parsedZ}/${parsedX}/${parsedY}.png`, {
+        headers: { 'User-Agent': 'SaveraParadise/1.0' },
+        signal: AbortSignal.timeout(4000)
+      });
+      if (fallbackRes.ok) {
+        const fallbackBuf = Buffer.from(await fallbackRes.arrayBuffer());
+        res.statusCode = 200;
+        return res.end(fallbackBuf);
+      }
+    } catch (fbErr) {}
+
+    res.statusCode = 502;
+    return res.end();
+  }
 
   if (!OLA_API_KEY) {
     return res.status(503).json({ error: 'Ola Maps API key not configured' });

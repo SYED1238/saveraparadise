@@ -3020,19 +3020,18 @@ function initStorefrontApp() {
         tap: true
       }).setView([riderLat, riderLng], 15);
 
-      // High-performance OpenStreetMap basemap (Free, zero watermarks, no API key required)
-      const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        subdomains: ['a', 'b', 'c'],
-        maxZoom: 19,
+      // Official Ola Maps Street Basemap via secure edge proxy (with OpenStreetMap fallback)
+      const streetLayer = L.tileLayer('/api/ola-maps?action=tile&z={z}&x={x}&y={y}', {
+        maxZoom: 20,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        attribution: '&copy; <a href="https://www.olamaps.io/" target="_blank" rel="noopener noreferrer">Ola Maps</a>'
       });
       streetLayer.on('tileerror', (error) => {
         const tile = error?.tile;
         if (tile && !tile.dataset.fallbackAttempted && error.coords) {
           tile.dataset.fallbackAttempted = '1';
-          tile.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${error.coords.z}/${error.coords.y}/${error.coords.x}`;
+          tile.src = `https://tile.openstreetmap.org/${error.coords.z}/${error.coords.x}/${error.coords.y}.png`;
         }
       });
       streetLayer.addTo(trackerLiveMap);
@@ -5578,19 +5577,18 @@ function initStorefrontApp() {
         attributionControl: false
       }).setView([lat, lng], 16);
 
-      // 1. Street Map: OpenStreetMap with Esri World Street Map automatic fallback
-      streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        subdomains: ['a', 'b', 'c'],
-        maxZoom: 19,
+      // 1. Street Map: Official Ola Maps Street Basemap (with OpenStreetMap fallback)
+      streetLayer = L.tileLayer('/api/ola-maps?action=tile&z={z}&x={x}&y={y}', {
+        maxZoom: 20,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        attribution: '&copy; <a href="https://www.olamaps.io/" target="_blank" rel="noopener noreferrer">Ola Maps</a>'
       });
       streetLayer.on('tileerror', (error) => {
         const tile = error?.tile;
         if (tile && !tile.dataset.fallbackAttempted && error.coords) {
           tile.dataset.fallbackAttempted = '1';
-          tile.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${error.coords.z}/${error.coords.y}/${error.coords.x}`;
+          tile.src = `https://tile.openstreetmap.org/${error.coords.z}/${error.coords.x}/${error.coords.y}.png`;
         }
       });
 

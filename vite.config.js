@@ -585,7 +585,49 @@ function r2DevMiddlewarePlugin() {
           const lat = searchParams.get('lat');
           const lng = searchParams.get('lng');
           const input = searchParams.get('input');
+          const z = searchParams.get('z');
+          const x = searchParams.get('x');
+          const y = searchParams.get('y');
           const apiKey = process.env.OLA_MAPS_API_KEY || '';
+
+          if (action === 'tile') {
+            const parsedZ = parseInt(z, 10);
+            const parsedX = parseInt(x, 10);
+            const parsedY = parseInt(y, 10);
+            if (isNaN(parsedZ) || isNaN(parsedX) || isNaN(parsedY) || parsedZ < 0 || parsedZ > 22 || parsedX < 0 || parsedY < 0) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              return res.end(JSON.stringify({ error: 'Invalid tile coordinates' }));
+            }
+            res.setHeader('Content-Type', 'image/png');
+            res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+
+            if (apiKey) {
+              try {
+                const tileUrl = `https://api.olamaps.io/tiles/vector/v1/styles/default-light-standard/${parsedZ}/${parsedX}/${parsedY}.png?api_key=${encodeURIComponent(apiKey)}`;
+                const resp = await fetch(tileUrl, { headers: { 'Accept': 'image/png' }, signal: AbortSignal.timeout(5000) });
+                if (resp.ok) {
+                  const buf = Buffer.from(await resp.arrayBuffer());
+                  res.statusCode = 200;
+                  return res.end(buf);
+                }
+              } catch (tErr) {}
+            }
+
+            // Fallback to OSM if Ola Maps tile fails
+            try {
+              const fb = await fetch(`https://tile.openstreetmap.org/${parsedZ}/${parsedX}/${parsedY}.png`, { headers: { 'User-Agent': 'SaveraParadise/1.0' }, signal: AbortSignal.timeout(4000) });
+              if (fb.ok) {
+                const fbBuf = Buffer.from(await fb.arrayBuffer());
+                res.statusCode = 200;
+                return res.end(fbBuf);
+              }
+            } catch (e) {}
+
+            res.statusCode = 502;
+            return res.end();
+          }
 
           if (!apiKey) {
             res.statusCode = 503;
