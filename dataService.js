@@ -2739,20 +2739,21 @@ class QuickBiteDataService {
             const digits = String(remote.id || '').replace(/\D/g, '');
             const fallbackPickupCode = digits.length >= 4 ? digits.slice(-4) : (digits || '1001');
 
-            // Database is the authoritative Single Source of Truth with Monotonic Rank Guard
+            // Database is the authoritative Single Source of Truth
+            // Allow short optimistic window (15s) only if staff just performed a local action
+            const isOptimistic = Boolean(local?._optimisticTimestamp && (Date.now() - local._optimisticTimestamp < 15000));
             const remoteRank = remote.status && ORDER_STATUS_RANKS[remote.status] !== undefined ? ORDER_STATUS_RANKS[remote.status] : -1;
             const localRank = local?.status && ORDER_STATUS_RANKS[local.status] !== undefined ? ORDER_STATUS_RANKS[local.status] : -1;
-            let effectiveStatus = remote.status || local?.status || 'accepted';
-            if (remote.status !== 'cancelled' && localRank > remoteRank) {
-              effectiveStatus = local.status;
-            }
-            const effectiveStepIndex = (localRank > remoteRank && local && typeof local.stepIndex === 'number')
+            let effectiveStatus = (isOptimistic && remote.status !== 'cancelled' && localRank > remoteRank)
+              ? local.status
+              : (remote.status || local?.status || 'accepted');
+            const effectiveStepIndex = (isOptimistic && localRank > remoteRank && local && typeof local.stepIndex === 'number')
               ? local.stepIndex
               : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : 0));
-            const effectiveStatusLabel = (localRank > remoteRank && local?.statusLabel)
+            const effectiveStatusLabel = (isOptimistic && localRank > remoteRank && local?.statusLabel)
               ? local.statusLabel
               : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted');
-            const effectiveEta = (localRank > remoteRank && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
+            const effectiveEta = (isOptimistic && localRank > remoteRank && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
 
             const mergedOrder = {
               ...(local || {}),
@@ -3235,6 +3236,18 @@ class QuickBiteDataService {
           const remote = remoteMap.get(normalizeId(lo.id));
           if (remote) {
             const recoveredPhone = extractPhoneFromOrder(remote, rawAddrs) || lo.customerPhone || remote.customer_phone || '';
+            const isOptimisticLo = Boolean(lo?._optimisticTimestamp && (Date.now() - lo._optimisticTimestamp < 15000));
+            const loRemoteRank = remote.status && ORDER_STATUS_RANKS[remote.status] !== undefined ? ORDER_STATUS_RANKS[remote.status] : -1;
+            const loLocalRank = lo?.status && ORDER_STATUS_RANKS[lo.status] !== undefined ? ORDER_STATUS_RANKS[lo.status] : -1;
+            const effectiveStatus = (isOptimisticLo && remote.status !== 'cancelled' && loLocalRank > loRemoteRank) ? lo.status : (remote.status || lo.status);
+            const effectiveStepIndex = (isOptimisticLo && loLocalRank > loRemoteRank && typeof lo.stepIndex === 'number')
+              ? lo.stepIndex
+              : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : lo.stepIndex));
+            const effectiveStatusLabel = (isOptimisticLo && loLocalRank > loRemoteRank && lo.statusLabel)
+              ? lo.statusLabel
+              : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || lo.statusLabel || 'Accepted');
+            const effectiveEta = (isOptimisticLo && loLocalRank > loRemoteRank && lo.eta) ? lo.eta : (remote.eta || lo.eta);
+
             const mappedRemote = {
               customerName: remote.customer_name || lo.customerName,
               customerEmail: remote.customer_email || lo.customerEmail,
@@ -3242,14 +3255,10 @@ class QuickBiteDataService {
               phone: recoveredPhone || lo.phone,
               customer_phone: recoveredPhone || lo.customer_phone,
               deliveryAddress: remote.delivery_address || lo.deliveryAddress,
-              stepIndex: ((ORDER_STATUS_RANKS[lo.status] || 0) > (ORDER_STATUS_RANKS[remote.status] || 0) && typeof lo.stepIndex === 'number')
-                ? lo.stepIndex
-                : (STATUS_TO_STEP_INDEX[remote.status || lo.status] !== undefined ? STATUS_TO_STEP_INDEX[remote.status || lo.status] : (typeof remote.step_index === 'number' ? remote.step_index : lo.stepIndex)),
-              status: (remote.status !== 'cancelled' && (ORDER_STATUS_RANKS[lo.status] || 0) > (ORDER_STATUS_RANKS[remote.status] || 0)) ? lo.status : (remote.status || lo.status),
-              statusLabel: ((ORDER_STATUS_RANKS[lo.status] || 0) > (ORDER_STATUS_RANKS[remote.status] || 0) && lo.statusLabel)
-                ? lo.statusLabel
-                : (STATUS_TO_LABEL_MAP[remote.status || lo.status] || remote.status_label || lo.statusLabel || 'Accepted'),
-              eta: ((ORDER_STATUS_RANKS[lo.status] || 0) > (ORDER_STATUS_RANKS[remote.status] || 0) && lo.eta) ? lo.eta : (remote.eta || lo.eta),
+              stepIndex: effectiveStepIndex,
+              status: effectiveStatus,
+              statusLabel: effectiveStatusLabel,
+              eta: effectiveEta,
               itemsSummary: remote.items_summary || lo.itemsSummary,
               pickupCode: remote.pickup_code || lo.pickupCode,
               assignedRiderPin: remote.assigned_rider_pin || lo.assignedRiderPin,
@@ -4165,18 +4174,6 @@ class QuickBiteDataService {
       realOrders.forEach(o => {
         if (!o) return;
 
-        // Auto-expire stale local orders older than 3 hours on customer portal so ghost orders never lock out checkout
-        if (this.portalType === 'customer' && o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered' && o.createdAt) {
-          const orderAgeMs = Date.now() - Number(o.createdAt);
-          if (orderAgeMs > 3 * 60 * 60 * 1000) {
-            o.status = 'delivered';
-            o.statusLabel = 'Delivered';
-            o.stepIndex = 4;
-            o.eta = 'Delivered 🎉';
-            hasHealed = true;
-          }
-        }
-
         // Fast path: if order was already healed in this or past session, skip expensive address and regex lookups
         if (o._healed) return;
 
@@ -4304,7 +4301,14 @@ class QuickBiteDataService {
 
   getCustomerActiveOrders(userId = null, userEmail = null, userPhone = null) {
     const customerOrders = this.getCustomerOrders(userId, userEmail, userPhone);
-    const activeOrders = customerOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered');
+    const now = Date.now();
+    // Exclude delivered, cancelled, undelivered, and stale ghost orders (> 6 hours) so abandoned carts never lock out checkout
+    const activeOrders = customerOrders.filter(o => {
+      if (!o || o.status === 'delivered' || o.status === 'cancelled' || o.status === 'undelivered') return false;
+      const orderAge = now - Number(o.createdAt || 0);
+      if (orderAge > 6 * 60 * 60 * 1000) return false;
+      return true;
+    });
     activeOrders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     return activeOrders;
   }
@@ -4674,6 +4678,7 @@ class QuickBiteDataService {
 
     const prevStatus = order.status;
     order.status = newStatus;
+    order._optimisticTimestamp = Date.now();
     if (newStatus === 'accepted') {
       order.stepIndex = 0;
       order.statusLabel = 'Accepted';
