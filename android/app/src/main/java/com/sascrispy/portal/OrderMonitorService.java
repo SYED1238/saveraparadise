@@ -63,6 +63,7 @@ public class OrderMonitorService extends Service {
     private Thread pollingThread;
     private boolean isInitialCheck = true;
     private boolean isRiderApp = false;
+    private boolean isOwnerApp = false;
 
     public static void markOrderNotified(String orderId) {
         if (orderId == null || orderId.trim().isEmpty()) {
@@ -109,6 +110,7 @@ public class OrderMonitorService extends Service {
         super.onCreate();
         activeInstance = this;
         isRiderApp = getPackageName().toLowerCase().contains("rider");
+        isOwnerApp = getPackageName().toLowerCase().contains("owner");
 
         createNotificationChannels();
         loadKnownOrdersFromStorage();
@@ -164,7 +166,14 @@ public class OrderMonitorService extends Service {
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openAppIntent, pendingFlags);
 
-        String title = isRiderApp ? "🟢 Savera Rider Dispatch Active" : "🟢 Savera Kitchen Monitor Active";
+        String title;
+        if (isRiderApp) {
+            title = "🟢 Savera Rider Dispatch Active";
+        } else if (isOwnerApp) {
+            title = "🟢 Savera Owner Monitor Active";
+        } else {
+            title = "🟢 Savera Kitchen Monitor Active";
+        }
         String subtitle = "24/7 live order monitoring active in background";
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID_SERVICE)

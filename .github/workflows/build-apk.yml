@@ -1,4 +1,4 @@
-name: Build Android APKs (Admin & Rider)
+name: Build Android APKs (Admin, Rider & Owner)
 
 on:
   workflow_dispatch:
@@ -36,10 +36,10 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Admin and Rider APKs
+      - name: Build Admin, Rider, and Owner APKs
         run: |
           cd android
-          gradle assembleAdminRelease assembleRiderRelease --no-daemon --stacktrace
+          gradle assembleAdminRelease assembleRiderRelease assembleOwnerRelease --no-daemon --stacktrace
 
       - name: Organize APK Artifacts
         run: |
@@ -47,6 +47,7 @@ jobs:
           # Locate and copy built APKs
           find android/app/build/outputs/apk/admin/release -name "*.apk" -exec cp {} dist-apks/Savera-Kitchen-Admin.apk \;
           find android/app/build/outputs/apk/rider/release -name "*.apk" -exec cp {} dist-apks/Savera-Paradise-Rider.apk \;
+          find android/app/build/outputs/apk/owner/release -name "*.apk" -exec cp {} dist-apks/Savera-Paradise-Owner.apk \;
           ls -la dist-apks/
 
       - name: Upload APKs as Workflow Artifacts
@@ -61,7 +62,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-apk
-          name: "Savera Paradise Android APKs (Admin & Rider)"
+          name: "Savera Paradise Android APKs (Admin, Rider & Owner)"
           body: |
             ### 📱 Official Android APK Downloads for Savera Paradise
 
@@ -71,11 +72,14 @@ jobs:
               * Kitchen order display, loud incoming order beeper sirens, menu 86/stock toggle, and rush setter.
             * 🏍️ **[Download Savera Paradise Rider APK](https://github.com/${{ github.repository }}/releases/download/latest-apk/Savera-Paradise-Rider.apk)**
               * Delivery fleet dispatch, live turn-by-turn customer doorstep navigation, and cash-on-delivery tracking.
+            * 👑 **[Download Savera Paradise Owner APK](https://github.com/${{ github.repository }}/releases/download/latest-apk/Savera-Paradise-Owner.apk)**
+              * Executive owner command center, sales analytics, store settings, UPI settlements, and audit logs.
 
             ---
             *Built automatically via GitHub Actions.*
           files: |
             dist-apks/Savera-Kitchen-Admin.apk
             dist-apks/Savera-Paradise-Rider.apk
+            dist-apks/Savera-Paradise-Owner.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

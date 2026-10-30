@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:translateX="0"
+        android:translateY="0">
+
+        <!-- Golden Radiance Glow behind Crown -->
+        <path
+            android:fillColor="#F59E0B"
+            android:fillAlpha="0.22"
+            android:pathData="M54,26 C68,26 80,38 80,52 C80,66 68,78 54,78 C40,78 28,66 28,52 C28,38 40,26 54,26 Z" />
+
+        <!-- Executive Royal Crown Main Body (Golden Amber #F59E0B) -->
+        <path
+            android:fillColor="#F59E0B"
+            android:pathData="M34,60 L36,44 L44,52 L54,34 L64,52 L72,44 L74,60 Z" />
+
+        <!-- Crown Right Facet Highlight (#FBBF24) -->
+        <path
+            android:fillColor="#FBBF24"
+            android:pathData="M54,34 L64,52 L54,60 Z" />
+
+        <!-- Crown Left Facet Highlight (#D97706) -->
+        <path
+            android:fillColor="#D97706"
+            android:pathData="M54,34 L44,52 L54,60 Z" />
+
+        <!-- Crown Far Right Facet (#FEF08A) -->
+        <path
+            android:fillColor="#FEF08A"
+            android:pathData="M64,52 L72,44 L74,60 L64,60 Z" />
+
+        <!-- Crown Far Left Facet (#B45309) -->
+        <path
+            android:fillColor="#B45309"
+            android:pathData="M44,52 L36,44 L34,60 L44,60 Z" />
+
+        <!-- Jewels on Crown Spire Tips (White Pearls / Diamonds #FFFFFF) -->
+        <!-- Center Spire Jewel (r=3.0 at 54, 33) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,30 C55.66,30 57,31.34 57,33 C57,34.66 55.66,36 54,36 C52.34,36 51,34.66 51,33 C51,31.34 52.34,30 54,30 Z" />
+        <!-- Left Inner Spire Jewel (r=2.2 at 44, 42) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M44,40 C45.22,40 46.2,40.98 46.2,42.2 C46.2,43.42 45.22,44.4 44,44.4 C42.78,44.4 41.8,43.42 41.8,42.2 C41.8,40.98 42.78,40 44,40 Z" />
+        <!-- Right Inner Spire Jewel (r=2.2 at 64, 42) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M64,40 C65.22,40 66.2,40.98 66.2,42.2 C66.2,43.42 65.22,44.4 64,44.4 C62.78,44.4 61.8,43.42 61.8,42.2 C61.8,40.98 62.78,40 64,40 Z" />
+        <!-- Left Outer Spire Jewel (r=1.8 at 36, 44) -->
+        <path
+            android:fillColor="#FEF08A"
+            android:pathData="M36,42.2 C37,42.2 37.8,43 37.8,44 C37.8,45 37,45.8 36,45.8 C35,45.8 34.2,45 34.2,44 C34.2,43 35,42.2 36,42.2 Z" />
+        <!-- Right Outer Spire Jewel (r=1.8 at 72, 44) -->
+        <path
+            android:fillColor="#FEF08A"
+            android:pathData="M72,42.2 C73,42.2 73.8,43 73.8,44 C73.8,45 73,45.8 72,45.8 C71,45.8 70.2,45 70.2,44 C70.2,43 71,42.2 72,42.2 Z" />
+
+        <!-- Crown Base Imperial Band (#F59E0B) -->
+        <path
+            android:fillColor="#F59E0B"
+            android:pathData="M32,60 L76,60 L74,68 L34,68 Z" />
+
+        <!-- Band Top Gold Accent Stripe -->
+        <path
+            android:strokeColor="#FDE68A"
+            android:strokeWidth="1.2"
+            android:strokeLineCap="round"
+            android:pathData="M33,61 L75,61" />
+
+        <!-- Imperial Center Star on Crown Band (#FFFFFF) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,62.2 L55.3,64.2 L57.5,64.5 L55.9,66 L56.3,68.2 L54,67.1 L51.7,68.2 L52.1,66 L50.5,64.5 L52.7,64.2 Z" />
+
+        <!-- Left Band Emerald Gem (#10B981) -->
+        <path
+            android:fillColor="#10B981"
+            android:pathData="M42,63 C43.1,63 44,63.9 44,65 C44,66.1 43.1,67 42,67 C40.9,67 40,66.1 40,65 C40,63.9 40.9,63 42,63 Z" />
+
+        <!-- Right Band Emerald Gem (#10B981) -->
+        <path
+            android:fillColor="#10B981"
+            android:pathData="M66,63 C67.1,63 68,63.9 68,65 C68,66.1 67.1,67 66,67 C64.9,67 64,66.1 64,65 C64,63.9 64.9,63 66,63 Z" />
+
+        <!-- Executive Analytics Growth Crest Line (Golden upward step chevron) -->
+        <path
+            android:strokeColor="#F59E0B"
+            android:strokeWidth="2.4"
+            android:strokeLineCap="round"
+            android:pathData="M32,75 L45,75 L54,71 L63,75 L76,75" />
+
+        <!-- Growth Profit Upward Arrow / Diamond (#10B981) -->
+        <path
+            android:fillColor="#10B981"
+            android:pathData="M54,77 L57,80 L54,83 L51,80 Z" />
+
+        <!-- Executive Platinum Base Line -->
+        <path
+            android:strokeColor="#94A3B8"
+            android:strokeWidth="1.6"
+            android:strokeLineCap="round"
+            android:pathData="M38,82 L70,82" />
+
+    </group>
+</vector>
