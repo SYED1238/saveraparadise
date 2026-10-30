@@ -1759,6 +1759,13 @@ document.addEventListener('DOMContentLoaded', () => {
         cnrClockSub.style.color = '#CBD5E1';
       }
     }
+
+    const isWaitComplete = remainingSeconds <= 0;
+    if (btnCnrReturnCod) {
+      btnCnrReturnCod.disabled = !isWaitComplete;
+      btnCnrReturnCod.style.opacity = isWaitComplete ? '1' : '0.5';
+      btnCnrReturnCod.style.cursor = isWaitComplete ? 'pointer' : 'not-allowed';
+    }
   }
 
   function closeUnreachableModal() {
@@ -1788,6 +1795,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!activeCnrOrder) return;
       const orderId = activeCnrOrder.id;
       const cleanId = String(orderId).replace(/^#/, '');
+      const timerStorageKey = `quickbite_cnr_start_${cleanId}`;
+      const startTime = Number(localStorage.getItem(timerStorageKey)) || 0;
+      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+      if (startTime > 0 && elapsedSeconds < 600) {
+        const remaining = Math.ceil((600 - elapsedSeconds) / 60);
+        showToast(`⏱️ Please wait the full 10 minutes at the customer's doorstep before returning the parcel (${remaining}m remaining).`, 'warning');
+        return;
+      }
       const reason = cnrCodReason ? cnrCodReason.value : 'Customer did not answer calls/doorbell after 10 mins wait';
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 

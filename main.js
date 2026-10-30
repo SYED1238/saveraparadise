@@ -3582,7 +3582,9 @@ function initStorefrontApp() {
     // Strict Requirement: Customer can cancel when order is in 'pending' or 'accepted' status (not once cooking begins)
     const btnCustomerCancelOrder = document.getElementById('btn-customer-cancel-order');
     if (btnCustomerCancelOrder) {
-      if (order.status === 'accepted' || order.status === 'pending') {
+      const elapsedMs = Date.now() - Number(order.createdAt || 0);
+      const withinTwoMins = elapsedMs >= 0 && elapsedMs <= 2 * 60 * 1000;
+      if ((order.status === 'accepted' || order.status === 'pending') && withinTwoMins) {
         btnCustomerCancelOrder.style.display = 'inline-flex';
         btnCustomerCancelOrder.onclick = () => {
           handleCustomerCancelOrder(order.id);
@@ -3607,6 +3609,13 @@ function initStorefrontApp() {
     if (!orderId) return;
     const order = dataService.getOrderById(orderId);
     if (!order) return;
+
+    const elapsedMs = Date.now() - Number(order.createdAt || 0);
+    if (elapsedMs > 2 * 60 * 1000) {
+      showToast('⏱️ The 2-minute cancellation window has expired. Please call the kitchen for changes.', 'warning');
+      renderOrderTracker(order.id);
+      return;
+    }
 
     // Strict Rule: Customers can ONLY cancel an order while it is in "pending" or "accepted" status
     if (order.status !== 'accepted' && order.status !== 'pending') {
@@ -4502,11 +4511,13 @@ function initStorefrontApp() {
         const storeSettings = dataService.getSettings();
         const maxAllowed = storeSettings.maxActiveOrdersPerCustomer !== undefined ? storeSettings.maxActiveOrdersPerCustomer : 2;
 
-        let activeOrders = dataService.getCustomerActiveOrders(currentUser.id, userEmail, userPhone);
-        if (activeOrders.length >= maxAllowed) {
-          await dataService.syncCustomerOrdersFromSupabase(currentUser.id, userEmail, userPhone);
-          activeOrders = dataService.getCustomerActiveOrders(currentUser.id, userEmail, userPhone);
+        // Always sync customer orders from Supabase first so active orders cannot be bypassed by clearing localStorage or opening new tabs
+        if (currentUser.id || userEmail || userPhone) {
+          try {
+            await dataService.syncCustomerOrdersFromSupabase(currentUser.id, userEmail, userPhone);
+          } catch {}
         }
+        let activeOrders = dataService.getCustomerActiveOrders(currentUser.id, userEmail, userPhone);
 
         if (activeOrders.length >= maxAllowed) {
           const firstOrder = activeOrders[0];
@@ -4538,13 +4549,14 @@ function initStorefrontApp() {
           calculatedTotal = Math.max(0, cartSubtotal - calculatedDiscount);
         }
 
-        // Safe delivery fee extraction: ensure summaryDelivery / checkoutDeliveryFee is safely resolved
-        const checkoutDeliveryFee = (typeof summaryDelivery !== 'undefined' && summaryDelivery) 
-          ? summaryDelivery 
-          : document.getElementById('summary-delivery');
-        const rawDeliveryFee = (checkoutDeliveryFee?.textContent && !checkoutDeliveryFee.textContent.includes('FREE'))
-          ? (Number(checkoutDeliveryFee.textContent.replace(/\D/g, '')) || 0)
-          : 0;
+        // Safe delivery fee extraction: compute arithmetically from store settings rather than scraping DOM text
+        const isFreeDelivEnabled = settings.freeDeliveryEnabled !== false;
+        const freeDelivThreshold = (typeof settings.freeDeliveryThreshold === 'number') ? settings.freeDeliveryThreshold : 250;
+        const standardDelivFee = (typeof settings.deliveryFeeStandard === 'number') ? settings.deliveryFeeStandard : 40;
+        const promoFreeDelivery = Boolean(promoRes && promoRes.valid && promoRes.freeDelivery);
+        const rawDeliveryFee = ((isFreeDelivEnabled && freeDelivThreshold > 0 && cartSubtotal >= freeDelivThreshold) || promoFreeDelivery)
+          ? 0
+          : standardDelivFee;
         calculatedTotal += rawDeliveryFee;
         const totalAmount = `₹${Math.round(calculatedTotal)}`;
         const customerAddressText = selectedAddr.details || selectedAddr.fullText || `${selectedAddr.flatNo}, ${selectedAddr.area}${selectedAddr.city ? ', ' + selectedAddr.city : ''}${selectedAddr.pincode ? ' - ' + selectedAddr.pincode : ''}`;
@@ -5997,11 +6009,9 @@ function initStorefrontApp() {
   const btnProceedToDetails = document.getElementById('btn-proceed-to-details');
   if (btnProceedToDetails) {
     btnProceedToDetails.addEventListener('click', () => {
-      if (!hasPinnedLocation) {
-        hasPinnedLocation = true;
-        hasDetectedLocation = true;
-        const center = addressMap ? addressMap.getCenter() : RESTAURANT_COORDINATES;
-        updateMapLocation(center.lat, center.lng, true, true);
+      if (!hasPinnedLocation && !hasDetectedLocation) {
+        showToast('📍 Please tap "Use current location" or drag the map pin to your doorstep first!', 'warning');
+        return;
       }
 
       const lat = Number(addrInputLat?.value) || currentAddressCoords.lat || RESTAURANT_COORDINATES.lat;

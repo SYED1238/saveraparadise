@@ -4416,8 +4416,6 @@ class QuickBiteDataService {
       } else if (appliedCode === 'FIRSTORDER' || appliedCode === 'WELCOME50') {
         discount = Math.min(computedSubtotal, 50);
       }
-    } else if (typeof orderData.discount === 'number' && orderData.discount > 0) {
-      discount = orderData.discount;
     }
 
     discount = Math.min(discount, computedSubtotal);
@@ -6093,6 +6091,10 @@ class QuickBiteDataService {
     };
   }
 
+  settleRiderCodCash(riderPin) {
+    return this.confirmRiderCashTaken(riderPin);
+  }
+
   settleRiderCash(riderPin) {
     const cleanPin = String(riderPin || '').trim();
     const riders = this.getRiders();
@@ -6104,6 +6106,7 @@ class QuickBiteDataService {
       riders[idx].cashTakenAt = settledTime;
       riders[idx].cashHandoverAmount = 0;
       this.saveRiders(riders);
+      this.saveOrUpdateRider(riders[idx]);
       this.notifyChange('cash_settled', { riderPin: cleanPin, settledAt: settledTime });
       return { success: true, settledAt: settledTime, rider: riders[idx] };
     }
@@ -6142,6 +6145,7 @@ class QuickBiteDataService {
       riders[idx].cashHandoverAmount = 0;
       riders[idx].lastCashCollectedAmount = amount;
       this.saveRiders(riders);
+      this.saveOrUpdateRider(riders[idx]);
 
       // Audit log into drawer transaction records
       try {
