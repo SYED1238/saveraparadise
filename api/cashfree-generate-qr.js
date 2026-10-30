@@ -11,8 +11,6 @@ const ALLOWED_ORIGINS = [
   'https://www.foodbliz.in',
   'https://saveraparadise.com',
   'https://www.saveraparadise.com',
-  'https://sascrispychicken.com',
-  'https://www.sascrispychicken.com',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:3000'

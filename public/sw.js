@@ -1,5 +1,5 @@
 /**
- * QuickBite / Crispy Chicken - Advanced Background Service Worker
+ * Savera Paradise - Advanced Background Service Worker
  * Handles:
  * 1. PWA Offline Caching & App Shell
  * 2. Background Notifications even when website/browser tabs are closed
@@ -112,10 +112,10 @@ self.addEventListener('push', (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: 'SAS Crispy Chicken Alert', body: event.data ? event.data.text() : 'New order update!' };
+    data = { title: 'Savera Paradise Alert', body: event.data ? event.data.text() : 'New order update!' };
   }
 
-  const title = data.title || '🔔 SAS Crispy Chicken Order Update';
+  const title = data.title || '🔔 Savera Paradise Order Update';
   const options = {
     body: data.body || 'Your order status has updated!',
     icon: '/icon-192.svg',

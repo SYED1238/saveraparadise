@@ -30,14 +30,14 @@ android {
     productFlavors {
         admin {
             dimension "portal"
-            applicationId "com.sascrispy.kitchen"
+            applicationId "com.saveraparadise.kitchen"
             resValue "string", "app_name", "Savera Paradise Kitchen"
             resValue "string", "portal_url", "https://saveraparadise.com/admin.html"
             resValue "color", "theme_color", "#0F172A"
         }
         rider {
             dimension "portal"
-            applicationId "com.sascrispy.rider"
+            applicationId "com.saveraparadise.rider"
             resValue "string", "app_name", "Savera Paradise Rider"
             resValue "string", "portal_url", "https://saveraparadise.com/delivery.html"
             resValue "color", "theme_color", "#059669"

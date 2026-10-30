@@ -1,5 +1,5 @@
-﻿-- =========================================================================
--- SAS CRISPY CHICKEN: SAFE RECOVERY FOR STAGE 2 POLICIES
+-- =========================================================================
+-- SAVERA PARADISE: SAFE RECOVERY FOR STAGE 2 POLICIES
 -- Only execute if explicitly needed to restore Stage 2 baseline policies.
 -- NOTE: Never opens unrestricted public access to customer PII or plaintext PINs.
 -- =========================================================================

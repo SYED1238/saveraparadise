@@ -1,4 +1,4 @@
-﻿name: Build Android APKs (Admin & Rider)
+name: Build Android APKs (Admin & Rider)
 
 on:
   workflow_dispatch:
@@ -45,14 +45,14 @@ jobs:
         run: |
           mkdir -p dist-apks
           # Locate and copy built APKs
-          find android/app/build/outputs/apk/admin/release -name "*.apk" -exec cp {} dist-apks/SAS-Kitchen-Admin.apk \;
-          find android/app/build/outputs/apk/rider/release -name "*.apk" -exec cp {} dist-apks/SAS-Crispy-Rider.apk \;
+          find android/app/build/outputs/apk/admin/release -name "*.apk" -exec cp {} dist-apks/Savera-Kitchen-Admin.apk \;
+          find android/app/build/outputs/apk/rider/release -name "*.apk" -exec cp {} dist-apks/Savera-Paradise-Rider.apk \;
           ls -la dist-apks/
 
       - name: Upload APKs as Workflow Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SAS-Crispy-Android-APKs
+          name: Savera-Paradise-Android-APKs
           path: dist-apks/*.apk
           retention-days: 30
 
@@ -61,21 +61,21 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-apk
-          name: "SAS Crispy Android APKs (Admin & Rider)"
+          name: "Savera Paradise Android APKs (Admin & Rider)"
           body: |
-            ### 📱 Official Android APK Downloads for SAS Crispy Chicken
+            ### 📱 Official Android APK Downloads for Savera Paradise
 
             These standalone native Android APKs run dedicated portals without browser address bars, keep the screen awake during service hours, and prevent tab sleep:
 
-            * 👨‍🍳 **[Download SAS Kitchen Admin APK](https://github.com/${{ github.repository }}/releases/download/latest-apk/SAS-Kitchen-Admin.apk)**
+            * 👨‍🍳 **[Download Savera Kitchen Admin APK](https://github.com/${{ github.repository }}/releases/download/latest-apk/Savera-Kitchen-Admin.apk)**
               * Kitchen order display, loud incoming order beeper sirens, menu 86/stock toggle, and rush setter.
-            * 🏍️ **[Download SAS Crispy Rider APK](https://github.com/${{ github.repository }}/releases/download/latest-apk/SAS-Crispy-Rider.apk)**
+            * 🏍️ **[Download Savera Paradise Rider APK](https://github.com/${{ github.repository }}/releases/download/latest-apk/Savera-Paradise-Rider.apk)**
               * Delivery fleet dispatch, live turn-by-turn customer doorstep navigation, and cash-on-delivery tracking.
 
             ---
             *Built automatically via GitHub Actions.*
           files: |
-            dist-apks/SAS-Kitchen-Admin.apk
-            dist-apks/SAS-Crispy-Rider.apk
+            dist-apks/Savera-Kitchen-Admin.apk
+            dist-apks/Savera-Paradise-Rider.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

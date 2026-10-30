@@ -1,5 +1,5 @@
 -- =========================================================================
--- SAS CRISPY CHICKEN: STAGE 3 CUSTOMER UNREACHABLE / UNDELIVERED STATUS
+-- SAVERA PARADISE: STAGE 3 CUSTOMER UNREACHABLE / UNDELIVERED STATUS
 -- Idempotent trigger function update to support 'undelivered' terminal status
 -- Copy and run in Supabase SQL Editor if using remote PostgreSQL triggers:
 -- https://supabase.com/dashboard/project/jsqpwkgcmcfidtprvhzm/sql/new

@@ -1,5 +1,5 @@
-﻿-- =========================================================================
--- SAS CRISPY CHICKEN: STAGE 2 PRODUCTION SECURITY HARDENING & RLS POLICIES
+-- =========================================================================
+-- SAVERA PARADISE: STAGE 2 PRODUCTION SECURITY HARDENING & RLS POLICIES
 -- PROPOSAL / DRAFT ONLY — DO NOT EXECUTE DIRECTLY ON LIVE INSTANCE!
 -- ⚠️ ARCHITECTURE NOTE:
 -- This draft migration assumes staff authenticate via Supabase Auth JWTs.

@@ -1,6 +1,6 @@
 /**
  * Serverless Ola Maps Proxy & Edge Caching Endpoint
- * GET /api/ola-maps?action=reverse&lat=12.720611&lng=77.286833
+ * GET /api/ola-maps?action=reverse&lat=12.7208891&lng=77.2805103
  * GET /api/ola-maps?action=autocomplete&input=Tippu
  *
  * Security & Performance Hardening:
@@ -10,8 +10,8 @@
  */
 
 const OLA_API_KEY = process.env.OLA_MAPS_API_KEY || '';
-const STORE_LAT = process.env.STORE_LAT || '12.720611';
-const STORE_LNG = process.env.STORE_LNG || '77.286833';
+const STORE_LAT = process.env.STORE_LAT || '12.7208891';
+const STORE_LNG = process.env.STORE_LNG || '77.2805103';
 
 // In-memory rate limiting against automated scrapers / spam
 const RATE_LIMIT_MAP = new Map();
@@ -37,8 +37,6 @@ const ALLOWED_ORIGINS = [
   'https://www.foodbliz.in',
   'https://saveraparadise.com',
   'https://www.saveraparadise.com',
-  'https://sascrispychicken.com',
-  'https://www.sascrispychicken.com',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:3000'

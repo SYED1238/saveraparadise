@@ -1,5 +1,5 @@
 /**
- * QuickBite / Crispy Chicken - Interactive Logic & Animation Engine
+ * Savera Paradise - Interactive Logic & Animation Engine
  */
 import confetti from 'canvas-confetti';
 import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl } from './dataService.js';
@@ -5719,7 +5719,7 @@ function initStorefrontApp() {
           // 2. Fallback to Photon/Komoot if Ola Maps returns no results
           if (items.length === 0) {
             try {
-              const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=12.720611&lon=77.286833&limit=5`;
+              const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=12.7208891&lon=77.2805103&limit=5`;
               const res = await fetch(url);
               if (res.ok) {
                 const data = await res.json();

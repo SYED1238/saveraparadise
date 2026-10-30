@@ -125,7 +125,7 @@ public class OrderMonitorService extends Service {
             // 1. Silent Low-Priority Channel for Foreground Service Status
             NotificationChannel serviceChannel = new NotificationChannel(
                 CHANNEL_ID_SERVICE,
-                "SAS Background Monitor",
+                "Savera Paradise Background Monitor",
                 NotificationManager.IMPORTANCE_LOW
             );
             serviceChannel.setDescription("Keeps order notifications alive 24/7 when app is closed");
@@ -135,7 +135,7 @@ public class OrderMonitorService extends Service {
             // 2. High-Priority Channel for Heads-Up Order Popup Banner
             NotificationChannel alertChannel = new NotificationChannel(
                 CHANNEL_ID_ALERTS,
-                "SAS Orders & Critical Alerts",
+                "Savera Paradise Orders & Critical Alerts",
                 NotificationManager.IMPORTANCE_HIGH
             );
             alertChannel.setDescription("Loud incoming order sirens and dispatch alerts");
@@ -164,7 +164,7 @@ public class OrderMonitorService extends Service {
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openAppIntent, pendingFlags);
 
-        String title = isRiderApp ? "🟢 SAS Rider Dispatch Active" : "🟢 SAS Kitchen Monitor Active";
+        String title = isRiderApp ? "🟢 Savera Rider Dispatch Active" : "🟢 Savera Kitchen Monitor Active";
         String subtitle = "24/7 live order monitoring active in background";
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID_SERVICE)
@@ -247,7 +247,7 @@ public class OrderMonitorService extends Service {
                     break;
                 }
             }
-        }, "SAS-OrderMonitorThread");
+        }, "Savera-OrderMonitorThread");
         pollingThread.start();
     }
 

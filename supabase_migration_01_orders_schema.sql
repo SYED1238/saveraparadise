@@ -1,5 +1,5 @@
-﻿-- =========================================================================
--- SAS CRISPY CHICKEN: STAGE 1 ORDERS SCHEMA ALIGNMENT (DDL ONLY)
+-- =========================================================================
+-- SAVERA PARADISE: STAGE 1 ORDERS SCHEMA ALIGNMENT (DDL ONLY)
 -- Safe, metadata-only column additions with lock protection.
 -- Copy and run this script in your Supabase Dashboard SQL Editor:
 -- https://supabase.com/dashboard/project/jsqpwkgcmcfidtprvhzm/sql/new

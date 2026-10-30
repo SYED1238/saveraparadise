@@ -22,7 +22,7 @@ public class WebAppInterface {
 
     private final Context context;
     public static final String CHANNEL_ID_ORDERS = "sas_orders_channel_v2";
-    public static final String CHANNEL_NAME_ORDERS = "SAS Orders & Critical Alerts";
+    public static final String CHANNEL_NAME_ORDERS = "Savera Paradise Orders & Critical Alerts";
 
     public WebAppInterface(Context context) {
         this.context = context;

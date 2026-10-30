@@ -1,5 +1,5 @@
-﻿-- =========================================================================
--- SAS CRISPY CHICKEN: ROLLBACK FOR STAGE 1 ORDERS SCHEMA ALIGNMENT
+-- =========================================================================
+-- SAVERA PARADISE: ROLLBACK FOR STAGE 1 ORDERS SCHEMA ALIGNMENT
 -- Only use if explicitly needed to revert Stage 1 column additions.
 -- NOTE: Does NOT affect core orders columns (id, customer_name, total, etc.)
 -- =========================================================================

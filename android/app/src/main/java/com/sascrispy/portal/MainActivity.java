@@ -78,7 +78,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
 
         // Set realistic Chrome mobile user agent
-        String customUA = settings.getUserAgentString() + " SASCrispyNativeApp/1.0";
+        String customUA = settings.getUserAgentString() + " SaveraParadiseNativeApp/1.0";
         settings.setUserAgentString(customUA);
 
         // Register Native Android Notification and Vibration Bridge
