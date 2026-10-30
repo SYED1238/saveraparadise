@@ -114,9 +114,9 @@ def create_phone_mockup(w=330, h=620, compact=False):
     
     return phone
 
-print("[OK] Loaded helper definitions")
 # =========================================================================
 # VARIATION 1: VERTICAL PRINT & FLYER POSTER (1200 x 1800 px)
+# (NO HOTEL IMAGE - FOCUSED ON DELICIOUS FOOD, SCANNER & DELIVERY)
 # =========================================================================
 def generate_poster_v1(output_png, output_jpg):
     W, H = 1200, 1800
@@ -125,23 +125,23 @@ def generate_poster_v1(output_png, output_jpg):
     # Ambient Lighting Flares
     glow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     dg = ImageDraw.Draw(glow)
-    dg.ellipse((100, 100, 1100, 480), fill=(255, 90, 38, 70))
+    dg.ellipse((100, 80, 1100, 450), fill=(255, 90, 38, 70))
     # Scanner glow (Left-Center)
-    dg.ellipse((40, 430, 520, 1130), fill=(255, 90, 38, 85))
-    dg.ellipse((100, 530, 440, 950), fill=(245, 158, 11, 70))
+    dg.ellipse((40, 430, 540, 1180), fill=(255, 90, 38, 85))
+    dg.ellipse((100, 520, 460, 980), fill=(245, 158, 11, 75))
     # Bike & App glow (Right-Center)
-    dg.ellipse((520, 430, 1150, 1130), fill=(255, 140, 20, 60))
-    # Storefront photo rim glow (Bottom)
-    dg.ellipse((150, 1110, 1050, 1620), fill=(245, 158, 11, 50))
-    glow = glow.filter(ImageFilter.GaussianBlur(100))
+    dg.ellipse((520, 430, 1150, 1180), fill=(255, 140, 20, 65))
+    # Bottom Dishes glow
+    dg.ellipse((80, 1200, 1120, 1650), fill=(245, 158, 11, 45))
+    glow = glow.filter(ImageFilter.GaussianBlur(105))
     canvas = Image.alpha_composite(canvas, glow)
     
     # Subtle technical grid in background
     grid = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     dgrid = ImageDraw.Draw(grid)
     for x in range(0, W, 40):
-        dgrid.line([(x, 0), (x, 320)], fill=(255, 255, 255, 8), width=1)
-    for y in range(0, 320, 40):
+        dgrid.line([(x, 0), (x, 340)], fill=(255, 255, 255, 8), width=1)
+    for y in range(0, 340, 40):
         dgrid.line([(0, y), (W, y)], fill=(255, 255, 255, 8), width=1)
     canvas = Image.alpha_composite(canvas, grid)
     
@@ -150,189 +150,228 @@ def generate_poster_v1(output_png, output_jpg):
     # 1. HEADER (Savera Emblem, English & Kannada Brand, Ramanagara)
     logo_path = 'public/savera-logo.png'
     if os.path.exists(logo_path):
-        logo = Image.open(logo_path).convert('RGBA').resize((116, 116), Image.Resampling.LANCZOS)
-        draw.ellipse((48, 38, 172, 162), fill=(255, 90, 38, 50), outline=(245, 158, 11, 220), width=3)
-        canvas.paste(logo, (52, 42), logo)
+        logo = Image.open(logo_path).convert('RGBA').resize((120, 120), Image.Resampling.LANCZOS)
+        draw.ellipse((46, 36, 174, 164), fill=(255, 90, 38, 50), outline=(245, 158, 11, 220), width=3)
+        canvas.paste(logo, (50, 40), logo)
     
-    draw.text((190, 40), "SAVERA PARADISE", font=get_font(FONT_IMPACT, 46), fill=(255, 255, 255))
-    draw.text((190, 96), "ಸವೇರ ಪ್ಯಾರಡೈಸ್", font=get_font(FONT_KANNADA, 26), fill=(255, 170, 50))
-    draw.text((370, 99), "• MULTI-CUISINE FAMILY RESTAURANT", font=get_font(FONT_BOLD, 17), fill=(226, 232, 240))
-    draw.text((190, 134), "📍 AGA Building, Railway Station Main Road, Ramanagara — 562159", font=get_font(FONT_REGULAR, 16), fill=(148, 163, 184))
+    draw.text((190, 38), "SAVERA PARADISE", font=get_font(FONT_IMPACT, 48), fill=(255, 255, 255))
+    draw.text((190, 96), "ಸವೇರ ಪ್ಯಾರಡೈಸ್", font=get_font(FONT_KANNADA, 28), fill=(255, 170, 50))
+    draw.text((380, 100), "• MULTI-CUISINE FAMILY RESTAURANT", font=get_font(FONT_BOLD, 17), fill=(226, 232, 240))
+    draw.text((190, 136), "AGA Building, Railway Station Main Road, Ramanagara — 562159", font=get_font(FONT_REGULAR, 17), fill=(148, 163, 184))
     
     # Top-right express pill
-    draw.rounded_rectangle((830, 54, 1150, 114), radius=30, fill=(255, 90, 38, 45), outline=(255, 90, 38, 220), width=2)
-    draw.text((854, 70), "🛵 20–30 MINS DELIVERY", font=get_font(FONT_BOLD, 20), fill=(255, 255, 255))
+    draw.rounded_rectangle((820, 52, 1150, 116), radius=32, fill=(255, 90, 38, 45), outline=(255, 90, 38, 220), width=2)
+    draw.text((846, 70), "🛵 20–30 MINS DELIVERY", font=get_font(FONT_BOLD, 21), fill=(255, 255, 255))
     
     # Golden separator beam
-    draw.line([(50, 175), (1150, 175)], fill=(245, 158, 11, 100), width=2)
+    draw.line([(50, 180), (1150, 180)], fill=(245, 158, 11, 100), width=2)
     
     # 2. HEADLINE: "WE ARE NOW DELIVERING TO YOUR DOORSTEP!"
-    draw.rounded_rectangle((50, 190, 480, 226), radius=8, fill=(245, 158, 11, 35), outline=(245, 158, 11, 150), width=1)
-    draw.text((65, 196), "★ RAMANAGARA'S FAVORITE FEAST ★", font=get_font(FONT_BOLD, 16), fill=(250, 204, 21))
+    draw.rounded_rectangle((50, 196, 490, 232), radius=8, fill=(245, 158, 11, 35), outline=(245, 158, 11, 150), width=1)
+    draw.text((65, 202), "★ RAMANAGARA'S PREMIER MULTI-CUISINE DESTINATION ★", font=get_font(FONT_BOLD, 15), fill=(250, 204, 21))
     
-    font_h1 = get_font(FONT_IMPACT, 64)
-    font_h2 = get_font(FONT_IMPACT, 82)
+    font_h1 = get_font(FONT_IMPACT, 66)
+    font_h2 = get_font(FONT_IMPACT, 86)
     
     # 3D shadow for row 1
-    draw.text((54, 240), "WE ARE NOW DELIVERING", font=font_h1, fill=(0, 0, 0, 200))
-    draw.text((50, 236), "WE ARE NOW DELIVERING", font=font_h1, fill=(255, 255, 255))
+    draw.text((54, 246), "WE ARE NOW DELIVERING", font=font_h1, fill=(0, 0, 0, 200))
+    draw.text((50, 242), "WE ARE NOW DELIVERING", font=font_h1, fill=(255, 255, 255))
     
     # 3D fiery orange for row 2
-    draw.text((54, 314), "TO YOUR DOORSTEP!", font=font_h2, fill=(160, 30, 0, 240))
-    draw.text((50, 310), "TO YOUR DOORSTEP!", font=font_h2, fill=(255, 90, 38))
+    draw.text((54, 322), "TO YOUR DOORSTEP!", font=font_h2, fill=(160, 30, 0, 240))
+    draw.text((50, 318), "TO YOUR DOORSTEP!", font=font_h2, fill=(255, 90, 38))
     
     # 3. HIGH-VISIBILITY 10% OFF PROMOTIONAL RIBBON
-    strip_y = 405
-    strip_h = 76
-    draw.rounded_rectangle((50, strip_y, 1150, strip_y + strip_h), radius=18, fill=(24, 18, 14, 255), outline=(255, 90, 38, 220), width=2)
-    draw.rounded_rectangle((53, strip_y + 3, 1147, strip_y + strip_h - 3), radius=15, outline=(245, 158, 11, 140), width=1)
+    strip_y = 415
+    strip_h = 80
+    draw.rounded_rectangle((50, strip_y, 1150, strip_y + strip_h), radius=20, fill=(24, 18, 14, 255), outline=(255, 90, 38, 220), width=2)
+    draw.rounded_rectangle((53, strip_y + 3, 1147, strip_y + strip_h - 3), radius=17, outline=(245, 158, 11, 140), width=1)
     
     # 10% Off headline
-    draw.text((75, strip_y + 14), "🔥 SPECIAL LAUNCH OFFER: GET FLAT 10% OFF!", font=get_font(FONT_IMPACT, 28), fill=(255, 200, 50))
-    draw.text((75, strip_y + 46), "Valid on all online food orders across Ramanagara", font=get_font(FONT_REGULAR, 15), fill=(203, 213, 225))
+    draw.text((75, strip_y + 14), "🔥 SPECIAL LAUNCH OFFER: GET FLAT 10% OFF!", font=get_font(FONT_IMPACT, 30), fill=(255, 200, 50))
+    draw.text((75, strip_y + 48), "Valid on all online food orders across Ramanagara", font=get_font(FONT_REGULAR, 15), fill=(203, 213, 225))
     
     # Coupon code pill
     coupon_x = 680
-    draw.rounded_rectangle((coupon_x, strip_y + 14, coupon_x + 230, strip_y + 60), radius=12, fill=(255, 90, 38, 255))
-    draw.text((coupon_x + 18, strip_y + 22), "USE CODE: SAVERA10", font=get_font(FONT_BOLD, 17), fill=(255, 255, 255))
+    draw.rounded_rectangle((coupon_x, strip_y + 14, coupon_x + 230, strip_y + 64), radius=12, fill=(255, 90, 38, 255))
+    draw.text((coupon_x + 18, strip_y + 24), "USE CODE: SAVERA10", font=get_font(FONT_BOLD, 17), fill=(255, 255, 255))
     
     # Free Delivery tag
-    draw.text((940, strip_y + 15), "🛵 FREE DELIVERY", font=get_font(FONT_IMPACT, 24), fill=(16, 185, 129))
-    draw.text((940, strip_y + 45), "On Orders Above ₹249", font=get_font(FONT_BOLD, 14), fill=(148, 163, 184))
+    draw.text((940, strip_y + 16), "🛵 FREE DELIVERY", font=get_font(FONT_IMPACT, 24), fill=(16, 185, 129))
+    draw.text((940, strip_y + 46), "On Orders Above ₹249", font=get_font(FONT_BOLD, 14), fill=(148, 163, 184))
     
     # 4. MIDDLE SECTION:
     # LEFT-CENTER = HIGHLIGHTED QR CODE SCANNER POD
-    pod_x, pod_y, pod_w, pod_h = 50, 498, 470, 610
-    draw.rounded_rectangle((pod_x, pod_y, pod_x + pod_w, pod_y + pod_h), radius=26, fill=(18, 14, 11, 255), outline=(255, 90, 38, 255), width=3)
-    draw.rounded_rectangle((pod_x + 4, pod_y + 4, pod_x + pod_w - 4, pod_y + pod_h - 4), radius=22, outline=(245, 158, 11, 150), width=1)
+    pod_x, pod_y, pod_w, pod_h = 50, 515, 470, 680
+    draw.rounded_rectangle((pod_x, pod_y, pod_x + pod_w, pod_y + pod_h), radius=28, fill=(18, 14, 11, 255), outline=(255, 90, 38, 255), width=3)
+    draw.rounded_rectangle((pod_x + 4, pod_y + 4, pod_x + pod_w - 4, pod_y + pod_h - 4), radius=24, outline=(245, 158, 11, 150), width=1)
     
     # Scanner Attention Badge
-    badge_w = 270
-    draw.rounded_rectangle((pod_x + 22, pod_y + 20, pod_x + 22 + badge_w, pod_y + 54), radius=17, fill=(255, 90, 38, 255))
-    draw.text((pod_x + 36, pod_y + 26), "📷 POINT CAMERA TO ORDER", font=get_font(FONT_BOLD, 14), fill=(255, 255, 255))
+    badge_w = 280
+    draw.rounded_rectangle((pod_x + 24, pod_y + 22, pod_x + 24 + badge_w, pod_y + 58), radius=18, fill=(255, 90, 38, 255))
+    draw.text((pod_x + 40, pod_y + 29), "📷 POINT CAMERA TO ORDER", font=get_font(FONT_BOLD, 14), fill=(255, 255, 255))
     
-    draw.text((pod_x + 22, pod_y + 66), "SCAN & ORDER IN 30 SECS", font=get_font(FONT_IMPACT, 32), fill=(255, 255, 255))
-    draw.text((pod_x + 22, pod_y + 106), "Instant live menu opens — zero app download required!", font=get_font(FONT_REGULAR, 14), fill=(203, 213, 225))
+    draw.text((pod_x + 24, pod_y + 72), "SCAN & ORDER IN 30 SECS", font=get_font(FONT_IMPACT, 34), fill=(255, 255, 255))
+    draw.text((pod_x + 24, pod_y + 114), "Instant live menu opens — zero app download required!", font=get_font(FONT_REGULAR, 14), fill=(203, 213, 225))
     
-    # QR Code White Frame & Pedestal (Scannable, 240x240)
-    qr_box_x = pod_x + int((pod_w - 240) / 2)
-    qr_box_y = pod_y + 140
-    qr_box_s = 240
-    draw.rounded_rectangle((qr_box_x, qr_box_y, qr_box_x + qr_box_s, qr_box_y + qr_box_s), radius=20, fill=(255, 255, 255, 255))
+    # QR Code White Frame & Pedestal (Scannable, 260x260)
+    qr_box_x = pod_x + int((pod_w - 260) / 2)
+    qr_box_y = pod_y + 150
+    qr_box_s = 260
+    draw.rounded_rectangle((qr_box_x, qr_box_y, qr_box_x + qr_box_s, qr_box_y + qr_box_s), radius=22, fill=(255, 255, 255, 255))
     
     qr_path = 'public/savera-paradise-qr.png'
     if os.path.exists(qr_path):
-        qr_img = Image.open(qr_path).convert('RGBA').resize((qr_box_s - 24, qr_box_s - 24), Image.Resampling.LANCZOS)
-        canvas.paste(qr_img, (qr_box_x + 12, qr_box_y + 12), qr_img)
+        qr_img = Image.open(qr_path).convert('RGBA').resize((qr_box_s - 26, qr_box_s - 26), Image.Resampling.LANCZOS)
+        canvas.paste(qr_img, (qr_box_x + 13, qr_box_y + 13), qr_img)
     
     # HUD targeting reticles [ ⛶ ] at corners
-    draw_hud_corners(draw, qr_box_x - 8, qr_box_y - 8, qr_box_s + 16, length=28, color=(255, 90, 38, 255), width=4)
+    draw_hud_corners(draw, qr_box_x - 10, qr_box_y - 10, qr_box_s + 20, length=32, color=(255, 90, 38, 255), width=4)
     
     # Horizontal Glowing Laser Beam
     laser_y = qr_box_y + int(qr_box_s / 2)
-    draw.line([(qr_box_x + 6, laser_y), (qr_box_x + qr_box_s - 6, laser_y)], fill=(255, 90, 38, 220), width=4)
-    draw.line([(qr_box_x + 20, laser_y), (qr_box_x + qr_box_s - 20, laser_y)], fill=(255, 255, 255, 255), width=2)
+    draw.line([(qr_box_x + 8, laser_y), (qr_box_x + qr_box_s - 8, laser_y)], fill=(255, 90, 38, 220), width=4)
+    draw.line([(qr_box_x + 24, laser_y), (qr_box_x + qr_box_s - 24, laser_y)], fill=(255, 255, 255, 255), width=2)
     
     # Website Link Pill
-    url_box_w = 400
+    url_box_w = 410
     url_box_x = pod_x + int((pod_w - url_box_w) / 2)
-    url_box_y = qr_box_y + qr_box_s + 18
-    draw.rounded_rectangle((url_box_x, url_box_y, url_box_x + url_box_w, url_box_y + 44), radius=12, fill=(10, 8, 6, 255), outline=(255, 90, 38, 200), width=2)
-    draw.text((url_box_x + 36, url_box_y + 10), "🌐 saveraparadise.foodbliz.in", font=get_font(FONT_BOLD, 18), fill=(255, 140, 60))
+    url_box_y = qr_box_y + qr_box_s + 20
+    draw.rounded_rectangle((url_box_x, url_box_y, url_box_x + url_box_w, url_box_y + 46), radius=14, fill=(10, 8, 6, 255), outline=(255, 90, 38, 200), width=2)
+    draw.text((url_box_x + 40, url_box_y + 10), "🌐 saveraparadise.foodbliz.in", font=get_font(FONT_BOLD, 19), fill=(255, 140, 60))
     
     # 3-Step Scan Instructions
-    step_y = url_box_y + 54
-    draw.text((pod_x + 28, step_y), "1️⃣ Open Camera  →  2️⃣ Tap Link  →  3️⃣ Enjoy Feast!", font=get_font(FONT_BOLD, 14), fill=(250, 204, 21))
+    step_y = url_box_y + 56
+    draw.text((pod_x + 26, step_y), "1️⃣ Open Camera  →  2️⃣ Tap Link  →  3️⃣ Enjoy Feast!", font=get_font(FONT_BOLD, 15), fill=(250, 204, 21))
     
     # Payment Icons Note
-    draw.text((pod_x + 28, step_y + 28), "💳 Google Pay • PhonePe • Paytm • UPI • Cash on Delivery", font=get_font(FONT_REGULAR, 13), fill=(148, 163, 184))
+    draw.text((pod_x + 26, step_y + 30), "💳 Google Pay • PhonePe • Paytm • UPI • Cash on Delivery", font=get_font(FONT_REGULAR, 14), fill=(148, 163, 184))
     
     # RIGHT-CENTER = DELIVERY SMARTPHONE APP + DELIVERY BIKE
     right_x = 540
     # Delivery bike in background
     bike_path = 'public/images/delivery-bike.jpg'
     if os.path.exists(bike_path):
-        bike = Image.open(bike_path).convert('RGBA').resize((460, 460), Image.Resampling.LANCZOS)
+        bike = Image.open(bike_path).convert('RGBA').resize((480, 480), Image.Resampling.LANCZOS)
         # Soft feathered edge mask
-        bmask = Image.new('L', (460, 460), 255)
+        bmask = Image.new('L', (480, 480), 255)
         dbm = ImageDraw.Draw(bmask)
         for i in range(40):
             alpha = int((i / 40) * 255)
-            dbm.rectangle((i, i, 460 - i, 460 - i), outline=alpha, width=1)
+            dbm.rectangle((i, i, 480 - i, 480 - i), outline=alpha, width=1)
         bike.putalpha(bmask)
-        canvas.paste(bike, (690, 520), bike)
+        canvas.paste(bike, (670, 540), bike)
     
     # Smartphone app mockup in foreground
-    phone_w, phone_h = 320, 590
-    phone = create_phone_mockup(phone_w, phone_h, compact=True)
+    phone_w, phone_h = 330, 640
+    phone = create_phone_mockup(phone_w, phone_h, compact=False)
     
     # Phone drop shadow
     pshadow = Image.new('RGBA', (phone_w + 60, phone_h + 60), (0, 0, 0, 0))
     dps = ImageDraw.Draw(pshadow)
     dps.rounded_rectangle((30, 30, phone_w + 30, phone_h + 30), radius=45, fill=(0, 0, 0, 190))
     pshadow = pshadow.filter(ImageFilter.GaussianBlur(25))
-    canvas.paste(pshadow, (right_x - 10, 485), pshadow)
-    canvas.paste(phone, (right_x + 20, 510), phone)
+    canvas.paste(pshadow, (right_x - 10, 520), pshadow)
+    canvas.paste(phone, (right_x + 20, 535), phone)
     
     # Foreground Hot Biryani Plate overlapping
     biryani_path = 'public/images/intro/plate-biryani.webp'
     if os.path.exists(biryani_path):
-        bplate = Image.open(biryani_path).convert('RGBA').resize((260, 195), Image.Resampling.LANCZOS)
-        bshadow = Image.new('RGBA', (280, 215), (0, 0, 0, 0))
+        bplate = Image.open(biryani_path).convert('RGBA').resize((270, 205), Image.Resampling.LANCZOS)
+        bshadow = Image.new('RGBA', (290, 225), (0, 0, 0, 0))
         dbs = ImageDraw.Draw(bshadow)
-        dbs.ellipse((15, 15, 265, 200), fill=(0, 0, 0, 170))
+        dbs.ellipse((15, 15, 275, 210), fill=(0, 0, 0, 170))
         bshadow = bshadow.filter(ImageFilter.GaussianBlur(18))
-        canvas.paste(bshadow, (right_x + 240, 890), bshadow)
-        canvas.paste(bplate, (right_x + 250, 900), bplate)
+        canvas.paste(bshadow, (right_x + 240, 960), bshadow)
+        canvas.paste(bplate, (right_x + 250, 970), bplate)
     
     # Delivery Guarantee Pill
-    draw.rounded_rectangle((790, 470, 1140, 510), radius=20, fill=(16, 185, 129, 35), outline=(16, 185, 129, 200), width=1)
-    draw.text((808, 480), "⚡ 20–30 Mins Guaranteed Hot & Fresh", font=get_font(FONT_BOLD, 14), fill=(52, 211, 153))
+    draw.rounded_rectangle((790, 490, 1140, 532), radius=21, fill=(16, 185, 129, 35), outline=(16, 185, 129, 200), width=1)
+    draw.text((808, 502), "⚡ 20–30 Mins Guaranteed Hot & Fresh", font=get_font(FONT_BOLD, 14), fill=(52, 211, 153))
     
-    # 5. "AND BELOW THIS IMAGE": REAL STOREFRONT SHOWCASE
-    sf_x, sf_y, sf_w, sf_h = 50, 1125, 1100, 490
-    draw.rounded_rectangle((sf_x, sf_y, sf_x + sf_w, sf_y + sf_h), radius=24, fill=(16, 12, 10, 255), outline=(255, 90, 38, 200), width=3)
+    # 5. BOTTOM SECTION: 3 SIGNATURE DISHES SHOWCASE (REPLACING HOTEL PHOTO)
+    dish_sec_y = 1220
+    dish_sec_h = 380
+    draw.rounded_rectangle((50, dish_sec_y, 1150, dish_sec_y + dish_sec_h), radius=24, fill=(16, 12, 10, 255), outline=(255, 90, 38, 180), width=2)
     
-    # Load and crop real storefront photo
-    sf_path = 'public/images/savera-storefront.jpg'
-    if os.path.exists(sf_path):
-        sf_raw = Image.open(sf_path).convert('RGBA')
-        # Target inner dimension
-        in_w = sf_w - 12
-        in_h = sf_h - 12
-        # Crop to keep top signboard & green "I ❤️ RAMANAGARA" wall
-        raw_w, raw_h = sf_raw.size
-        # Crop slight bottom pavement to center on entrance and sign
-        crop_box = (0, 0, raw_w, int(raw_h * 0.95))
-        sf_cropped = sf_raw.crop(crop_box).resize((in_w, in_h), Image.Resampling.LANCZOS)
+    # Section Header
+    draw.text((75, dish_sec_y + 18), "👑 SIGNATURE SPECIALTIES DELIVERED PIPING HOT TO YOUR DOOR", font=get_font(FONT_IMPACT, 26), fill=(255, 255, 255))
+    draw.text((850, dish_sec_y + 20), "⚡ 100% Halal & Fresh Guaranteed", font=get_font(FONT_BOLD, 15), fill=(245, 158, 11))
+    draw.line([(70, dish_sec_y + 54), (1130, dish_sec_y + 54)], fill=(45, 34, 26, 255), width=1)
+    
+    # 3 Dish Cards Grid
+    card_w = 338
+    card_h = 290
+    card_y = dish_sec_y + 70
+    
+    dishes_data = [
+        {
+            "name": "Dum Biryani",
+            "desc": "Fragrant long-grain basmati rice, succulent spiced meat, saffron & caramelized crispy onions.",
+            "price": "From ₹190",
+            "badge": "★ BESTSELLER",
+            "badge_color": (255, 90, 38, 255),
+            "img": "public/images/intro/plate-biryani.webp",
+            "x": 70
+        },
+        {
+            "name": "Crispy Chicken & Kebabs",
+            "desc": "Golden crunchy crispy fried chicken & clay tandoor roasted Seekh & Malai tikka with fresh mint dip.",
+            "price": "From ₹180",
+            "badge": "🔥 SIZZLING HOT",
+            "badge_color": (245, 158, 11, 255),
+            "img": "public/images/intro/plate-kebab.webp",
+            "x": 70 + card_w + 22
+        },
+        {
+            "name": "Curries, BBQ & Seafood",
+            "desc": "Rich butter chicken, artisan gravies, flaky parottas & fresh fish fry cooked to royal perfection.",
+            "price": "From ₹150",
+            "badge": "🍗 CHEF SPECIAL",
+            "badge_color": (16, 185, 129, 255),
+            "img": "public/images/intro/plate-bbq.webp",
+            "x": 70 + (card_w + 22) * 2
+        }
+    ]
+    
+    for d in dishes_data:
+        cx = d["x"]
+        draw.rounded_rectangle((cx, card_y, cx + card_w, card_y + card_h), radius=18, fill=(24, 18, 14, 255), outline=(55, 42, 32, 255), width=1)
         
-        # Rounded corner mask for the storefront photo
-        sf_mask = Image.new('L', (in_w, in_h), 0)
-        dsm = ImageDraw.Draw(sf_mask)
-        dsm.rounded_rectangle((0, 0, in_w, in_h), radius=20, fill=255)
+        # Dish image centered at top of card
+        if os.path.exists(d["img"]):
+            dimg = Image.open(d["img"]).convert('RGBA').resize((130, 100), Image.Resampling.LANCZOS)
+            canvas.paste(dimg, (cx + int((card_w - 130) / 2), card_y + 12), dimg)
         
-        canvas.paste(sf_cropped, (sf_x + 6, sf_y + 6), sf_mask)
+        # Badge
+        draw.rounded_rectangle((cx + 14, card_y + 118, cx + card_w - 14, card_y + 144), radius=10, fill=(35, 27, 21, 255), outline=d["badge_color"], width=1)
+        draw.text((cx + 24, card_y + 123), d["badge"], font=get_font(FONT_BOLD, 12), fill=d["badge_color"])
+        draw.text((cx + card_w - 95, card_y + 123), d["price"], font=get_font(FONT_IMPACT, 16), fill=(255, 255, 255))
         
-        # Subtle dark gradient overlay at top and bottom of photo for text readability
-        overlay = Image.new('RGBA', (in_w, in_h), (0, 0, 0, 0))
-        dov = ImageDraw.Draw(overlay)
-        # Top banner shade
-        for i in range(70):
-            a = int((1 - i/70) * 190)
-            dov.line([(0, i), (in_w, i)], fill=(0, 0, 0, a))
-        # Bottom banner shade
-        for i in range(80):
-            a = int((i/80) * 210)
-            dov.line([(0, in_h - 80 + i), (in_w, in_h - 80 + i)], fill=(0, 0, 0, a))
-        canvas.paste(overlay, (sf_x + 6, sf_y + 6), overlay)
+        # Name
+        draw.text((cx + 14, card_y + 154), d["name"], font=get_font(FONT_BOLD, 18), fill=(255, 255, 255))
         
-        # Floating badge on top-left of storefront photo
-        draw.rounded_rectangle((sf_x + 20, sf_y + 18, sf_x + 460, sf_y + 56), radius=19, fill=(14, 11, 9, 230), outline=(255, 90, 38, 220), width=2)
-        draw.text((sf_x + 36, sf_y + 26), "📍 OUR AUTHENTIC RESTAURANT IN RAMANAGARA", font=get_font(FONT_BOLD, 14), fill=(255, 255, 255))
+        # Description (wrapped)
+        words = d["desc"].split()
+        lines = []
+        cur_line = []
+        for w in words:
+            if len(" ".join(cur_line + [w])) <= 34:
+                cur_line.append(w)
+            else:
+                lines.append(" ".join(cur_line))
+                cur_line = [w]
+        if cur_line:
+            lines.append(" ".join(cur_line))
         
-        # Bottom bar overlay on storefront photo
-        draw.text((sf_x + 26, sf_y + sf_h - 48), "SAVERA PARADISE • LUXURY FAMILY DINING & EXPRESS HOME DELIVERY", font=get_font(FONT_BOLD, 17), fill=(255, 255, 255))
-        draw.text((sf_x + 26, sf_y + sf_h - 26), "Dine-In • Takeaway • Doorstep Delivery | Known for 'I ❤️ RAMANAGARA'", font=get_font(FONT_REGULAR, 14), fill=(255, 170, 50))
+        desc_y = card_y + 182
+        for line in lines[:3]:
+            draw.text((cx + 14, desc_y), line, font=get_font(FONT_REGULAR, 12), fill=(148, 163, 184))
+            desc_y += 18
+        
+        # Bottom call to action pill
+        draw.rounded_rectangle((cx + 14, card_y + 246, cx + card_w - 14, card_y + 276), radius=8, fill=(255, 90, 38, 35), outline=(255, 90, 38, 160), width=1)
+        draw.text((cx + int((card_w - 140) / 2), card_y + 252), "ORDER ONLINE →", font=get_font(FONT_BOLD, 13), fill=(255, 140, 60))
     
     # 6. BOTTOM DETAILS FOOTER
     foot_y = 1630
@@ -354,11 +393,12 @@ def generate_poster_v1(output_png, output_jpg):
     # Save PNG & JPG
     canvas.save(output_png, 'PNG', quality=95)
     canvas.convert('RGB').save(output_jpg, 'JPEG', quality=95)
-    print(f"[OK] Generated Poster V1: {output_png} & {output_jpg}")
+    print(f"[OK] Generated Poster V1 (Clean Food Edition): {output_png} & {output_jpg}")
 
-print("[OK] Defined generate_poster_v1")
+print("[OK] Defined clean generate_poster_v1")
 # =========================================================================
 # VARIATION 2: SOCIAL MEDIA & WHATSAPP SQUARE (1200 x 1200 px)
+# (NO HOTEL IMAGE - CLEAN HIGH-IMPACT COMMERCIAL)
 # =========================================================================
 def generate_poster_square(output_png, output_jpg):
     W, H = 1200, 1200
@@ -367,9 +407,10 @@ def generate_poster_square(output_png, output_jpg):
     # Ambient Lighting Flares
     glow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     dg = ImageDraw.Draw(glow)
-    dg.ellipse((80, 50, 1120, 360), fill=(255, 90, 38, 70))
-    dg.ellipse((30, 260, 500, 820), fill=(255, 90, 38, 80))
-    dg.ellipse((500, 260, 1150, 820), fill=(245, 158, 11, 60))
+    dg.ellipse((80, 40, 1120, 360), fill=(255, 90, 38, 70))
+    dg.ellipse((30, 260, 500, 850), fill=(255, 90, 38, 80))
+    dg.ellipse((500, 260, 1150, 850), fill=(245, 158, 11, 60))
+    dg.ellipse((60, 860, 1140, 1160), fill=(245, 158, 11, 40))
     glow = glow.filter(ImageFilter.GaussianBlur(90))
     canvas = Image.alpha_composite(canvas, glow)
     
@@ -378,156 +419,154 @@ def generate_poster_square(output_png, output_jpg):
     # 1. HEADER
     logo_path = 'public/savera-logo.png'
     if os.path.exists(logo_path):
-        logo = Image.open(logo_path).convert('RGBA').resize((96, 96), Image.Resampling.LANCZOS)
-        draw.ellipse((40, 26, 144, 130), fill=(255, 90, 38, 50), outline=(245, 158, 11, 220), width=2)
-        canvas.paste(logo, (44, 30), logo)
+        logo = Image.open(logo_path).convert('RGBA').resize((100, 100), Image.Resampling.LANCZOS)
+        draw.ellipse((40, 24, 148, 132), fill=(255, 90, 38, 50), outline=(245, 158, 11, 220), width=2)
+        canvas.paste(logo, (44, 28), logo)
     
-    draw.text((158, 28), "SAVERA PARADISE", font=get_font(FONT_IMPACT, 38), fill=(255, 255, 255))
-    draw.text((158, 74), "ಸವೇರ ಪ್ಯಾರಡೈಸ್", font=get_font(FONT_KANNADA, 22), fill=(255, 170, 50))
-    draw.text((310, 77), "• MULTI-CUISINE • RAMANAGARA", font=get_font(FONT_BOLD, 14), fill=(203, 213, 225))
-    draw.text((158, 106), "AGA Building, Railway Station Main Road — 562159", font=get_font(FONT_REGULAR, 14), fill=(148, 163, 184))
+    draw.text((162, 26), "SAVERA PARADISE", font=get_font(FONT_IMPACT, 40), fill=(255, 255, 255))
+    draw.text((162, 74), "ಸವೇರ ಪ್ಯಾರಡೈಸ್", font=get_font(FONT_KANNADA, 24), fill=(255, 170, 50))
+    draw.text((324, 77), "• MULTI-CUISINE • RAMANAGARA", font=get_font(FONT_BOLD, 15), fill=(203, 213, 225))
+    draw.text((162, 106), "AGA Building, Railway Station Main Road — 562159", font=get_font(FONT_REGULAR, 14), fill=(148, 163, 184))
     
     # Right pill
-    draw.rounded_rectangle((870, 38, 1160, 88), radius=25, fill=(255, 90, 38, 45), outline=(255, 90, 38, 200), width=2)
-    draw.text((890, 52), "🛵 20–30 MINS DELIVERY", font=get_font(FONT_BOLD, 17), fill=(255, 255, 255))
+    draw.rounded_rectangle((860, 36, 1160, 90), radius=27, fill=(255, 90, 38, 45), outline=(255, 90, 38, 200), width=2)
+    draw.text((884, 52), "🛵 20–30 MINS DELIVERY", font=get_font(FONT_BOLD, 18), fill=(255, 255, 255))
     
     # Headline
-    font_h1 = get_font(FONT_IMPACT, 48)
-    font_h2 = get_font(FONT_IMPACT, 58)
-    draw.text((40, 146), "NOW DELIVERING TO YOUR DOORSTEP!", font=font_h1, fill=(255, 255, 255))
+    font_h1 = get_font(FONT_IMPACT, 50)
+    draw.text((40, 144), "NOW DELIVERING TO YOUR DOORSTEP!", font=font_h1, fill=(255, 255, 255))
     
     # 10% OFF Launch Offer Strip
-    strip_y = 210
-    strip_h = 58
-    draw.rounded_rectangle((40, strip_y, 1160, strip_y + strip_h), radius=14, fill=(24, 18, 14, 255), outline=(255, 90, 38, 220), width=2)
-    draw.text((60, strip_y + 14), "🔥 FLAT 10% OFF ON ALL ORDERS!", font=get_font(FONT_IMPACT, 24), fill=(255, 200, 50))
+    strip_y = 208
+    strip_h = 60
+    draw.rounded_rectangle((40, strip_y, 1160, strip_y + strip_h), radius=15, fill=(24, 18, 14, 255), outline=(255, 90, 38, 220), width=2)
+    draw.text((60, strip_y + 14), "🔥 FLAT 10% OFF ON ALL ORDERS!", font=get_font(FONT_IMPACT, 25), fill=(255, 200, 50))
     # Code badge
-    draw.rounded_rectangle((490, strip_y + 10, 710, strip_y + 48), radius=10, fill=(255, 90, 38, 255))
-    draw.text((505, strip_y + 16), "USE CODE: SAVERA10", font=get_font(FONT_BOLD, 15), fill=(255, 255, 255))
+    draw.rounded_rectangle((490, strip_y + 10, 720, strip_y + 50), radius=10, fill=(255, 90, 38, 255))
+    draw.text((506, strip_y + 17), "USE CODE: SAVERA10", font=get_font(FONT_BOLD, 15), fill=(255, 255, 255))
     # Free delivery
-    draw.text((740, strip_y + 16), "🛵 FREE DELIVERY ABOVE ₹249", font=get_font(FONT_IMPACT, 20), fill=(16, 185, 129))
-    draw.text((1010, strip_y + 18), "⚡ 100% Hot & Fresh", font=get_font(FONT_BOLD, 13), fill=(203, 213, 225))
+    draw.text((750, strip_y + 16), "🛵 FREE DELIVERY ABOVE ₹249", font=get_font(FONT_IMPACT, 20), fill=(16, 185, 129))
+    draw.text((1015, strip_y + 18), "⚡ 100% Hot & Fresh", font=get_font(FONT_BOLD, 13), fill=(203, 213, 225))
     
     # 2. MIDDLE SECTION (LEFT: QR SCANNER, RIGHT: BIKE + APP)
-    pod_x, pod_y, pod_w, pod_h = 40, 286, 440, 480
+    pod_x, pod_y, pod_w, pod_h = 40, 284, 450, 530
     draw.rounded_rectangle((pod_x, pod_y, pod_x + pod_w, pod_y + pod_h), radius=22, fill=(18, 14, 11, 255), outline=(255, 90, 38, 255), width=2)
     
     # Scanner badge
-    draw.rounded_rectangle((pod_x + 18, pod_y + 14, pod_x + 240, pod_y + 44), radius=15, fill=(255, 90, 38, 255))
-    draw.text((pod_x + 30, pod_y + 20), "📷 POINT CAMERA TO ORDER", font=get_font(FONT_BOLD, 12), fill=(255, 255, 255))
+    draw.rounded_rectangle((pod_x + 20, pod_y + 16, pod_x + 250, pod_y + 48), radius=16, fill=(255, 90, 38, 255))
+    draw.text((pod_x + 34, pod_y + 23), "📷 POINT CAMERA TO ORDER", font=get_font(FONT_BOLD, 12), fill=(255, 255, 255))
     
-    draw.text((pod_x + 18, pod_y + 54), "SCAN & ORDER IN 30 SECS", font=get_font(FONT_IMPACT, 26), fill=(255, 255, 255))
+    draw.text((pod_x + 20, pod_y + 58), "SCAN & ORDER IN 30 SECS", font=get_font(FONT_IMPACT, 28), fill=(255, 255, 255))
     
-    # QR Code Box (210x210)
-    qr_s = 210
+    # QR Code Box (230x230)
+    qr_s = 230
     qr_x = pod_x + int((pod_w - qr_s) / 2)
-    qr_y = pod_y + 96
-    draw.rounded_rectangle((qr_x, qr_y, qr_x + qr_s, qr_y + qr_s), radius=16, fill=(255, 255, 255, 255))
+    qr_y = pod_y + 104
+    draw.rounded_rectangle((qr_x, qr_y, qr_x + qr_s, qr_y + qr_s), radius=18, fill=(255, 255, 255, 255))
     
     qr_path = 'public/savera-paradise-qr.png'
     if os.path.exists(qr_path):
-        qr_img = Image.open(qr_path).convert('RGBA').resize((qr_s - 20, qr_s - 20), Image.Resampling.LANCZOS)
-        canvas.paste(qr_img, (qr_x + 10, qr_y + 10), qr_img)
+        qr_img = Image.open(qr_path).convert('RGBA').resize((qr_s - 22, qr_s - 22), Image.Resampling.LANCZOS)
+        canvas.paste(qr_img, (qr_x + 11, qr_y + 11), qr_img)
     
     # HUD targeting reticles
-    draw_hud_corners(draw, qr_x - 6, qr_y - 6, qr_s + 12, length=22, color=(255, 90, 38, 255), width=3)
+    draw_hud_corners(draw, qr_x - 8, qr_y - 8, qr_s + 16, length=24, color=(255, 90, 38, 255), width=3)
     # Laser line
     laser_y = qr_y + int(qr_s / 2)
     draw.line([(qr_x + 4, laser_y), (qr_x + qr_s - 4, laser_y)], fill=(255, 90, 38, 220), width=3)
-    draw.line([(qr_x + 14, laser_y), (qr_x + qr_s - 14, laser_y)], fill=(255, 255, 255, 255), width=1)
+    draw.line([(qr_x + 16, laser_y), (qr_x + qr_s - 16, laser_y)], fill=(255, 255, 255, 255), width=1)
     
     # Website pill
-    url_w = 380
+    url_w = 390
     url_x = pod_x + int((pod_w - url_w) / 2)
-    url_y = qr_y + qr_s + 14
-    draw.rounded_rectangle((url_x, url_y, url_x + url_w, url_y + 38), radius=10, fill=(10, 8, 6, 255), outline=(255, 90, 38, 200), width=1)
-    draw.text((url_x + 36, url_y + 8), "🌐 saveraparadise.foodbliz.in", font=get_font(FONT_BOLD, 16), fill=(255, 140, 60))
+    url_y = qr_y + qr_s + 16
+    draw.rounded_rectangle((url_x, url_y, url_x + url_w, url_y + 40), radius=11, fill=(10, 8, 6, 255), outline=(255, 90, 38, 200), width=1)
+    draw.text((url_x + 36, url_y + 8), "🌐 saveraparadise.foodbliz.in", font=get_font(FONT_BOLD, 17), fill=(255, 140, 60))
     
-    draw.text((pod_x + 22, url_y + 46), "1️⃣ Open Camera  →  2️⃣ Tap  →  3️⃣ Enjoy Feast!", font=get_font(FONT_BOLD, 13), fill=(250, 204, 21))
-    draw.text((pod_x + 22, url_y + 70), "💳 GPay • PhonePe • Paytm • UPI • COD", font=get_font(FONT_REGULAR, 12), fill=(148, 163, 184))
+    draw.text((pod_x + 22, url_y + 50), "1️⃣ Open Camera  →  2️⃣ Tap  →  3️⃣ Enjoy Feast!", font=get_font(FONT_BOLD, 13), fill=(250, 204, 21))
+    draw.text((pod_x + 22, url_y + 76), "💳 GPay • PhonePe • Paytm • UPI • COD", font=get_font(FONT_REGULAR, 12), fill=(148, 163, 184))
     
     # RIGHT: DELIVERY BIKE + APP
-    right_x = 510
+    right_x = 520
     bike_path = 'public/images/delivery-bike.jpg'
     if os.path.exists(bike_path):
-        bike = Image.open(bike_path).convert('RGBA').resize((380, 380), Image.Resampling.LANCZOS)
-        bmask = Image.new('L', (380, 380), 255)
+        bike = Image.open(bike_path).convert('RGBA').resize((410, 410), Image.Resampling.LANCZOS)
+        bmask = Image.new('L', (410, 410), 255)
         dbm = ImageDraw.Draw(bmask)
         for i in range(35):
             alpha = int((i / 35) * 255)
-            dbm.rectangle((i, i, 380 - i, 380 - i), outline=alpha, width=1)
+            dbm.rectangle((i, i, 410 - i, 410 - i), outline=alpha, width=1)
         bike.putalpha(bmask)
-        canvas.paste(bike, (780, 310), bike)
+        canvas.paste(bike, (760, 320), bike)
     
-    phone = create_phone_mockup(280, 470, compact=True)
-    pshadow = Image.new('RGBA', (320, 510), (0, 0, 0, 0))
+    phone = create_phone_mockup(290, 490, compact=True)
+    pshadow = Image.new('RGBA', (330, 530), (0, 0, 0, 0))
     dps = ImageDraw.Draw(pshadow)
-    dps.rounded_rectangle((20, 20, 300, 490), radius=40, fill=(0, 0, 0, 180))
+    dps.rounded_rectangle((20, 20, 310, 510), radius=40, fill=(0, 0, 0, 180))
     pshadow = pshadow.filter(ImageFilter.GaussianBlur(20))
-    canvas.paste(pshadow, (right_x - 10, 280), pshadow)
-    canvas.paste(phone, (right_x + 10, 290), phone)
+    canvas.paste(pshadow, (right_x - 10, 290), pshadow)
+    canvas.paste(phone, (right_x + 10, 305), phone)
     
     # Overlapping Biryani Cutout
     biryani_path = 'public/images/intro/plate-biryani.webp'
     if os.path.exists(biryani_path):
-        bplate = Image.open(biryani_path).convert('RGBA').resize((210, 155), Image.Resampling.LANCZOS)
-        bshadow = Image.new('RGBA', (230, 175), (0, 0, 0, 0))
+        bplate = Image.open(biryani_path).convert('RGBA').resize((230, 175), Image.Resampling.LANCZOS)
+        bshadow = Image.new('RGBA', (250, 195), (0, 0, 0, 0))
         dbs = ImageDraw.Draw(bshadow)
-        dbs.ellipse((10, 10, 220, 165), fill=(0, 0, 0, 170))
-        bshadow = bshadow.filter(ImageFilter.GaussianBlur(14))
-        canvas.paste(bshadow, (right_x + 220, 570), bshadow)
-        canvas.paste(bplate, (right_x + 230, 580), bplate)
+        dbs.ellipse((10, 10, 240, 185), fill=(0, 0, 0, 170))
+        bshadow = bshadow.filter(ImageFilter.GaussianBlur(15))
+        canvas.paste(bshadow, (right_x + 220, 600), bshadow)
+        canvas.paste(bplate, (right_x + 230, 610), bplate)
     
-    # 3. "AND BELOW THIS IMAGE": STOREFRONT SHOWCASE
-    sf_x, sf_y, sf_w, sf_h = 40, 786, 1120, 310
-    draw.rounded_rectangle((sf_x, sf_y, sf_x + sf_w, sf_y + sf_h), radius=20, fill=(16, 12, 10, 255), outline=(255, 90, 38, 200), width=2)
+    # 3. FOOD HIGHLIGHTS STRIP (NO HOTEL IMAGE)
+    dish_strip_y = 830
+    dish_strip_h = 240
+    draw.rounded_rectangle((40, dish_strip_y, 1160, dish_strip_y + dish_strip_h), radius=20, fill=(18, 14, 11, 255), outline=(255, 90, 38, 180), width=2)
     
-    sf_path = 'public/images/savera-storefront.jpg'
-    if os.path.exists(sf_path):
-        sf_raw = Image.open(sf_path).convert('RGBA')
-        in_w, in_h = sf_w - 8, sf_h - 8
-        raw_w, raw_h = sf_raw.size
-        # Crop to emphasize "I ❤️ RAMANAGARA" and grand sign
-        crop_box = (0, 0, raw_w, int(raw_h * 0.90))
-        sf_cropped = sf_raw.crop(crop_box).resize((in_w, in_h), Image.Resampling.LANCZOS)
+    # 3 Food Item Pillars
+    col_w = 345
+    col_data = [
+        {"title": "🍚 DUM BIRYANI", "sub": "Long-grain saffron basmati with tender meat & raita", "price": "From ₹190", "x": 60, "img": "public/images/intro/plate-biryani.webp"},
+        {"title": "🍗 CRISPY CHICKEN", "sub": "Golden crunchy crunch, juicy & freshly fried", "price": "From ₹180", "x": 60 + col_w + 30, "img": "public/images/intro/plate-kebab.webp"},
+        {"title": "🍢 CHARCOAL KEBABS", "sub": "Clay tandoor smoked Seekh & Malai tikka platters", "price": "From ₹220", "x": 60 + (col_w + 30) * 2, "img": "public/images/intro/plate-bbq.webp"}
+    ]
+    
+    for c in col_data:
+        cx = c["x"]
+        draw.rounded_rectangle((cx, dish_strip_y + 16, cx + col_w, dish_strip_y + dish_strip_h - 16), radius=14, fill=(26, 20, 16, 255), outline=(55, 42, 32, 255), width=1)
+        if os.path.exists(c["img"]):
+            th = Image.open(c["img"]).convert('RGBA').resize((100, 75), Image.Resampling.LANCZOS)
+            canvas.paste(th, (cx + int((col_w - 100) / 2), dish_strip_y + 24), th)
         
-        sf_mask = Image.new('L', (in_w, in_h), 0)
-        dsm = ImageDraw.Draw(sf_mask)
-        dsm.rounded_rectangle((0, 0, in_w, in_h), radius=18, fill=255)
-        canvas.paste(sf_cropped, (sf_x + 4, sf_y + 4), sf_mask)
+        draw.text((cx + 18, dish_strip_y + 110), c["title"], font=get_font(FONT_IMPACT, 20), fill=(255, 255, 255))
+        draw.text((cx + col_w - 90, dish_strip_y + 110), c["price"], font=get_font(FONT_BOLD, 14), fill=(255, 90, 38))
+        draw.text((cx + 18, dish_strip_y + 140), c["sub"][:42], font=get_font(FONT_REGULAR, 12), fill=(148, 163, 184))
+        draw.text((cx + 18, dish_strip_y + 160), c["sub"][42:85], font=get_font(FONT_REGULAR, 12), fill=(148, 163, 184))
         
-        # Bottom dark gradient
-        overlay = Image.new('RGBA', (in_w, in_h), (0, 0, 0, 0))
-        dov = ImageDraw.Draw(overlay)
-        for i in range(60):
-            a = int((i/60) * 200)
-            dov.line([(0, in_h - 60 + i), (in_w, in_h - 60 + i)], fill=(0, 0, 0, a))
-        canvas.paste(overlay, (sf_x + 4, sf_y + 4), overlay)
-        
-        # Badge
-        draw.rounded_rectangle((sf_x + 16, sf_y + 14, sf_x + 360, sf_y + 46), radius=16, fill=(14, 11, 9, 220), outline=(255, 90, 38, 200), width=1)
-        draw.text((sf_x + 28, sf_y + 20), "📍 VISIT US IN PERSON • RAMANAGARA", font=get_font(FONT_BOLD, 13), fill=(255, 255, 255))
-        
-        draw.text((sf_x + 20, sf_y + sf_h - 38), "SAVERA PARADISE • Known for 'I ❤️ RAMANAGARA' • Dine-In & Doorstep Delivery", font=get_font(FONT_BOLD, 15), fill=(255, 255, 255))
+        # Order pill
+        draw.rounded_rectangle((cx + 18, dish_strip_y + 186, cx + col_w - 18, dish_strip_y + 214), radius=6, fill=(255, 90, 38, 40), outline=(255, 90, 38, 150), width=1)
+        draw.text((cx + int((col_w - 110) / 2), dish_strip_y + 192), "ORDER ONLINE →", font=get_font(FONT_BOLD, 12), fill=(255, 140, 60))
     
     # 4. BOTTOM FOOTER
-    foot_y = 1110
-    draw.text((40, foot_y + 6), "📍 AGA Building, Railway Station Main Road, Ramanagara — 562159", font=get_font(FONT_REGULAR, 15), fill=(203, 213, 225))
-    draw.text((40, foot_y + 30), "⏰ 11:30 AM – 11:30 PM Daily • 100% Halal Food Guaranteed", font=get_font(FONT_BOLD, 13), fill=(250, 204, 21))
+    foot_y = 1100
+    draw.text((40, foot_y + 10), "📍 AGA Building, Railway Station Main Road, Ramanagara — 562159", font=get_font(FONT_REGULAR, 15), fill=(203, 213, 225))
+    draw.text((40, foot_y + 36), "⏰ 11:30 AM – 11:30 PM Daily • 100% Halal Food Guaranteed", font=get_font(FONT_BOLD, 13), fill=(250, 204, 21))
     
     # Call Helpline
-    draw.rounded_rectangle((780, foot_y - 2, 1160, foot_y + 54), radius=14, fill=(24, 18, 14, 255), outline=(255, 90, 38, 200), width=2)
-    draw.text((798, foot_y + 8), "📞 CALL / HELPLINE:", font=get_font(FONT_BOLD, 12), fill=(148, 163, 184))
-    draw.text((798, foot_y + 24), "+91 9742924237", font=get_font(FONT_IMPACT, 24), fill=(255, 90, 38))
+    draw.rounded_rectangle((780, foot_y, 1160, foot_y + 60), radius=14, fill=(24, 18, 14, 255), outline=(255, 90, 38, 200), width=2)
+    draw.text((798, foot_y + 10), "📞 CALL / HELPLINE:", font=get_font(FONT_BOLD, 12), fill=(148, 163, 184))
+    draw.text((798, foot_y + 28), "+91 9742924237", font=get_font(FONT_IMPACT, 24), fill=(255, 90, 38))
     
     # Save PNG & JPG
     canvas.save(output_png, 'PNG', quality=95)
     canvas.convert('RGB').save(output_jpg, 'JPEG', quality=95)
-    print(f"[OK] Generated Poster Square: {output_png} & {output_jpg}")
+    print(f"[OK] Generated Poster Square (Clean Food Edition): {output_png} & {output_jpg}")
 
-print("[OK] Defined generate_poster_square")
+print("[OK] Defined clean generate_poster_square")
+
 # =========================================================================
 # VARIATION 3: MOBILE STORY & FULLSCREEN STATUS (1080 x 1920 px)
+# (NO HOTEL IMAGE - CLEAN HIGH-IMPACT MOBILE)
 # =========================================================================
 def generate_poster_story(output_png, output_jpg):
     W, H = 1080, 1920
@@ -536,11 +575,11 @@ def generate_poster_story(output_png, output_jpg):
     # Ambient Lighting Flares
     glow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     dg = ImageDraw.Draw(glow)
-    dg.ellipse((60, 80, 1020, 520), fill=(255, 90, 38, 70))
+    dg.ellipse((60, 60, 1020, 500), fill=(255, 90, 38, 70))
     dg.ellipse((30, 480, 520, 1200), fill=(255, 90, 38, 85))
     dg.ellipse((480, 480, 1050, 1200), fill=(245, 158, 11, 65))
-    dg.ellipse((80, 1200, 1000, 1720), fill=(245, 158, 11, 45))
-    glow = glow.filter(ImageFilter.GaussianBlur(100))
+    dg.ellipse((80, 1200, 1000, 1750), fill=(245, 158, 11, 45))
+    glow = glow.filter(ImageFilter.GaussianBlur(105))
     canvas = Image.alpha_composite(canvas, glow)
     
     draw = ImageDraw.Draw(canvas)
@@ -548,147 +587,147 @@ def generate_poster_story(output_png, output_jpg):
     # 1. HEADER
     logo_path = 'public/savera-logo.png'
     if os.path.exists(logo_path):
-        logo = Image.open(logo_path).convert('RGBA').resize((110, 110), Image.Resampling.LANCZOS)
-        draw.ellipse((40, 40, 158, 158), fill=(255, 90, 38, 50), outline=(245, 158, 11, 220), width=3)
-        canvas.paste(logo, (44, 44), logo)
+        logo = Image.open(logo_path).convert('RGBA').resize((115, 115), Image.Resampling.LANCZOS)
+        draw.ellipse((40, 38, 163, 161), fill=(255, 90, 38, 50), outline=(245, 158, 11, 220), width=3)
+        canvas.paste(logo, (44, 42), logo)
     
-    draw.text((176, 42), "SAVERA PARADISE", font=get_font(FONT_IMPACT, 44), fill=(255, 255, 255))
-    draw.text((176, 94), "ಸವೇರ ಪ್ಯಾರಡೈಸ್", font=get_font(FONT_KANNADA, 26), fill=(255, 170, 50))
-    draw.text((350, 97), "• RAMANAGARA", font=get_font(FONT_BOLD, 16), fill=(203, 213, 225))
-    draw.text((176, 130), "AGA Building, Railway Station Main Road — 562159", font=get_font(FONT_REGULAR, 15), fill=(148, 163, 184))
+    draw.text((180, 40), "SAVERA PARADISE", font=get_font(FONT_IMPACT, 46), fill=(255, 255, 255))
+    draw.text((180, 96), "ಸವೇರ ಪ್ಯಾರಡೈಸ್", font=get_font(FONT_KANNADA, 28), fill=(255, 170, 50))
+    draw.text((360, 99), "• RAMANAGARA", font=get_font(FONT_BOLD, 17), fill=(203, 213, 225))
+    draw.text((180, 134), "AGA Building, Railway Station Main Road — 562159", font=get_font(FONT_REGULAR, 15), fill=(148, 163, 184))
     
     # 2. HEADLINE
-    font_h1 = get_font(FONT_IMPACT, 58)
-    font_h2 = get_font(FONT_IMPACT, 76)
+    font_h1 = get_font(FONT_IMPACT, 60)
+    font_h2 = get_font(FONT_IMPACT, 80)
     draw.text((44, 186), "WE ARE NOW DELIVERING", font=font_h1, fill=(0, 0, 0, 200))
     draw.text((40, 182), "WE ARE NOW DELIVERING", font=font_h1, fill=(255, 255, 255))
     
-    draw.text((44, 252), "TO YOUR DOORSTEP!", font=font_h2, fill=(160, 30, 0, 240))
-    draw.text((40, 248), "TO YOUR DOORSTEP!", font=font_h2, fill=(255, 90, 38))
+    draw.text((44, 256), "TO YOUR DOORSTEP!", font=font_h2, fill=(160, 30, 0, 240))
+    draw.text((40, 252), "TO YOUR DOORSTEP!", font=font_h2, fill=(255, 90, 38))
     
     # 3. 10% OFF PROMOTIONAL RIBBON
-    strip_y = 350
-    strip_h = 76
+    strip_y = 356
+    strip_h = 78
     draw.rounded_rectangle((40, strip_y, 1040, strip_y + strip_h), radius=18, fill=(24, 18, 14, 255), outline=(255, 90, 38, 220), width=2)
     
-    draw.text((60, strip_y + 12), "🔥 SPECIAL LAUNCH OFFER: GET FLAT 10% OFF!", font=get_font(FONT_IMPACT, 26), fill=(255, 200, 50))
-    draw.text((60, strip_y + 44), "Valid on all online food orders in Ramanagara", font=get_font(FONT_REGULAR, 14), fill=(203, 213, 225))
+    draw.text((60, strip_y + 12), "🔥 SPECIAL LAUNCH OFFER: GET FLAT 10% OFF!", font=get_font(FONT_IMPACT, 27), fill=(255, 200, 50))
+    draw.text((60, strip_y + 46), "Valid on all online food orders in Ramanagara", font=get_font(FONT_REGULAR, 14), fill=(203, 213, 225))
     
     coupon_x = 600
-    draw.rounded_rectangle((coupon_x, strip_y + 12, coupon_x + 210, strip_y + 58), radius=12, fill=(255, 90, 38, 255))
+    draw.rounded_rectangle((coupon_x, strip_y + 12, coupon_x + 210, strip_y + 60), radius=12, fill=(255, 90, 38, 255))
     draw.text((coupon_x + 14, strip_y + 20), "CODE: SAVERA10", font=get_font(FONT_BOLD, 17), fill=(255, 255, 255))
     
     draw.text((830, strip_y + 14), "🛵 FREE DELIVERY", font=get_font(FONT_IMPACT, 22), fill=(16, 185, 129))
     draw.text((830, strip_y + 44), "Above ₹249", font=get_font(FONT_BOLD, 13), fill=(148, 163, 184))
     
     # 4. MIDDLE SECTION (LEFT: QR SCANNER POD, RIGHT: BIKE + APP)
-    pod_x, pod_y, pod_w, pod_h = 40, 448, 440, 630
+    pod_x, pod_y, pod_w, pod_h = 40, 458, 440, 680
     draw.rounded_rectangle((pod_x, pod_y, pod_x + pod_w, pod_y + pod_h), radius=26, fill=(18, 14, 11, 255), outline=(255, 90, 38, 255), width=3)
     
     # Badge
-    draw.rounded_rectangle((pod_x + 18, pod_y + 18, pod_x + 260, pod_y + 52), radius=17, fill=(255, 90, 38, 255))
-    draw.text((pod_x + 30, pod_y + 24), "📷 POINT CAMERA TO ORDER", font=get_font(FONT_BOLD, 13), fill=(255, 255, 255))
+    draw.rounded_rectangle((pod_x + 18, pod_y + 20, pod_x + 260, pod_y + 54), radius=17, fill=(255, 90, 38, 255))
+    draw.text((pod_x + 30, pod_y + 26), "📷 POINT CAMERA TO ORDER", font=get_font(FONT_BOLD, 13), fill=(255, 255, 255))
     
-    draw.text((pod_x + 18, pod_y + 64), "SCAN & ORDER IN 30 SECS", font=get_font(FONT_IMPACT, 30), fill=(255, 255, 255))
-    draw.text((pod_x + 18, pod_y + 104), "Live menu opens in browser instantly!", font=get_font(FONT_REGULAR, 13), fill=(203, 213, 225))
+    draw.text((pod_x + 18, pod_y + 68), "SCAN & ORDER IN 30 SECS", font=get_font(FONT_IMPACT, 32), fill=(255, 255, 255))
+    draw.text((pod_x + 18, pod_y + 110), "Live menu opens in browser instantly!", font=get_font(FONT_REGULAR, 13), fill=(203, 213, 225))
     
-    # QR Code Box (230x230)
-    qr_s = 230
+    # QR Code Box (240x240)
+    qr_s = 240
     qr_x = pod_x + int((pod_w - qr_s) / 2)
-    qr_y = pod_y + 138
-    draw.rounded_rectangle((qr_x, qr_y, qr_x + qr_s, qr_y + qr_s), radius=18, fill=(255, 255, 255, 255))
+    qr_y = pod_y + 146
+    draw.rounded_rectangle((qr_x, qr_y, qr_x + qr_s, qr_y + qr_s), radius=20, fill=(255, 255, 255, 255))
     
     qr_path = 'public/savera-paradise-qr.png'
     if os.path.exists(qr_path):
-        qr_img = Image.open(qr_path).convert('RGBA').resize((qr_s - 20, qr_s - 20), Image.Resampling.LANCZOS)
-        canvas.paste(qr_img, (qr_x + 10, qr_y + 10), qr_img)
+        qr_img = Image.open(qr_path).convert('RGBA').resize((qr_s - 22, qr_s - 22), Image.Resampling.LANCZOS)
+        canvas.paste(qr_img, (qr_x + 11, qr_y + 11), qr_img)
     
     # HUD targeting reticles
-    draw_hud_corners(draw, qr_x - 8, qr_y - 8, qr_s + 16, length=26, color=(255, 90, 38, 255), width=4)
+    draw_hud_corners(draw, qr_x - 8, qr_y - 8, qr_s + 16, length=28, color=(255, 90, 38, 255), width=4)
     # Laser line
     laser_y = qr_y + int(qr_s / 2)
     draw.line([(qr_x + 6, laser_y), (qr_x + qr_s - 6, laser_y)], fill=(255, 90, 38, 220), width=4)
-    draw.line([(qr_x + 16, laser_y), (qr_x + qr_s - 16, laser_y)], fill=(255, 255, 255, 255), width=2)
+    draw.line([(qr_x + 18, laser_y), (qr_x + qr_s - 18, laser_y)], fill=(255, 255, 255, 255), width=2)
     
     # Website link pill
     url_w = 390
     url_x = pod_x + int((pod_w - url_w) / 2)
     url_y = qr_y + qr_s + 18
-    draw.rounded_rectangle((url_x, url_y, url_x + url_w, url_y + 42), radius=12, fill=(10, 8, 6, 255), outline=(255, 90, 38, 200), width=2)
-    draw.text((url_x + 32, url_y + 9), "🌐 saveraparadise.foodbliz.in", font=get_font(FONT_BOLD, 17), fill=(255, 140, 60))
+    draw.rounded_rectangle((url_x, url_y, url_x + url_w, url_y + 44), radius=12, fill=(10, 8, 6, 255), outline=(255, 90, 38, 200), width=2)
+    draw.text((url_x + 32, url_y + 10), "🌐 saveraparadise.foodbliz.in", font=get_font(FONT_BOLD, 17), fill=(255, 140, 60))
     
-    draw.text((pod_x + 20, url_y + 54), "1️⃣ Open Camera  →  2️⃣ Tap  →  3️⃣ Enjoy!", font=get_font(FONT_BOLD, 14), fill=(250, 204, 21))
-    draw.text((pod_x + 20, url_y + 80), "💳 GPay • PhonePe • Paytm • UPI • COD", font=get_font(FONT_REGULAR, 12), fill=(148, 163, 184))
+    draw.text((pod_x + 20, url_y + 56), "1️⃣ Open Camera  →  2️⃣ Tap  →  3️⃣ Enjoy!", font=get_font(FONT_BOLD, 14), fill=(250, 204, 21))
+    draw.text((pod_x + 20, url_y + 82), "💳 GPay • PhonePe • Paytm • UPI • COD", font=get_font(FONT_REGULAR, 12), fill=(148, 163, 184))
     
     # RIGHT: DELIVERY BIKE + APP
     right_x = 500
     bike_path = 'public/images/delivery-bike.jpg'
     if os.path.exists(bike_path):
-        bike = Image.open(bike_path).convert('RGBA').resize((440, 440), Image.Resampling.LANCZOS)
-        bmask = Image.new('L', (440, 440), 255)
+        bike = Image.open(bike_path).convert('RGBA').resize((460, 460), Image.Resampling.LANCZOS)
+        bmask = Image.new('L', (460, 460), 255)
         dbm = ImageDraw.Draw(bmask)
         for i in range(40):
             alpha = int((i / 40) * 255)
-            dbm.rectangle((i, i, 440 - i, 440 - i), outline=alpha, width=1)
+            dbm.rectangle((i, i, 460 - i, 460 - i), outline=alpha, width=1)
         bike.putalpha(bmask)
-        canvas.paste(bike, (620, 470), bike)
+        canvas.paste(bike, (600, 480), bike)
     
-    phone = create_phone_mockup(300, 600, compact=True)
-    pshadow = Image.new('RGBA', (350, 650), (0, 0, 0, 0))
+    phone = create_phone_mockup(310, 630, compact=False)
+    pshadow = Image.new('RGBA', (360, 680), (0, 0, 0, 0))
     dps = ImageDraw.Draw(pshadow)
-    dps.rounded_rectangle((25, 25, 325, 625), radius=45, fill=(0, 0, 0, 180))
+    dps.rounded_rectangle((25, 25, 335, 655), radius=45, fill=(0, 0, 0, 180))
     pshadow = pshadow.filter(ImageFilter.GaussianBlur(25))
-    canvas.paste(pshadow, (right_x - 10, 450), pshadow)
-    canvas.paste(phone, (right_x + 15, 465), phone)
+    canvas.paste(pshadow, (right_x - 10, 460), pshadow)
+    canvas.paste(phone, (right_x + 15, 475), phone)
     
     # Overlapping Biryani
     biryani_path = 'public/images/intro/plate-biryani.webp'
     if os.path.exists(biryani_path):
-        bplate = Image.open(biryani_path).convert('RGBA').resize((240, 180), Image.Resampling.LANCZOS)
-        bshadow = Image.new('RGBA', (260, 200), (0, 0, 0, 0))
+        bplate = Image.open(biryani_path).convert('RGBA').resize((250, 190), Image.Resampling.LANCZOS)
+        bshadow = Image.new('RGBA', (270, 210), (0, 0, 0, 0))
         dbs = ImageDraw.Draw(bshadow)
-        dbs.ellipse((10, 10, 250, 190), fill=(0, 0, 0, 170))
+        dbs.ellipse((10, 10, 260, 200), fill=(0, 0, 0, 170))
         bshadow = bshadow.filter(ImageFilter.GaussianBlur(16))
-        canvas.paste(bshadow, (right_x + 220, 840), bshadow)
-        canvas.paste(bplate, (right_x + 230, 850), bplate)
+        canvas.paste(bshadow, (right_x + 220, 890), bshadow)
+        canvas.paste(bplate, (right_x + 230, 900), bplate)
     
-    # 5. "AND BELOW THIS IMAGE": STOREFRONT SHOWCASE
-    sf_x, sf_y, sf_w, sf_h = 40, 1100, 1000, 560
-    draw.rounded_rectangle((sf_x, sf_y, sf_x + sf_w, sf_y + sf_h), radius=24, fill=(16, 12, 10, 255), outline=(255, 90, 38, 200), width=3)
+    # 5. BOTTOM FOOD SHOWCASE SECTION (NO HOTEL IMAGE)
+    dish_sec_y = 1170
+    dish_sec_h = 500
+    draw.rounded_rectangle((40, dish_sec_y, 1040, dish_sec_y + dish_sec_h), radius=24, fill=(16, 12, 10, 255), outline=(255, 90, 38, 180), width=2)
     
-    sf_path = 'public/images/savera-storefront.jpg'
-    if os.path.exists(sf_path):
-        sf_raw = Image.open(sf_path).convert('RGBA')
-        in_w, in_h = sf_w - 10, sf_h - 10
-        raw_w, raw_h = sf_raw.size
-        crop_box = (0, 0, raw_w, int(raw_h * 0.96))
-        sf_cropped = sf_raw.crop(crop_box).resize((in_w, in_h), Image.Resampling.LANCZOS)
+    draw.text((65, dish_sec_y + 18), "👑 POPULAR DISHES DELIVERED PIPING HOT", font=get_font(FONT_IMPACT, 26), fill=(255, 255, 255))
+    draw.text((740, dish_sec_y + 20), "⚡ 100% Halal Food Guaranteed", font=get_font(FONT_BOLD, 15), fill=(245, 158, 11))
+    draw.line([(55, dish_sec_y + 54), (1025, dish_sec_y + 54)], fill=(45, 34, 26, 255), width=1)
+    
+    # 3 Horizontal Dish Rows inside the card
+    row_h = 130
+    story_dishes = [
+        {"name": "Royal Dum Biryani", "desc": "Fragrant basmati rice layered with spiced tender meat, saffron, raita & salan.", "price": "₹190", "badge": "★ BESTSELLER", "badge_col": (255, 90, 38, 255), "img": "public/images/intro/plate-biryani.webp", "y": dish_sec_y + 68},
+        {"name": "Crispy Chicken & Kebab Platter", "desc": "Crunchy golden fried chicken & tandoor roasted Seekh, Malai Tikka with mint dip.", "price": "₹220", "badge": "🔥 CHEF SPECIAL", "badge_col": (245, 158, 11, 255), "img": "public/images/intro/plate-kebab.webp", "y": dish_sec_y + 68 + row_h + 12},
+        {"name": "BBQ Tandoori, Curries & Parotta", "desc": "Smoky charcoal tandoori chicken, rich aromatic gravies & fresh flaky parottas.", "price": "₹160", "badge": "🍗 TOP RATED", "badge_col": (16, 185, 129, 255), "img": "public/images/intro/plate-bbq.webp", "y": dish_sec_y + 68 + (row_h + 12) * 2}
+    ]
+    
+    for sd in story_dishes:
+        sy = sd["y"]
+        draw.rounded_rectangle((55, sy, 1025, sy + row_h), radius=16, fill=(24, 18, 14, 255), outline=(50, 38, 30, 255), width=1)
+        if os.path.exists(sd["img"]):
+            sim = Image.open(sd["img"]).convert('RGBA').resize((120, 92), Image.Resampling.LANCZOS)
+            canvas.paste(sim, (70, sy + 18), sim)
         
-        sf_mask = Image.new('L', (in_w, in_h), 0)
-        dsm = ImageDraw.Draw(sf_mask)
-        dsm.rounded_rectangle((0, 0, in_w, in_h), radius=20, fill=255)
-        canvas.paste(sf_cropped, (sf_x + 5, sf_y + 5), sf_mask)
+        draw.rounded_rectangle((210, sy + 14, 340, sy + 38), radius=8, fill=(35, 27, 21, 255), outline=sd["badge_col"], width=1)
+        draw.text((220, sy + 18), sd["badge"], font=get_font(FONT_BOLD, 11), fill=sd["badge_col"])
         
-        # Shading overlays
-        overlay = Image.new('RGBA', (in_w, in_h), (0, 0, 0, 0))
-        dov = ImageDraw.Draw(overlay)
-        for i in range(70):
-            a = int((1 - i/70) * 180)
-            dov.line([(0, i), (in_w, i)], fill=(0, 0, 0, a))
-        for i in range(80):
-            a = int((i/80) * 200)
-            dov.line([(0, in_h - 80 + i), (in_w, in_h - 80 + i)], fill=(0, 0, 0, a))
-        canvas.paste(overlay, (sf_x + 5, sf_y + 5), overlay)
+        draw.text((210, sy + 44), sd["name"], font=get_font(FONT_BOLD, 20), fill=(255, 255, 255))
+        draw.text((210, sy + 74), sd["desc"], font=get_font(FONT_REGULAR, 13), fill=(148, 163, 184))
+        draw.text((210, sy + 96), f"Starting at {sd['price']} • Fast 20–30 Mins Delivery", font=get_font(FONT_BOLD, 13), fill=(255, 170, 50))
         
-        # Badge
-        draw.rounded_rectangle((sf_x + 20, sf_y + 18, sf_x + 440, sf_y + 54), radius=18, fill=(14, 11, 9, 220), outline=(255, 90, 38, 220), width=2)
-        draw.text((sf_x + 36, sf_y + 25), "📍 OUR RESTAURANT IN RAMANAGARA", font=get_font(FONT_BOLD, 14), fill=(255, 255, 255))
-        
-        draw.text((sf_x + 24, sf_y + sf_h - 52), "SAVERA PARADISE • LUXURY FAMILY DINING & EXPRESS DELIVERY", font=get_font(FONT_BOLD, 18), fill=(255, 255, 255))
-        draw.text((sf_x + 24, sf_y + sf_h - 26), "Home of 'I ❤️ RAMANAGARA' • Sizzling Biryani, Chicken & Kebabs", font=get_font(FONT_REGULAR, 15), fill=(255, 170, 50))
+        # Add button on right
+        draw.rounded_rectangle((880, sy + 45, 1005, sy + 85), radius=10, fill=(255, 90, 38, 255))
+        draw.text((905, sy + 54), "+ ORDER", font=get_font(FONT_BOLD, 14), fill=(255, 255, 255))
     
     # 6. BOTTOM DETAILS FOOTER
-    foot_y = 1680
+    foot_y = 1700
     draw.line([(40, foot_y), (1040, foot_y)], fill=(60, 48, 38, 255), width=2)
     
     draw.text((40, foot_y + 16), "SAVERA PARADISE MULTI-CUISINE RESTAURANT", font=get_font(FONT_BOLD, 18), fill=(255, 255, 255))
@@ -706,22 +745,21 @@ def generate_poster_story(output_png, output_jpg):
     # Save PNG & JPG
     canvas.save(output_png, 'PNG', quality=95)
     canvas.convert('RGB').save(output_jpg, 'JPEG', quality=95)
-    print(f"[OK] Generated Poster Story: {output_png} & {output_jpg}")
+    print(f"[OK] Generated Poster Story (Clean Food Edition): {output_png} & {output_jpg}")
 
-print("[OK] Defined generate_poster_story")
+print("[OK] Defined clean generate_poster_story")
 
 # =========================================================================
 # MAIN EXECUTION ENTRY
 # =========================================================================
 if __name__ == '__main__':
-    print("=== Generating Savera Paradise Posters Collection ===")
+    print("=== Generating Clean Savera Paradise Posters (No Hotel Image) ===")
     
     # Variation 1: Vertical Flyer / Print Poster (1200 x 1800 px)
     generate_poster_v1(
         'public/images/savera_doorstep_poster_v3.png',
         'public/images/savera_doorstep_poster_v3.jpg'
     )
-    # Also update doorstep_delivery_poster.png and jpg to use this layout
     generate_poster_v1(
         'public/images/doorstep_delivery_poster.png',
         'public/images/doorstep_delivery_poster.jpg'
@@ -739,4 +777,4 @@ if __name__ == '__main__':
         'public/images/savera_doorstep_poster_story.jpg'
     )
     
-    print("=== ALL 3 POSTER VARIATIONS GENERATED SUCCESSFULLY ===")
+    print("=== ALL 3 CLEAN POSTER VARIATIONS GENERATED SUCCESSFULLY ===")
