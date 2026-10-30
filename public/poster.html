@@ -594,34 +594,87 @@
       margin-top: 2px;
     }
 
-    /* Permanent Working QR Code Section */
+    /* Highly Highlighted Permanent Working QR Code Hero Pod */
     .qr-card-section {
-      background: linear-gradient(135deg, #1C1611 0%, #120E0B 100%);
-      border: 2px solid #3D2C1E;
-      border-radius: 26px;
-      padding: 24px 28px;
+      background: radial-gradient(circle at 20% 50%, #26160E 0%, #17110C 60%, #0E0A07 100%);
+      border: 3px solid #FF5A26;
+      border-radius: 28px;
+      padding: 26px 30px;
       display: flex;
       align-items: center;
-      gap: 28px;
+      gap: 32px;
       margin-bottom: 28px;
       position: relative;
-      z-index: 2;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      z-index: 5;
+      box-shadow: 0 0 50px rgba(255, 90, 38, 0.45), 0 16px 40px rgba(0, 0, 0, 0.8);
+      animation: podPulsingGlow 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes podPulsingGlow {
+      0% {
+        box-shadow: 0 0 35px rgba(255, 90, 38, 0.35), 0 16px 40px rgba(0, 0, 0, 0.8);
+        border-color: #FF5A26;
+      }
+      100% {
+        box-shadow: 0 0 65px rgba(255, 90, 38, 0.65), 0 20px 45px rgba(0, 0, 0, 0.9);
+        border-color: #FFA133;
+      }
+    }
+
+    /* Scanner Viewfinder Stage with Glowing Reticles */
+    .qr-viewfinder-stage {
+      position: relative;
+      flex-shrink: 0;
+      padding: 10px;
     }
 
     .qr-white-frame {
       background: #FFFFFF;
-      padding: 12px;
-      border-radius: 18px;
-      flex-shrink: 0;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+      padding: 14px;
+      border-radius: 20px;
+      display: block;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      position: relative;
+      overflow: hidden;
     }
 
     .qr-white-frame img {
-      width: 140px;
-      height: 140px;
+      width: 155px;
+      height: 155px;
       display: block;
     }
+
+    /* Laser Scan Beam Animation */
+    .qr-laser-beam {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      height: 3px;
+      background: linear-gradient(90deg, transparent 0%, #FF5A26 20%, #FFF 50%, #FFA133 80%, transparent 100%);
+      box-shadow: 0 0 12px #FF5A26, 0 0 4px #FFF;
+      pointer-events: none;
+      animation: laserSweep 2s ease-in-out infinite alternate;
+    }
+
+    @keyframes laserSweep {
+      0% { top: 12px; opacity: 0.9; }
+      100% { top: 165px; opacity: 0.9; }
+    }
+
+    /* Viewfinder Corner Targeting HUD */
+    .hud-corner {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-color: #FF5A26;
+      border-style: solid;
+      pointer-events: none;
+      filter: drop-shadow(0 0 6px #FF5A26);
+    }
+    .hud-tl { top: 0; left: 0; border-width: 4px 0 0 4px; border-top-left-radius: 8px; }
+    .hud-tr { top: 0; right: 0; border-width: 4px 4px 0 0; border-top-right-radius: 8px; }
+    .hud-bl { bottom: 0; left: 0; border-width: 0 0 4px 4px; border-bottom-left-radius: 8px; }
+    .hud-br { bottom: 0; right: 0; border-width: 0 4px 4px 0; border-bottom-right-radius: 8px; }
 
     .qr-content-col {
       flex: 1;
@@ -630,66 +683,91 @@
     .qr-badge-inline {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      background: rgba(255, 90, 38, 0.18);
-      border: 1px solid rgba(255, 90, 38, 0.4);
-      padding: 5px 12px;
+      gap: 7px;
+      background: #FF5A26;
+      border: 1px solid #FFA133;
+      padding: 6px 14px;
       border-radius: 999px;
-      color: #FFA177;
-      font-size: 0.78rem;
+      color: #FFFFFF;
+      font-size: 0.84rem;
       font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
       margin-bottom: 8px;
+      box-shadow: 0 4px 14px rgba(255, 90, 38, 0.45);
     }
 
     .qr-content-col h3 {
-      font-size: 1.45rem;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2.1rem;
       font-weight: 900;
       color: #FFF;
-      letter-spacing: -0.3px;
+      letter-spacing: 0.5px;
+      line-height: 1.05;
+      margin-bottom: 4px;
     }
 
     .qr-content-col p {
-      font-size: 0.9rem;
-      color: var(--text-muted);
-      margin-top: 4px;
-      line-height: 1.4;
+      font-size: 0.94rem;
+      color: #CBD5E1;
+      line-height: 1.45;
     }
 
     .url-pill-box {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       background: #0B0806;
-      border: 1.5px solid #352518;
-      padding: 8px 16px;
-      border-radius: 12px;
-      margin-top: 10px;
+      border: 2px solid #FF5A26;
+      padding: 8px 18px;
+      border-radius: 14px;
+      margin-top: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
     }
 
     .url-pill-box i {
       color: var(--brand-orange);
+      font-size: 1.1rem;
     }
 
     .url-pill-box strong {
       font-family: 'Outfit', sans-serif;
-      font-size: 1.15rem;
-      color: var(--brand-orange);
+      font-size: 1.25rem;
+      color: #FF8A50;
       letter-spacing: 0.5px;
     }
 
-    .payments-hint {
+    .how-to-order-steps {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px dashed rgba(255, 90, 38, 0.3);
+    }
+
+    .step-pill {
       font-size: 0.78rem;
+      color: #E2E8F0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .step-pill strong {
+      color: #FFA133;
+    }
+
+    .payments-hint {
+      font-size: 0.82rem;
       color: #94A3B8;
-      margin-top: 10px;
+      margin-top: 12px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
     .payments-hint i {
-      color: #38BDF8;
+      color: #10B981;
     }
 
     /* Footer Info Section */
@@ -840,11 +918,11 @@
     <button class="btn btn-primary" onclick="window.print()">
       <i class="fa-solid fa-print"></i> 🖨️ Print High-Res Poster
     </button>
-    <a class="btn btn-secondary" href="/images/doorstep_delivery_poster.png" download="Savera_Paradise_Doorstep_Delivery_Poster.png">
-      <i class="fa-solid fa-download"></i> ⬇️ Download 300DPI PNG
+    <a class="btn btn-primary" href="/images/doorstep_delivery_poster.png" download="Savera_Paradise_Doorstep_Delivery_Poster_VIP.png">
+      <i class="fa-solid fa-download"></i> ⬇️ Download VIP Poster (PNG)
     </a>
-    <a class="btn btn-secondary" href="/images/doorstep_delivery_poster.jpg" download="Savera_Paradise_Doorstep_Delivery_Poster.jpg">
-      <i class="fa-solid fa-image"></i> ⬇️ Download JPG (WhatsApp/Social)
+    <a class="btn btn-secondary" href="/images/doorstep_delivery_poster_classic.png" download="Savera_Paradise_Doorstep_Delivery_Classic.png">
+      <i class="fa-solid fa-clock-rotate-left"></i> ⬇️ Classic Edition (Preserved)
     </a>
     <button class="btn btn-whatsapp" onclick="copyWhatsAppBroadcast()">
       <i class="fa-brands fa-whatsapp"></i> 💬 Copy WhatsApp Promo Text
@@ -1021,19 +1099,27 @@
       </div>
     </section>
 
-    <!-- Permanent Scannable QR Code Box -->
+    <!-- Highly Highlighted Hero Scanner Pod -->
     <section class="qr-card-section">
-      <div class="qr-white-frame">
-        <img src="/savera-paradise-qr.svg" alt="Scan to Order Online from Savera Paradise">
+      <div class="qr-viewfinder-stage">
+        <span class="hud-corner hud-tl"></span>
+        <span class="hud-corner hud-tr"></span>
+        <span class="hud-corner hud-bl"></span>
+        <span class="hud-corner hud-br"></span>
+        
+        <div class="qr-white-frame">
+          <div class="qr-laser-beam"></div>
+          <img src="/savera-paradise-qr.svg" alt="Scan to Order Online from Savera Paradise">
+        </div>
       </div>
 
       <div class="qr-content-col">
         <div class="qr-badge-inline">
-          <i class="fa-solid fa-camera"></i> SCAN CAMERA TO ORDER
+          <i class="fa-solid fa-camera"></i> POINT CAMERA TO ORDER
         </div>
-        <h3>Scan &amp; Taste Paradise in 30 Seconds</h3>
+        <h3>SCAN &amp; TASTE PARADISE IN 30 SECONDS</h3>
         <p>
-          Point your phone camera at this QR code. The live menu opens immediately — no app store installation required!
+          Point your smartphone camera at this QR code. The live restaurant menu opens instantly in your browser — zero download or installation required!
         </p>
         
         <div class="url-pill-box">
@@ -1041,9 +1127,17 @@
           <strong>saveraparadise.foodbliz.in</strong>
         </div>
 
+        <div class="how-to-order-steps">
+          <div class="step-pill">1️⃣ <strong>Open Camera</strong></div>
+          <div class="step-pill">→</div>
+          <div class="step-pill">2️⃣ <strong>Tap Link</strong></div>
+          <div class="step-pill">→</div>
+          <div class="step-pill">3️⃣ <strong>Enjoy Hot Feast!</strong></div>
+        </div>
+
         <div class="payments-hint">
           <i class="fa-solid fa-shield-halved"></i>
-          <span>Pay with PhonePe, Google Pay, Paytm, UPI, Cards or Cash on Delivery (COD)</span>
+          <span>Pay with Google Pay, PhonePe, Paytm, UPI, Cards or Cash on Delivery (COD)</span>
         </div>
       </div>
     </section>
@@ -1100,3 +1194,4 @@
 
 </body>
 </html>
+
