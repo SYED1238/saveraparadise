@@ -6,7 +6,11 @@ import {
   detectPlatformEnvironment,
   isAppAlreadyInstalled,
   getCurrentPortalType,
-  getPortalConfig
+  getPortalConfig,
+  openDirectlyInChrome,
+  hasAutoInstallParam,
+  cleanAutoInstallParam,
+  triggerAppDownload
 } from '../pwaInstallService.js';
 
 test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
@@ -116,41 +120,177 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
   });
 
   // =========================================================================
-  // 4. Install Button Click Behavior (3-Way Routing & Intent URL)
+  // 4. Direct Chrome Activity, Hash Routing & IntentDispatcher Component
   // =========================================================================
-  await t.test('4. pwaInstallService implements 3-way routing with Android Chrome Intent & autoInstall param', () => {
-    // Verify Android Chrome intent string format in source code
-    assert.match(
-      pwaServiceJs,
-      /intent:\/\/.*#Intent;scheme=https;package=com\.android\.chrome;S\.browser_fallback_url=.*end/,
-      'Must construct proper Android Chrome Intent URL with browser fallback'
+  await t.test('4. openDirectlyInChrome preserves hash routes before ?autoInstall=true and forces IntentDispatcher component', () => {
+    const originalWindow = globalThis.window;
+    let redirectedUrl = '';
+
+    globalThis.window = {
+      location: {
+        host: 'saveraparadise.foodbliz.in',
+        pathname: '/',
+        hash: '#/dilvery.html',
+        set href(val) {
+          redirectedUrl = val;
+        },
+        get href() {
+          return redirectedUrl;
+        }
+      }
+    };
+
+    openDirectlyInChrome();
+
+    // Verify ?autoInstall=true is placed BEFORE hash #/dilvery.html
+    assert.ok(
+      redirectedUrl.includes('saveraparadise.foodbliz.in/?autoInstall=true#/dilvery.html'),
+      `Target path must place ?autoInstall=true before hash. Got: ${redirectedUrl}`
     );
+
+    // Verify explicit action and IntentDispatcher component to prevent "Choose activity" dialog
+    assert.ok(
+      redirectedUrl.includes('action=android.intent.action.VIEW;'),
+      `Intent must include VIEW action. Got: ${redirectedUrl}`
+    );
+    assert.ok(
+      redirectedUrl.includes('package=com.android.chrome;'),
+      `Intent must target com.android.chrome package. Got: ${redirectedUrl}`
+    );
+    assert.ok(
+      redirectedUrl.includes('component=com.android.chrome/com.google.android.apps.chrome.IntentDispatcher;'),
+      `Intent must target Chrome IntentDispatcher component. Got: ${redirectedUrl}`
+    );
+    assert.ok(
+      redirectedUrl.includes('S.browser_fallback_url=https%3A%2F%2Fsaveraparadise.foodbliz.in%2F%3FautoInstall%3Dtrue%23%2Fdilvery.html;end'),
+      `Intent must include properly encoded fallback URL. Got: ${redirectedUrl}`
+    );
+
+    globalThis.window = originalWindow;
+  });
+
+  // =========================================================================
+  // 5. Detection & Clean-up of autoInstall in Search & Hash
+  // =========================================================================
+  await t.test('5. hasAutoInstallParam and cleanAutoInstallParam handle search and hash routing seamlessly', () => {
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+
+    // Test case A: ?autoInstall=true in search query
+    let currentPath = '';
+    globalThis.window = {
+      location: {
+        pathname: '/',
+        search: '?autoInstall=true',
+        hash: '#/dilvery.html'
+      },
+      history: {
+        replaceState: (_state, _title, newPath) => {
+          currentPath = newPath;
+        }
+      }
+    };
+    globalThis.document = { title: 'Savera Paradise' };
+
+    assert.strictEqual(hasAutoInstallParam(), true, 'Must detect autoInstall in location.search');
+    cleanAutoInstallParam();
+    assert.strictEqual(currentPath, '/#/dilvery.html', 'Must clean search and retain hash');
+
+    // Test case B: autoInstall=true in hash query
+    globalThis.window.location = {
+      pathname: '/',
+      search: '',
+      hash: '#/dilvery.html?autoInstall=true'
+    };
+    assert.strictEqual(hasAutoInstallParam(), true, 'Must detect autoInstall in location.hash');
+    cleanAutoInstallParam();
+    assert.strictEqual(currentPath, '/#/dilvery.html', 'Must clean hash param and retain route');
+
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  });
+
+  // =========================================================================
+  // 6. Native Prompt Priority (Brave, Opera, Samsung Internet)
+  // =========================================================================
+  await t.test('6. triggerAppDownload prompts natively if beforeinstallprompt exists without redirecting', async () => {
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+
+    let promptCalled = false;
+    let redirected = false;
+
+    // Simulate Opera on Android with native beforeinstallprompt available
+    const mockNavigator = {
+      userAgent: 'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36 OPR/74.0.3922.70977',
+      standalone: false
+    };
+
+    globalThis.document = {
+      documentElement: { classList: { add: () => {}, remove: () => {} } },
+      querySelectorAll: () => [],
+      getElementById: () => null
+    };
+
+    globalThis.window = {
+      matchMedia: () => ({ matches: false }),
+      navigator: mockNavigator,
+      __deferredPwaPrompt: {
+        prompt: () => {
+          promptCalled = true;
+        },
+        userChoice: Promise.resolve({ outcome: 'accepted' })
+      },
+      location: {
+        host: 'saveraparadise.foodbliz.in',
+        pathname: '/',
+        hash: '',
+        set href(_val) {
+          redirected = true;
+        }
+      }
+    };
+
+    const outcome = await triggerAppDownload();
+
+    assert.strictEqual(promptCalled, true, 'Must call prompt() directly when deferredPrompt exists');
+    assert.strictEqual(redirected, false, 'Must NOT redirect when native install is supported in current browser');
+    assert.strictEqual(outcome, 'accepted');
+
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  });
+
+  // =========================================================================
+  // 7. Elimination of Old Chrome Guide Modal & Redirect Loop
+  // =========================================================================
+  await t.test('7. Old Chrome guide modal and redirect loop are completely eliminated', () => {
+    // Verify that the old Chrome 3-dots step modal html does not exist in pwaServiceJs
+    assert.doesNotMatch(
+      pwaServiceJs,
+      /Tap the <strong>three dots menu<\/strong>.*in Google Chrome/,
+      'Old Chrome guide steps must be removed from install modal'
+    );
+
+    // Verify modal primary button does not contain the old intent:// redirect
+    assert.doesNotMatch(
+      pwaServiceJs,
+      /primaryBtn\.addEventListener\('click'[\s\S]*intent:\/\/[\s\S]*package=com\.android\.chrome/,
+      'Modal primary button must NOT trigger intent redirect loop'
+    );
+
+    // Verify Android Chrome without prompt provides menu toast feedback rather than looping
     assert.match(
       pwaServiceJs,
-      /url\.searchParams\.set\(['"]autoInstall['"],\s*['"]true['"]\)/,
-      'Android intent must include ?autoInstall=true parameter'
+      /return 'chrome_menu_toast'/,
+      'Android Chrome without prompt must return chrome_menu_toast rather than redirecting'
     );
   });
 
-  await t.test('5. Chrome auto-install banner detects ?autoInstall=true and cleans up URL', () => {
-    assert.match(
-      pwaServiceJs,
-      /url\.searchParams\.get\(['"]autoInstall['"]\)\s*===\s*['"]true['"]/,
-      'checkAndTriggerAutoInstall must inspect autoInstall query parameter'
-    );
-    assert.match(
-      pwaServiceJs,
-      /window\.history\.replaceState/,
-      'checkAndTriggerAutoInstall must sanitize URL via replaceState'
-    );
-    assert.match(
-      pwaServiceJs,
-      /pwa-autoinstall-sheet/,
-      'pwaInstallService must render pwa-autoinstall-sheet'
-    );
-  });
-
-  await t.test('6. iOS Smart Guide modal includes browser-tailored visual steps with SVG badges', () => {
+  // =========================================================================
+  // 8. iOS Smart Guide modal includes browser-tailored visual steps with SVG badges
+  // =========================================================================
+  await t.test('8. iOS Smart Guide modal includes browser-tailored visual steps with SVG badges', () => {
     assert.match(pwaServiceJs, /ios-safari/, 'Must handle ios-safari tailored guide');
     assert.match(pwaServiceJs, /ios-chrome/, 'Must handle ios-chrome tailored guide');
     assert.match(pwaServiceJs, /ios-inapp/, 'Must handle ios-inapp tailored guide');
@@ -172,9 +312,9 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
   });
 
   // =========================================================================
-  // 5. Verification of index.html, manifest.json, sw.js & CSS
+  // 9. Verification of index.html, manifest.json, sw.js & CSS
   // =========================================================================
-  await t.test('7. index.html includes all required Apple PWA meta tags and icons', () => {
+  await t.test('9. index.html includes all required Apple PWA meta tags and icons', () => {
     assert.match(indexHtml, /<meta name="apple-mobile-web-app-capable" content="yes"/i, 'Must have apple-mobile-web-app-capable');
     assert.match(indexHtml, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/i, 'Must have apple-mobile-web-app-status-bar-style');
     assert.match(indexHtml, /<meta name="apple-mobile-web-app-title" content="Savera Paradise"/i, 'Must have apple-mobile-web-app-title');
@@ -182,7 +322,7 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
     assert.match(indexHtml, /<link rel="apple-touch-icon" sizes="180x180" href="\/apple-touch-icon\.png"/i, 'Must have 180x180 apple-touch-icon');
   });
 
-  await t.test('8. manifest.json satisfies W3C PWA standards with separated icon purposes and root id', () => {
+  await t.test('10. manifest.json satisfies W3C PWA standards with separated icon purposes and root id', () => {
     assert.strictEqual(manifestJson.id, '/', 'Manifest id must be "/"');
     assert.strictEqual(manifestJson.start_url, '/', 'Manifest start_url must be "/"');
     assert.strictEqual(manifestJson.display, 'standalone', 'Manifest display must be "standalone"');
@@ -198,11 +338,11 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
     assert.strictEqual(hasCombined, false, 'Manifest must NOT combine "any maskable" in one string (Samsung Internet compatibility)');
   });
 
-  await t.test('9. sw.js includes valid fetch event listener for offline/caching installability criteria', () => {
+  await t.test('11. sw.js includes valid fetch event listener for offline/caching installability criteria', () => {
     assert.match(swJs, /self\.addEventListener\(['"]fetch['"]/, 'Service Worker must have fetch event listener');
   });
 
-  await t.test('10. pwa.css includes responsive bottom sheet, drag handle, and auto-install banner styles', () => {
+  await t.test('12. pwa.css includes responsive bottom sheet, drag handle, and auto-install banner styles', () => {
     assert.match(pwaCss, /\.pwa-sheet-drag-handle/, 'Must style pwa-sheet-drag-handle');
     assert.match(pwaCss, /\.ios-share-badge/, 'Must style ios-share-badge');
     assert.match(pwaCss, /\.pwa-autoinstall-sheet/, 'Must style pwa-autoinstall-sheet');

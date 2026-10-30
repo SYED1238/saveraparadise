@@ -364,8 +364,72 @@ export function checkAndPromptAppNotifications() {
 }
 
 /**
+ * Direct Chrome Activity & Hash URL Routing:
+ * Places ?autoInstall=true BEFORE any hash route (e.g. domain.com/?autoInstall=true#/dilvery.html)
+ * and sets explicit IntentDispatcher component & VIEW action to prevent the Android "Choose activity" dialog.
+ */
+export const openDirectlyInChrome = () => {
+  if (typeof window === 'undefined') return;
+  const { host, pathname, hash } = window.location;
+  const targetPath = `${host}${pathname}?autoInstall=true${hash || ''}`;
+  const fallbackUrl = encodeURIComponent(`https://${targetPath}`);
+  window.location.href = `intent://${targetPath}#Intent;scheme=https;action=android.intent.action.VIEW;package=com.android.chrome;component=com.android.chrome/com.google.android.apps.chrome.IntentDispatcher;S.browser_fallback_url=${fallbackUrl};end`;
+};
+
+/**
+ * Detects if ?autoInstall=true is present in location.search OR location.hash
+ */
+export function hasAutoInstallParam() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const searchParams = new URLSearchParams(window.location.search || '');
+    if (searchParams.get('autoInstall') === 'true') return true;
+    const hash = window.location.hash || '';
+    if (hash.includes('autoInstall=true')) return true;
+  } catch {}
+  return false;
+}
+
+/**
+ * Strips autoInstall=true from location.search and location.hash without page reload
+ */
+export function cleanAutoInstallParam() {
+  if (typeof window === 'undefined') return;
+  try {
+    let search = window.location.search || '';
+    let hash = window.location.hash || '';
+    let modified = false;
+
+    if (search.includes('autoInstall=true')) {
+      const sp = new URLSearchParams(search);
+      sp.delete('autoInstall');
+      const rest = sp.toString();
+      search = rest ? `?${rest}` : '';
+      modified = true;
+    }
+
+    if (hash.includes('autoInstall=true')) {
+      hash = hash
+        .replace(/([?&])autoInstall=true(&?)/g, (match, prefix, suffix) => {
+          if (prefix === '?' && suffix === '&') return '?';
+          return '';
+        })
+        .replace(/[?&]$/, '');
+      modified = true;
+    }
+
+    if (modified) {
+      const newPath = (window.location.pathname || '/') + search + hash;
+      window.history.replaceState({}, document.title, newPath);
+    }
+  } catch (err) {
+    console.warn('[PWA] cleanAutoInstallParam error:', err);
+  }
+}
+
+/**
  * Auto-Install Banner in Chrome:
- * When page loads in Chrome with ?autoInstall=true, automatically show a prominent
+ * When page loads in Chrome with ?autoInstall=true (in search or hash), automatically show a prominent
  * bottom sheet saying "Tap below to finish installing the app" with a 1-tap button.
  * Cleans up ?autoInstall=true via window.history.replaceState.
  */
@@ -374,11 +438,8 @@ export function checkAndTriggerAutoInstall() {
   if (isAppAlreadyInstalled()) return;
 
   try {
-    const url = new URL(window.location.href);
-    if (url.searchParams.get('autoInstall') === 'true') {
-      url.searchParams.delete('autoInstall');
-      const newPath = url.pathname + (url.search || '') + (url.hash || '');
-      window.history.replaceState({}, document.title, newPath);
+    if (hasAutoInstallParam()) {
+      cleanAutoInstallParam();
 
       setTimeout(() => {
         showAutoInstallBanner();
@@ -460,7 +521,7 @@ export function showAutoInstallBanner() {
         }
       } else {
         hideAutoInstallBanner();
-        openPwaInstallModal();
+        showPwaToast(`Tap the three dots (⋮) in Chrome and select "Install app" or "Add to Home Screen"`, 'info');
       }
     });
   }
@@ -595,24 +656,28 @@ export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
   // Detect platform & browser environment
   const env = detectPlatformEnvironment();
 
-  // Case B — Android Non-Chrome or In-App Browser (or Android where deferredPrompt isn't available)
-  if (env === 'android-other' || env === 'android-chrome') {
-    const url = new URL(window.location.href);
-    url.searchParams.set('autoInstall', 'true');
-    const cleanUrl = url.toString().replace(/^https?:\/\//, '');
-    const intentUrl = `intent://${cleanUrl}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`;
-    window.location.href = intentUrl;
-    return 'android_redirected';
-  }
-
   // Case C — iPhone / iPad (ios-safari, ios-chrome, ios-inapp)
   if (env.startsWith('ios-')) {
     openPwaInstallModal(env);
     return 'ios_modal_opened';
   }
 
+  // Case B — Android environments without native prompt:
+  // If already inside Google Chrome on Android, DO NOT loop/redirect to Chrome via intent
+  if (env === 'android-chrome') {
+    showPwaToast(`Tap the three dots (⋮) in Chrome and select "Install app" or "Add to Home Screen"`, 'info');
+    return 'chrome_menu_toast';
+  }
+
+  // If on Android inside an in-app browser (Instagram/WhatsApp/FB) or non-Chrome browser without prompt:
+  // Open directly in Google Chrome with explicit component to prevent "Choose activity" dialog
+  if (env === 'android-other') {
+    openDirectlyInChrome();
+    return 'android_redirected';
+  }
+
   // Desktop or generic browser without deferredPrompt
-  openPwaInstallModal(env);
+  openPwaInstallModal('desktop');
   return 'desktop_modal_opened';
 }
 
@@ -620,6 +685,7 @@ export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
  * Creates and opens the PWA Installation Guide Modal tailored to the platform and browser
  */
 export function openPwaInstallModal(forcedEnv) {
+  if (typeof document === 'undefined') return;
   let modal = document.getElementById('pwa-install-modal-backdrop');
   if (modal) {
     modal.remove();
@@ -633,6 +699,7 @@ export function openPwaInstallModal(forcedEnv) {
 }
 
 export function closePwaInstallModal() {
+  if (typeof document === 'undefined') return;
   const modal = document.getElementById('pwa-install-modal-backdrop');
   if (modal) {
     modal.classList.remove('open');
@@ -770,28 +837,6 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
         </div>
       </div>
     `;
-  } else if (env.startsWith('android-')) {
-    subtitleText = 'Install directly to your Android device';
-    stepsHtml = `
-      <div class="install-step-item">
-        <span class="step-num">1</span>
-        <div class="step-desc">
-          Tap the <strong>three dots menu</strong> <i class="fa-solid fa-ellipsis-vertical"></i> in Google Chrome.
-        </div>
-      </div>
-      <div class="install-step-item">
-        <span class="step-num">2</span>
-        <div class="step-desc">
-          Select <strong>"Install app"</strong> or <strong>"Add to Home Screen"</strong>.
-        </div>
-      </div>
-      <div class="install-step-item">
-        <span class="step-num">3</span>
-        <div class="step-desc">
-          Tap <strong>Install</strong> to add ${portalConfig.name} to your app drawer.
-        </div>
-      </div>
-    `;
   } else {
     stepsHtml = `
       <div class="install-step-item">
@@ -878,11 +923,6 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
           deferredInstallPrompt = null;
           if (typeof window !== 'undefined') window.__deferredPwaPrompt = null;
         } catch {}
-      } else if (!isIOS && env.startsWith('android-')) {
-        const url = new URL(window.location.href);
-        url.searchParams.set('autoInstall', 'true');
-        const cleanUrl = url.toString().replace(/^https?:\/\//, '');
-        window.location.href = `intent://${cleanUrl}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`;
       } else {
         closePwaInstallModal();
       }
