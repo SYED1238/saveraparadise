@@ -10,12 +10,14 @@ const R2_CONFIG = {
   SERVICE: 's3'
 };
 
-const DEFAULT_VIDEO_KEY = 'Untitled design (16).mp4';
+const DEFAULT_VIDEO_KEY = 'Untitled design (17).mp4';
 
 // Allowed explicit video keys or folder prefixes
 const ALLOWED_EXPLICIT_KEYS = new Set([
-  DEFAULT_VIDEO_KEY,
-  'videos/' + DEFAULT_VIDEO_KEY
+  'Untitled design (16).mp4',
+  'videos/Untitled design (16).mp4',
+  'Untitled design (17).mp4',
+  'videos/Untitled design (17).mp4'
 ]);
 
 export const config = {
