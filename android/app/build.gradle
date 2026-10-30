@@ -32,21 +32,21 @@ android {
             dimension "portal"
             applicationId "com.saveraparadise.kitchen"
             resValue "string", "app_name", "Savera Paradise Kitchen"
-            resValue "string", "portal_url", "https://saveraparadise.com/admin.html"
+            resValue "string", "portal_url", "https://saveraparadise.foodbliz.in/admin"
             resValue "color", "theme_color", "#0F172A"
         }
         rider {
             dimension "portal"
             applicationId "com.saveraparadise.rider"
             resValue "string", "app_name", "Savera Paradise Rider"
-            resValue "string", "portal_url", "https://saveraparadise.com/delivery.html"
+            resValue "string", "portal_url", "https://saveraparadise.foodbliz.in/delivery"
             resValue "color", "theme_color", "#059669"
         }
         owner {
             dimension "portal"
             applicationId "com.saveraparadise.owner"
             resValue "string", "app_name", "Savera Paradise Owner"
-            resValue "string", "portal_url", "https://saveraparadise.com/owner.html"
+            resValue "string", "portal_url", "https://saveraparadise.foodbliz.in/owner"
             resValue "color", "theme_color", "#0B0F17"
         }
     }
