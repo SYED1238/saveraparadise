@@ -1431,32 +1431,33 @@
           </div>
           <div class="readonly-total-val" id="order-detail-total">₹0</div>
         </div>
+      </div>
 
-        <div class="modal-card-actions order-modal-actions">
-          <button type="button" class="btn btn-modal-cancel" id="btn-cancel-order">Close</button>
-          
-          <button type="button" class="btn btn-print-kot" id="btn-modal-print-kot" title="Print Kitchen Order Ticket (KOT) on 58mm/80mm thermal receipt printer">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 6 2 18 2 18 9"></polyline>
-              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-              <rect x="6" y="14" width="12" height="8"></rect>
-            </svg>
-            <span>Print KOT</span>
-          </button>
+      <!-- Sticky Pinned Action Bar: KOT & Cancel Order Always Visible -->
+      <div class="modal-card-actions order-modal-actions">
+        <button type="button" class="btn btn-modal-cancel" id="btn-cancel-order">Close</button>
+        
+        <button type="button" class="btn btn-print-kot" id="btn-modal-print-kot" title="Print Kitchen Order Ticket (KOT) on 58mm/80mm thermal receipt printer">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+          <span>Print KOT</span>
+        </button>
 
-          <button type="button" class="btn btn-danger-action btn-modal-reject" id="btn-modal-reject-order" title="Cancel or decline this customer order">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="15" y1="9" x2="9" y2="15"></line>
-              <line x1="9" y1="9" x2="15" y2="15"></line>
-            </svg>
-            <span>Cancel Order</span>
-          </button>
+        <button type="button" class="btn btn-danger-action btn-modal-reject" id="btn-modal-reject-order" title="Cancel or decline this customer order">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+          </svg>
+          <span>Cancel Order</span>
+        </button>
 
-          <button type="button" class="btn btn-brand-primary" id="btn-modal-advance-status">
-            <i class="fa-solid fa-arrow-right"></i> <span id="btn-modal-advance-text">Advance Status</span>
-          </button>
-        </div>
+        <button type="button" class="btn btn-brand-primary" id="btn-modal-advance-status">
+          <i class="fa-solid fa-arrow-right"></i> <span id="btn-modal-advance-text">Advance Status</span>
+        </button>
       </div>
     </div>
   </div>

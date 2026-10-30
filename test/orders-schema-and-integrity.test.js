@@ -423,4 +423,33 @@ test('ORDER INTEGRITY & SCHEMA SPECIFICATION', async (t) => {
     assert.equal(parseMovSetting(-50), 0);
     assert.equal(parseMovSetting(undefined), 0);
   });
+
+  await t.test('Admin Order Receipt Modal ergonomics: Sticky KOT & Cancel buttons, smooth body scrolling', async () => {
+    const fs = await import('node:fs');
+    const adminHtml = fs.readFileSync(new URL('../admin.html', import.meta.url), 'utf-8');
+    const adminCss = fs.readFileSync(new URL('../admin.css', import.meta.url), 'utf-8');
+
+    // 1. Verify admin.html order modal structure has sticky actions bar with KOT and Cancel Order buttons
+    assert.match(adminHtml, /id="btn-modal-print-kot"/, 'Must contain Print KOT action button');
+    assert.match(adminHtml, /id="btn-modal-reject-order"/, 'Must contain Cancel Order action button');
+    assert.match(adminHtml, /class="[^"]*modal-card-actions\s+order-modal-actions[^"]*"/, 'Must have modal-card-actions order-modal-actions bar');
+
+    // 2. Verify admin.css defines flex column layout on order-modal-card
+    assert.match(adminCss, /\.admin-modal-card\.order-modal-card[\s\S]*?display:\s*flex/i, 'Order modal card must use flex column layout');
+    assert.match(adminCss, /\.admin-modal-card\.order-modal-card[\s\S]*?flex-direction:\s*column/i, 'Order modal card must specify flex-direction: column');
+
+    // 3. Verify admin-order-details-body has smooth scrolling and custom scrollbar
+    assert.match(adminCss, /\.admin-order-details-body[\s\S]*?overflow-y:\s*auto/i, 'Order modal body must have overflow-y: auto');
+    assert.match(adminCss, /\.admin-order-details-body[\s\S]*?scrollbar-width:\s*thin/i, 'Order modal body must have visible thin scrollbar');
+
+    // 4. Verify order-modal-actions has sticky positioning pinned at bottom
+    assert.match(adminCss, /\.order-modal-actions[\s\S]*?position:\s*sticky/i, 'Action buttons must be sticky pinned at bottom');
+    assert.match(adminCss, /\.order-modal-actions[\s\S]*?bottom:\s*0/i, 'Action buttons must stick to bottom: 0');
+
+    // 5. Verify order-items-readonly-list does not trap wheel scroll with fixed max-height
+    assert.match(adminCss, /\.order-items-readonly-list[\s\S]*?max-height:\s*none/i, 'Items list must expand naturally without nested scroll trap');
+
+    // 6. Verify admin-modal-backdrop has overflow-y: auto for viewport overflow protection
+    assert.match(adminCss, /\.admin-modal-backdrop[\s\S]*?overflow-y:\s*auto/i, 'Backdrop must have overflow-y: auto for viewport overflow protection');
+  });
 });

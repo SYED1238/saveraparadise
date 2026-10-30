@@ -2199,6 +2199,8 @@
   opacity: 0;
   visibility: hidden;
   transition: all 0.3s ease;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .admin-modal-backdrop.open {
@@ -2213,7 +2215,8 @@
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5E1 transparent;
   padding: 34px 28px;
   position: relative;
   box-shadow: var(--shadow-lg);
@@ -2221,11 +2224,30 @@
   transition: all 0.35s var(--ease-spring);
 }
 
+.admin-modal-card::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+}
+
+.admin-modal-card::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-modal-card::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 999px;
+}
+
+.admin-modal-card::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
 .dish-modal-card {
   max-width: 660px;
 }
 
-.admin-modal-backdrop.open .admin-modal-card {
+.admin-modal-backdrop.open .admin-modal-card,
+.admin-modal-backdrop.open .order-modal-card {
   transform: scale(1) translateY(0);
 }
 
@@ -2744,11 +2766,32 @@ label.btn-file-upload i {
 }
 
 /* Order Management Modal Bottom Sheet */
+.admin-modal-card.order-modal-card,
 .order-modal-card {
   max-width: 620px;
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 28px 28px 24px;
+  max-height: min(92vh, calc(100dvh - 36px));
+  height: auto;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  border-radius: 26px;
+  position: relative;
+  box-shadow: 0 24px 60px -12px rgba(18, 15, 12, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.admin-modal-card.order-modal-card .sheet-drag-handle-bar {
+  flex-shrink: 0;
+  padding: 8px 0 2px;
+}
+
+.admin-modal-card.order-modal-card .modal-card-header {
+  flex-shrink: 0 !important;
+  padding: 22px 26px 16px 26px !important;
+  margin-bottom: 0 !important;
+  border-bottom: 1px solid var(--admin-border);
+  background: #FFFFFF;
+  z-index: 5;
 }
 
 .order-modal-header-top {
@@ -2896,9 +2939,35 @@ label.btn-file-upload i {
 
 /* Order Details (Read-only Receipt Ticket View) */
 .admin-order-details-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain !important;
+  padding: 20px 26px 22px 26px !important;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  scrollbar-width: thin !important;
+  scrollbar-color: #CBD5E1 transparent !important;
+}
+
+.admin-order-details-body::-webkit-scrollbar {
+  display: block !important;
+  width: 6px !important;
+}
+
+.admin-order-details-body::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.admin-order-details-body::-webkit-scrollbar-thumb {
+  background: #CBD5E1 !important;
+  border-radius: 999px !important;
+}
+
+.admin-order-details-body::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8 !important;
 }
 
 .detail-section-label {
@@ -2969,8 +3038,8 @@ label.btn-file-upload i {
   padding: 8px 14px;
   display: flex;
   flex-direction: column;
-  max-height: 220px;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .order-item-readonly-row {
@@ -3074,17 +3143,24 @@ label.btn-file-upload i {
   letter-spacing: -0.02em;
 }
 
-/* Modal Actions */
+/* Modal Actions: Pinned Sticky Footer (KOT & Cancel Order Always Visible) */
+.admin-modal-card.order-modal-card .order-modal-actions,
 .order-modal-actions {
+  flex-shrink: 0 !important;
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 20 !important;
+  background: #FFFFFF !important;
+  border-top: 1px solid var(--admin-border) !important;
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.07) !important;
+  padding: 14px 26px !important;
+  margin-top: 0 !important;
   display: flex !important;
   flex-direction: row !important;
-  flex-wrap: nowrap !important;
+  flex-wrap: wrap !important;
   align-items: center !important;
   justify-content: flex-end !important;
   gap: 10px !important;
-  margin-top: 10px;
-  padding-top: 16px;
-  border-top: 1px solid var(--admin-border);
 }
 
 .order-modal-actions .btn-modal-delete-order {
@@ -3668,12 +3744,55 @@ label.btn-file-upload i {
     max-height: 90vh;
     border-radius: 28px 28px 0 0;
     padding: 14px 16px 28px;
-    transform: translateY(100%);
-    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translateY(20px);
+    transition: transform 0.25s ease-out, opacity 0.25s ease-out;
   }
 
-  .admin-modal-backdrop.open .admin-modal-card {
-    transform: translateY(0);
+  .admin-modal-card.order-modal-card {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: min(94vh, calc(100dvh - 16px)) !important;
+    border-radius: 26px 26px 0 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .admin-modal-card.order-modal-card .modal-card-header {
+    padding: 14px 18px 12px 18px !important;
+    margin-bottom: 0 !important;
+  }
+
+  .admin-modal-card.order-modal-card .admin-order-details-body {
+    padding: 14px 18px 16px 18px !important;
+  }
+
+  .admin-modal-card.order-modal-card .order-modal-actions {
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) 12px !important;
+    gap: 8px 6px !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+  }
+
+  .admin-modal-card.order-modal-card .order-modal-actions .btn {
+    flex: 1 1 calc(33.333% - 6px) !important;
+    font-size: 0.8rem !important;
+    padding: 8px 8px !important;
+    min-height: 38px !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+
+  .admin-modal-card.order-modal-card .order-modal-actions #btn-modal-advance-status {
+    flex: 1 1 100% !important;
+    font-size: 0.85rem !important;
+    padding: 10px 14px !important;
+  }
+
+  .admin-modal-backdrop.open .admin-modal-card,
+  .admin-modal-backdrop.open .order-modal-card {
+    transform: translateY(0) !important;
   }
 
   .admin-modal-close {

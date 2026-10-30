@@ -33,6 +33,9 @@ pnpm-debug.log*
 
 # Agent / Scratch
 .agents/
+skills-lock.json
+mcp_config.json
+orders_backup_*.json
 .gemini/
 
 # Python Cache
