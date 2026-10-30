@@ -1004,7 +1004,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ? (cleanPhoneDigits.length === 10 ? `+91${cleanPhoneDigits}` : `+${cleanPhoneDigits}`)
         : '';
       const displayPhone = hasRealPhone
-        ? (cleanPhoneDigits.length === 10 ? `+91 ${cleanPhoneDigits.slice(0, 5)} ${cleanPhoneDigits.slice(5)}` : rawPhone)
+        ? (cleanPhoneDigits.length === 10 ? `+91 ${cleanPhoneDigits.slice(0, 5)} ${cleanPhoneDigits.slice(5)}` : escapeHtml(rawPhone))
         : 'No phone number';
 
       const rawDropAddress = order.deliveryAddress || `${order.addressDetails?.flatNo || 'House'}, ${order.addressDetails?.area || 'Ramanagara'}`;
@@ -1015,7 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dropLat)},${encodeURIComponent(dropLng)}&travelmode=driving&dir_action=navigate`
         : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cleanDeliveryAddress(rawDropAddress) + ', Ramanagara, Karnataka')}&travelmode=driving&dir_action=navigate`;
 
-      const bagCode = order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000');
+      const bagCode = escapeHtml(order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000'));
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
 
       const whatsappText = `Hello ${order.customerName || 'Customer'}, I am your Savera Paradise delivery partner ${currentRider.name} on my way with your order ${order.id}.`;
@@ -1080,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="row-customer-info">
               <div class="row-customer-name-bar">
                 <h4 class="row-customer-name">${safeCustomerName}</h4>
-                <a href="${hasRealPhone ? `tel:${dialerPhone}` : '#'}" class="row-customer-phone-pill ${hasRealPhone ? 'active' : 'missing'}" title="${hasRealPhone ? `Call Customer: ${displayPhone}` : 'Customer phone not provided'}">
+                <a href="${hasRealPhone ? `tel:${dialerPhone}` : '#'}" class="row-customer-phone-pill ${hasRealPhone ? 'active' : 'missing'}" title="${hasRealPhone ? `Call Customer: ${escapeHtml(displayPhone)}` : 'Customer phone not provided'}">
                   <i class="fa-solid fa-phone"></i>
                   <span>${escapeHtml(displayPhone)}</span>
                 </a>
@@ -1106,14 +1106,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 </a>
 
                 <!-- 2. Call Button (Symbol Only) -->
-                <a href="${hasRealPhone ? `tel:${dialerPhone}` : '#'}" class="btn-action-pill btn-action-icon btn-action-call ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `Call Customer: ${displayPhone}` : 'Customer phone not provided'}" aria-label="Call Customer">
+                <a href="${hasRealPhone ? `tel:${dialerPhone}` : '#'}" class="btn-action-pill btn-action-icon btn-action-call ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `Call Customer: ${escapeHtml(displayPhone)}` : 'Customer phone not provided'}" aria-label="Call Customer">
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="#FFFFFF" aria-hidden="true" style="display: block;">
                     <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.5 3.92c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.54c0-.55-.45-1-.99-1z"/>
                   </svg>
                 </a>
 
                 <!-- 3. WhatsApp Button (Symbol Only) -->
-                <a href="${whatsappUrl}" ${hasRealPhone ? 'target="_blank" rel="noopener noreferrer"' : ''} class="btn-action-pill btn-action-icon btn-action-wa ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `WhatsApp Customer: ${displayPhone}` : 'Customer phone not provided'}" aria-label="WhatsApp Customer">
+                <a href="${whatsappUrl}" ${hasRealPhone ? 'target="_blank" rel="noopener noreferrer"' : ''} class="btn-action-pill btn-action-icon btn-action-wa ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `WhatsApp Customer: ${escapeHtml(displayPhone)}` : 'Customer phone not provided'}" aria-label="WhatsApp Customer">
                   <svg viewBox="0 0 24 24" width="22" height="22" fill="#FFFFFF" aria-hidden="true" style="display: block;">
                     <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.41a8.19 8.19 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.25-.75-.67-1.26-1.5-1.41-1.75-.15-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.34-.76-1.84-.2-.49-.4-.42-.56-.43h-.47c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.77 2.7 4.29 3.79.6.26 1.07.41 1.43.53.6.19 1.15.16 1.58.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.07-.12-.23-.19-.48-.31z"/>
                   </svg>
@@ -1341,7 +1341,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rawPhone = extractPhoneFromOrder(order, rawAddrs) || order.customerPhone || '';
     const cleanDigits = rawPhone.replace(/\D/g, '');
     const displayPhone = cleanDigits.length >= 10
-      ? (cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : rawPhone)
+      ? (cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : escapeHtml(rawPhone))
       : 'Phone not provided';
 
     confirmOrderDetails.innerHTML = `

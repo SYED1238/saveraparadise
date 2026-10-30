@@ -17,7 +17,10 @@ function getSigningSecret() {
   if (process.env.R2_SECRET_ACCESS_KEY && process.env.R2_SECRET_ACCESS_KEY.length >= 16) {
     return process.env.R2_SECRET_ACCESS_KEY;
   }
-  // In development/test without configured secret, generate an ephemeral random 32-byte key
+  // In production environments (e.g. Vercel deployment), forbid ephemeral fallback to prevent cross-isolate token invalidation
+  if (process.env.NODE_ENV === 'production' && (process.env.VERCEL === '1' || process.env.VERCEL_ENV === 'production')) {
+    throw new Error('[Security] CRITICAL: Dedicated SESSION_SECRET (min 32 characters) must be configured in production environment.');
+  }
   if (process.env.NODE_ENV === 'production') {
     console.warn('[Security] CRITICAL: Dedicated SESSION_SECRET (min 32 chars) should be set in production');
   }

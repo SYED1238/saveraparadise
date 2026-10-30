@@ -128,12 +128,24 @@ export default async function handler(req, res) {
   const buffer = Buffer.concat(chunks);
 
   // Validate magic bytes to prevent format spoofing
-  const isJpeg = buffer.length > 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
-  const isPng = buffer.length > 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47;
-  const isWebp = buffer.length > 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
-  const isGif = buffer.length > 4 && buffer.toString('ascii', 0, 3) === 'GIF';
-  if (!isJpeg && !isPng && !isWebp && !isGif) {
+  const isJpeg = buffer.length >= 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+  const isPng = buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47 && buffer[4] === 0x0D && buffer[5] === 0x0A && buffer[6] === 0x1A && buffer[7] === 0x0A;
+  const isWebp = buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
+  const isGif = buffer.length >= 6 && (buffer.toString('ascii', 0, 6) === 'GIF87a' || buffer.toString('ascii', 0, 6) === 'GIF89a');
+
+  let detectedMime = null;
+  if (isJpeg) detectedMime = 'image/jpeg';
+  else if (isPng) detectedMime = 'image/png';
+  else if (isWebp) detectedMime = 'image/webp';
+  else if (isGif) detectedMime = 'image/gif';
+
+  if (!detectedMime) {
     return res.status(415).json({ error: 'File contents do not match valid image signature (JPEG, PNG, WEBP, GIF).' });
+  }
+
+  // Cross-verify that claimed Content-Type matches binary magic bytes
+  if (mimeType !== detectedMime) {
+    return res.status(415).json({ error: `Declared Content-Type (${mimeType}) does not match detected file format (${detectedMime}).` });
   }
 
   // 3. Sanitize key to prevent directory traversal
