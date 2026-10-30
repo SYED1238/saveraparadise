@@ -3020,19 +3020,19 @@ function initStorefrontApp() {
         tap: true
       }).setView([riderLat, riderLng], 15);
 
-      // High-performance CDN street basemap (CartoDB Voyager) with OpenStreetMap tile error fallback
-      const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        subdomains: ['a', 'b', 'c', 'd'],
-        maxZoom: 20,
+      // High-performance OpenStreetMap basemap (Free, zero watermarks, no API key required)
+      const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        subdomains: ['a', 'b', 'c'],
+        maxZoom: 19,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       });
       streetLayer.on('tileerror', (error) => {
         const tile = error?.tile;
         if (tile && !tile.dataset.fallbackAttempted && error.coords) {
           tile.dataset.fallbackAttempted = '1';
-          tile.src = `https://tile.openstreetmap.org/${error.coords.z}/${error.coords.x}/${error.coords.y}.png`;
+          tile.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${error.coords.z}/${error.coords.y}/${error.coords.x}`;
         }
       });
       streetLayer.addTo(trackerLiveMap);
@@ -5578,19 +5578,19 @@ function initStorefrontApp() {
         attributionControl: false
       }).setView([lat, lng], 16);
 
-      // 1. Street Map: CartoDB Voyager with OpenStreetMap automatic tile fallback
-      streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        subdomains: ['a', 'b', 'c', 'd'],
-        maxZoom: 20,
+      // 1. Street Map: OpenStreetMap with Esri World Street Map automatic fallback
+      streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        subdomains: ['a', 'b', 'c'],
+        maxZoom: 19,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       });
       streetLayer.on('tileerror', (error) => {
         const tile = error?.tile;
         if (tile && !tile.dataset.fallbackAttempted && error.coords) {
           tile.dataset.fallbackAttempted = '1';
-          tile.src = `https://tile.openstreetmap.org/${error.coords.z}/${error.coords.x}/${error.coords.y}.png`;
+          tile.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${error.coords.z}/${error.coords.y}/${error.coords.x}`;
         }
       });
 
