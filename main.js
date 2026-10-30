@@ -7479,9 +7479,13 @@ function initStorefrontApp() {
         homeStatusDot.classList.remove('closed');
       }
       if (homeStatusText) {
-        const rawNotice = (settings.statusNotice && settings.statusNotice.trim())
-          ? settings.statusNotice.trim()
-          : `Open Now: ${settings.openTime || '11:00 AM'} – ${settings.closeTime || '11:00 PM'} • Delivery & Pickup`;
+        const openT = settings.openTime || '11:00 AM';
+        const closeT = settings.closeTime || '11:00 PM';
+        const defaultHoursNotice = `Open Now: ${openT} – ${closeT} • Delivery & Pickup`;
+        let rawNotice = (settings.statusNotice && settings.statusNotice.trim()) || '';
+        if (!rawNotice || /^Open Now(\s*[:–-].*)?$/i.test(rawNotice)) {
+          rawNotice = defaultHoursNotice;
+        }
         const colonIdx = rawNotice.indexOf(':');
         if (colonIdx !== -1) {
           const prefix = escapeHtml(rawNotice.slice(0, colonIdx).trim());

@@ -3330,6 +3330,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputCloseTime = document.getElementById('input-close-time');
   const inputRestaurantPhone = document.getElementById('input-restaurant-phone');
   const inputStatusNotice = document.getElementById('input-status-notice');
+
+  // Auto-sync customer status notice text with Opening & Closing times
+  function syncStatusNoticeWithTimes() {
+    if (!inputStatusNotice) return;
+    const currentVal = inputStatusNotice.value.trim();
+    if (!currentVal || /^Open Now(\s*[:–-].*)?$/i.test(currentVal)) {
+      const oT = inputOpenTime?.value?.trim() || '11:00 AM';
+      const cT = inputCloseTime?.value?.trim() || '11:00 PM';
+      inputStatusNotice.value = `Open Now: ${oT} – ${cT} • Delivery & Pickup`;
+    }
+  }
+  inputOpenTime?.addEventListener('input', syncStatusNoticeWithTimes);
+  inputCloseTime?.addEventListener('input', syncStatusNoticeWithTimes);
   const inputStoreOpen = document.getElementById('input-store-open');
   const inputStoreClosedReason = document.getElementById('input-store-closed-reason');
   const groupStoreClosedReason = document.getElementById('group-store-closed-reason');
@@ -3724,7 +3737,14 @@ document.addEventListener('DOMContentLoaded', () => {
       inputRestaurantPhone.value = settings.restaurantPhone || settings.helpline || '+91 98450 12345';
     }
     if (inputStatusNotice && document.activeElement !== inputStatusNotice) {
-      inputStatusNotice.value = settings.statusNotice || 'Open Now: 11:00 AM – 11:00 PM • Delivery & Pickup';
+      const openT = settings.openTime || '11:00 AM';
+      const closeT = settings.closeTime || '11:00 PM';
+      const rawNotice = (settings.statusNotice || '').trim();
+      if (!rawNotice || /^Open Now(\s*[:–-].*)?$/i.test(rawNotice)) {
+        inputStatusNotice.value = `Open Now: ${openT} – ${closeT} • Delivery & Pickup`;
+      } else {
+        inputStatusNotice.value = rawNotice;
+      }
     }
 
     // Populate slider
@@ -3894,7 +3914,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const restPhone = formatStorePhoneNumber(rawPhone);
       if (inputRestaurantPhone) inputRestaurantPhone.value = restPhone;
 
-      const noticeT = inputStatusNotice?.value?.trim() || `Open Now: ${openT} – ${closeT} • Delivery & Pickup`;
+      const rawNotice = inputStatusNotice?.value?.trim() || '';
+      const noticeT = (!rawNotice || /^Open Now(\s*[:–-].*)?$/i.test(rawNotice))
+        ? `Open Now: ${openT} – ${closeT} • Delivery & Pickup`
+        : rawNotice;
       const radiusKm = Number(deliveryRadiusSlider?.value || current.deliveryRadiusKm || 7);
       const storeIsOpen = inputStoreOpen ? inputStoreOpen.checked : (current.storeOpen !== false);
       const storeReason = inputStoreClosedReason?.value?.trim() || '';
