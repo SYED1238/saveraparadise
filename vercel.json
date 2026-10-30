@@ -2,6 +2,10 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/poster",
+      "destination": "/poster.html"
+    },
+    {
       "source": "/admin",
       "destination": "/admin.html"
     },
