@@ -770,6 +770,70 @@
       color: #10B981;
     }
 
+    /* Real Storefront Showcase Section ("and below this image") */
+    .storefront-showcase-section {
+      position: relative;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 2px solid #FF5A26;
+      margin-bottom: 28px;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.7);
+      background: #120D0A;
+      z-index: 2;
+    }
+
+    .storefront-showcase-section img {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+      object-position: center 25%;
+      display: block;
+    }
+
+    .storefront-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(14, 11, 9, 0.75) 0%, rgba(14, 11, 9, 0.1) 40%, rgba(14, 11, 9, 0.88) 100%);
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px 20px;
+    }
+
+    .storefront-badge-top {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: rgba(14, 11, 9, 0.92);
+      border: 1px solid #FF5A26;
+      color: #FFF;
+      font-size: 0.82rem;
+      font-weight: 800;
+      padding: 6px 14px;
+      border-radius: 999px;
+      align-self: flex-start;
+      backdrop-filter: blur(6px);
+    }
+
+    .storefront-info-bottom {
+      color: #FFF;
+    }
+
+    .storefront-info-bottom h4 {
+      font-size: 1.15rem;
+      font-weight: 900;
+      letter-spacing: -0.2px;
+      color: #FFF;
+    }
+
+    .storefront-info-bottom p {
+      font-size: 0.86rem;
+      color: #FFA133;
+      margin-top: 2px;
+      font-weight: 600;
+    }
+
     /* Footer Info Section */
     .poster-footer {
       border-top: 1.5px dashed #2E2218;
@@ -918,14 +982,20 @@
     <button class="btn btn-primary" onclick="window.print()">
       <i class="fa-solid fa-print"></i> 🖨️ Print High-Res Poster
     </button>
-    <a class="btn btn-primary" href="/images/doorstep_delivery_poster.png" download="Savera_Paradise_Doorstep_Delivery_Poster_VIP.png">
-      <i class="fa-solid fa-download"></i> ⬇️ Download VIP Poster (PNG)
+    <a class="btn btn-primary" href="/images/savera_doorstep_poster_v3.png" download="Savera_Paradise_Flyer_Poster_1200x1800.png">
+      <i class="fa-solid fa-download"></i> ⬇️ Vertical Flyer (1200×1800)
+    </a>
+    <a class="btn btn-primary" href="/images/savera_doorstep_poster_square.png" download="Savera_Paradise_Square_1200x1200.png">
+      <i class="fa-brands fa-whatsapp"></i> ⬇️ WhatsApp Square (1200×1200)
+    </a>
+    <a class="btn btn-primary" href="/images/savera_doorstep_poster_story.png" download="Savera_Paradise_Mobile_Story_1080x1920.png">
+      <i class="fa-solid fa-mobile-screen"></i> ⬇️ Mobile Story (1080×1920)
     </a>
     <a class="btn btn-secondary" href="/images/doorstep_delivery_poster_classic.png" download="Savera_Paradise_Doorstep_Delivery_Classic.png">
       <i class="fa-solid fa-clock-rotate-left"></i> ⬇️ Classic Edition (Preserved)
     </a>
     <button class="btn btn-whatsapp" onclick="copyWhatsAppBroadcast()">
-      <i class="fa-brands fa-whatsapp"></i> 💬 Copy WhatsApp Promo Text
+      <i class="fa-brands fa-whatsapp"></i> 💬 Copy 10% OFF WhatsApp Text
     </button>
     <a class="btn btn-secondary" href="/">
       <i class="fa-solid fa-utensils"></i> 🏠 Back to Restaurant
@@ -1073,8 +1143,8 @@
           <i class="fa-solid fa-gift"></i>
         </div>
         <div class="offer-text">
-          <h4>FLAT ₹50 OFF</h4>
-          <p>Coupon: <strong>FIRSTORDER</strong> on 1st order</p>
+          <h4>FLAT 10% OFF</h4>
+          <p>Coupon: <strong>SAVERA10</strong> on all orders</p>
         </div>
       </div>
 
@@ -1142,6 +1212,21 @@
       </div>
     </section>
 
+    <!-- Real Storefront Showcase Section ("and below this image") -->
+    <section class="storefront-showcase-section">
+      <img src="/images/savera-storefront.jpg" alt="Savera Paradise Ramanagara Storefront - I Love Ramanagara">
+      <div class="storefront-overlay">
+        <div class="storefront-badge-top">
+          <i class="fa-solid fa-location-dot" style="color: #FF5A26;"></i>
+          OUR AUTHENTIC RESTAURANT IN RAMANAGARA
+        </div>
+        <div class="storefront-info-bottom">
+          <h4>SAVERA PARADISE • LUXURY FAMILY DINING &amp; EXPRESS DELIVERY</h4>
+          <p>AGA Building, Railway Station Main Road • Known for the iconic "I ❤️ RAMANAGARA" wall &amp; authentic feasts</p>
+        </div>
+      </div>
+    </section>
+
     <!-- Footer Address & Phone Helpline -->
     <footer class="poster-footer">
       <div class="footer-address">
@@ -1171,16 +1256,16 @@
     function copyWhatsAppBroadcast() {
       const msg = `👑 *SAVERA PARADISE — NOW DELIVERING TO YOUR DOORSTEP!* 🛵🍗\n\n` +
         `Great news Ramanagara! Your favorite multi-cuisine restaurant is now delivering hot & fresh meals straight to your home & office in 20–30 minutes!\n\n` +
-        `🔥 *Special Launch Offer:* FLAT ₹50 OFF on your first order! (Use code: *FIRSTORDER*)\n` +
+        `🔥 *Special Launch Offer:* FLAT 10% OFF on your entire order! (Use code: *SAVERA10*)\n` +
         `🛵 *FREE Delivery* on all orders above ₹249!\n\n` +
         `🍚 Signature Dum Biryani\n` +
         `🍗 Sizzling Crispy Chicken & Tandoori\n` +
         `🍢 Charcoal Kebabs & Starters\n` +
         `🍛 Artisan Curries & Parottas\n\n` +
-        `👉 *Order Online in 30 Seconds:* https://saveraparadise.foodbliz.in\n` +
-        `📍 *Location:* AGA Building, Railway Station Main Road, Ramanagara — 562159\n` +
-        `📞 *Helpline / Call:* +91 9742924237\n` +
-        `💳 Pay via Google Pay, PhonePe, Paytm, or Cash on Delivery (COD)!`;
+        `👉 *Scan & Order Online in 30 Seconds:* https://saveraparadise.foodbliz.in\n` +
+        `📍 *Location:* AGA Building, Railway Station Main Road, Ramanagara — 562159 (Known for "I ❤️ RAMANAGARA")\n` +
+        `📞 *Helpline / Call:* +91 9742924237 • 080-27271234\n` +
+        `💳 Pay via Google Pay, PhonePe, Paytm, UPI, Cards, or Cash on Delivery (COD)!`;
 
       navigator.clipboard.writeText(msg).then(() => {
         const toast = document.getElementById('toast');

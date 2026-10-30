@@ -349,3 +349,4 @@ print("[OK] Successfully generated highlighted scanner poster v2:")
 print(f"  - {output_png}")
 print(f"  - {output_jpg}")
 print(f"  - {output_v2_png}")
+
