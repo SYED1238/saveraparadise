@@ -1,15 +1,20 @@
 /**
- * Crispy Chicken Multi-App PWA Installation & Management Service
- * Supports 3 completely separate, independently installable Web Apps:
- * 1. Crispy Chicken (Customer Food App, scope: /)
- * 2. Crispy Kitchen (Restaurant Control Hub, scope: /admin.html)
- * 3. Crispy Rider (Delivery Partner App, scope: /delivery.html)
- *
- * Each portal has:
- * - Dedicated Web App Manifest & unique Manifest ID
- * - Unique Theme Color & Icon Set
- * - Dedicated start URL and scope isolation
- * - Portal-specific install guide modal, welcome notification & haptic alerts
+ * Savera Paradise Multi-App PWA Installation & Management Service
+ * Universal PWA Install Flow:
+ * 1. Early global beforeinstallprompt capture (window.__deferredPwaPrompt)
+ * 2. Standalone detection (display-mode: standalone / navigator.standalone / appinstalled)
+ * 3. Platform & Browser Detection:
+ *    - 'ios-inapp'
+ *    - 'ios-chrome'
+ *    - 'ios-safari'
+ *    - 'android-other'
+ *    - 'android-chrome'
+ *    - 'desktop'
+ * 4. 3-Way Routing:
+ *    - Case A: Native 1-click install (promptEvent.prompt())
+ *    - Case B: Android non-Chrome / in-app (intent:// URL with ?autoInstall=true + Chrome Auto-Install Sheet)
+ *    - Case C: iOS (Smart tailored bottom sheet guide with visual SVG icons)
+ * 5. Auto-Install banner on Chrome when ?autoInstall=true is present with 1-tap install trigger and URL cleanup
  */
 
 import {
@@ -22,7 +27,7 @@ import {
   isSystemNotificationSupported
 } from './notificationService.js';
 
-let deferredInstallPrompt = null;
+let deferredInstallPrompt = (typeof window !== 'undefined' && window.__deferredPwaPrompt) || null;
 
 /**
  * Detects the active portal based on current pathname
@@ -137,35 +142,59 @@ export function getPortalConfig() {
 }
 
 /**
- * Checks if the current portal is running inside a standalone PWA window.
- * Returns false if the user is visiting via Chrome, Safari, Edge, or web browser tabs,
- * allowing them to install (or re-install if previously removed).
+ * Platform & Browser Detection Logic
+ * Detects user's environment using navigator.userAgent:
+ * - 'ios-inapp': iOS device inside in-app browser (Instagram|FBAN|FBAV|WhatsApp|Line|Snapchat)
+ * - 'ios-chrome': iOS device using Chrome (CriOS)
+ * - 'ios-safari': iOS device using Safari (or other iOS browsers)
+ * - 'android-other': Android device inside in-app browser OR non-Chrome browsers (SamsungBrowser|OPR|Opera|Firefox|UCBrowser)
+ * - 'android-chrome': Android device running standard Google Chrome
+ * - 'desktop': Desktop / Laptop browsers
+ */
+export function detectPlatformEnvironment(customUa) {
+  const ua = (customUa || (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '').trim();
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(ua);
+  const isInApp = /Instagram|FBAN|FBAV|WhatsApp|Line\/|Snapchat/i.test(ua);
+
+  if (isIOS) {
+    if (isInApp) return 'ios-inapp';
+    if (/CriOS/i.test(ua)) return 'ios-chrome';
+    return 'ios-safari';
+  }
+
+  if (isAndroid) {
+    const isNonChrome = /SamsungBrowser|OPR|Opera|Firefox|FxiOS|UCBrowser|DuckDuckGo|MiuiBrowser|HeyTapBrowser/i.test(ua);
+    if (isInApp || isNonChrome) {
+      return 'android-other';
+    }
+    if (/Chrome|CriOS/i.test(ua)) {
+      return 'android-chrome';
+    }
+    return 'android-other';
+  }
+
+  return 'desktop';
+}
+
+/**
+ * Standalone Detection (Hide When Installed)
+ * Detects if the web app is already running in standalone mode using:
+ * window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
  */
 export function isAppAlreadyInstalled() {
   if (typeof window === 'undefined') return false;
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-                       window.navigator.standalone === true ||
-                       document.referrer.includes('android-app://');
-  if (!isStandalone) return false;
-
-  const type = getCurrentPortalType();
-  const path = window.location.pathname.toLowerCase();
-  if (type === 'owner') {
-    return path.includes('owner');
-  }
-  if (type === 'admin') {
-    return path.includes('admin');
-  }
-  if (type === 'delivery') {
-    return path.includes('delivery');
-  }
-  return !path.includes('admin') && !path.includes('delivery') && !path.includes('owner');
+  return !!(
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    window.navigator.standalone === true ||
+    (typeof document !== 'undefined' && document.referrer && document.referrer.includes('android-app://'))
+  );
 }
 
 export function hideAllInstallButtons() {
   if (typeof document === 'undefined') return;
   document.documentElement.classList.add('pwa-customer-installed');
-  document.body.classList.add('pwa-customer-installed');
+  if (document.body) document.body.classList.add('pwa-customer-installed');
   const allBtns = document.querySelectorAll(
     '#btn-download-app, #btn-mobile-download-app, #btn-admin-download-app, #btn-rider-download-app, .header-pwa-dock, .admin-pwa-dock, .rider-pwa-dock, .mobile-download-item'
   );
@@ -180,9 +209,13 @@ export function showAllInstallButtons() {
     hideAllInstallButtons();
     return;
   }
+  if (isAppAlreadyInstalled()) {
+    hideAllInstallButtons();
+    return;
+  }
 
   document.documentElement.classList.remove('pwa-customer-installed');
-  document.body.classList.remove('pwa-customer-installed');
+  if (document.body) document.body.classList.remove('pwa-customer-installed');
   const customerBtns = document.querySelectorAll('#btn-download-app, #btn-mobile-download-app, .header-pwa-dock, .mobile-download-item');
   customerBtns.forEach(el => el.style.removeProperty('display'));
 }
@@ -206,12 +239,7 @@ export function autoBindDownloadButtons() {
 }
 
 /**
- * Activates real-native app notifications:
- * 1. Requests system OS notification permission
- * 2. Emits physical vibration haptic buzz
- * 3. Plays welcome audio chime
- * 4. Updates W3C home screen app badge
- * 5. Sends a Welcome system push notification with action buttons tailored to the portal
+ * Activates real-native app notifications
  */
 export async function enableAppNotificationsWithWelcome() {
   if (!isSystemNotificationSupported()) {
@@ -224,16 +252,10 @@ export async function enableAppNotificationsWithWelcome() {
   try {
     const perm = await requestSystemNotificationPermission();
     if (perm === 'granted') {
-      // 1. Play joyful celebratory chime or urgent kitchen chime
       playNotificationSound(portalConfig.type === 'admin' ? 'new_order' : 'order_placed');
-
-      // 2. Real app haptic buzz
       triggerDeviceVibration([180, 90, 180, 90, 240]);
-
-      // 3. Clear/sync app badge
       updateAppBadge(0);
 
-      // 4. Send the native system notification
       sendSystemNotification({
         title: portalConfig.welcomeTitle,
         body: portalConfig.welcomeBody,
@@ -242,9 +264,7 @@ export async function enableAppNotificationsWithWelcome() {
         data: { url: portalConfig.startUrl }
       });
 
-      // 5. Hide the prompt banner if present
       hideAppNotificationPromptBanner();
-
       showPwaToast(`🔔 ${portalConfig.name} Notifications Enabled! Live alerts active.`, 'success');
       try {
         localStorage.setItem(`quickbite_notif_prompt_answered_${portalConfig.type}`, 'true');
@@ -281,14 +301,12 @@ export function checkAndPromptAppNotifications() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (!isSystemNotificationSupported()) return;
 
-  // If already granted or explicitly denied in browser, don't show prompt
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return;
   }
 
   const portalConfig = getPortalConfig();
 
-  // Check if user dismissed recently on this portal (wait 3 days before reminding)
   try {
     const dismissedTime = localStorage.getItem(`quickbite_notif_prompt_dismissed_${portalConfig.type}`);
     if (dismissedTime && Date.now() - Number(dismissedTime) < 3 * 24 * 60 * 60 * 1000) {
@@ -296,7 +314,6 @@ export function checkAndPromptAppNotifications() {
     }
   } catch {}
 
-  // If banner already exists
   if (document.getElementById('app-notification-prompt-banner')) return;
 
   const banner = document.createElement('div');
@@ -322,7 +339,6 @@ export function checkAndPromptAppNotifications() {
 
   document.body.appendChild(banner);
 
-  // Smooth slide-up transition
   requestAnimationFrame(() => {
     setTimeout(() => {
       banner.classList.add('show');
@@ -347,10 +363,128 @@ export function checkAndPromptAppNotifications() {
   }
 }
 
+/**
+ * Auto-Install Banner in Chrome:
+ * When page loads in Chrome with ?autoInstall=true, automatically show a prominent
+ * bottom sheet saying "Tap below to finish installing the app" with a 1-tap button.
+ * Cleans up ?autoInstall=true via window.history.replaceState.
+ */
+export function checkAndTriggerAutoInstall() {
+  if (typeof window === 'undefined') return;
+  if (isAppAlreadyInstalled()) return;
+
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('autoInstall') === 'true') {
+      url.searchParams.delete('autoInstall');
+      const newPath = url.pathname + (url.search || '') + (url.hash || '');
+      window.history.replaceState({}, document.title, newPath);
+
+      setTimeout(() => {
+        showAutoInstallBanner();
+      }, 500);
+    }
+  } catch (err) {
+    console.warn('[PWA] checkAndTriggerAutoInstall error:', err);
+  }
+}
+
+export function showAutoInstallBanner() {
+  if (typeof document === 'undefined') return;
+  if (isAppAlreadyInstalled()) return;
+  if (document.getElementById('pwa-autoinstall-sheet')) return;
+
+  const portalConfig = getPortalConfig();
+  const banner = document.createElement('div');
+  banner.id = 'pwa-autoinstall-sheet';
+  banner.className = 'pwa-autoinstall-sheet';
+  banner.setAttribute('role', 'dialog');
+  banner.setAttribute('aria-modal', 'true');
+  banner.setAttribute('aria-label', 'Finish App Installation');
+
+  banner.innerHTML = `
+    <div class="pwa-autoinstall-card">
+      <button type="button" class="pwa-autoinstall-close" id="btn-close-autoinstall" aria-label="Dismiss">✕</button>
+      <div class="pwa-autoinstall-header">
+        <div class="pwa-app-icon-wrap" style="width: 52px; height: 52px;">
+          <img src="${portalConfig.icon}" alt="${portalConfig.name} Icon" class="pwa-modal-app-icon" style="width: 100%; height: 100%; border-radius: 14px;">
+          <span class="pwa-verified-badge" style="width: 18px; height: 18px; font-size: 0.6rem;"><i class="fa-solid fa-check"></i></span>
+        </div>
+        <div class="pwa-autoinstall-info">
+          <h4>Tap below to finish installing the app</h4>
+          <p>Add ${portalConfig.name} to your Home Screen for instant 1-tap launch &amp; live orders.</p>
+        </div>
+      </div>
+      <div class="pwa-autoinstall-actions">
+        <button type="button" class="btn btn-pwa-primary pwa-autoinstall-btn" id="btn-pwa-autoinstall-confirm">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Install ${portalConfig.shortName} Now</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(banner);
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      banner.classList.add('show');
+    }, 100);
+  });
+
+  const closeBtn = banner.querySelector('#btn-close-autoinstall');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', hideAutoInstallBanner);
+  }
+
+  const confirmBtn = banner.querySelector('#btn-pwa-autoinstall-confirm');
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', async () => {
+      const promptEvent = deferredInstallPrompt || (typeof window !== 'undefined' ? window.__deferredPwaPrompt : null);
+      if (promptEvent) {
+        try {
+          promptEvent.prompt();
+          const choice = await promptEvent.userChoice;
+          if (choice && choice.outcome === 'accepted') {
+            hideAutoInstallBanner();
+            hideAllInstallButtons();
+            setTimeout(() => {
+              enableAppNotificationsWithWelcome();
+            }, 1200);
+          }
+        } catch (err) {
+          console.warn('[PWA] Auto-install prompt failed:', err);
+        }
+      } else {
+        hideAutoInstallBanner();
+        openPwaInstallModal();
+      }
+    });
+  }
+}
+
+export function hideAutoInstallBanner() {
+  const banner = document.getElementById('pwa-autoinstall-sheet');
+  if (banner) {
+    banner.classList.remove('show');
+    setTimeout(() => {
+      banner.remove();
+    }, 350);
+  }
+}
+
 export function initPwaInstallService() {
   if (typeof window === 'undefined') return;
 
   const portalConfig = getPortalConfig();
+
+  // Pick up early captured prompt if window.__deferredPwaPrompt was populated by index.html
+  if (window.__deferredPwaPrompt && !deferredInstallPrompt) {
+    deferredInstallPrompt = window.__deferredPwaPrompt;
+  }
 
   // Clean up any legacy localStorage flags so reinstallation is never blocked
   try {
@@ -370,15 +504,18 @@ export function initPwaInstallService() {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       autoBindDownloadButtons();
+      checkAndTriggerAutoInstall();
     });
   } else {
     autoBindDownloadButtons();
+    checkAndTriggerAutoInstall();
   }
 
-  // Browser fired beforeinstallprompt -> Browser confirmed the app is not installed and ready to install!
+  // Capture early / subsequent beforeinstallprompt event globally
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
+    window.__deferredPwaPrompt = e;
     try {
       localStorage.removeItem(`quickbite_pwa_installed_${portalConfig.type}`);
       localStorage.removeItem('quickbite_pwa_installed');
@@ -389,12 +526,15 @@ export function initPwaInstallService() {
     }
   });
 
+  // App installed event -> hide all banners & install buttons
   window.addEventListener('appinstalled', () => {
     deferredInstallPrompt = null;
+    window.__deferredPwaPrompt = null;
     hideAllInstallButtons();
+    hideAutoInstallBanner();
+    closePwaInstallModal();
     const config = getPortalConfig();
     showPwaToast(config.installToast, 'success');
-    // Prompt and welcome the user with native app notification after install
     setTimeout(() => {
       enableAppNotificationsWithWelcome();
     }, 1200);
@@ -411,25 +551,34 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Main trigger function called when any "Download App" button is clicked
+ * Main trigger function called when any "Install App" / "Download App" button is clicked
+ * Implements 3-Way Routing:
+ * - Case A: Native 1-Click Install Available (deferredPrompt exists)
+ * - Case B: Android Non-Chrome or In-App Browser (Auto-redirect to Chrome via intent://)
+ * - Case C: iPhone / iPad (Smart tailored iOS bottom sheet guide)
  */
 export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
   const portalConfig = getPortalConfig();
 
-  // If user is already running inside the standalone installed window
+  // Standalone detection: hide when installed
   if (isAppAlreadyInstalled()) {
     hideAllInstallButtons();
-    showPwaToast(`✅ ${portalConfig.name} is already running in app mode on your device!`, 'success');
+    showPwaToast(`✅ ${portalConfig.name} is already installed and running in app mode!`, 'success');
     return 'already_installed';
   }
 
-  // If native browser prompt is available (Chrome, Edge, Samsung Internet, Android)
-  if (deferredInstallPrompt) {
+  // Case A — Native 1-Click Install Available (deferredPrompt exists)
+  const promptEvent = deferredInstallPrompt || (typeof window !== 'undefined' ? window.__deferredPwaPrompt : null);
+  if (promptEvent) {
     try {
-      deferredInstallPrompt.prompt();
-      const choice = await deferredInstallPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
+      promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice && choice.outcome === 'accepted') {
+        deferredInstallPrompt = null;
+        if (typeof window !== 'undefined') window.__deferredPwaPrompt = null;
         hideAllInstallButtons();
+        closePwaInstallModal();
+        hideAutoInstallBanner();
         if (typeof onInstalled === 'function') onInstalled();
         setTimeout(() => {
           enableAppNotificationsWithWelcome();
@@ -437,27 +586,46 @@ export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
       } else {
         if (typeof onCancel === 'function') onCancel();
       }
-      deferredInstallPrompt = null;
-      return choice.outcome;
+      return choice ? choice.outcome : 'prompt_shown';
     } catch (err) {
       console.warn('[PWA] Prompt error:', err);
     }
   }
 
-  // Fallback: Display sleek instructions modal for iOS Safari / Chrome desktop
-  openPwaInstallModal();
-  return 'modal_opened';
+  // Detect platform & browser environment
+  const env = detectPlatformEnvironment();
+
+  // Case B — Android Non-Chrome or In-App Browser (or Android where deferredPrompt isn't available)
+  if (env === 'android-other' || env === 'android-chrome') {
+    const url = new URL(window.location.href);
+    url.searchParams.set('autoInstall', 'true');
+    const cleanUrl = url.toString().replace(/^https?:\/\//, '');
+    const intentUrl = `intent://${cleanUrl}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`;
+    window.location.href = intentUrl;
+    return 'android_redirected';
+  }
+
+  // Case C — iPhone / iPad (ios-safari, ios-chrome, ios-inapp)
+  if (env.startsWith('ios-')) {
+    openPwaInstallModal(env);
+    return 'ios_modal_opened';
+  }
+
+  // Desktop or generic browser without deferredPrompt
+  openPwaInstallModal(env);
+  return 'desktop_modal_opened';
 }
 
 /**
- * Creates and opens the PWA Installation Guide Modal tailored to the active portal
+ * Creates and opens the PWA Installation Guide Modal tailored to the platform and browser
  */
-export function openPwaInstallModal() {
+export function openPwaInstallModal(forcedEnv) {
   let modal = document.getElementById('pwa-install-modal-backdrop');
   if (modal) {
-    modal.remove(); // Remove existing modal to guarantee fresh portal branding
+    modal.remove();
   }
-  modal = createPwaInstallModalElement();
+  const env = forcedEnv || detectPlatformEnvironment();
+  modal = createPwaInstallModalElement(env);
   document.body.appendChild(modal);
 
   modal.classList.add('open');
@@ -474,14 +642,13 @@ export function closePwaInstallModal() {
   }
 }
 
-function createPwaInstallModalElement() {
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const isAndroid = /Android/.test(navigator.userAgent);
+function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
+  const isIOS = env.startsWith('ios-');
   const portalConfig = getPortalConfig();
 
   const container = document.createElement('div');
   container.id = 'pwa-install-modal-backdrop';
-  container.className = 'pwa-install-backdrop';
+  container.className = `pwa-install-backdrop ${isIOS ? 'pwa-backdrop-ios-sheet' : ''}`;
   container.style.display = 'none';
 
   const featurePillsHtml = portalConfig.featurePills.map(p => `
@@ -491,8 +658,171 @@ function createPwaInstallModalElement() {
     </div>
   `).join('');
 
+  // Tailored steps based on platform environment
+  let stepsHtml = '';
+  let subtitleText = portalConfig.subtitle;
+
+  if (env === 'ios-safari') {
+    subtitleText = 'Follow these 3 quick steps in Safari on your iPhone';
+    stepsHtml = `
+      <div class="install-step-item">
+        <span class="step-num">1</span>
+        <div class="step-desc">
+          Tap the <strong>Share</strong> icon
+          <span class="ios-share-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+              <polyline points="16 6 12 2 8 6"></polyline>
+              <line x1="12" y1="2" x2="12" y2="15"></line>
+            </svg>
+            Share
+          </span>
+          at the <strong>bottom center</strong> of your screen.
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">2</span>
+        <div class="step-desc">
+          Scroll down and tap <strong>"Add to Home Screen"</strong>
+          <span class="ios-plus-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect>
+              <line x1="12" y1="8" x2="12" y2="16"></line>
+              <line x1="8" y1="12" x2="16" y2="12"></line>
+            </svg>
+            Add
+          </span>
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">3</span>
+        <div class="step-desc">
+          Tap <strong>"Add"</strong> in the top right corner. ${portalConfig.name} will appear on your Home Screen!
+        </div>
+      </div>
+    `;
+  } else if (env === 'ios-chrome') {
+    subtitleText = 'Follow these 3 quick steps in Chrome on iOS';
+    stepsHtml = `
+      <div class="install-step-item">
+        <span class="step-num">1</span>
+        <div class="step-desc">
+          Tap the <strong>Share</strong> icon
+          <span class="ios-share-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+              <polyline points="16 6 12 2 8 6"></polyline>
+              <line x1="12" y1="2" x2="12" y2="15"></line>
+            </svg>
+            Share
+          </span>
+          at the <strong>top right</strong> inside the address bar.
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">2</span>
+        <div class="step-desc">
+          Scroll down and tap <strong>"Add to Home Screen"</strong>
+          <span class="ios-plus-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect>
+              <line x1="12" y1="8" x2="12" y2="16"></line>
+              <line x1="8" y1="12" x2="16" y2="12"></line>
+            </svg>
+            Add
+          </span>
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">3</span>
+        <div class="step-desc">
+          Tap <strong>"Add"</strong> in the top right corner to finish installing!
+        </div>
+      </div>
+    `;
+  } else if (env === 'ios-inapp') {
+    subtitleText = 'Open in Safari to add to your iPhone Home Screen';
+    stepsHtml = `
+      <div class="install-step-item">
+        <span class="step-num">1</span>
+        <div class="step-desc">
+          Tap the <strong>•••</strong> menu or <strong>Safari compass icon</strong>
+          <span class="ios-compass-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+            </svg>
+            Safari
+          </span>
+          at the bottom right to <strong>Open in Safari</strong> first.
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">2</span>
+        <div class="step-desc">
+          In Safari, tap the <strong>Share</strong> icon &rarr; tap <strong>"Add to Home Screen"</strong>.
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">3</span>
+        <div class="step-desc">
+          Tap <strong>"Add"</strong> in the top right corner to install ${portalConfig.name}!
+        </div>
+      </div>
+    `;
+  } else if (env.startsWith('android-')) {
+    subtitleText = 'Install directly to your Android device';
+    stepsHtml = `
+      <div class="install-step-item">
+        <span class="step-num">1</span>
+        <div class="step-desc">
+          Tap the <strong>three dots menu</strong> <i class="fa-solid fa-ellipsis-vertical"></i> in Google Chrome.
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">2</span>
+        <div class="step-desc">
+          Select <strong>"Install app"</strong> or <strong>"Add to Home Screen"</strong>.
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">3</span>
+        <div class="step-desc">
+          Tap <strong>Install</strong> to add ${portalConfig.name} to your app drawer.
+        </div>
+      </div>
+    `;
+  } else {
+    stepsHtml = `
+      <div class="install-step-item">
+        <span class="step-num">1</span>
+        <div class="step-desc">
+          Click the <strong>Install icon</strong> <i class="fa-solid fa-download"></i> in your browser's address bar.
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">2</span>
+        <div class="step-desc">
+          Or click the <strong>3-dots browser menu</strong> ➔ <strong>"Install ${portalConfig.name}"</strong>.
+        </div>
+      </div>
+      <div class="install-step-item">
+        <span class="step-num">3</span>
+        <div class="step-desc">
+          Confirm <strong>"Install"</strong> to launch in standalone window mode!
+        </div>
+      </div>
+    `;
+  }
+
+  const promptAvailable = !!(deferredInstallPrompt || (typeof window !== 'undefined' && window.__deferredPwaPrompt));
+  const primaryBtnText = isIOS
+    ? 'Got It / Close'
+    : (promptAvailable ? `Download & Install ${portalConfig.shortName}` : 'I Understand / Add to Home Screen');
+
   container.innerHTML = `
-    <div class="pwa-install-modal" role="dialog" aria-modal="true" aria-labelledby="pwa-modal-title">
+    <div class="pwa-install-modal ${isIOS ? 'pwa-modal-ios-sheet' : ''}" role="dialog" aria-modal="true" aria-labelledby="pwa-modal-title">
+      <div class="pwa-sheet-drag-handle" aria-hidden="true"></div>
       <button type="button" class="pwa-modal-close" id="btn-close-pwa-modal" aria-label="Close modal">✕</button>
 
       <div class="pwa-modal-header">
@@ -502,7 +832,7 @@ function createPwaInstallModalElement() {
         </div>
         <div class="pwa-modal-title-group">
           <h3 id="pwa-modal-title">Install ${portalConfig.fullName}</h3>
-          <p class="pwa-modal-subtitle">${portalConfig.subtitle}</p>
+          <p class="pwa-modal-subtitle">${subtitleText}</p>
         </div>
       </div>
 
@@ -511,76 +841,18 @@ function createPwaInstallModalElement() {
       </div>
 
       <div class="pwa-install-steps">
-        ${isIOS ? `
-          <div class="install-step-item">
-            <span class="step-num">1</span>
-            <div class="step-desc">
-              Tap the <strong>Share button</strong> <span class="ios-share-icon"><i class="fa-solid fa-arrow-up-from-bracket"></i></span> at the bottom of Safari.
-            </div>
-          </div>
-          <div class="install-step-item">
-            <span class="step-num">2</span>
-            <div class="step-desc">
-              Scroll down and select <strong>"Add to Home Screen"</strong> <i class="fa-regular fa-square-plus"></i>.
-            </div>
-          </div>
-          <div class="install-step-item">
-            <span class="step-num">3</span>
-            <div class="step-desc">
-              Tap <strong>"Add"</strong> in the top-right corner to finish installing ${portalConfig.name}!
-            </div>
-          </div>
-        ` : isAndroid ? `
-          <div class="install-step-item">
-            <span class="step-num">1</span>
-            <div class="step-desc">
-              Tap the <strong>three dots menu</strong> <i class="fa-solid fa-ellipsis-vertical"></i> in Chrome.
-            </div>
-          </div>
-          <div class="install-step-item">
-            <span class="step-num">2</span>
-            <div class="step-desc">
-              Select <strong>"Install app"</strong> or <strong>"Add to Home Screen"</strong>.
-            </div>
-          </div>
-          <div class="install-step-item">
-            <span class="step-num">3</span>
-            <div class="step-desc">
-              Tap <strong>Install</strong> to add ${portalConfig.name} to your app drawer.
-            </div>
-          </div>
-        ` : `
-          <div class="install-step-item">
-            <span class="step-num">1</span>
-            <div class="step-desc">
-              Click the <strong>Install icon</strong> <i class="fa-solid fa-download"></i> in your browser's address bar.
-            </div>
-          </div>
-          <div class="install-step-item">
-            <span class="step-num">2</span>
-            <div class="step-desc">
-              Or click the <strong>3-dots browser menu</strong> ➔ <strong>"Install ${portalConfig.name}"</strong>.
-            </div>
-          </div>
-          <div class="install-step-item">
-            <span class="step-num">3</span>
-            <div class="step-desc">
-              Confirm <strong>"Install"</strong> to launch in standalone window mode!
-            </div>
-          </div>
-        `}
+        ${stepsHtml}
       </div>
 
-      <div class="pwa-modal-footer" style="display: flex; flex-direction: column; gap: 10px;">
+      <div class="pwa-modal-footer">
         <button type="button" class="btn btn-pwa-primary" id="btn-pwa-modal-primary">
           <i class="fa-solid fa-cloud-arrow-down"></i>
-          <span>${deferredInstallPrompt ? `Download & Install ${portalConfig.shortName}` : 'I Understand / Add to Home Screen'}</span>
+          <span>${primaryBtnText}</span>
         </button>
       </div>
     </div>
   `;
 
-  // Attach event listeners
   container.addEventListener('click', (e) => {
     if (e.target === container) closePwaInstallModal();
   });
@@ -591,22 +863,29 @@ function createPwaInstallModalElement() {
   const primaryBtn = container.querySelector('#btn-pwa-modal-primary');
   if (primaryBtn) {
     primaryBtn.addEventListener('click', async () => {
-      if (deferredInstallPrompt) {
+      const promptEvent = deferredInstallPrompt || (typeof window !== 'undefined' ? window.__deferredPwaPrompt : null);
+      if (promptEvent && !isIOS) {
         try {
-          deferredInstallPrompt.prompt();
-          const choice = await deferredInstallPrompt.userChoice;
-          if (choice.outcome === 'accepted') {
+          promptEvent.prompt();
+          const choice = await promptEvent.userChoice;
+          if (choice && choice.outcome === 'accepted') {
             hideAllInstallButtons();
+            closePwaInstallModal();
             setTimeout(() => {
               enableAppNotificationsWithWelcome();
             }, 1200);
           }
           deferredInstallPrompt = null;
+          if (typeof window !== 'undefined') window.__deferredPwaPrompt = null;
         } catch {}
+      } else if (!isIOS && env.startsWith('android-')) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('autoInstall', 'true');
+        const cleanUrl = url.toString().replace(/^https?:\/\//, '');
+        window.location.href = `intent://${cleanUrl}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`;
       } else {
-        showPwaToast(`Follow the steps shown above to add ${portalConfig.name} to your Home Screen!`, 'info');
+        closePwaInstallModal();
       }
-      closePwaInstallModal();
     });
   }
 
@@ -614,10 +893,11 @@ function createPwaInstallModalElement() {
 }
 
 function showPwaToast(message, type = 'info') {
+  if (typeof document === 'undefined') return;
   const container = document.querySelector('.toast-container') || document.body;
   const toast = document.createElement('div');
   toast.className = `toast toast-${type} show`;
-  toast.style.cssText = 'position:fixed;bottom:24px;left:24px;z-index:9999;background:#181512;color:#FFF;padding:14px 20px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);display:flex;align-items:center;gap:10px;font-weight:600;';
+  toast.style.cssText = 'position:fixed;bottom:24px;left:24px;z-index:99999;background:#181512;color:#FFF;padding:14px 20px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);display:flex;align-items:center;gap:10px;font-weight:600;';
   toast.innerHTML = `<span>${message}</span>`;
   container.appendChild(toast);
   setTimeout(() => {

@@ -20,6 +20,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="icon" type="image/svg+xml" href="/icon-192.svg">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <meta name="theme-color" content="#FF5A26">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -35,6 +36,15 @@
           document.documentElement.classList.remove('pwa-customer-installed');
         }
       } catch(e) {}
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__deferredPwaPrompt = e;
+      });
+      window.addEventListener('appinstalled', function() {
+        window.__deferredPwaPrompt = null;
+        document.documentElement.classList.add('pwa-customer-installed');
+        if (document.body) document.body.classList.add('pwa-customer-installed');
+      });
     })();
   </script>
 </head>

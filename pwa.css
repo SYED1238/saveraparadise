@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    QuickBite / Cryspy Chiken - Universal PWA & Download Button Styles
    Shared across: Customer Storefront, Admin Portal, Delivery Rider Portal
    ========================================================================== */
@@ -573,6 +573,156 @@ body.pwa-rider-installed #btn-rider-download-app {
 
 .app-notification-prompt-banner .btn-prompt-dismiss:hover {
   color: #FFF;
+}
+
+/* ==========================================================================
+   Universal PWA Install Flow Styles (iOS Smart Guide + Chrome Auto-Install)
+   ========================================================================== */
+
+/* Bottom Sheet Drag Handle */
+.pwa-sheet-drag-handle {
+  width: 44px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 0 auto 16px;
+  display: block;
+}
+
+/* iOS Step Visual Badges */
+.ios-share-badge,
+.ios-plus-badge,
+.ios-compass-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 0.8rem;
+  vertical-align: middle;
+  line-height: 1.2;
+}
+
+.ios-share-badge svg,
+.ios-plus-badge svg,
+.ios-compass-badge svg {
+  width: 14px;
+  height: 14px;
+  stroke: #FF5A26;
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Chrome Auto-Install Prominent Bottom Sheet / Toast Banner */
+.pwa-autoinstall-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100000;
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+
+.pwa-autoinstall-sheet.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.pwa-autoinstall-card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: #181512;
+  border: 1.5px solid #FF5A26;
+  border-radius: 24px;
+  padding: 20px 22px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65), 0 0 35px rgba(255, 90, 38, 0.28);
+  color: #FFFFFF;
+}
+
+.pwa-autoinstall-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #FFF;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pwa-autoinstall-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.pwa-autoinstall-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding-right: 28px;
+}
+
+.pwa-autoinstall-info h4 {
+  margin: 0 0 4px 0;
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  letter-spacing: -0.2px;
+}
+
+.pwa-autoinstall-info p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.35;
+}
+
+.pwa-autoinstall-btn {
+  width: 100%;
+}
+
+/* Mobile Bottom Sheet Modal Transition */
+@media (max-width: 640px) {
+  .pwa-install-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .pwa-install-modal {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    max-width: 100%;
+    width: 100%;
+    padding: 20px 20px max(24px, env(safe-area-inset-bottom, 24px));
+    animation: pwa-sheet-slideup 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    max-height: 88vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  @keyframes pwa-sheet-slideup {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
 }
 
 @media (max-width: 480px) {

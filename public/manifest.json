@@ -2,7 +2,7 @@
   "name": "Savera Paradise Restaurant",
   "short_name": "Savera Paradise",
   "start_url": "/",
-  "id": "/customer-app",
+  "id": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
