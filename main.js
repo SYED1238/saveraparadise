@@ -6682,11 +6682,12 @@ function initStorefrontApp() {
 
     if (activeOrders.length >= maxAllowed) {
       const firstOrder = activeOrders[0];
-      const activeIds = activeOrders.map(o => o.id).join(', ');
+      const safeFirstOrderId = escapeHtml(firstOrder.id);
+      const activeIds = activeOrders.map(o => escapeHtml(o.id)).join(', ');
       if (cartOrderLimitBanner) {
         cartOrderLimitBanner.style.display = 'block';
         if (cartOrderLimitMsg) {
-          cartOrderLimitMsg.innerHTML = `You have <strong>${activeOrders.length} active order${activeOrders.length > 1 ? 's' : ''} in progress</strong> (${activeIds}). You cannot place another order until your 1st order (<strong>${firstOrder.id}</strong>) is delivered!`;
+          cartOrderLimitMsg.innerHTML = `You have <strong>${activeOrders.length} active order${activeOrders.length > 1 ? 's' : ''} in progress</strong> (${activeIds}). You cannot place another order until your 1st order (<strong>${safeFirstOrderId}</strong>) is delivered!`;
         }
         if (cartOrderLimitFirstId) cartOrderLimitFirstId.textContent = firstOrder.id;
         if (cartTrackFirstIdLabel) cartTrackFirstIdLabel.textContent = firstOrder.id;
