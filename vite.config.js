@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import crypto from 'crypto';
 import https from 'https';
 import { verifyAdminToken, verifyAdminPin, createAdminToken, getPinRole, signData, safeEqual } from './api/_auth.js';
@@ -712,7 +712,7 @@ function r2DevMiddlewarePlugin() {
 
             try {
               const routePath = resolve(__dirname, devServerlessRoutes[url]);
-              const module = await import(routePath);
+              const module = await import(pathToFileURL(routePath).href);
               const handler = module.default || module;
               await handler(req, res);
             } catch (err) {
