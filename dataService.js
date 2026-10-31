@@ -3464,6 +3464,7 @@ class QuickBiteDataService {
   }
 
   broadcastSettings(settings) {
+    if (typeof window === 'undefined') return;
     try {
       if (!this.sharedBroadcastChannel && supabase) {
         this.sharedBroadcastChannel = supabase.channel('quickbite-kitchen-broadcast', {
@@ -3608,7 +3609,7 @@ class QuickBiteDataService {
 
   async syncSettingsToSupabase(settings) {
     try {
-      if (!supabase) return;
+      if (!supabase || typeof window === 'undefined') return;
       const phone = settings.restaurantPhone || settings.helpline || DEFAULT_SETTINGS.restaurantPhone;
       const payloadSettings = {
         ...settings,
@@ -4401,6 +4402,16 @@ class QuickBiteDataService {
     const standardFee = Number(settings.deliveryFeeStandard) || 40;
     let deliveryFee = (isFreeDeliveryEnabled && threshold > 0 && computedSubtotal >= threshold) ? 0 : standardFee;
 
+    // Validate Unlocked Deals (Threshold Wholesale Pricing)
+    let unlockedDealDiscount = 0;
+    if (settings.unlockedDealsEnabled) {
+      const dealsMin = Number(settings.unlockedDealsMinOrder) || 299;
+      const dealsPct = Number(settings.unlockedDealsDiscountPct) || 15;
+      if (computedSubtotal >= dealsMin) {
+        unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
+      }
+    }
+
     // Validate coupon code boundaries against store settings
     let discount = 0;
     const appliedCode = String(orderData.appliedPromo || orderData.promoCode || '').trim().toUpperCase();
@@ -4428,6 +4439,7 @@ class QuickBiteDataService {
       }
     }
 
+    discount += unlockedDealDiscount;
     discount = Math.min(discount, computedSubtotal);
     const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee);
     const authoritativeTotalString = `₹${Math.round(calculatedTotal)}`;
@@ -5217,11 +5229,13 @@ class QuickBiteDataService {
 
   setUnlockedDeals(dealsData) {
     const current = this.getSettings();
+    const rawMin = Number(dealsData.unlockedDealsMinOrder);
+    const rawPct = Number(dealsData.unlockedDealsDiscountPct);
     const updated = {
       ...current,
       unlockedDealsEnabled: Boolean(dealsData.unlockedDealsEnabled),
-      unlockedDealsMinOrder: Math.max(10, Number(dealsData.unlockedDealsMinOrder !== undefined ? dealsData.unlockedDealsMinOrder : 299)),
-      unlockedDealsDiscountPct: Math.max(1, Math.min(90, Number(dealsData.unlockedDealsDiscountPct !== undefined ? dealsData.unlockedDealsDiscountPct : 15))),
+      unlockedDealsMinOrder: Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 299,
+      unlockedDealsDiscountPct: Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(90, Math.round(rawPct)) : 15,
       unlockedDealsTitle: (dealsData.unlockedDealsTitle || 'Wholesale Club Deals').trim(),
       unlockedDealsSubtext: (dealsData.unlockedDealsSubtext || 'Shop for ₹299 to unlock special menu prices!').trim()
     };

@@ -6663,7 +6663,11 @@ body.pwa-customer-installed .header-pwa-dock {
 
 /* Hide floating capsule bar completely whenever cart drawer or food detail is active */
 body.cart-drawer-open .mobile-floating-bar,
-body.food-modal-open .mobile-floating-bar {
+body.food-modal-open .mobile-floating-bar,
+body.cart-drawer-open .unlocked-deals-floating-bar,
+body.food-modal-open .unlocked-deals-floating-bar,
+body.checkout-modal-open .unlocked-deals-floating-bar,
+body.order-modal-open .unlocked-deals-floating-bar {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -12108,6 +12112,9 @@ body.food-modal-open .mobile-floating-bar {
   z-index: 998;
   opacity: 0;
   pointer-events: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
   transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
 }
 

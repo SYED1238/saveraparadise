@@ -1439,6 +1439,7 @@ function initStorefrontApp() {
         : `FREE delivery on orders above <strong>₹${Math.round(currentThreshold)}</strong>!`;
       if (btnCheckout) btnCheckout.classList.remove('disabled-min-order');
       if (btnCheckoutLabel) btnCheckoutLabel.textContent = 'Proceed to Checkout';
+      updateFloatingUnlockedDealsBar(0, settings);
       return;
     }
 
@@ -1574,7 +1575,8 @@ function initStorefrontApp() {
     let discountLabels = [];
     if (unlockedDealDiscount > 0) {
       discount += unlockedDealDiscount;
-      discountLabels.push(`Wholesale Deal -${unlockedDiscountPct}%`);
+      const dealTitle = (settings.unlockedDealsTitle || 'Wholesale Deal').trim();
+      discountLabels.push(`${escapeHtml(dealTitle)} -${unlockedDiscountPct}%`);
     }
     if (isPromoValid && promoResult && promoResult.discount > 0) {
       discount += promoResult.discount;
@@ -1784,7 +1786,16 @@ function initStorefrontApp() {
       setupImageSkeleton(foodDetailImg);
     }
     if (foodDetailTitle) foodDetailTitle.textContent = dish.name;
-    if (foodDetailPrice) foodDetailPrice.textContent = `₹${Math.round(dish.price)}`;
+    if (foodDetailPrice) {
+      const liveSettings = (typeof dataService !== 'undefined' && dataService.getSettings) ? dataService.getSettings() : {};
+      if (liveSettings.unlockedDealsEnabled) {
+        const discountPct = Number(liveSettings.unlockedDealsDiscountPct || 15);
+        const dealPrice = Math.max(1, Math.round(dish.price * (1 - discountPct / 100)));
+        foodDetailPrice.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${liveSettings.unlockedDealsMinOrder || 299}+"><i class="fa-solid fa-lock" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span> <span class="meta-strike-price" style="text-decoration: line-through; opacity: 0.6; font-size: 0.85em; margin-left: 6px;">₹${Math.round(dish.price)}</span>`;
+      } else {
+        foodDetailPrice.textContent = `₹${Math.round(dish.price)}`;
+      }
+    }
     if (foodDetailCat) foodDetailCat.textContent = dish.category;
     if (foodDetailDesc) foodDetailDesc.textContent = dish.desc;
     if (foodDetailBadge) {
@@ -1992,7 +2003,7 @@ function initStorefrontApp() {
     const recipeGrid = document.getElementById('recipe-grid');
 
     dishes.forEach(dish => {
-      let card = document.getElementById(`card-${dish.id}`);
+      let card = document.getElementById(`card-${dish.id}`) || document.querySelector(`.recipe-card[data-id="${dish.id}"]`);
 
       // If card doesn't exist in DOM (new dish added from Admin), dynamically append it
       if (!card && recipeGrid) {
@@ -7819,12 +7830,12 @@ function initStorefrontApp() {
   renderCart();
   updateHeroDeliveryDistanceBadge();
 
-  // Floating Unlocked Deals View Button Listener
-  const btnUnlockedBarView = document.getElementById('unlocked-bar-view-btn');
-  if (btnUnlockedBarView) {
-    btnUnlockedBarView.addEventListener('click', (e) => {
+  // Floating Unlocked Deals Bar Click Listener (Full Touch Target with Back Navigation)
+  const floatingDealsBar = document.getElementById('unlocked-deals-floating-bar');
+  if (floatingDealsBar) {
+    floatingDealsBar.addEventListener('click', (e) => {
       e.preventDefault();
-      openCartDrawerInternal();
+      openCartDrawer();
     });
   }
 

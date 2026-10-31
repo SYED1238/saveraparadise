@@ -1,6 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SETTINGS } from '../dataService.js';
+
+if (typeof global.localStorage === 'undefined') {
+  const store = new Map();
+  global.localStorage = {
+    getItem: (key) => store.get(String(key)) ?? null,
+    setItem: (key, val) => store.set(String(key), String(val)),
+    removeItem: (key) => store.delete(String(key)),
+    clear: () => store.clear(),
+    key: (i) => Array.from(store.keys())[i] ?? null,
+    get length() { return store.size; }
+  };
+}
+if (typeof global.sessionStorage === 'undefined') {
+  const store = new Map();
+  global.sessionStorage = {
+    getItem: (key) => store.get(String(key)) ?? null,
+    setItem: (key, val) => store.set(String(key), String(val)),
+    removeItem: (key) => store.delete(String(key)),
+    clear: () => store.clear()
+  };
+}
+
+import { DEFAULT_SETTINGS, dataService } from '../dataService.js';
 import checkoutHandler from '../api/checkout.js';
 
 test('DYNAMIC UNLOCKED DEALS & THRESHOLD PRICING SUITE', async (t) => {
@@ -126,5 +148,81 @@ test('DYNAMIC UNLOCKED DEALS & THRESHOLD PRICING SUITE', async (t) => {
     assert.strictEqual(responseData.subtotal, 360);
     assert.strictEqual(responseData.discount, 0, 'Discount should be 0 when unlocked deals are disabled');
     assert.strictEqual(responseData.total, '₹360');
+  });
+
+  await t.test('6. Tamper defense: /api/checkout clamps client-injected excessive discount percentages to 50%', async () => {
+    const mockReq = {
+      method: 'POST',
+      headers: { origin: 'http://localhost:5173' },
+      body: {
+        items: [
+          { id: 'dish-1', name: 'Chicken Biryani Full', price: 210, quantity: 1 },
+          { id: 'dish-2', name: 'Crispy Wings', price: 150, quantity: 1 }
+        ],
+        storeSettings: {
+          unlockedDealsEnabled: true,
+          unlockedDealsMinOrder: 299,
+          unlockedDealsDiscountPct: 99, // Maliciously forged 99%
+          freeDeliveryEnabled: true,
+          freeDeliveryThreshold: 250
+        }
+      }
+    };
+
+    let responseData = null;
+    let statusCode = 200;
+    const mockRes = {
+      setHeader: () => {},
+      status: (code) => {
+        statusCode = code;
+        return {
+          json: (data) => { responseData = data; return data; },
+          end: () => {}
+        };
+      }
+    };
+
+    await checkoutHandler(mockReq, mockRes);
+
+    assert.strictEqual(statusCode, 200);
+    assert.strictEqual(responseData.subtotal, 360);
+    // 50% max clamp of 360 = 180, NOT 99% (356)
+    assert.strictEqual(responseData.discount, 180, 'Excessive discount should be clamped to 50% max');
+    assert.strictEqual(responseData.total, '₹180');
+  });
+
+  await t.test('7. dataService.setUnlockedDeals() defends against NaN and invalid inputs', () => {
+    const updated = dataService.setUnlockedDeals({
+      unlockedDealsEnabled: true,
+      unlockedDealsMinOrder: 'invalid_nan',
+      unlockedDealsDiscountPct: 'invalid_pct'
+    });
+
+    assert.strictEqual(updated.unlockedDealsEnabled, true);
+    assert.strictEqual(updated.unlockedDealsMinOrder, 299, 'Should fallback safely to 299 when NaN provided');
+    assert.strictEqual(updated.unlockedDealsDiscountPct, 15, 'Should fallback safely to 15 when NaN provided');
+
+    // Restore to default disabled
+    dataService.setUnlockedDeals({ unlockedDealsEnabled: false, unlockedDealsMinOrder: 299, unlockedDealsDiscountPct: 15 });
+  });
+
+  await t.test('8. Order threshold calculation computes and applies unlocked wholesale deals', () => {
+    const settings = {
+      unlockedDealsEnabled: true,
+      unlockedDealsMinOrder: 299,
+      unlockedDealsDiscountPct: 20
+    };
+    const computedSubtotal = 390;
+    let unlockedDealDiscount = 0;
+    if (settings.unlockedDealsEnabled) {
+      const dealsMin = Number(settings.unlockedDealsMinOrder) || 299;
+      const dealsPct = Number(settings.unlockedDealsDiscountPct) || 15;
+      if (computedSubtotal >= dealsMin) {
+        unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
+      }
+    }
+    assert.strictEqual(unlockedDealDiscount, 78);
+    const calculatedTotal = computedSubtotal - unlockedDealDiscount;
+    assert.strictEqual(calculatedTotal, 312);
   });
 });

@@ -32,6 +32,40 @@ function isOriginAllowed(origin) {
 let authoritativeDishesCache = null;
 let authoritativeDishesCachedAt = 0;
 
+let authoritativeSettingsCache = null;
+let authoritativeSettingsCachedAt = 0;
+
+async function fetchAuthoritativeSettings() {
+  const now = Date.now();
+  if (authoritativeSettingsCache && (now - authoritativeSettingsCachedAt < 60000)) {
+    return authoritativeSettingsCache;
+  }
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !apiKey) return authoritativeSettingsCache;
+  try {
+    const cleanUrl = String(supabaseUrl).replace(/\/+$/, '');
+    const res = await fetch(`${cleanUrl}/rest/v1/store_settings?id=eq.restaurant_config&select=settings`, {
+      headers: {
+        apikey: apiKey,
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(3000) : undefined
+    });
+    if (!res.ok) return authoritativeSettingsCache;
+    const data = await res.json();
+    if (Array.isArray(data) && data[0]?.settings && typeof data[0].settings === 'object') {
+      authoritativeSettingsCache = data[0].settings;
+      authoritativeSettingsCachedAt = now;
+      return authoritativeSettingsCache;
+    }
+    return authoritativeSettingsCache;
+  } catch {
+    return authoritativeSettingsCache;
+  }
+}
+
 async function fetchAuthoritativeDishes() {
   const now = Date.now();
   if (authoritativeDishesCache && (now - authoritativeDishesCachedAt < 60000)) {
@@ -152,7 +186,10 @@ export default async function handler(req, res) {
     });
   }
 
-  const settings = (storeSettings && typeof storeSettings === 'object') ? storeSettings : {};
+  const serverSettings = await fetchAuthoritativeSettings();
+  const settings = (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0)
+    ? { ...(storeSettings || {}), ...serverSettings }
+    : ((storeSettings && typeof storeSettings === 'object') ? storeSettings : {});
   const activePromo = appliedPromo || promoCode || null;
 
   // Minimum Order Value (MOV) validation
@@ -173,11 +210,13 @@ export default async function handler(req, res) {
     : 40;
   let deliveryFee = (isFreeDeliveryEnabled && threshold > 0 && computedSubtotal >= threshold) ? 0 : standardFee;
 
-  // Unlocked Deals (Threshold Pricing) validation
+  // Unlocked Deals (Threshold Pricing) validation with tamper defense clamping
   let unlockedDealDiscount = 0;
   if (settings.unlockedDealsEnabled) {
-    const dealsMin = Number(settings.unlockedDealsMinOrder || 299);
-    const dealsPct = Number(settings.unlockedDealsDiscountPct || 15);
+    const rawMin = Number(settings.unlockedDealsMinOrder);
+    const dealsMin = Number.isFinite(rawMin) ? Math.max(50, rawMin) : 299;
+    const rawPct = Number(settings.unlockedDealsDiscountPct);
+    const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
     if (computedSubtotal >= dealsMin) {
       unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
     }

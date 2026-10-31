@@ -3616,8 +3616,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateUnlockedDealsPreview() {
     const isEnabled = inputUnlockedDealsActive ? inputUnlockedDealsActive.checked : false;
-    const minOrder = Math.max(10, Number(inputUnlockedDealsMin?.value || 299));
-    const discountPct = Math.max(1, Math.min(90, Number(inputUnlockedDealsPct?.value || 15)));
+    const rawMin = Number(inputUnlockedDealsMin?.value);
+    const minOrder = Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 299;
+    const rawPct = Number(inputUnlockedDealsPct?.value);
+    const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(90, Math.round(rawPct)) : 15;
     const title = inputUnlockedDealsTitle?.value?.trim() || 'Wholesale Club Deals';
 
     if (unlockedDealsStatusBadge) {
@@ -4225,8 +4227,10 @@ document.addEventListener('DOMContentLoaded', () => {
     formUnlockedDeals.addEventListener('submit', async (e) => {
       e.preventDefault();
       const isEnabled = inputUnlockedDealsActive ? inputUnlockedDealsActive.checked : false;
-      const minOrder = Math.max(10, Number(inputUnlockedDealsMin?.value || 299));
-      const discountPct = Math.max(1, Math.min(90, Number(inputUnlockedDealsPct?.value || 15)));
+      const rawMin = Number(inputUnlockedDealsMin?.value);
+      const minOrder = Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 299;
+      const rawPct = Number(inputUnlockedDealsPct?.value);
+      const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(90, Math.round(rawPct)) : 15;
       const title = inputUnlockedDealsTitle?.value?.trim() || 'Wholesale Club Deals';
       const subtext = inputUnlockedDealsSubtext?.value?.trim() || `Shop for ₹${minOrder} to unlock special menu prices!`;
 
