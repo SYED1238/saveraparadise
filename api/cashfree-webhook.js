@@ -41,6 +41,7 @@ export default async function handler(req, res) {
       const paymentMethod = eventData.payment?.payment_group || 'upi';
 
       const cleanOrderId = cfOrderId
+        .replace(/^order_/, '')
         .replace(/^doorstep_/, '')
         .replace(/^qb_/, '')
         .split('_')[0];
