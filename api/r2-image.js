@@ -34,10 +34,11 @@ function awsUriEncode(str) {
 }
 
 export default async function handler(req, res) {
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Allow', 'GET, HEAD, OPTIONS');
-    return res.status(200).end();
-  }
+  try {
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Allow', 'GET, HEAD, OPTIONS');
+      return res.status(200).end();
+    }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.setHeader('Allow', 'GET, HEAD, OPTIONS');
@@ -149,4 +150,10 @@ export default async function handler(req, res) {
 
     r2Req.end();
   });
+  } catch (err) {
+    console.error('[R2 Image Uncaught Error]:', err);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Internal server error processing image request' });
+    }
+  }
 }

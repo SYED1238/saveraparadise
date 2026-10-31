@@ -61,4 +61,14 @@ test('RIDER BAG PIN VERIFICATION & ROUTE PREVIEW WORKFLOW SUITE', async (t) => {
     assert.ok(roadKm > 0, 'Road km must be positive');
     assert.ok(estimatedMins >= 5, 'Estimated mins must respect minimum floor');
   });
+
+  await t.test('6. Distance calculation fallback prevents NaN duration and handles edge case coordinates', () => {
+    const rawDistanceKm = NaN;
+    const distanceKm = (!rawDistanceKm || isNaN(rawDistanceKm) || rawDistanceKm <= 0) ? 1.8 : rawDistanceKm;
+    const estimatedMins = Math.max(5, Math.round(distanceKm * 3.5));
+
+    assert.strictEqual(distanceKm, 1.8, 'Fallback distance must be 1.8km');
+    assert.strictEqual(estimatedMins, 6, 'Estimated mins must be calculated properly');
+    assert.ok(!isNaN(estimatedMins), 'Estimated mins must not be NaN');
+  });
 });

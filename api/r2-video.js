@@ -50,10 +50,11 @@ function awsUriEncode(str) {
 }
 
 export default async function handler(req, res) {
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Allow', 'GET, HEAD, OPTIONS');
-    return res.status(200).end();
-  }
+  try {
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Allow', 'GET, HEAD, OPTIONS');
+      return res.status(200).end();
+    }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.setHeader('Allow', 'GET, HEAD, OPTIONS');
@@ -202,4 +203,12 @@ export default async function handler(req, res) {
 
     r2Req.end();
   });
+  } catch (err) {
+    console.error('[R2 Video Uncaught Error]:', err);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Internal server error processing video streaming request' }));
+    }
+  }
 }

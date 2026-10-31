@@ -58,6 +58,8 @@ export default async function handler(req, res) {
             cf_order_id: cfOrderId,
             cf_payment_id: String(cfPaymentId),
             cf_payment_status: 'SUCCESS',
+            payment_status: 'Paid',
+            payment_method: 'Online',
             is_paid_online: true,
             doorstep_upi: cfOrderId.startsWith('doorstep_'),
             payment_gateway: 'cashfree'

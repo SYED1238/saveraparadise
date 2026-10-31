@@ -2433,7 +2433,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const dropCoords = getOrderDropCoordinates(order);
     const riderOriginLat = riderLiveLocation.lat || RESTAURANT_COORDINATES.lat;
     const riderOriginLng = riderLiveLocation.lng || RESTAURANT_COORDINATES.lng;
-    const distanceKm = calculateDistanceKm(riderOriginLat, riderOriginLng, dropCoords.lat, dropCoords.lng);
+    const rawDistanceKm = calculateDistanceKm(riderOriginLat, riderOriginLng, dropCoords.lat, dropCoords.lng);
+    const distanceKm = (!rawDistanceKm || isNaN(rawDistanceKm) || rawDistanceKm <= 0) ? 1.8 : rawDistanceKm;
     const estimatedMins = Math.max(5, Math.round(distanceKm * 3.5));
 
     const rawAddrs = dataService.getAllAddressesRaw();
@@ -2448,10 +2449,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const safeDropAddress = cleanDeliveryAddress(rawDropAddress);
 
     // Extract area / landmark route description
-    const areaName = order.addressDetails?.area || 
+    const rawAreaName = order.addressDetails?.area || 
       (order.addressDetails?.landmark ? `${order.addressDetails.landmark}, ` : '') + (order.addressDetails?.city || '') ||
       safeDropAddress.split(',').slice(-3, -1).join(',').trim() || 
       safeDropAddress.split(',')[0] || 'Ramanagara';
+    const areaName = rawAreaName.replace(/,\s*$/, '').trim() || 'Ramanagara';
 
     let itemsSummary = 'Food Items';
     if (Array.isArray(order.items) && order.items.length > 0) {
