@@ -3793,6 +3793,24 @@ input:checked + .slider:before {
   color: #34D399;
 }
 
+.preview-row.highlight-route {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.preview-row.highlight-route .row-label {
+  color: #6EE7B7;
+  font-weight: 700;
+}
+
+.preview-row.highlight-route .route-val {
+  color: #A7F3D0;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
 .preview-row.highlight-payment {
   background: rgba(245, 158, 11, 0.12);
   border: 1px solid rgba(245, 158, 11, 0.3);
@@ -3840,6 +3858,28 @@ input:checked + .slider:before {
   background: linear-gradient(135deg, #059669, #047857);
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(16, 185, 129, 0.45);
+}
+
+.bag-preview-card .rider-modal-close {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #E2E8F0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+.bag-preview-card .rider-modal-close:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #FFFFFF !important;
+}
+
+.bag-preview-card .btn-cancel-modal {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #E2E8F0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+.bag-preview-card .btn-cancel-modal:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #FFFFFF !important;
 }
 
 /* ==========================================================================

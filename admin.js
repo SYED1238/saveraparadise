@@ -3498,21 +3498,6 @@ document.addEventListener('DOMContentLoaded', () => {
     renderDiscountPresets(type, nextVal);
     updateOfferPreview();
 
-    // Populate unlocked deals
-    if (inputUnlockedDealsActive) inputUnlockedDealsActive.checked = Boolean(settings.unlockedDealsEnabled);
-    if (inputUnlockedDealsMin) inputUnlockedDealsMin.value = settings.unlockedDealsMinOrder || 299;
-    if (inputUnlockedDealsPct) inputUnlockedDealsPct.value = settings.unlockedDealsDiscountPct || 15;
-    if (inputUnlockedDealsTitle) inputUnlockedDealsTitle.value = settings.unlockedDealsTitle || 'Wholesale Club Deals';
-    if (inputUnlockedDealsSubtext) inputUnlockedDealsSubtext.value = settings.unlockedDealsSubtext || 'Shop for ₹299 to unlock special menu prices!';
-
-    document.querySelectorAll('#unlocked-min-presets .unlocked-min-btn').forEach(btn => {
-      btn.classList.toggle('active', Number(btn.getAttribute('data-val')) === Number(inputUnlockedDealsMin?.value));
-    });
-    document.querySelectorAll('#unlocked-pct-presets .unlocked-pct-btn').forEach(btn => {
-      btn.classList.toggle('active', Number(btn.getAttribute('data-val')) === Number(inputUnlockedDealsPct?.value));
-    });
-
-    updateUnlockedDealsPreview();
   }
 
   function updateOfferPreview() {
@@ -3849,6 +3834,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     updateOfferPreview();
+
+    // Populate unlocked deals
+    if (inputUnlockedDealsActive) inputUnlockedDealsActive.checked = Boolean(settings.unlockedDealsEnabled);
+    if (inputUnlockedDealsMin) inputUnlockedDealsMin.value = settings.unlockedDealsMinOrder || 299;
+    if (inputUnlockedDealsPct) inputUnlockedDealsPct.value = settings.unlockedDealsDiscountPct || 15;
+    if (inputUnlockedDealsTitle) inputUnlockedDealsTitle.value = settings.unlockedDealsTitle || 'Wholesale Club Deals';
+    if (inputUnlockedDealsSubtext) inputUnlockedDealsSubtext.value = settings.unlockedDealsSubtext || 'Shop for ₹299 to unlock special menu prices!';
+
+    document.querySelectorAll('#unlocked-min-presets .unlocked-min-btn').forEach(btn => {
+      btn.classList.toggle('active', Number(btn.getAttribute('data-val')) === Number(inputUnlockedDealsMin?.value));
+    });
+    document.querySelectorAll('#unlocked-pct-presets .unlocked-pct-btn').forEach(btn => {
+      btn.classList.toggle('active', Number(btn.getAttribute('data-val')) === Number(inputUnlockedDealsPct?.value));
+    });
+
+    updateUnlockedDealsPreview();
   }
 
   function renderDeliveryOptions() {

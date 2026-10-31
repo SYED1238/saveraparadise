@@ -229,6 +229,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const cnrPrepaidReason = document.getElementById('cnr-prepaid-reason');
   const btnCnrReturnPrepaid = document.getElementById('btn-cnr-return-prepaid');
 
+  // 4-Digit Bag Code Verification & Route Preview Modal Elements
+  const modalBagPreviewBackdrop = document.getElementById('modal-bag-preview-backdrop');
+  const btnCloseBagPreview = document.getElementById('btn-close-bag-preview');
+  const previewBagCodePill = document.getElementById('preview-bag-code-pill');
+  const previewOrderId = document.getElementById('preview-order-id');
+  const previewDistVal = document.getElementById('preview-dist-val');
+  const previewEtaVal = document.getElementById('preview-eta-val');
+  const previewDistRouteDesc = document.getElementById('preview-dist-route-desc');
+  const previewRouteArea = document.getElementById('preview-route-area');
+  const previewCustomerName = document.getElementById('preview-customer-name');
+  const previewCustomerPhone = document.getElementById('preview-customer-phone');
+  const previewDropAddress = document.getElementById('preview-drop-address');
+  const previewItemsSummary = document.getElementById('preview-items-summary');
+  const previewPaymentPill = document.getElementById('preview-payment-pill');
+  const previewPayoutPill = document.getElementById('preview-payout-pill');
+  const previewPayoutFormula = document.getElementById('preview-payout-formula');
+  const btnCancelBagClaim = document.getElementById('btn-cancel-bag-claim');
+  const btnConfirmBagClaim = document.getElementById('btn-confirm-bag-claim');
+  let pendingClaimOrder = null;
+  let pendingClaimCode = null;
+
   // ========================================================
   // RIDER SECURITY GATE: iOS PASSCODE KEYPAD CONTROLLER
   // ========================================================
@@ -1275,34 +1296,15 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleStartDelivery(orderId) {
     if (!orderId) return;
     const cleanId = String(orderId).trim().replace(/^#/, '');
-    const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
     const allOrders = dataService.getOrders();
     const order = dataService.getOrderById(orderId) ||
       allOrders.find(o => o && String(o.id || '').trim().replace(/^#/, '') === cleanId);
-    const code = order ? (order.pickupCode || String(order.id).replace(/\D/g, '').slice(-4)) : cleanId.slice(-4);
-
-    const result = dataService.claimOrderByBagCode(code, currentRider.pin);
-    if (result.success) {
-      showToast(`🛵 Order ${orderId} (Bag #${code}) claimed! Customer and kitchen have been notified. Drive safe!`, 'success');
-      activeTab = 'active';
-      updateActiveTabUI();
-      renderPortal();
-
-      // Immediately broadcast initial location on dispatch
-      try {
-        dataService.broadcastRiderLocation({
-          orderId: orderId,
-          riderPin: currentRider.pin,
-          riderName: currentRider.name,
-          lat: riderLiveLocation.lat,
-          lng: riderLiveLocation.lng,
-          accuracy: riderLiveLocation.accuracy,
-          timestamp: Date.now()
-        });
-      } catch {}
-    } else {
-      showToast(`❌ ${result.message || 'Cannot claim this order.'}`, 'error');
+    if (!order) {
+      showToast('❌ Order details not found.', 'error');
+      return;
     }
+    const code = order.pickupCode || String(order.id).replace(/\D/g, '').slice(-4) || cleanId.slice(-4);
+    openBagPreviewModal(order, code);
   }
 
   // Open confirmation modal for delivery & cash collection
@@ -2396,6 +2398,15 @@ document.addEventListener('DOMContentLoaded', () => {
       // 3. Reject unknown or terminal bag codes instead of fabricating a demo order in production
       if (!order) {
         showToast(`❌ No active order found with 4-digit bag code #${code}. Please check the receipt code.`, 'error');
+        if (inputBagCode) {
+          inputBagCode.classList.add('shake');
+          setTimeout(() => inputBagCode.classList.remove('shake'), 500);
+          inputBagCode.select();
+        }
+        return;
+      }
+      if (order.status === 'on_the_way' && order.assignedRiderPin && order.assignedRiderPin !== currentRider.pin) {
+        showToast(`⚠️ Order ${order.id} is already claimed by ${order.assignedRiderName || 'another rider'}.`, 'warning');
         return;
       }
       if (order.status === 'delivered' || order.status === 'cancelled' || order.status === 'undelivered') {
@@ -2403,32 +2414,161 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // 4. Claim existing kitchen order
-      activeTab = 'active';
-      persistRiderTab('active');
-      updateActiveTabUI();
+      // 4. Open Route & Distance Preview Modal - Rider reviews route details and presses "Accept"
+      openBagPreviewModal(order, code);
+    } finally {
+      setTimeout(() => { isClaimingBag = false; }, 300);
+    }
+  }
 
+  // ========================================================
+  // 4-DIGIT BAG CODE VERIFICATION & ROUTE PREVIEW MODAL
+  // ========================================================
+  function openBagPreviewModal(order, code) {
+    if (!order) return;
+    pendingClaimOrder = order;
+    pendingClaimCode = code;
+
+    const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
+    const dropCoords = getOrderDropCoordinates(order);
+    const riderOriginLat = riderLiveLocation.lat || RESTAURANT_COORDINATES.lat;
+    const riderOriginLng = riderLiveLocation.lng || RESTAURANT_COORDINATES.lng;
+    const distanceKm = calculateDistanceKm(riderOriginLat, riderOriginLng, dropCoords.lat, dropCoords.lng);
+    const estimatedMins = Math.max(5, Math.round(distanceKm * 3.5));
+
+    const rawAddrs = dataService.getAllAddressesRaw();
+    const rawPhone = extractPhoneFromOrder(order, rawAddrs) || order.customerPhone || order.customer_phone || order.phone || '';
+    const cleanPhoneDigits = rawPhone.replace(/\D/g, '');
+    const hasRealPhone = cleanPhoneDigits.length >= 10;
+    const displayPhone = hasRealPhone 
+      ? (cleanPhoneDigits.length === 10 ? `+91 ${cleanPhoneDigits.slice(0, 5)} ${cleanPhoneDigits.slice(5)}` : escapeHtml(rawPhone))
+      : 'Phone not provided';
+
+    const rawDropAddress = order.deliveryAddress || `${order.addressDetails?.flatNo || 'House'}, ${order.addressDetails?.area || 'Ramanagara'}`;
+    const safeDropAddress = cleanDeliveryAddress(rawDropAddress);
+
+    // Extract area / landmark route description
+    const areaName = order.addressDetails?.area || 
+      (order.addressDetails?.landmark ? `${order.addressDetails.landmark}, ` : '') + (order.addressDetails?.city || '') ||
+      safeDropAddress.split(',').slice(-3, -1).join(',').trim() || 
+      safeDropAddress.split(',')[0] || 'Ramanagara';
+
+    let itemsSummary = 'Food Items';
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      itemsSummary = order.items.map(it => `${it.quantity || 1}x ${it.name || 'Item'}`).join(', ');
+    } else if (order.itemCount) {
+      itemsSummary = `${order.itemCount} items`;
+    }
+
+    const isCod = isCashOnDelivery(order);
+    const cashAmount = extractCashAmount(order.total);
+    const paymentText = isCod ? `💵 COD: Collect ₹${cashAmount}` : `💳 Prepaid Online (₹0 to collect)`;
+
+    const payoutCfg = dataService.getPayoutConfig();
+    const allOrders = dataService.getOrders();
+    const deliveredCount = allOrders.filter(o => o.status === 'delivered' && o.assignedRiderPin === currentRider.pin).length;
+    const payout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);
+
+    if (previewBagCodePill) previewBagCodePill.textContent = `BAG CODE: #${code}`;
+    if (previewOrderId) previewOrderId.textContent = `Order #${String(order.id || code).replace(/^#/, '')}`;
+    if (previewDistVal) previewDistVal.textContent = `${distanceKm} km away`;
+    if (previewEtaVal) previewEtaVal.textContent = `~${estimatedMins} mins ride`;
+    if (previewDistRouteDesc) {
+      previewDistRouteDesc.textContent = `Live route from Savera Paradise Kitchen ➔ ${areaName}`;
+    }
+    if (previewRouteArea) {
+      previewRouteArea.textContent = `Savera Paradise ➔ ${areaName}`;
+    }
+    if (previewCustomerName) previewCustomerName.textContent = order.customerName || 'Online Guest';
+    if (previewCustomerPhone) previewCustomerPhone.textContent = displayPhone;
+    if (previewDropAddress) previewDropAddress.textContent = safeDropAddress;
+    if (previewItemsSummary) previewItemsSummary.textContent = itemsSummary;
+    if (previewPaymentPill) previewPaymentPill.textContent = paymentText;
+    if (previewPayoutPill) previewPayoutPill.textContent = `+₹${payout.amount.toFixed(2)}`;
+    if (previewPayoutFormula) previewPayoutFormula.textContent = payout.formula || 'Base pay + distance';
+
+    if (modalBagPreviewBackdrop) {
+      modalBagPreviewBackdrop.classList.add('open');
+    }
+    backNav.pushStep('modal-bag-preview', () => closeBagPreviewModal());
+  }
+
+  function closeBagPreviewModal() {
+    if (modalBagPreviewBackdrop) {
+      modalBagPreviewBackdrop.classList.remove('open');
+    }
+    pendingClaimOrder = null;
+    pendingClaimCode = null;
+    backNav.removeStep('modal-bag-preview');
+  }
+
+  if (btnCloseBagPreview) {
+    btnCloseBagPreview.addEventListener('click', closeBagPreviewModal);
+  }
+  if (btnCancelBagClaim) {
+    btnCancelBagClaim.addEventListener('click', () => {
+      closeBagPreviewModal();
+      const inputBagCode = document.getElementById('input-bag-code');
+      if (inputBagCode) inputBagCode.select();
+      showToast('Parcel not claimed. Food bag remains at kitchen counter.', 'info');
+    });
+  }
+  if (modalBagPreviewBackdrop) {
+    modalBagPreviewBackdrop.addEventListener('click', (e) => {
+      if (e.target === modalBagPreviewBackdrop) closeBagPreviewModal();
+    });
+  }
+
+  if (btnConfirmBagClaim) {
+    btnConfirmBagClaim.addEventListener('click', () => {
+      if (!pendingClaimOrder || !pendingClaimCode) {
+        closeBagPreviewModal();
+        return;
+      }
+      const code = pendingClaimCode;
+      const order = pendingClaimOrder;
+      const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
+
+      closeBagPreviewModal();
+
+      // Execute atomic claim in dataService
       const res = dataService.claimOrderByBagCode(code, currentRider.pin);
-
       if (res.success) {
+        const inputBagCode = document.getElementById('input-bag-code');
         if (inputBagCode) inputBagCode.value = '';
+
+        activeTab = 'active';
+        persistRiderTab('active');
+        updateActiveTabUI();
         renderPortal();
 
         const allActive = dataService.getOrders().filter(o => o.status === 'on_the_way' && o.assignedRiderPin === currentRider.pin);
-        showToast(`🚀 Parcel #${code} claimed! (${Math.max(1, allActive.length)} active parcel${allActive.length > 1 ? 's' : ''} on your run)`, 'success');
+        showToast(`🚀 Parcel #${code} accepted! (${Math.max(1, allActive.length)} active parcel${allActive.length > 1 ? 's' : ''} on your run)`, 'success');
         playNotificationSound('rider_new_task');
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+        // Immediately broadcast initial location
+        try {
+          dataService.broadcastRiderLocation({
+            orderId: order.id,
+            riderPin: currentRider.pin,
+            riderName: currentRider.name,
+            lat: riderLiveLocation.lat,
+            lng: riderLiveLocation.lng,
+            accuracy: riderLiveLocation.accuracy,
+            timestamp: Date.now()
+          });
+        } catch {}
       } else {
         showToast(`❌ ${res.message || 'Cannot claim parcel #' + code}`, 'error');
+        const inputBagCode = document.getElementById('input-bag-code');
         if (inputBagCode) {
           inputBagCode.classList.add('shake');
           setTimeout(() => inputBagCode.classList.remove('shake'), 500);
           inputBagCode.select();
         }
       }
-    } finally {
-      setTimeout(() => { isClaimingBag = false; }, 300);
-    }
+    });
   }
 
   function renderParcelReadyChips(readyOrders = []) {
@@ -2507,21 +2647,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const filtered = existingOrders.filter(o => o.id !== orderId && o.id !== `#${codeStr}`);
     dataService.saveOrders([demoOrder, ...filtered]);
 
-    // Claim the order directly to this rider
-    dataService.claimOrderByBagCode(codeStr, currentRider.pin);
-
-    // Switch to active run and render
-    activeTab = 'active';
-    persistRiderTab('active');
-    updateActiveTabUI();
-    renderPortal();
-
-    const inputBagCode = document.getElementById('input-bag-code');
-    if (inputBagCode) inputBagCode.value = '';
-
-    showToast(`🚀 Parcel #${codeStr} claimed! Delivery started.`, 'success');
-    playNotificationSound('rider_new_task');
-    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+    // Open route preview modal so rider can review distance & route and press Accept
+    openBagPreviewModal(demoOrder, codeStr);
   }
 
   function attachBagInputListeners() {
@@ -2565,6 +2692,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Register DOM fallback checkers for bulletproof single-step back navigation (modals only)
+  backNav.registerFallbackChecker({
+    isOpen: () => modalBagPreviewBackdrop && modalBagPreviewBackdrop.classList.contains('open'),
+    close: () => closeBagPreviewModal()
+  });
   backNav.registerFallbackChecker({
     isOpen: () => modalConfirmBackdrop && modalConfirmBackdrop.classList.contains('open'),
     close: () => closeConfirmModal()
