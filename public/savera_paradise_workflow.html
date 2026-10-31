@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Savera Paradise — Full System Workflow & Architecture Blueprint (A to Z)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --primary: #10b981;
+      --primary-hover: #059669;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f8fafc;
+        --card-bg: #ffffff;
+        --border: #e2e8f0;
+        --text: #0f172a;
+        --muted: #64748b;
+        --primary: #059669;
+        --primary-hover: #047857;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      color: var(--text);
+      background-color: var(--bg);
+      margin: 0;
+      padding: 32px 16px;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px 40px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--primary);
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: 1px solid var(--border);
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+    }
+    .btn-secondary:hover {
+      background: rgba(0,0,0,0.05);
+    }
+    h1 { font-size: 28px; margin-top: 0; border-bottom: 2px solid var(--primary); padding-bottom: 12px; }
+    h2 { font-size: 22px; margin-top: 36px; border-bottom: 1px solid var(--border); padding-bottom: 8px; color: var(--primary); }
+    h3 { font-size: 18px; margin-top: 24px; }
+    h4 { font-size: 15px; margin-top: 16px; }
+    p, li { font-size: 14.5px; }
+    pre {
+      background: #090d16;
+      color: #f1f5f9;
+      padding: 16px 20px;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+      border: 1px solid #1e293b;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9em;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(125,125,125,0.15);
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 13.5px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    th {
+      background: rgba(0,0,0,0.04);
+      font-weight: 600;
+    }
+    blockquote {
+      margin: 16px 0;
+      padding: 12px 20px;
+      border-left: 4px solid var(--primary);
+      background: rgba(16, 185, 129, 0.08);
+      border-radius: 0 8px 8px 0;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 36px 0;
+    }
+    @media print {
+      body { background: #fff; color: #000; padding: 0; }
+      .container { border: none; box-shadow: none; max-width: 100%; padding: 0; }
+      .toolbar { display: none; }
+      pre { background: #f8fafc; color: #000; border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="toolbar">
+      <div>
+        <span class="badge">Official Blueprint</span>
+        <span style="font-size: 13px; margin-left: 8px; color: var(--muted);">Savera Paradise Restaurant System</span>
+      </div>
+      <div style="display:flex; gap: 8px;">
+        <button onclick="window.print()" class="btn btn-primary">🖨️ Print / Save as PDF</button>
+        <a id="btn-save-md" class="btn btn-secondary" href="SAVERA_PARADISE_FULL_WORKFLOW_A_TO_Z.md" download="SAVERA_PARADISE_FULL_WORKFLOW_A_TO_Z.md">📥 Download Raw .md</a>
+      </div>
+    </div>
+    <div id="content"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+  <script>
+    const rawMd = "# Savera Paradise — Complete System Architecture & A-to-Z Workflow Blueprint\n\nThis document details the end-to-end architecture, user journeys, data pipelines, business logic, security boundaries, and technical implementations across the entire **Savera Paradise** restaurant ordering ecosystem.\n\n---\n\n## 1. System Topology & Technology Stack\n\n```mermaid\nflowchart TB\n    subgraph ClientPortals[\"Frontend Client Portals (Vite / Vanilla JS)\"]\n        Customer[\"🛒 Customer Storefront\\n(index.html / main.js)\"]\n        Admin[\"🍳 Kitchen Admin Portal\\n(admin.html / admin.js)\\nPIN: 8899\"]\n        Delivery[\"🛵 Delivery Partner Fleet\\n(delivery.html / delivery.js)\\nPIN: 2233 / 4422\"]\n        Owner[\"💼 Executive Owner Portal\\n(owner.html / owner.js)\\nPIN: 9900\"]\n    end\n\n    subgraph DataServiceLayer[\"Hybrid Offline-First Persistence Layer\"]\n        LocalData[\"LocalStorage + IndexedDB Cache\"]\n        Broadcast[\"BroadcastChannel / Storage Events\"]\n    end\n\n    subgraph ServerlessLayer[\"Serverless API Layer (Node.js ESM)\"]\n        AuthAPI[\"POST /api/admin-auth\\n(Rate-Limited, Signed Cookies)\"]\n        CheckoutAPI[\"POST /api/checkout\\n(Authoritative Pricing & HMAC Signing)\"]\n        CashfreeAPI[\"Cashfree API Handlers\\n(Prepayment, Doorstep UPI, Payouts)\"]\n        WebhookAPI[\"POST /api/cashfree-webhook\\n(HMAC-SHA256 Signature Verification)\"]\n        R2API[\"R2 Storage Proxy\\n(Magic Bytes, SVG Block, Signed Stream)\"]\n    end\n\n    subgraph ExternalServices[\"External Cloud Infrastructure\"]\n        Supabase[\"🐘 Supabase PostgreSQL\\n(RLS, Realtime WebSockets)\"]\n        CloudflareR2[\"📦 Cloudflare R2 Object Storage\\n(Dish & Category Assets)\"]\n        Cashfree[\"💳 Cashfree Payments\\n(PG, UPI QR, Instant Payouts)\"]\n        OlaMaps[\"🗺️ Ola Maps & OSRM\\n(Reverse Geocode, Route Engine)\"]\n    end\n\n    Customer --> DataServiceLayer\n    Admin --> DataServiceLayer\n    Delivery --> DataServiceLayer\n    Owner --> DataServiceLayer\n\n    Customer --> CheckoutAPI\n    Customer --> CashfreeAPI\n    Admin --> AuthAPI\n    Admin --> R2API\n    Delivery --> CashfreeAPI\n    Owner --> AuthAPI\n    Owner --> CashfreeAPI\n\n    CheckoutAPI --> Supabase\n    CashfreeAPI --> Cashfree\n    Cashfree --> WebhookAPI\n    WebhookAPI --> Supabase\n    R2API --> CloudflareR2\n    DataServiceLayer <--> Supabase\n```\n\n---\n\n## 2. Core Portals & User Journeys (A to Z)\n\n---\n\n### Portal 1: Customer Storefront (`index.html` & `main.js`)\n\nThe customer storefront is a responsive, mobile-first Progressive Web App (PWA) designed for frictionless food ordering.\n\n#### A. Progressive Web App (PWA) Engine\n- **Universal Detection**: Evaluates environment (iOS Safari, Android Chrome, in-app webviews like Instagram/WhatsApp) via `detectPlatformEnvironment()`.\n- **Install Flow**: Caches early `beforeinstallprompt` in `window.__deferredPwaPrompt`. Displays custom install prompt bottom sheet. On iOS, shows browser-tailored step-by-step visual guides with SVG badges.\n- **Service Worker (`sw.js`)**: Offline caching of static CSS, JS, fonts, and assets for instant load times.\n\n#### B. Menu Browsing, Search & Kinetic Categories\n- **135+ Authentic Dishes**: Categorized into Biryani, Starters, Kebabs, Curries, Rotis, Desserts, and Beverages.\n- **Kinetic Spin Carousel**: Horizontal scrolling categories rotate angularly using continuous degree calculations without jitter.\n- **View All Modal**: Vertical list with proportional rotation displaying all categories and dish counts.\n- **Live Search & Filter**: Real-time keyword search across dish names, tags, ingredients, and categories.\n\n#### C. Dish Details Modal & Stepper Controls\n- **Card Steppers**: Food cards feature high-visibility resting \"+ Add\" buttons that transform into quantity pill steppers (`- 1 +`) upon selection.\n- **Particle Flying Micro-Animation**: Smooth 60fps trajectory animation flying a duplicate dish icon to the cart icon upon addition.\n- **Detailed Modal**: High-res dish imagery, spice level indicators, portion size descriptions, and nutritional/dietary badges.\n\n#### D. Dynamic Wholesale Club Deals & Threshold Pricing (Wholesale Bazaar Mode)\n- **Wholesale Price Badges**: When enabled, every dish card renders a deal price badge (`meta-deal-price`), displaying the discounted price (e.g. `₹104` instead of `₹130`).\n- **Floating Progress Bar**: \n  - Subtotal below threshold (e.g. ₹299): Displays remaining spend required:\n    > *\"Add ₹169 more to unlock 20% OFF special prices!\"*\n  - Subtotal meets or exceeds threshold: Transforms into unlocked celebratory banner:\n    > *\"🎉 Deals Unlocked! You save ₹68 (20% OFF)!\"*\n- **Single-Tap Drawer Access**: Tapping the floating bar smoothly slides open the Cart Drawer.\n- **Multi-Promotion Co-Existence**: Wholesale deals co-exist with standard promo coupons (`SAVERA20`, `FIRSTORDER`) and free delivery rules ($\\ge$ ₹250).\n\n#### E. Cart Drawer & Financial Calculation\n- **Subtotal Calculation**: Dynamic summation of item prices $\\times$ quantities.\n- **Discount Engine**:\n  $$\\text{Discount} = \\text{round}\\left(\\frac{\\text{Subtotal} \\times \\text{DealPct}}{100}\\right)$$\n- **Delivery Fee Rules**:\n  - Subtotal $\\ge$ ₹250: **FREE Delivery** (₹0).\n  - Subtotal $<$ ₹250: Standard Delivery Fee (₹40).\n- **Promo Coupon Application**: Validates minimum order thresholds (e.g. `SAVERA20` requires ₹199 subtotal).\n- **Payable Total**:\n  $$\\text{Grand Total} = \\text{Subtotal} - \\text{Discount} + \\text{Delivery Fee}$$\n\n#### F. Address & Geolocation Engine\n- **GPS Location Detection**: Retrieves user latitude/longitude via HTML5 Geolocation.\n- **Reverse Geocoding**: Queries Ola Maps API / OpenStreetMap to convert GPS coordinates into verified street, area, and city names.\n- **Saved Address Book**: Multi-address management (Home, Work, Other) synchronized bi-directionally between `localStorage` and Supabase `user_addresses`.\n- **Delivery Radius Enforcer**: Haversine distance calculation from restaurant coordinates ($12.7214^\\circ\\text{N}, 77.2798^\\circ\\text{E}$); alerts customer if delivery address exceeds allowable radius (default 7 km).\n\n#### G. Checkout & Payment Selection\n- **Payment Modes**:\n  1. **Cash on Delivery (COD)**: Order placed instantly with pending cash collection.\n  2. **Online Prepayment**: Initiates Cashfree PG session for UPI, NetBanking, Credit/Debit cards.\n- **Multi-Order Rate Limiting**: Prevents a customer from placing more than 2 simultaneous active orders to prevent kitchen congestion. Displays a safe notification banner linking to active order tracking.\n\n#### H. Live 5-Step Order Tracking & Realtime Updates\n- **Interactive Tracker**:\n  1. `Accepted` $\\rightarrow$ 2. `Preparing (Cooking)` $\\rightarrow$ 3. `Ready to Dispatch` $\\rightarrow$ 4. `Dispatched (On the Way)` $\\rightarrow$ 5. `Delivered`\n- **Interactive Leaflet GPS Map**: Shows restaurant anchor, rider live coordinates, customer drop pin, and animated vehicle routing.\n- **Web Audio Sound Effects**: Custom audio notifications for order status transitions.\n\n---\n\n### Portal 2: Kitchen Admin & Store Manager Portal (`admin.html` & `admin.js`)\n\nThe command center for restaurant management, kitchen staff, and menu operations.\n\n#### A. Master Passcode Unlock Screen\n- **Passcode**: **`8899`**\n- **Authentication**: Keypad input is hashed client-side with salted SHA-256 and authenticated server-side against `/api/admin-auth`.\n- **Session Security**: Issues a cryptographically signed HMAC bearer token valid for 12 hours. Lockout enforced after 5 failed attempts via signed HTTP-only cookies.\n\n#### B. Live Kitchen Order Queue\n- **Realtime WebSocket Feed**: Listens to Supabase `orders` table changes.\n- **Audio Chime Engine**: Web Audio oscillator sounds an audible kitchen alarm upon arrival of new orders until acknowledged.\n- **Forward-Only Lifecycle Buttons**:\n  - `Accept Order` $\\rightarrow$ status becomes `accepted`.\n  - `Start Cooking` $\\rightarrow$ status becomes `cooking`.\n  - `Ready for Pickup` $\\rightarrow$ status becomes `ready_for_pickup`.\n- **Handshake Bag Code (`bagPin`)**: Automatically generates a 4-digit numeric code (e.g. `4821`) stamped onto the parcel slip for rider verification.\n\n#### C. Menu & Inventory Management\n- **Add & Edit Dishes**: Name, category, price, description, spice level, veg/non-veg flag.\n- **Image Pipeline**: Uploads dish photos directly through the secure Cloudflare R2 proxy (`/api/r2-upload`) with binary magic byte validation.\n- **Stock Toggles**: Instant 1-click in-stock / out-of-stock toggle updates customer storefront immediately via broadcast channels.\n\n#### D. Category Management\n- Create, rename, delete, and reorder categories.\n- Assign canonical category hero banners stored in Cloudflare R2.\n\n#### E. Store Operations & Rush Controls\n- **Rush Mode Pause**: Temporarily halts incoming storefront orders for 15, 30, or 45 minutes with a custom customer notice (e.g. \"Kitchen at full capacity\").\n- **Store Hours & Open/Close Toggle**: Instantly opens or closes online ordering.\n- **Delivery Radius Setting**: Adjustable radius slider (1 to 20 km).\n\n#### F. Promotions & Wholesale Deals Control Center\n- **Wholesale Deals Switch**: Toggle Wholesale Club Deals active/inactive.\n- **Spend Threshold Input**: Minimum cart spend to unlock deal (default ₹299).\n- **Discount Percentage Input**: Wholesale discount percentage (default 20%).\n- **Live Preview Card**: Renders real-time customer banner preview and sample math before saving to `store_settings`.\n\n---\n\n### Portal 3: Delivery Partner Fleet Portal (`delivery.html` & `delivery.js`)\n\nMobile interface for delivery riders to claim packages, navigate routes, and collect payments.\n\n#### A. Rider Passcode Unlock Screen\n- **Rider PINs**: **`2233`**, **`4422`**, **`4455`**, **`8811`**\n- Matches against authorized salted SHA-256 hashes (`DEFAULT_RIDER_PIN_HASHES`).\n- Loads individualized rider profile, vehicle type, and shift earnings.\n\n#### B. Shift Dashboard & Payout Tracker\n- **Online / Offline Toggle**: Controls rider availability in dispatch queue.\n- **Earnings Breakdown**: Shift base pay, per-kilometer rates, milestone bonuses, and tips.\n- **Live GPS Tracking**: Transmits rider coordinates periodically to update customer tracking map.\n\n#### C. Available Orders & Kitchen Handshake Protocol\n- **4-Digit Bag Code Verification**:\n  - Rider arrives at the kitchen counter and enters the 4-digit code from the food bag into `#input-bag-code`.\n  - **Route Preview Modal (`role=\"dialog\"`)**:\n    - Customer name and masked phone number (`+91 98450 12345`).\n    - Clean delivery address with landmark extraction.\n    - Haversine route distance with `NaN` fallback guard ($1.8\\text{ km}$).\n    - Calculated ride time: $\\max(5, \\text{round}(\\text{Distance} \\times 3.5))\\text{ mins}$.\n    - Payment liability flag: `💵 COD: Collect ₹Amount` vs `💳 Prepaid Online (₹0 to collect)`.\n    - Calculated rider payout for this delivery.\n  - Tapping **\"Claim & Start Ride\"** transitions order to `on_the_way` and assigns it exclusively to the rider's PIN.\n\n#### D. Customer Unreachable Protocol\n- Triggered if customer does not answer door or phone.\n- Starts a 3-minute countdown timer.\n- Pushes automated SMS / notification alert to customer app.\n- Logs failure timestamp if order must be marked `undelivered` and returned to kitchen.\n\n#### E. Doorstep Payment Collection Engine\n- **Mode 1 — Cash on Delivery (COD)**: Collects physical cash; records liability in the rider's physical cash drawer account.\n- **Mode 2 — Dynamic Doorstep UPI QR Code**:\n  - Rider selects \"Generate UPI QR\".\n  - System generates an Indian NPCI-compliant UPI URI:\n    ```\n    upi://pay?pa=saveraparadise@okhdfcbank&pn=Savera%20Paradise&am=312.00&tr=QB9988&cu=INR\n    ```\n  - Displays instant high-resolution QR code on rider's screen.\n  - Customer scans with PhonePe, Google Pay, Paytm, or BHIM.\n  - Does **not** add physical cash to rider's drawer liability.\n\n#### F. Delivery Confirmation\n- Rider confirms delivery $\\rightarrow$ order status becomes `delivered`.\n- Delivers customer push notification and completes transaction.\n\n---\n\n### Portal 4: Executive Owner Portal (`owner.html` & `owner.js`)\n\nExecutive oversight for store owners, accounting reconciliation, and fleet disbursements.\n\n#### A. Executive Passcode Unlock Screen\n- **Passcode**: **`9900`**\n- Verified against `/api/admin-auth` issuing `role: 'owner'` signed bearer token.\n\n#### B. Financial Intelligence Dashboard\n- **Total Gross Sales**: Sum of all delivered orders within selected timeframe (Today, 7 Days, Month, All-Time).\n- **Food Cash Drawer (Liability)**: Physical cash collected by riders on COD deliveries that must be deposited at the store counter.\n- **Bank Direct (Settled)**: Net revenue collected directly into bank via online prepayment and doorstep UPI QR.\n- **Fleet Metrics**: Total road kilometers driven, average delivery times, fulfillment rates.\n\n#### C. Shift Payout Settlement Engine\n- Formula:\n  $$\\text{Payout} = \\text{BasePay (₹35)} + (\\text{DistanceKm} \\times \\text{ExtraKmRate (₹5)}) + \\text{Surge}$$\n- **Instant Cashfree Payout**: Executive Owner can trigger direct bank/UPI payouts to riders with a single tap. Verified server-side via `POST /api/cashfree-payout`.\n\n---\n\n## 3. Serverless API Architecture (`api/`)\n\n| Endpoint | Method | Security / Auth | Responsibilities |\n| :--- | :---: | :--- | :--- |\n| [`/api/checkout`](file:///c:/Users/DELL/Projects/resturent2/api/checkout.js) | `POST` | Public / Origin Whitelist | <ul><li>Overrides client prices with authoritative catalog prices.</li><li>Evaluates Wholesale Deal threshold ($\\ge$ ₹299).</li><li>Clamps discount $\\le 50\\%$.</li><li>Signs payload with HMAC-SHA256 (`checkoutToken`).</li></ul> |\n| [`/api/admin-auth`](file:///c:/Users/DELL/Projects/resturent2/api/admin-auth.js) | `POST` | Rate-Limited / Cookie State | <ul><li>Validates Manager PIN (`8899`) or Owner PIN (`9900`).</li><li>Constant-time comparison via `crypto.timingSafeEqual`.</li><li>Issues signed 12-hour session bearer tokens.</li><li>Locks out after 5 consecutive failures for 15 minutes.</li></ul> |\n| [`/api/cashfree-create-order`](file:///c:/Users/DELL/Projects/resturent2/api/cashfree-create-order.js) | `POST` | Verified `checkoutToken` | <ul><li>Validates cryptographic signature of cart total.</li><li>Creates pre-payment session with Cashfree PG.</li><li>Returns `payment_session_id` for Cashfree Web SDK.</li></ul> |\n| [`/api/cashfree-generate-qr`](file:///c:/Users/DELL/Projects/resturent2/api/cashfree-generate-qr.js) | `POST` | Public / Valid Order ID | <ul><li>Constructs NPCI UPI intent string (`upi://pay?...`).</li><li>Formats merchant VPA, order tag, and exact amount.</li></ul> |\n| [`/api/cashfree-webhook`](file:///c:/Users/DELL/Projects/resturent2/api/cashfree-webhook.js) | `POST` | Cashfree HMAC-SHA256 Sig | <ul><li>Validates `x-webhook-signature` against webhook secret.</li><li>Parses `PAYMENT_SUCCESS_WEBHOOK`.</li><li>Updates Supabase order: `payment_status: 'Paid'`, `payment_method: 'Online'`, `is_paid_online: true`.</li></ul> |\n| [`/api/cashfree-payout`](file:///c:/Users/DELL/Projects/resturent2/api/cashfree-payout.js) | `POST` | Bearer Token (`role: 'owner'`) | <ul><li>Strictly permits Owner role; rejects kitchen admin (403).</li><li>Initiates instant transfer to rider bank / UPI VPA.</li></ul> |\n| [`/api/r2-upload`](file:///c:/Users/DELL/Projects/resturent2/api/r2-upload.js) | `POST` | Admin Session Bearer Token | <ul><li>Enforces admin token.</li><li>Binary magic byte inspection (JPEG, PNG, WEBP, GIF).</li><li>Disallows SVG to eliminate stored XSS.</li><li>Directory traversal defense on keys.</li></ul> |\n| [`/api/r2-delete`](file:///c:/Users/DELL/Projects/resturent2/api/r2-delete.js) | `POST` | Admin Session Bearer Token | <ul><li>Validates admin token.</li><li>Deletes assets from Cloudflare R2 bucket.</li></ul> |\n| [`/api/r2-image`](file:///c:/Users/DELL/Projects/resturent2/api/r2-image.js) & [`/api/r2-video`](file:///c:/Users/DELL/Projects/resturent2/api/r2-video.js) | `GET` | Public Whitelist Key | <ul><li>Streams imagery/video with presigned S3 AWS SigV4.</li><li>Protected with try/catch exception shielding.</li></ul> |\n\n---\n\n## 4. Database Schema & Security Policies (Supabase PostgreSQL)\n\n### A. Tables\n1. **`orders`**: Order ID, customer details, address, items JSON, financial breakdown, payment mode, payment status (`Paid` / `Cash on Delivery`), order status (`accepted` to `delivered`), assigned rider, bag PIN (`bagPin`).\n2. **`dishes`**: Dish ID, category, name, price, description, image URL, stock flag (`inStock`), spice level.\n3. **`categories`**: Category ID, title, sort order, icon/image URL, dish count.\n4. **`user_addresses`**: User ID, contact name, phone, address text, flat/door no, landmark, coordinates (`lat`, `lng`), default flag.\n5. **`store_settings`**: Restaurant phone, operating hours, delivery radius, free delivery threshold, Wholesale Club Deals configuration (`unlockedDealsEnabled`, `unlockedDealsMinOrder`, `unlockedDealsDiscountPct`).\n6. **`riders`**: Rider PIN hash, name, phone, vehicle, active status, current coordinates.\n\n### B. Row Level Security (RLS) & Immutability Triggers\n- **Customer Isolation**: Customers can only select orders where `auth.uid() = user_id`.\n- **Status Reversal Protection**: Trigger `prevent_order_status_reversal()` blocks any query attempting to revert order status backwards.\n- **Deletion Protection**: Trigger `prevent_order_deletion()` blocks all `DELETE` statements on `orders`.\n- **Secret Isolation**: `SUPABASE_SERVICE_ROLE_KEY` is exclusively accessed server-side and is never bundled in frontend code.\n\n---\n\n## 5. Automated Verification & Quality Assurance Suite\n\nThe codebase includes **19 automated test suites** covering **679 test cases** (`node --test`):\n\n1. **`cashfree-integration.test.js`**: PG session creation, NPCI UPI formatting, webhook HMAC verification, payout role boundaries.\n2. **`unlocked-deals-threshold-pricing.test.js`**: Spend threshold math, wholesale discount calculations, co-existence with coupons, tamper clamping.\n3. **`end-to-end-portal-integration.test.js`**: Cross-portal order flow from cart progression to kitchen acceptance, rider handshake, and owner payout.\n4. **`checkout-api.test.js`**: Authoritative price overrides, free delivery boundaries, promo code logic (`SAVERA20`, `SAVE10`, `FIRSTORDER`).\n5. **`security-utils.test.js`**: XSS entity escaping (`escapeHtml`), protocol sanitization (`sanitizeUrl`), phone formatting, salted SHA-256 PIN hashing.\n6. **`r2-api-security.test.js`**: Cloudflare R2 token enforcement, magic byte validation, SVG rejection, key sanitization.\n7. **`order-status-progression-lifecycle.test.js`**: Forward-only state transitions, tracker index synchronization.\n8. **`rider-bag-preview-route.test.js`**: Handshake bag code verification, `NaN` distance fallback protection.\n9. **`universal-pwa-install-flow.test.js`**: Platform detection, manifest compliance, service worker caching, iOS guide modals.\n10. **`storefront-stepper-and-add-button.test.js`**: Add button transformation, stepper DOM synchronization, click propagation guards.\n\n---\n\n## 6. Access Credentials Quick Reference\n\n| Role | Portal URL | Passcode | Authentication Method |\n| :--- | :--- | :---: | :--- |\n| **Store Manager & Kitchen Staff** | `/admin.html` | **`8899`** | Salted SHA-256 Hash + Serverless Token |\n| **Fleet Delivery Riders** | `/delivery.html` | **`2233`** / **`4422`** / **`4455`** / **`8811`** | Salted SHA-256 Hash Roster |\n| **Executive Store Owner** | `/owner.html` | **`9900`** | Salted SHA-256 Hash + Owner Token |\n| **Customer Storefront** | `/` (`index.html`) | None | Open Access / Optional Google Auth |\n";
+    if (typeof marked !== 'undefined') {
+      document.getElementById('content').innerHTML = marked.parse(rawMd);
+    } else {
+      document.getElementById('content').innerHTML = '<pre style="white-space:pre-wrap;">' + 
+        rawMd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+    }
+  </script>
+</body>
+</html>
