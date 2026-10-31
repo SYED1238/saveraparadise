@@ -173,6 +173,16 @@ export default async function handler(req, res) {
     : 40;
   let deliveryFee = (isFreeDeliveryEnabled && threshold > 0 && computedSubtotal >= threshold) ? 0 : standardFee;
 
+  // Unlocked Deals (Threshold Pricing) validation
+  let unlockedDealDiscount = 0;
+  if (settings.unlockedDealsEnabled) {
+    const dealsMin = Number(settings.unlockedDealsMinOrder || 299);
+    const dealsPct = Number(settings.unlockedDealsDiscountPct || 15);
+    if (computedSubtotal >= dealsMin) {
+      unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
+    }
+  }
+
   // Coupon discount validation matching dataService.addOrder()
   let discount = 0;
   if (activePromo && settings.offerActive !== false) {
@@ -202,6 +212,7 @@ export default async function handler(req, res) {
     }
   }
 
+  discount += unlockedDealDiscount;
   discount = Math.min(discount, computedSubtotal);
 
   const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee);

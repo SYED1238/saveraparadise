@@ -3395,6 +3395,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const previewCouponFreePill = document.getElementById('preview-coupon-free-pill') || document.getElementById('preview-free-deliv-pill');
   const btnSaveOffer = document.getElementById('btn-save-offer');
 
+  // Unlocked Deals (Threshold Pricing) Elements
+  const formUnlockedDeals = document.getElementById('form-unlocked-deals');
+  const inputUnlockedDealsActive = document.getElementById('input-unlocked-deals-active');
+  const inputUnlockedDealsMin = document.getElementById('input-unlocked-deals-min');
+  const inputUnlockedDealsPct = document.getElementById('input-unlocked-deals-pct');
+  const inputUnlockedDealsTitle = document.getElementById('input-unlocked-deals-title');
+  const inputUnlockedDealsSubtext = document.getElementById('input-unlocked-deals-subtext');
+  const unlockedDealsStatusBadge = document.getElementById('unlocked-deals-status-badge');
+  const previewUnlockedStatus = document.getElementById('preview-unlocked-status');
+  const previewUnlockedTitle = document.getElementById('preview-unlocked-title');
+  const previewUnlockedCalc = document.getElementById('preview-unlocked-calc');
+  const previewUnlockedMinPill = document.getElementById('preview-unlocked-min-pill');
+  const previewUnlockedPctPill = document.getElementById('preview-unlocked-pct-pill');
+  const previewUnlockedBadgeDisplay = document.getElementById('preview-unlocked-badge-display');
+  const btnSaveUnlockedDeals = document.getElementById('btn-save-unlocked-deals');
+
   // ========================================================
   // 6. DELIVERY OPTIONS & RADIUS MANAGEMENT
   // ========================================================
@@ -3481,6 +3497,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderDiscountPresets(type, nextVal);
     updateOfferPreview();
+
+    // Populate unlocked deals
+    if (inputUnlockedDealsActive) inputUnlockedDealsActive.checked = Boolean(settings.unlockedDealsEnabled);
+    if (inputUnlockedDealsMin) inputUnlockedDealsMin.value = settings.unlockedDealsMinOrder || 299;
+    if (inputUnlockedDealsPct) inputUnlockedDealsPct.value = settings.unlockedDealsDiscountPct || 15;
+    if (inputUnlockedDealsTitle) inputUnlockedDealsTitle.value = settings.unlockedDealsTitle || 'Wholesale Club Deals';
+    if (inputUnlockedDealsSubtext) inputUnlockedDealsSubtext.value = settings.unlockedDealsSubtext || 'Shop for ₹299 to unlock special menu prices!';
+
+    document.querySelectorAll('#unlocked-min-presets .unlocked-min-btn').forEach(btn => {
+      btn.classList.toggle('active', Number(btn.getAttribute('data-val')) === Number(inputUnlockedDealsMin?.value));
+    });
+    document.querySelectorAll('#unlocked-pct-presets .unlocked-pct-btn').forEach(btn => {
+      btn.classList.toggle('active', Number(btn.getAttribute('data-val')) === Number(inputUnlockedDealsPct?.value));
+    });
+
+    updateUnlockedDealsPreview();
   }
 
   function updateOfferPreview() {
@@ -3594,6 +3626,39 @@ document.addEventListener('DOMContentLoaded', () => {
         desc += ` <span style="display:block; margin-top:4px; color:var(--admin-accent); font-weight:600;">🛒 Checkout Minimum Order: ₹${movVal}</span>`;
       }
       previewDeliveryDesc.innerHTML = desc;
+    }
+  }
+
+  function updateUnlockedDealsPreview() {
+    const isEnabled = inputUnlockedDealsActive ? inputUnlockedDealsActive.checked : false;
+    const minOrder = Math.max(10, Number(inputUnlockedDealsMin?.value || 299));
+    const discountPct = Math.max(1, Math.min(90, Number(inputUnlockedDealsPct?.value || 15)));
+    const title = inputUnlockedDealsTitle?.value?.trim() || 'Wholesale Club Deals';
+
+    if (unlockedDealsStatusBadge) {
+      unlockedDealsStatusBadge.textContent = isEnabled ? 'Active' : 'Disabled';
+      unlockedDealsStatusBadge.classList.toggle('paused', !isEnabled);
+    }
+    if (previewUnlockedStatus) {
+      previewUnlockedStatus.textContent = isEnabled ? 'Enabled on Storefront' : 'Currently Disabled (Hidden)';
+      previewUnlockedStatus.classList.toggle('paused', !isEnabled);
+    }
+    if (previewUnlockedTitle) previewUnlockedTitle.textContent = title;
+    if (previewUnlockedBadgeDisplay) previewUnlockedBadgeDisplay.textContent = `${discountPct}% OFF`;
+    if (previewUnlockedMinPill) {
+      previewUnlockedMinPill.innerHTML = `<i class="fa-solid fa-lock-open"></i> Unlocks at ₹${minOrder}+`;
+    }
+    if (previewUnlockedPctPill) {
+      previewUnlockedPctPill.innerHTML = `<i class="fa-solid fa-tags"></i> ${discountPct}% Automatic Discount`;
+    }
+    if (previewUnlockedCalc) {
+      const sampleOriginal = 200;
+      const sampleDiscounted = Math.round(sampleOriginal * (1 - discountPct / 100));
+      if (isEnabled) {
+        previewUnlockedCalc.innerHTML = `Sample: Dish of <strong>₹${sampleOriginal}</strong> ➔ Drops to <strong style="color: #10b981;">₹${sampleDiscounted}</strong> (${discountPct}% OFF) when cart hits ₹${minOrder}!`;
+      } else {
+        previewUnlockedCalc.innerHTML = `<span style="color:#9CA3AF;">Deals are disabled. Dishes will show regular prices without threshold discounts.</span>`;
+      }
     }
   }
 
@@ -4150,6 +4215,89 @@ document.addEventListener('DOMContentLoaded', () => {
         formStoreOffer.requestSubmit();
       } else {
         formStoreOffer.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      }
+    });
+  }
+
+  // Save unlocked deals form
+  if (formUnlockedDeals) {
+    formUnlockedDeals.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const isEnabled = inputUnlockedDealsActive ? inputUnlockedDealsActive.checked : false;
+      const minOrder = Math.max(10, Number(inputUnlockedDealsMin?.value || 299));
+      const discountPct = Math.max(1, Math.min(90, Number(inputUnlockedDealsPct?.value || 15)));
+      const title = inputUnlockedDealsTitle?.value?.trim() || 'Wholesale Club Deals';
+      const subtext = inputUnlockedDealsSubtext?.value?.trim() || `Shop for ₹${minOrder} to unlock special menu prices!`;
+
+      const saveBtn = document.getElementById('btn-save-unlocked-deals');
+      const origHtml = saveBtn ? saveBtn.innerHTML : '';
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+      }
+
+      try {
+        await dataService.setUnlockedDeals({
+          unlockedDealsEnabled: isEnabled,
+          unlockedDealsMinOrder: minOrder,
+          unlockedDealsDiscountPct: discountPct,
+          unlockedDealsTitle: title,
+          unlockedDealsSubtext: subtext
+        });
+
+        updateUnlockedDealsPreview();
+        const statusMsg = isEnabled ? `Active (${discountPct}% OFF above ₹${minOrder})` : 'Disabled';
+        showToast(`🎉 Unlocked Deals saved! Status: ${statusMsg}`, 'success');
+        if (saveBtn) {
+          saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
+          setTimeout(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = origHtml;
+          }, 1500);
+        }
+      } catch (err) {
+        console.error('[Admin] Error saving unlocked deals settings:', err);
+        showToast('⚠️ Settings updated locally.', 'warning');
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = origHtml;
+        }
+      }
+    });
+
+    [inputUnlockedDealsActive, inputUnlockedDealsMin, inputUnlockedDealsPct, inputUnlockedDealsTitle, inputUnlockedDealsSubtext].forEach(input => {
+      if (input) {
+        input.addEventListener('input', updateUnlockedDealsPreview);
+        input.addEventListener('change', updateUnlockedDealsPreview);
+      }
+    });
+
+    document.querySelectorAll('#unlocked-min-presets .unlocked-min-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = Number(btn.getAttribute('data-val'));
+        if (inputUnlockedDealsMin) inputUnlockedDealsMin.value = val;
+        document.querySelectorAll('#unlocked-min-presets .unlocked-min-btn').forEach(b => b.classList.toggle('active', b === btn));
+        updateUnlockedDealsPreview();
+      });
+    });
+
+    document.querySelectorAll('#unlocked-pct-presets .unlocked-pct-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = Number(btn.getAttribute('data-val'));
+        if (inputUnlockedDealsPct) inputUnlockedDealsPct.value = val;
+        document.querySelectorAll('#unlocked-pct-presets .unlocked-pct-btn').forEach(b => b.classList.toggle('active', b === btn));
+        updateUnlockedDealsPreview();
+      });
+    });
+  }
+
+  if (btnSaveUnlockedDeals && formUnlockedDeals) {
+    btnSaveUnlockedDeals.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (typeof formUnlockedDeals.requestSubmit === 'function') {
+        formUnlockedDeals.requestSubmit();
+      } else {
+        formUnlockedDeals.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
       }
     });
   }

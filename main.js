@@ -1560,14 +1560,34 @@ function initStorefrontApp() {
       }
     }
 
+    // Unlocked Deals (Threshold Pricing) Calculation
+    const isUnlockedDealsEnabled = Boolean(settings.unlockedDealsEnabled);
+    const unlockedMinOrder = Number(settings.unlockedDealsMinOrder || 299);
+    const unlockedDiscountPct = Number(settings.unlockedDealsDiscountPct || 15);
+    const isDealsUnlocked = isUnlockedDealsEnabled && subtotal >= unlockedMinOrder;
+    let unlockedDealDiscount = 0;
+    if (isDealsUnlocked) {
+      unlockedDealDiscount = Math.round((subtotal * unlockedDiscountPct) / 100);
+    }
+
     let discount = 0;
-    if (isPromoValid && promoResult) {
-      discount = promoResult.discount;
+    let discountLabels = [];
+    if (unlockedDealDiscount > 0) {
+      discount += unlockedDealDiscount;
+      discountLabels.push(`Wholesale Deal -${unlockedDiscountPct}%`);
+    }
+    if (isPromoValid && promoResult && promoResult.discount > 0) {
+      discount += promoResult.discount;
+      discountLabels.push(`${escapeHtml(promoResult.code)} (${promoResult.discTag})`);
+    }
+
+    if (discount > 0) {
+      discount = Math.min(subtotal, discount);
       discountLine.style.display = 'flex';
       summaryDiscount.textContent = `-₹${Math.round(discount)}`;
       const discountLabel = document.getElementById('summary-discount-label');
       if (discountLabel) {
-        discountLabel.textContent = `Discount (${escapeHtml(promoResult.code)} - ${promoResult.discTag})`;
+        discountLabel.textContent = `Discount (${discountLabels.join(' + ')})`;
       }
     } else {
       discountLine.style.display = 'none';
@@ -1640,6 +1660,7 @@ function initStorefrontApp() {
 
     renderCartAddresses();
     renderCartOrderLimitUI();
+    updateFloatingUnlockedDealsBar(subtotal, settings);
   }
 
   // Delegated click handler on #menu-section (handles all 40+ dishes with 1 listener)
@@ -1967,6 +1988,7 @@ function initStorefrontApp() {
   // Live sync of dish images, prices & stock status with dataService
   function syncStorefrontCardsWithDataService() {
     const dishes = dataService.getDishes();
+    const settings = dataService.getSettings();
     const recipeGrid = document.getElementById('recipe-grid');
 
     dishes.forEach(dish => {
@@ -2055,7 +2077,15 @@ function initStorefrontApp() {
 
       // 4. Live Sync Price
       const priceEl = card.querySelector('.meta-price');
-      if (priceEl) priceEl.textContent = `₹${Math.round(dish.price)}`;
+      if (priceEl) {
+        if (settings.unlockedDealsEnabled) {
+          const discountPct = Number(settings.unlockedDealsDiscountPct || 15);
+          const dealPrice = Math.max(1, Math.round(dish.price * (1 - discountPct / 100)));
+          priceEl.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${settings.unlockedDealsMinOrder || 299}+"><i class="fa-solid fa-lock" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span><span class="meta-strike-price">₹${Math.round(dish.price)}</span>`;
+        } else {
+          priceEl.textContent = `₹${Math.round(dish.price)}`;
+        }
+      }
 
       // 5. Live Sync Add to Cart Button Data Attributes
       const addBtn = card.querySelector('.btn-add-cart');
@@ -2153,6 +2183,56 @@ function initStorefrontApp() {
       addToCart(item, triggerEl);
     });
   });
+
+
+  // Update Floating Unlocking Deals Progress Bar (Blinkit / Zepto Style)
+  function updateFloatingUnlockedDealsBar(subtotal, settings = dataService.getSettings()) {
+    const floatingBar = document.getElementById('unlocked-deals-floating-bar');
+    if (!floatingBar) return;
+
+    const isEnabled = Boolean(settings.unlockedDealsEnabled);
+    const totalItems = cart.reduce((acc, i) => acc + i.quantity, 0);
+
+    if (!isEnabled || totalItems === 0 || subtotal <= 0) {
+      floatingBar.classList.remove('is-visible');
+      floatingBar.style.display = 'none';
+      return;
+    }
+
+    floatingBar.style.display = 'block';
+    floatingBar.classList.add('is-visible');
+
+    const minOrder = Number(settings.unlockedDealsMinOrder || 299);
+    const discountPct = Number(settings.unlockedDealsDiscountPct || 15);
+    const barText = document.getElementById('unlocked-bar-text');
+    const barFill = document.getElementById('unlocked-progress-fill');
+    const barIcon = document.getElementById('unlocked-bar-icon');
+
+    if (subtotal >= minOrder) {
+      floatingBar.classList.add('is-unlocked');
+      if (barIcon) barIcon.textContent = '🎉';
+      const savings = Math.round((subtotal * discountPct) / 100);
+      if (barText) {
+        barText.innerHTML = `<strong>Deals Unlocked!</strong> You save <span class="unlocked-bar-highlight">₹${savings} (${discountPct}% OFF)</span>!`;
+      }
+      if (barFill) {
+        barFill.style.width = '100%';
+        barFill.classList.add('is-full');
+      }
+    } else {
+      floatingBar.classList.remove('is-unlocked');
+      if (barIcon) barIcon.textContent = '🏷️';
+      const needed = Math.round(minOrder - subtotal);
+      const pct = Math.min(100, Math.max(8, Math.round((subtotal / minOrder) * 100)));
+      if (barText) {
+        barText.innerHTML = `Add <strong>₹${needed}</strong> more to unlock <span class="unlocked-bar-highlight">${discountPct}% OFF</span> special prices!`;
+      }
+      if (barFill) {
+        barFill.style.width = `${pct}%`;
+        barFill.classList.remove('is-full');
+      }
+    }
+  }
 
   // Drawer Open/Close
   function openCartDrawerInternal() {
@@ -4599,11 +4679,15 @@ function initStorefrontApp() {
         const cartSubtotal = cart.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
         let calculatedTotal = cartSubtotal;
         let calculatedDiscount = 0;
+        const isDealsActive = settings.unlockedDealsEnabled && cartSubtotal >= (settings.unlockedDealsMinOrder || 299);
+        const dealDiscount = isDealsActive ? Math.round((cartSubtotal * (settings.unlockedDealsDiscountPct || 15)) / 100) : 0;
+        calculatedDiscount += dealDiscount;
         const promoRes = appliedPromo ? evaluatePromoCode(appliedPromo, cartSubtotal, settings) : null;
         if (promoRes && promoRes.valid) {
-          calculatedDiscount = promoRes.discount;
-          calculatedTotal = Math.max(0, cartSubtotal - calculatedDiscount);
+          calculatedDiscount += promoRes.discount;
         }
+        calculatedDiscount = Math.min(cartSubtotal, calculatedDiscount);
+        calculatedTotal = Math.max(0, cartSubtotal - calculatedDiscount);
 
         // Safe delivery fee extraction: compute arithmetically from store settings rather than scraping DOM text
         const isFreeDelivEnabled = settings.freeDeliveryEnabled !== false;
@@ -7734,6 +7818,21 @@ function initStorefrontApp() {
   // Initial render
   renderCart();
   updateHeroDeliveryDistanceBadge();
+
+  // Floating Unlocked Deals View Button Listener
+  const btnUnlockedBarView = document.getElementById('unlocked-bar-view-btn');
+  if (btnUnlockedBarView) {
+    btnUnlockedBarView.addEventListener('click', (e) => {
+      e.preventDefault();
+      openCartDrawerInternal();
+    });
+  }
+
+  // Live re-render cards when settings change (e.g. deals toggled in admin)
+  dataService.subscribeToChanges('settings', () => {
+    syncStorefrontCardsWithDataService();
+    renderCart();
+  });
 }
 
 if (document.readyState === 'loading') {

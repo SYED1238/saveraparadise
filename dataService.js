@@ -192,7 +192,13 @@ export const DEFAULT_SETTINGS = {
   offerMinOrder: 250, // valid above orders 250
   offerTitle: 'Craving Savera? Get 20% OFF Today!',
   offerSubtext: 'Use coupon code at checkout for 20% off plus 100% Free Shipping.',
-  offerFreeDelivery: true
+  offerFreeDelivery: true,
+  // Dynamic Unlocked Deals & Wholesale Pricing (Optional 3rd Promotion Mode)
+  unlockedDealsEnabled: false,
+  unlockedDealsMinOrder: 299,
+  unlockedDealsDiscountPct: 15,
+  unlockedDealsTitle: 'Wholesale Club Deals',
+  unlockedDealsSubtext: 'Shop for ₹299 to unlock special menu prices!'
 };
 
 // ========================================================
@@ -5207,6 +5213,20 @@ class QuickBiteDataService {
       maxRadiusKm: radius,
       reason: distance <= radius ? 'in_zone' : 'out_of_zone'
     };
+  }
+
+  setUnlockedDeals(dealsData) {
+    const current = this.getSettings();
+    const updated = {
+      ...current,
+      unlockedDealsEnabled: Boolean(dealsData.unlockedDealsEnabled),
+      unlockedDealsMinOrder: Math.max(10, Number(dealsData.unlockedDealsMinOrder !== undefined ? dealsData.unlockedDealsMinOrder : 299)),
+      unlockedDealsDiscountPct: Math.max(1, Math.min(90, Number(dealsData.unlockedDealsDiscountPct !== undefined ? dealsData.unlockedDealsDiscountPct : 15))),
+      unlockedDealsTitle: (dealsData.unlockedDealsTitle || 'Wholesale Club Deals').trim(),
+      unlockedDealsSubtext: (dealsData.unlockedDealsSubtext || 'Shop for ₹299 to unlock special menu prices!').trim()
+    };
+    this.saveSettings(updated);
+    return updated;
   }
 
   setOffer(offerData) {
