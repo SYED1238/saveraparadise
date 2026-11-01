@@ -409,4 +409,99 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
     });
   });
 
+  describe('7. Security Gating, Webhook Idempotency & Production Isolation', () => {
+    it('strictly forbids mock payment order creation when CASHFREE_ENV is PROD', async () => {
+      const prodEnv = { ...mockEnv, CASHFREE_ENV: 'PROD' };
+      const req = new Request('https://saveraparadise.com/api/cashfree-create-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'cf-turnstile-response': '1x00000000000000000000AA'
+        },
+        body: JSON.stringify({ orderId: '1004', amount: 350 })
+      });
+      const res = await cashfreeCreateOrderHandler({ request: req, env: prodEnv });
+      assert.equal(res.status, 500);
+      const data = await res.json();
+      assert.ok(data.message.includes('not configured in production'));
+    });
+
+    it('strictly forbids mock rider payouts when CASHFREE_ENV is PROD', async () => {
+      const prodEnv = { ...mockEnv, CASHFREE_ENV: 'PROD' };
+      const ownerToken = createAdminToken(3600000, 'owner', prodEnv);
+      const req = new Request('https://saveraparadise.com/api/cashfree-payout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ownerToken}`
+        },
+        body: JSON.stringify({ riderPin: '1234', amount: 200, upiVpa: 'rider@upi' })
+      });
+      const res = await cashfreePayoutHandler({ request: req, env: prodEnv });
+      assert.equal(res.status, 500);
+      const data = await res.json();
+      assert.ok(data.message.includes('not configured in production'));
+    });
+
+    it('rejects default PINs when running in production mode', async () => {
+      const prodEnv = { ...mockEnv, NODE_ENV: 'production', ADMIN_PIN: '' };
+      const req = new Request('https://saveraparadise.com/api/admin-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: '8899' }) // Default dev PIN should fail in production
+      });
+      const res = await adminAuthHandler({ request: req, env: prodEnv });
+      assert.equal(res.status, 401);
+    });
+
+    it('validates Cashfree webhook with raw body HMAC and acknowledges payment', async () => {
+      const webhookSecret = 'test_webhook_secret_key_32_chars!';
+      const envWithSecret = { ...mockEnv, CASHFREE_WEBHOOK_SECRET: webhookSecret };
+      const timestamp = String(Date.now());
+      const rawBody = JSON.stringify({
+        type: 'PAYMENT_SUCCESS_WEBHOOK',
+        data: {
+          order: { order_id: 'qb_1005_1234' },
+          payment: { cf_payment_id: 'cf_pay_9999', payment_amount: 450, payment_status: 'SUCCESS' }
+        }
+      });
+
+      const crypto = await import('node:crypto');
+      const signature = crypto.createHmac('sha256', webhookSecret).update(`${timestamp}${rawBody}`).digest('base64');
+
+      const req = new Request('https://saveraparadise.com/api/cashfree-webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-webhook-signature': signature,
+          'x-webhook-timestamp': timestamp
+        },
+        body: rawBody
+      });
+
+      const res = await cashfreeWebhookHandler({ request: req, env: envWithSecret });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.success, true);
+      assert.equal(data.orderId, '1005');
+      assert.equal(data.cfPaymentId, 'cf_pay_9999');
+    });
+
+    it('rejects tampered webhook signature with 401', async () => {
+      const webhookSecret = 'test_webhook_secret_key_32_chars!';
+      const envWithSecret = { ...mockEnv, CASHFREE_WEBHOOK_SECRET: webhookSecret };
+      const req = new Request('https://saveraparadise.com/api/cashfree-webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-webhook-signature': 'tampered_invalid_signature',
+          'x-webhook-timestamp': String(Date.now())
+        },
+        body: JSON.stringify({ type: 'PAYMENT_SUCCESS_WEBHOOK' })
+      });
+      const res = await cashfreeWebhookHandler({ request: req, env: envWithSecret });
+      assert.equal(res.status, 401);
+    });
+  });
+
 });

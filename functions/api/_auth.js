@@ -1,6 +1,7 @@
 /**
  * Server-Side Authentication & Session Verification Helper for Cloudflare Pages Functions
  * Ensures privileged storage and admin operations require cryptographically signed tokens.
+ * Enforces production security gates: strictly disallows default PINs or ephemeral secrets in production.
  */
 import crypto from 'node:crypto';
 
@@ -15,6 +16,11 @@ export function getSigningSecret(env = null) {
   if (r2Secret && r2Secret.length >= 16) {
     return r2Secret;
   }
+  const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) ||
+    (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+  if (isProd) {
+    throw new Error('[Security] CRITICAL: Dedicated SESSION_SECRET (min 32 characters) must be configured in production environment.');
+  }
   if (!devEphemeralSecret) {
     devEphemeralSecret = crypto.randomBytes(32).toString('hex');
   }
@@ -26,7 +32,12 @@ export function getAdminPin(env = null) {
   if (envPin && String(envPin).trim()) {
     return String(envPin).trim();
   }
-  return '8899';
+  const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) ||
+    (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+  if (!isProd) {
+    return '8899';
+  }
+  return '';
 }
 
 export function getOwnerPin(env = null) {
@@ -34,7 +45,12 @@ export function getOwnerPin(env = null) {
   if (envPin && String(envPin).trim()) {
     return String(envPin).trim();
   }
-  return '9900';
+  const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) ||
+    (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+  if (!isProd) {
+    return '9900';
+  }
+  return '';
 }
 
 const TOKEN_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours

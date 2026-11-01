@@ -1,6 +1,7 @@
 /**
  * Cashfree Payments Integration Engine for Cloudflare Pages Functions
  * Handles Payment Gateway (PG), Doorstep Dynamic UPI QR, and Rider Nighttime Payouts.
+ * Strictly forbids mock/fallback success when running in PRODUCTION environment.
  */
 import crypto from 'node:crypto';
 
@@ -49,6 +50,13 @@ export async function createPgOrder({
   const cleanAmount = Math.max(1, Math.round(Number(amount) * 100) / 100);
 
   if (!cfg.isConfigured) {
+    // Strictly forbid mock payment order creation in production
+    if (cfg.isProd) {
+      return {
+        success: false,
+        error: 'Cashfree Payment Gateway credentials are not configured in production environment'
+      };
+    }
     const mockSessionId = `session_mock_${cleanOrderId}_${Date.now()}`;
     return {
       success: true,
@@ -86,8 +94,7 @@ export async function createPgOrder({
         'x-client-secret': cfg.secretKey,
         'x-api-version': '2023-08-01',
         'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
+      }
     });
 
     const data = await resp.json();
@@ -132,6 +139,12 @@ export async function generateDoorstepUpiQr({
   const upiIntentUri = `upi://pay?pa=${merchantVpa}&pn=${merchantName}&am=${cleanAmount.toFixed(2)}&tr=QB${cleanId}&tn=${encodeURIComponent(`Order #${cleanId}`)}&cu=INR`;
 
   if (!cfg.isConfigured) {
+    if (cfg.isProd) {
+      return {
+        success: false,
+        error: 'Cashfree Doorstep UPI is not configured in production environment'
+      };
+    }
     return {
       success: true,
       isMock: true,
@@ -163,6 +176,12 @@ export async function generateDoorstepUpiQr({
       expiresAt: Date.now() + (expiryMinutes * 60 * 1000)
     };
   } catch {
+    if (cfg.isProd) {
+      return {
+        success: false,
+        error: 'Cashfree Doorstep QR generation failed in production environment'
+      };
+    }
     return {
       success: true,
       isFallback: true,
@@ -218,6 +237,13 @@ export async function initiateRiderPayout({
   const cleanTransferId = String(transferId || `payout_rd_${riderPin}_${Date.now()}`);
 
   if (!cfg.isConfigured) {
+    // Strictly forbid mock payouts in production
+    if (cfg.isProd) {
+      return {
+        success: false,
+        error: 'Cashfree Payout credentials are not configured in production environment'
+      };
+    }
     return {
       success: true,
       isMock: true,
