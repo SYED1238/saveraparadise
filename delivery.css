@@ -3686,57 +3686,97 @@ input:checked + .slider:before {
 }
 
 /* ==========================================================================
-   BAG CODE ROUTE PREVIEW MODAL
+   BAG CODE ROUTE PREVIEW MODAL - CLEAN WHITE THEME
    ========================================================================== */
 .bag-preview-card {
-  max-width: 500px !important;
-  padding: 24px !important;
-  background: #111827 !important;
-  color: #FFFFFF !important;
-  border: 1px solid rgba(255, 90, 38, 0.35) !important;
+  max-width: 480px !important;
+  width: 100% !important;
+  max-height: min(94dvh, 740px) !important;
+  padding: 20px 20px 16px !important;
+  background: #FFFFFF !important;
+  color: #0F172A !important;
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+}
+
+.bag-preview-card .confirm-modal-header {
+  flex-shrink: 0;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.bag-preview-card .confirm-modal-header .confirm-icon-bubble {
+  font-size: 1.8rem;
+  margin-bottom: 2px;
+}
+
+.bag-preview-card .confirm-modal-header h3 {
+  font-size: 1.25rem;
+  margin: 2px 0;
+  color: #0F172A !important;
+  font-weight: 800;
+}
+
+.bag-preview-card .confirm-modal-header p {
+  font-size: 0.78rem;
+  color: #64748B !important;
+  margin: 0;
 }
 
 .bag-code-tag-pill {
   display: inline-block;
-  background: rgba(255, 90, 38, 0.2);
-  color: #FF9466;
-  border: 1px solid rgba(255, 90, 38, 0.4);
-  padding: 4px 12px;
+  background: #FFF7ED !important;
+  color: #C2410C !important;
+  border: 1px solid #FDBA74 !important;
+  padding: 3px 12px;
   border-radius: 999px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 1px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+}
+
+.bag-preview-card .bag-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 2px 2px 4px;
 }
 
 .preview-distance-card {
   display: flex;
   align-items: center;
-  gap: 14px;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  padding: 14px 18px;
-  border-radius: 14px;
-  margin: 16px 0;
+  gap: 12px;
+  background: #ECFDF5 !important;
+  border: 1px solid #A7F3D0 !important;
+  padding: 10px 14px;
+  border-radius: 12px;
+  margin: 2px 0 10px;
 }
 
 .dist-icon-wrap {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   background: #059669;
   color: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   flex-shrink: 0;
 }
 
 .dist-main-line strong {
   font-size: 1.15rem;
   font-weight: 800;
-  color: #6EE7B7;
+  color: #065F46 !important;
 }
 
 .dist-main-line .dot-sep {
@@ -3745,27 +3785,28 @@ input:checked + .slider:before {
 }
 
 .dist-main-line span {
-  color: #E2E8F0;
+  color: #047857 !important;
   font-weight: 700;
   font-size: 0.95rem;
 }
 
 .dist-sub-line {
   display: block;
-  font-size: 0.72rem;
-  color: #94A3B8;
+  font-size: 0.74rem;
+  color: #059669 !important;
+  font-weight: 600;
   margin-top: 2px;
 }
 
 .preview-info-table {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
   border-radius: 14px;
-  padding: 14px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 9px;
+  margin-bottom: 6px;
 }
 
 .preview-row {
@@ -3777,73 +3818,125 @@ input:checked + .slider:before {
 }
 
 .preview-row .row-label {
-  color: #94A3B8;
+  color: #64748B !important;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  font-weight: 600;
 }
 
 .preview-row .row-val {
   text-align: right;
-  color: #F8FAFC;
+  color: #0F172A !important;
+  font-weight: 700;
 }
 
 .preview-row .row-phone {
-  color: #34D399;
-}
-
-.preview-row.highlight-route {
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  padding: 8px 12px;
-  border-radius: 8px;
-}
-
-.preview-row.highlight-route .row-label {
-  color: #6EE7B7;
+  color: #059669 !important;
   font-weight: 700;
 }
 
+.preview-row .items-val {
+  color: #1E293B !important;
+  font-weight: 700;
+}
+
+.preview-row.highlight-destination,
+.preview-row.highlight-route {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 4px !important;
+  background: #EFF6FF !important;
+  border: 1px solid #BFDBFE !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+}
+
+.preview-row.highlight-destination .row-label,
+.preview-row.highlight-route .row-label {
+  color: #1D4ED8 !important;
+  font-weight: 800 !important;
+  font-size: 0.78rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+.preview-row.highlight-destination .address-val,
 .preview-row.highlight-route .route-val {
-  color: #A7F3D0;
-  font-size: 0.95rem;
-  font-weight: 800;
+  color: #0F172A !important;
+  font-size: 0.92rem !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+  text-align: left !important;
+  word-break: normal !important;
 }
 
 .preview-row.highlight-payment {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  padding: 8px 12px;
-  border-radius: 8px;
-  margin-top: 4px;
+  background: #FFFBEB !important;
+  border: 1px solid #FDE68A !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  margin-top: 4px !important;
 }
 
 .preview-row.highlight-payment .row-label {
-  color: #FCD34D;
-  font-weight: 700;
+  color: #B45309 !important;
+  font-weight: 800 !important;
 }
 
 .preview-row.highlight-payment .payment-val {
-  color: #FDE047;
-  font-size: 1.05rem;
-  font-weight: 900;
+  color: #92400E !important;
+  font-size: 1.05rem !important;
+  font-weight: 900 !important;
+}
+
+.preview-row.highlight-payout {
+  background: #F0FDF4 !important;
+  border: 1px solid #86EFAC !important;
+  border-left: 3.5px solid #10B981 !important;
+  padding: 9px 12px !important;
+  border-radius: 8px !important;
+  margin-top: 4px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.preview-row.highlight-payout .row-label {
+  color: #065F46 !important;
+  font-weight: 800 !important;
+}
+
+.preview-row.highlight-payout .payout-val {
+  color: #047857 !important;
+  font-size: 1.25rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.5px !important;
+  line-height: 1.2 !important;
 }
 
 .bag-preview-actions {
+  flex-shrink: 0;
   display: flex;
   gap: 12px;
+  padding-top: 14px;
+  margin-top: 6px;
+  border-top: 1px solid #E2E8F0 !important;
+  background: #FFFFFF !important;
 }
 
 .btn-confirm-bag-claim {
-  flex: 1;
-  background: linear-gradient(135deg, #10B981, #059669);
-  color: #FFFFFF;
+  flex: 1.6;
+  min-height: 50px;
+  background: linear-gradient(135deg, #10B981, #059669) !important;
+  color: #FFFFFF !important;
   border: none;
   border-radius: 12px;
-  padding: 14px 20px;
+  padding: 12px 16px;
   font-family: var(--font-heading);
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 800;
   display: inline-flex;
   align-items: center;
@@ -3852,34 +3945,150 @@ input:checked + .slider:before {
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35);
+  white-space: nowrap;
 }
 
 .btn-confirm-bag-claim:hover {
-  background: linear-gradient(135deg, #059669, #047857);
+  background: linear-gradient(135deg, #059669, #047857) !important;
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(16, 185, 129, 0.45);
 }
 
 .bag-preview-card .rider-modal-close {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #E2E8F0 !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  background: #F1F5F9 !important;
+  color: #64748B !important;
+  border: 1px solid #E2E8F0 !important;
 }
 
 .bag-preview-card .rider-modal-close:hover {
-  background: rgba(255, 255, 255, 0.18) !important;
+  background: #EF4444 !important;
   color: #FFFFFF !important;
+  border-color: #EF4444 !important;
 }
 
 .bag-preview-card .btn-cancel-modal {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #E2E8F0 !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  flex: 0.9;
+  min-height: 50px;
+  background: #F1F5F9 !important;
+  color: #475569 !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .bag-preview-card .btn-cancel-modal:hover {
-  background: rgba(255, 255, 255, 0.14) !important;
-  color: #FFFFFF !important;
+  background: #E2E8F0 !important;
+  color: #0F172A !important;
+}
+
+@media (max-width: 480px) {
+  .bag-preview-card {
+    padding: 12px 14px 10px !important;
+    border-radius: 16px !important;
+    max-height: min(94dvh, 740px) !important;
+  }
+  
+  .bag-preview-card .confirm-modal-header {
+    margin-bottom: 6px;
+  }
+
+  .bag-preview-card .confirm-modal-header .confirm-icon-bubble {
+    font-size: 1.5rem;
+    margin-bottom: 2px;
+  }
+
+  .bag-code-tag-pill {
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    margin-bottom: 4px;
+  }
+
+  .bag-preview-card .confirm-modal-header h3 {
+    font-size: 1.15rem;
+    margin: 2px 0 0;
+  }
+
+  .bag-preview-card .confirm-modal-header p {
+    font-size: 0.74rem;
+    margin-top: 2px;
+  }
+
+  .preview-distance-card {
+    padding: 8px 12px !important;
+    gap: 10px !important;
+    margin: 4px 0 8px !important;
+    border-radius: 10px !important;
+  }
+
+  .dist-icon-wrap {
+    width: 34px !important;
+    height: 34px !important;
+    font-size: 0.95rem !important;
+  }
+
+  .dist-main-line strong {
+    font-size: 1rem !important;
+  }
+
+  .preview-info-table {
+    padding: 8px 10px !important;
+    gap: 7px !important;
+    margin-bottom: 2px !important;
+  }
+
+  .preview-row {
+    font-size: 0.82rem !important;
+  }
+
+  .preview-row.highlight-destination,
+  .preview-row.highlight-route {
+    padding: 6px 10px !important;
+  }
+
+  .preview-row.highlight-destination .row-label,
+  .preview-row.highlight-route .row-label {
+    font-size: 0.74rem !important;
+  }
+
+  .preview-row.highlight-destination .address-val,
+  .preview-row.highlight-route .route-val {
+    font-size: 0.86rem !important;
+  }
+
+  .preview-row.highlight-payment {
+    padding: 6px 10px !important;
+    margin-top: 2px !important;
+  }
+
+  .preview-row.highlight-payout {
+    padding: 8px 10px !important;
+    margin-top: 2px !important;
+  }
+
+  .preview-row.highlight-payout .payout-val {
+    font-size: 1.15rem !important;
+  }
+
+  .bag-preview-actions {
+    padding-top: 10px;
+    margin-top: 4px;
+    gap: 10px;
+    background: #FFFFFF !important;
+  }
+
+  .btn-confirm-bag-claim {
+    min-height: 48px !important;
+    font-size: 0.92rem !important;
+    padding: 10px 12px !important;
+  }
+
+  .bag-preview-card .btn-cancel-modal {
+    min-height: 48px !important;
+    font-size: 0.88rem !important;
+  }
 }
 
 /* ==========================================================================
@@ -5028,22 +5237,46 @@ input:checked + .slider:before {
   margin-top: 4px;
 }
 
-/* Bag Preview Modal Payout Row */
-.highlight-payout {
+/* Bag Preview Modal Payout Row - White Theme High Contrast */
+.highlight-payout,
+.preview-row.highlight-payout {
   background: #F0FDF4 !important;
-  border-left: 3px solid #10B981 !important;
+  border: 1px solid #86EFAC !important;
+  border-left: 3.5px solid #10B981 !important;
 }
 
 .payout-row-val-wrap {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  gap: 2px;
+}
+
+.highlight-payout .payout-val,
+.preview-row.highlight-payout .payout-val {
+  color: #047857 !important;
+  font-size: 1.25rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.5px !important;
+  line-height: 1.2 !important;
+}
+
+.highlight-payout .row-label,
+.preview-row.highlight-payout .row-label {
+  color: #065F46 !important;
+  font-weight: 800 !important;
 }
 
 .payout-formula-tag {
-  font-size: 0.72rem;
-  color: #059669;
-  font-weight: 600;
+  font-size: 0.72rem !important;
+  color: #A7F3D0 !important;
+  font-weight: 700 !important;
+  background: rgba(16, 185, 129, 0.22) !important;
+  padding: 2px 8px !important;
+  border-radius: 6px !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+  margin-top: 2px !important;
+  display: inline-block !important;
 }
 
 /* Shift Payout & Earnings Modal */

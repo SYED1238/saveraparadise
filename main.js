@@ -1216,6 +1216,15 @@ function initStorefrontApp() {
     const item = cart.find(i => i.id === id);
     if (!item) return;
 
+    if (delta > 0) {
+      const liveDishes = (typeof dataService !== 'undefined' && dataService.getDishes) ? dataService.getDishes() : [];
+      const liveDish = liveDishes.find(d => d.id === id || d.name === item.name);
+      if (liveDish && liveDish.inStock === false) {
+        showToast(`Sorry, "${liveDish.name || item.name}" will be back soon! 🍗`, 'info');
+        return;
+      }
+    }
+
     item.quantity += delta;
     if (item.quantity <= 0) {
       removeFromCart(id);
@@ -1469,7 +1478,7 @@ function initStorefrontApp() {
         el.classList.add('cart-item-sold-out');
       }
       const safePrice = Math.round((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1));
-      const soldOutBadge = isSoldOut ? ' <span class="cart-sold-out-badge" style="color: #ef4444; font-size: 0.72rem; font-weight: 600; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 1px 6px; border-radius: 4px; margin-left: 4px;">Sold Out</span>' : '';
+      const soldOutBadge = isSoldOut ? ' <span class="cart-sold-out-badge" style="color: #D97706; font-size: 0.72rem; font-weight: 700; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); padding: 1px 6px; border-radius: 4px; margin-left: 4px;">Back Soon</span>' : '';
       el.innerHTML = `
         <div class="cart-item-img-wrap is-img-loading">
           <img src="${safeImage}" alt="${safeName}" class="cart-item-img" loading="eager" decoding="async"/>
@@ -1649,7 +1658,7 @@ function initStorefrontApp() {
         btnCheckout.disabled = true;
       }
       if (btnCheckoutLabel) {
-        btnCheckoutLabel.textContent = `⚠️ "${soldOutItem.name}" Sold Out`;
+        btnCheckoutLabel.textContent = `⏳ "${soldOutItem.name}" Back Soon`;
       }
     } else if (minOrderValue <= 0 || subtotal >= minOrderValue) {
       if (btnCheckout) {
@@ -1721,7 +1730,7 @@ function initStorefrontApp() {
     return {
       ...dish,
       rating: dish.rating || '5.0 (200+ reviews)',
-      badge: dish.badge || (dish.inStock === false ? 'Sold Out' : ''),
+      badge: dish.badge || (dish.inStock === false ? 'Back Soon' : ''),
       category: dish.categoryName || dish.category,
       time: dish.time || '10 - 12 mins',
       calories: dish.calories || '420 kcal',
@@ -1765,9 +1774,24 @@ function initStorefrontApp() {
 
   function updateModalSubmitPrice() {
     if (!activeDetailItem) return;
+    const isOut = activeDetailItem.inStock === false;
     const total = activeDetailItem.price * activeDetailQty;
     if (modalSubmitPrice) modalSubmitPrice.textContent = `₹${Math.round(total)}`;
     if (modalQtyText) modalQtyText.textContent = activeDetailQty;
+
+    if (btnModalAddCart) {
+      if (isOut) {
+        btnModalAddCart.disabled = true;
+        btnModalAddCart.innerHTML = `<span>⏳ Back Soon</span>`;
+        btnModalAddCart.style.opacity = '0.65';
+        btnModalAddCart.style.cursor = 'not-allowed';
+      } else {
+        btnModalAddCart.disabled = false;
+        btnModalAddCart.innerHTML = `<span>Add to Basket</span> <span class="submit-separator">•</span> <span id="modal-submit-price">₹${Math.round(total)}</span>`;
+        btnModalAddCart.style.opacity = '';
+        btnModalAddCart.style.cursor = '';
+      }
+    }
   }
 
   function openFoodDetail(dish) {
@@ -1799,12 +1823,18 @@ function initStorefrontApp() {
     if (foodDetailCat) foodDetailCat.textContent = dish.category;
     if (foodDetailDesc) foodDetailDesc.textContent = dish.desc;
     if (foodDetailBadge) {
-      if (dish.badge && dish.badge.trim()) {
+      if (dish.inStock === false) {
+        foodDetailBadge.textContent = 'Back Soon';
+        foodDetailBadge.style.display = '';
+        foodDetailBadge.className = 'food-modal-badge recipe-card-stock-pill';
+      } else if (dish.badge && dish.badge.trim()) {
         foodDetailBadge.textContent = dish.badge.trim();
         foodDetailBadge.style.display = '';
+        foodDetailBadge.className = 'food-modal-badge';
       } else {
         foodDetailBadge.textContent = '';
         foodDetailBadge.style.display = 'none';
+        foodDetailBadge.className = 'food-modal-badge';
       }
     }
     if (foodDetailRating) foodDetailRating.style.display = 'none';
@@ -1890,6 +1920,7 @@ function initStorefrontApp() {
 
   if (modalQtyMinus) {
     modalQtyMinus.addEventListener('click', () => {
+      if (activeDetailItem && activeDetailItem.inStock === false) return;
       if (activeDetailQty > 1) {
         activeDetailQty -= 1;
         updateModalSubmitPrice();
@@ -1899,6 +1930,10 @@ function initStorefrontApp() {
 
   if (modalQtyPlus) {
     modalQtyPlus.addEventListener('click', () => {
+      if (activeDetailItem && activeDetailItem.inStock === false) {
+        showToast(`Sorry, "${activeDetailItem.name}" will be back soon! 🍗`, 'info');
+        return;
+      }
       activeDetailQty += 1;
       updateModalSubmitPrice();
     });
@@ -1907,6 +1942,10 @@ function initStorefrontApp() {
   if (btnModalAddCart) {
     btnModalAddCart.addEventListener('click', () => {
       if (!activeDetailItem) return;
+      if (activeDetailItem.inStock === false) {
+        showToast(`Sorry, "${activeDetailItem.name}" will be back soon! 🍗`, 'info');
+        return;
+      }
       addToCart({
         id: activeDetailItem.id,
         name: activeDetailItem.name,
@@ -1927,7 +1966,7 @@ function initStorefrontApp() {
       if (addBtn) {
         e.stopPropagation();
         if (addBtn.disabled || addBtn.hasAttribute('disabled')) {
-          showToast('Sorry, this dish is currently out of stock ⚠️', 'warning');
+          showToast('Sorry, this dish will be back soon! 🍗', 'info');
           return;
         }
         const item = {
@@ -2106,7 +2145,7 @@ function initStorefrontApp() {
         addBtn.setAttribute('data-image', dish.image);
         if (dish.inStock === false) {
           addBtn.setAttribute('disabled', 'true');
-          addBtn.title = 'Item Sold Out';
+          addBtn.title = 'Back Soon';
         } else {
           addBtn.removeAttribute('disabled');
           addBtn.title = 'Add to basket';
@@ -2120,7 +2159,7 @@ function initStorefrontApp() {
         if (!stockPill) {
           stockPill = document.createElement('span');
           stockPill.className = 'recipe-card-stock-pill';
-          stockPill.textContent = 'Sold Out';
+          stockPill.textContent = 'Back Soon';
           card.querySelector('.recipe-card-inner')?.prepend(stockPill);
         }
       } else {
@@ -4338,8 +4377,61 @@ function initStorefrontApp() {
     }
   }
 
+  // ==========================================
+  // CLOUDFLARE TURNSTILE INVISIBLE BOT PROTECTION
+  // ==========================================
+  let turnstileWidgetId = null;
+  let activeTurnstileToken = '';
+  const TURNSTILE_SITE_KEY = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_TURNSTILE_SITE_KEY)
+    ? import.meta.env.VITE_TURNSTILE_SITE_KEY
+    : '0x4AAAAAAFvMZe_e-NBz1a8W';
+
+  function initTurnstileCheckoutWidget() {
+    const container = document.getElementById('turnstile-checkout-widget');
+    if (!container || typeof window.turnstile === 'undefined') return;
+
+    if (turnstileWidgetId !== null) {
+      try {
+        window.turnstile.reset(turnstileWidgetId);
+        return;
+      } catch (_) {}
+    }
+
+    try {
+      container.innerHTML = '';
+      turnstileWidgetId = window.turnstile.render(container, {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: 'auto',
+        size: 'flexible',
+        callback: function(token) {
+          activeTurnstileToken = token;
+        },
+        'expired-callback': function() {
+          activeTurnstileToken = '';
+        },
+        'error-callback': function() {
+          activeTurnstileToken = '';
+        }
+      });
+    } catch (e) {
+      console.warn('[Turnstile] Widget render error:', e);
+    }
+  }
+
+  async function getTurnstileToken() {
+    if (activeTurnstileToken) return activeTurnstileToken;
+    if (typeof window.turnstile !== 'undefined' && turnstileWidgetId !== null) {
+      try {
+        const resp = window.turnstile.getResponse(turnstileWidgetId);
+        if (resp) return resp;
+      } catch (_) {}
+    }
+    return 'dev-turnstile-token-' + Date.now();
+  }
+
   function openCheckoutModalInternal() {
     renderCheckoutAddresses();
+    initTurnstileCheckoutWidget();
     if (modalCheckoutBackdrop) {
       modalCheckoutBackdrop.classList.add('open');
       document.body.style.overflow = 'hidden';
@@ -4484,7 +4576,7 @@ function initStorefrontApp() {
         return dish && dish.inStock === false;
       });
       if (soldOutInCart) {
-        showToast(`⚠️ "${soldOutInCart.name}" is currently sold out. Please remove it from your basket before proceeding to checkout!`, 'warning');
+        showToast(`⏳ "${soldOutInCart.name}" will be back soon! Please remove it from your basket before proceeding to checkout.`, 'warning');
         return;
       }
 
@@ -4598,7 +4690,7 @@ function initStorefrontApp() {
           return dish && dish.inStock === false;
         });
         if (soldOutInCart) {
-          showToast(`⚠️ "${soldOutInCart.name}" is currently sold out. Please remove it from your basket to place your order.`, 'warning');
+          showToast(`⏳ "${soldOutInCart.name}" will be back soon! Please remove it from your basket to place your order.`, 'warning');
           resetSubmitState();
           return;
         }
@@ -4760,6 +4852,9 @@ function initStorefrontApp() {
           } catch {}
         }
 
+        // Retrieve invisible Cloudflare Turnstile bot verification token
+        const turnstileToken = await getTurnstileToken();
+
         // Server-side verification & anti-price tampering check via /api/checkout
         try {
           const checkoutRes = await fetch('/api/checkout', {
@@ -4769,9 +4864,16 @@ function initStorefrontApp() {
               items: cart.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price })),
               promoCode: appliedPromo || null,
               appliedPromo: appliedPromo || null,
-              storeSettings: settings
+              storeSettings: settings,
+              turnstileToken: turnstileToken
             })
           });
+          if (checkoutRes.status === 403) {
+            const checkoutErr = await checkoutRes.json().catch(() => ({}));
+            showToast(checkoutErr.error || 'Bot verification failed. Automated traffic blocked.', 'error');
+            resetSubmitState();
+            return;
+          }
           if (checkoutRes.ok) {
             const checkoutData = await checkoutRes.json();
             if (checkoutData && (typeof checkoutData.numericTotal === 'number' || typeof checkoutData.total === 'number' || typeof checkoutData.total === 'string')) {

@@ -32,37 +32,11 @@ function awsUriEncode(str) {
   return encodeURIComponent(str).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
 }
 
-function generatePresignedGetUrl(key, expiresInSeconds = 604800) {
+function generatePresignedGetUrl(key) {
   if (R2_CONFIG.PUBLIC_DOMAIN) {
     return `${R2_CONFIG.PUBLIC_DOMAIN}/${awsUriEncode(key).replace(/%2F/g, '/')}`;
   }
-  const date = new Date();
-  const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
-  const dateStamp = amzDate.substring(0, 8);
-  const credentialScope = `${dateStamp}/${R2_CONFIG.REGION}/${R2_CONFIG.SERVICE}/aws4_request`;
-
-  const canonicalUri = `/${R2_CONFIG.BUCKET_NAME}/${awsUriEncode(key).replace(/%2F/g, '/')}`;
-  const queryParams = [
-    `X-Amz-Algorithm=AWS4-HMAC-SHA256`,
-    `X-Amz-Credential=${encodeURIComponent(`${R2_CONFIG.ACCESS_KEY_ID}/${credentialScope}`)}`,
-    `X-Amz-Date=${amzDate}`,
-    `X-Amz-Expires=${expiresInSeconds}`,
-    `X-Amz-SignedHeaders=host`
-  ];
-  queryParams.sort();
-  const canonicalQueryString = queryParams.join('&');
-
-  const canonicalHeaders = `host:${R2_CONFIG.HOST}\n`;
-  const signedHeaders = 'host';
-  const payloadHash = 'UNSIGNED-PAYLOAD';
-
-  const canonicalRequest = `GET\n${canonicalUri}\n${canonicalQueryString}\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${sha256Hex(canonicalRequest)}`;
-
-  const signingKey = getSigningKey(R2_CONFIG.SECRET_ACCESS_KEY, dateStamp, R2_CONFIG.REGION, R2_CONFIG.SERVICE);
-  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
-
-  return `https://${R2_CONFIG.HOST}${canonicalUri}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
+  return `/api/r2-image?key=${encodeURIComponent(key)}`;
 }
 
 export default async function handler(req, res) {

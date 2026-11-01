@@ -38,13 +38,14 @@ class CloudflareR2Service {
   }
 
   /**
-   * Generates a public URL if PUBLIC_DOMAIN is configured.
+   * Generates a permanent URL for an R2 key.
+   * If a custom public domain is configured, returns that; otherwise returns the permanent proxy endpoint.
    */
   async generatePresignedGetUrl(key) {
     if (this.publicDomain) {
       return `${this.publicDomain}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
     }
-    return `https://${this.host}/${this.bucket}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+    return `/api/r2-image?key=${encodeURIComponent(key)}`;
   }
 
   /**

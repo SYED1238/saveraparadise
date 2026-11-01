@@ -5,6 +5,7 @@
  * clamps quantities, and issues an HMAC signature for authoritative orders.
  */
 import { signPayload } from './_auth.js';
+import { verifyTurnstileToken, getClientIp } from './_turnstile.js';
 
 const ALLOWED_ORIGINS = [
   'https://foodbliz.in',
@@ -125,7 +126,18 @@ export default async function handler(req, res) {
     }
   }
 
-  const { items, promoCode, appliedPromo, storeSettings, catalogDishes } = body || {};
+  const { items, promoCode, appliedPromo, storeSettings, catalogDishes, turnstileToken } = body || {};
+
+  // Cloudflare Turnstile Invisible Bot Defense
+  const clientToken = turnstileToken || req.headers?.['cf-turnstile-response'] || body?.['cf-turnstile-response'];
+  const clientIp = getClientIp(req);
+  const botCheck = await verifyTurnstileToken(clientToken, clientIp);
+  if (!botCheck.success) {
+    return res.status(403).json({
+      error: botCheck.error || 'Bot verification failed. Automated traffic blocked.',
+      botBlocked: true
+    });
+  }
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Order must contain at least one item' });
@@ -164,7 +176,7 @@ export default async function handler(req, res) {
 
     const dish = catalogMap.get(String(item.id || '')) || catalogMap.get(String(item.name || '').toLowerCase());
     if (dish && (dish.is_available === false || dish.inStock === false)) {
-      return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' is currently sold out` });
+      return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' will be back soon` });
     }
     const unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : Math.max(0, Number(item.price) || 0);
 

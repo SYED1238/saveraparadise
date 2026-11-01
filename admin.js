@@ -391,46 +391,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Render category cards (touch to open category)
     if (categoriesGrid) {
-      const allImg = (typeof dataService.getAllCategoryImage === 'function')
-        ? dataService.getAllCategoryImage()
-        : '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png';
-      const safeAllImg = (typeof dataService.sanitizeCategoryImageUrl === 'function')
-        ? dataService.sanitizeCategoryImageUrl(allImg)
-        : allImg;
-
-      const allCardHtml = `
-        <div class="category-admin-card category-admin-all-card" data-id="all" data-slug="all" title="Storefront 'All' Category - Touch to edit photo" style="border: 2px dashed #EA580C; background: linear-gradient(135deg, rgba(234, 88, 12, 0.08) 0%, rgba(30, 41, 59, 0.95) 100%);">
-          <div class="cat-card-top">
-            <div class="cat-emoji-badge cat-admin-thumb" style="width: 44px; height: 44px; min-width: 44px; border-radius: 50%; overflow: hidden; border: 2.2px solid #EA580C; padding: 0; display: flex; align-items: center; justify-content: center; background: #F3F4F6;">
-              <img src="${safeAllImg}" alt="All Dishes" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-              <span style="display: none; width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 1.4rem;">🍽️</span>
-            </div>
-            <div class="cat-action-btns">
-              <span style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; background: rgba(234, 88, 12, 0.2); color: #FB923C; padding: 3px 8px; border-radius: 999px; letter-spacing: 0.04em;">Storefront</span>
-              <button class="btn-icon-admin edit-cat-btn" data-id="all" title="Change 'All' Category Photo" aria-label="Change 'All' Category Photo">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-              </button>
-            </div>
-          </div>
-          <div class="cat-card-info">
-            <h3 class="cat-info-title">All (Storefront Circle)</h3>
-            <span class="cat-info-count">${dishes.length} total dishes</span>
-          </div>
-          <div class="cat-card-touch-indicator">
-            <span style="color: #EA580C; font-weight: 600;">
-              <i class="fa-solid fa-camera" style="margin-right: 4px;"></i> Edit "All" Photo
-            </span>
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </div>
-        </div>
-      `;
-
       const regularCardsHtml = categories.map(cat => {
         const dishCount = dishes.filter(d => d.category === cat.slug || d.category === cat.id).length;
         const safeName = escapeHtml(cat.name);
@@ -494,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }).join('');
 
-      categoriesGrid.innerHTML = allCardHtml + regularCardsHtml;
+      categoriesGrid.innerHTML = regularCardsHtml;
 
       // Attach Category Event Listeners
       categoriesGrid.querySelectorAll('.edit-cat-btn').forEach(btn => {
@@ -516,11 +476,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Touching/clicking category card opens it to add/remove food inside
       categoriesGrid.querySelectorAll('.category-admin-card').forEach(card => {
         card.addEventListener('click', () => {
-          const id = card.getAttribute('data-id');
           const slug = card.getAttribute('data-slug');
-          if (id === 'all' || slug === 'all') {
-            openEditCategoryModal('all');
-          } else {
+          if (slug) {
             openCategoryDetail(slug);
           }
         });

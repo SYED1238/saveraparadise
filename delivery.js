@@ -2476,10 +2476,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (previewDistVal) previewDistVal.textContent = `${distanceKm} km away`;
     if (previewEtaVal) previewEtaVal.textContent = `~${estimatedMins} mins ride`;
     if (previewDistRouteDesc) {
-      previewDistRouteDesc.textContent = `Live route from Savera Paradise Kitchen ➔ ${areaName}`;
+      previewDistRouteDesc.textContent = `Direct distance to customer destination`;
     }
     if (previewRouteArea) {
-      previewRouteArea.textContent = `Savera Paradise ➔ ${areaName}`;
+      previewRouteArea.textContent = areaName;
     }
     if (previewCustomerName) previewCustomerName.textContent = order.customerName || 'Online Guest';
     if (previewCustomerPhone) previewCustomerPhone.textContent = displayPhone;

@@ -75,16 +75,31 @@ const DEFAULT_SETTINGS = {
 // PURE FUNCTIONS — copied verbatim from dataService.js
 // ═══════════════════════════════════════════════════════════════
 
-// Source: dataService.js lines 2093-2102
+// Source: dataService.js lines 2181-2200
 function sanitizeDishImageUrl(url) {
   if (!url || typeof url !== 'string') return '';
-  if (url.includes('r2.cloudflarestorage.com') && url.includes('dishes/')) {
-    const match = url.match(/dishes\/([^?&#]+)/);
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  // Already a permanent proxy URL
+  if (trimmed.startsWith('/api/r2-image?key=')) {
+    return trimmed;
+  }
+
+  // 1. Direct R2 presigned URLs or S3 URLs with dishes/
+  if ((trimmed.includes('r2.cloudflarestorage.com') || trimmed.includes('X-Amz-Expires') || trimmed.includes('X-Amz-Signature')) && trimmed.includes('dishes/')) {
+    const match = trimmed.match(/dishes\/([^?&#]+)/);
     if (match && match[1]) {
       return `/api/r2-image?key=dishes/${decodeURIComponent(match[1])}`;
     }
   }
-  return url;
+
+  // 2. Relative keys (e.g. "dishes/chicken_biryani_xyz.jpg")
+  if (trimmed.startsWith('dishes/')) {
+    return `/api/r2-image?key=${trimmed}`;
+  }
+
+  return trimmed;
 }
 
 // Source: dataService.js lines 2108-2132
@@ -449,6 +464,18 @@ test('sanitizeDishImageUrl', async (t) => {
   await t.test('R2 URL without dishes/ path is passed through', () => {
     const url = 'https://abc.r2.cloudflarestorage.com/bucket/categories/cat.png?sig=xyz';
     assert.equal(sanitizeDishImageUrl(url), url);
+  });
+
+  await t.test('converts R2 presigned URL with X-Amz-Expires to proxy URL', () => {
+    const expiredUrl = 'https://ac8ec178ff831995f9cc03213674c306.r2.cloudflarestorage.com/smmtaj/dishes/malai_tikka.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20261025T120000Z&X-Amz-Expires=604800&X-Amz-Signature=def456';
+    const result = sanitizeDishImageUrl(expiredUrl);
+    assert.equal(result, '/api/r2-image?key=dishes/malai_tikka.jpg');
+  });
+
+  await t.test('converts relative dish key to proxy URL', () => {
+    const relativeKey = 'dishes/chicken_kassa.jpg';
+    const result = sanitizeDishImageUrl(relativeKey);
+    assert.equal(result, '/api/r2-image?key=dishes/chicken_kassa.jpg');
   });
 
   await t.test('URL with "dishes/" in query but not R2 domain is passed through', () => {

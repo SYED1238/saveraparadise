@@ -71,4 +71,26 @@ test('RIDER BAG PIN VERIFICATION & ROUTE PREVIEW WORKFLOW SUITE', async (t) => {
     assert.strictEqual(estimatedMins, 6, 'Estimated mins must be calculated properly');
     assert.ok(!isNaN(estimatedMins), 'Estimated mins must not be NaN');
   });
+
+  await t.test('7. Rider bag preview modal adheres to clean white theme with high-contrast text', () => {
+    assert.ok(deliveryCss.includes('background: #FFFFFF !important'), 'Modal card must use clean white theme background #FFFFFF');
+    assert.ok(deliveryCss.includes('.highlight-payout .payout-val') || deliveryCss.includes('.preview-row.highlight-payout .payout-val'), 'Payout val CSS must exist');
+    assert.ok(deliveryCss.includes('#047857'), 'Payout amount must use bold high-contrast emerald text #047857 in white theme');
+    assert.ok(deliveryCss.includes('.payout-formula-tag'), 'Formula breakdown pill must be styled');
+  });
+
+  await t.test('8. Modal displays only destination address and avoids redundant "from where to where"', () => {
+    // delivery.html must display Destination Address and not redundant "Delivery Route: Savera Paradise"
+    assert.ok(deliveryHtml.includes('Destination Address:'), 'Modal must prominently label Destination Address');
+    assert.ok(!deliveryHtml.includes('Delivery Route: Savera Paradise'), 'delivery.html must not show origin kitchen route');
+    assert.ok(!deliveryJs.includes('`Savera Paradise ➔ ${areaName}`'), 'delivery.js must not set origin in previewRouteArea');
+    assert.ok(!deliveryJs.includes('`Live route from Savera Paradise Kitchen'), 'delivery.js must not set origin in previewDistRouteDesc');
+  });
+
+  await t.test('9. Mobile-first ergonomic actions bar and touch targets conform to standards', () => {
+    // Actions must be sticky/fixed in flex container with >= 48px touch targets
+    assert.ok(deliveryCss.includes('.bag-preview-actions'), 'bag-preview-actions must exist');
+    assert.ok(deliveryCss.includes('min-height: 48px') || deliveryCss.includes('min-height: 50px'), 'Buttons must meet 48px touch minimum');
+    assert.ok(deliveryCss.includes('max-height: min(92dvh') || deliveryCss.includes('max-height: min(94dvh'), 'Modal card must clamp within mobile viewport');
+  });
 });

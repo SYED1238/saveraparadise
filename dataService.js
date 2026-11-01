@@ -2180,13 +2180,28 @@ export const PRESET_FOOD_IMAGES = [
  */
 export function sanitizeDishImageUrl(url) {
   if (!url || typeof url !== 'string') return '';
-  if (url.includes('r2.cloudflarestorage.com') && url.includes('dishes/')) {
-    const match = url.match(/dishes\/([^?&#]+)/);
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  // Already a permanent proxy URL
+  if (trimmed.startsWith('/api/r2-image?key=')) {
+    return trimmed;
+  }
+
+  // 1. Direct R2 presigned URLs or S3 URLs with dishes/
+  if ((trimmed.includes('r2.cloudflarestorage.com') || trimmed.includes('X-Amz-Expires') || trimmed.includes('X-Amz-Signature')) && trimmed.includes('dishes/')) {
+    const match = trimmed.match(/dishes\/([^?&#]+)/);
     if (match && match[1]) {
       return `/api/r2-image?key=dishes/${decodeURIComponent(match[1])}`;
     }
   }
-  return url;
+
+  // 2. Relative keys (e.g. "dishes/chicken_biryani_xyz.jpg")
+  if (trimmed.startsWith('dishes/')) {
+    return `/api/r2-image?key=${trimmed}`;
+  }
+
+  return trimmed;
 }
 
 /**
@@ -2669,7 +2684,7 @@ class QuickBiteDataService {
           }
 
           const mapped = data.map(d => {
-            const finalImage = d.image || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=80';
+            const finalImage = sanitizeDishImageUrl(d.image) || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=80';
             return {
               id: d.id,
               name: d.name,
@@ -3954,16 +3969,20 @@ class QuickBiteDataService {
 
   saveDishes(dishes) {
     if (!Array.isArray(dishes)) return;
-    this.dishesCache = dishes;
+    const sanitizedDishes = dishes.map(d => ({
+      ...d,
+      image: sanitizeDishImageUrl(d.image)
+    }));
+    this.dishesCache = sanitizedDishes;
 
     // 1. Always persist complete high-resolution data to IndexedDB (No 5MB limit)
-    idbSet('dishes', dishes).catch(err => {
+    idbSet('dishes', sanitizedDishes).catch(err => {
       console.warn('[DataService] idbSet dishes error:', err);
     });
 
     // 2. Try to persist to localStorage safely
     try {
-      localStorage.setItem(STORAGE_KEYS.DISHES, JSON.stringify(dishes));
+      localStorage.setItem(STORAGE_KEYS.DISHES, JSON.stringify(sanitizedDishes));
     } catch (quotaErr) {
       console.warn('[DataService] LocalStorage quota reached for full dishes payload. Keeping full data in IndexedDB and saving optimized copy to localStorage:', quotaErr?.message || quotaErr);
       try {
@@ -4049,6 +4068,7 @@ class QuickBiteDataService {
 
   addDish(dishData) {
     const list = this.getDishes();
+    const sanitizedImage = sanitizeDishImageUrl(dishData.image) || '/api/r2-image?key=dishes/crispy-chicken.jpg';
     const newDish = {
       id: 'item-' + Date.now(),
       name: dishData.name.trim(),
@@ -4056,7 +4076,7 @@ class QuickBiteDataService {
       categoryName: dishData.categoryName || '',
       price: parseFloat(dishData.price) || 199,
       rating: '',
-      image: dishData.image || '/api/r2-image?key=dishes/crispy-chicken.jpg',
+      image: sanitizedImage,
       badge: dishData.badge || '✨ Chef Specialty',
       time: dishData.time || '10 - 15 mins',
       calories: dishData.calories || '520 kcal',
@@ -4069,7 +4089,7 @@ class QuickBiteDataService {
 
     // Asynchronously insert into Supabase (Guard: NEVER save raw Base64 data to Supabase)
     const remoteDishImage = (newDish.image && !newDish.image.startsWith('data:'))
-      ? newDish.image
+      ? sanitizeDishImageUrl(newDish.image)
       : '/api/r2-image?key=dishes/crispy-chicken.jpg';
 
     supabase.from('dishes').insert([{
@@ -4097,6 +4117,9 @@ class QuickBiteDataService {
     const list = this.getDishes();
     const idx = list.findIndex(d => d.id === id);
     if (idx !== -1) {
+      if (updatedData && updatedData.image) {
+        updatedData.image = sanitizeDishImageUrl(updatedData.image);
+      }
       list[idx] = { ...list[idx], ...updatedData };
       this.saveDishes(list);
 
@@ -4115,7 +4138,7 @@ class QuickBiteDataService {
       };
       // Guard: Only update image in Supabase if it's a valid remote/R2 URL and NOT raw Base64 data
       if (d.image && !d.image.startsWith('data:')) {
-        updatePayload.image = d.image;
+        updatePayload.image = sanitizeDishImageUrl(d.image);
       }
 
       supabase.from('dishes').update(updatePayload).eq('id', id).then(({ error }) => {
@@ -4352,7 +4375,7 @@ class QuickBiteDataService {
     for (const item of rawItems) {
       const dish = dishes.find(d => d.id === item.id || d.name === item.name);
       if (dish && dish.inStock === false) {
-        const msg = `"${dish.name}" is currently sold out and cannot be ordered.`;
+        const msg = `"${dish.name}" will be back soon and cannot be ordered right now.`;
         return {
           success: false,
           reason: 'out_of_stock',

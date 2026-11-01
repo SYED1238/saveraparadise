@@ -5,6 +5,7 @@
  */
 import { createPgOrder } from './_cashfree.js';
 import { verifySignedPayload } from './_auth.js';
+import { verifyTurnstileToken, getClientIp } from './_turnstile.js';
 
 const ALLOWED_ORIGINS = [
   'https://foodbliz.in',
@@ -57,7 +58,16 @@ export default async function handler(req, res) {
       }
     }
 
-    const { orderId, amount, customerPhone, customerName, customerEmail, returnUrl, checkoutToken } = body || {};
+    const { orderId, amount, customerPhone, customerName, customerEmail, returnUrl, checkoutToken, turnstileToken } = body || {};
+
+    if (!checkoutToken) {
+      const clientToken = turnstileToken || req.headers?.['cf-turnstile-response'] || body?.['cf-turnstile-response'];
+      const clientIp = getClientIp(req);
+      const botCheck = await verifyTurnstileToken(clientToken, clientIp);
+      if (!botCheck.success) {
+        return res.status(403).json({ error: 'Forbidden', message: botCheck.error || 'Bot verification failed.' });
+      }
+    }
 
     if (!orderId || !amount || Number(amount) <= 0) {
       return res.status(400).json({ error: 'Bad Request', message: 'orderId and valid amount are required' });

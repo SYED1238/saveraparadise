@@ -3386,16 +3386,18 @@ body.pwa-customer-installed .header-pwa-dock {
   position: absolute;
   top: 14px;
   left: 14px;
-  background: rgba(220, 38, 38, 0.95);
-  color: #FFFFFF;
+  background: rgba(15, 23, 42, 0.88);
+  color: #FCD34D;
   font-size: 0.75rem;
   font-weight: 800;
   padding: 5px 12px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 6;
-  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);
-  letter-spacing: 0.03em;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 

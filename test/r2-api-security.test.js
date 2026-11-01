@@ -7,6 +7,8 @@ import r2DeleteHandler from '../api/r2-delete.js';
 import r2ListHandler from '../api/r2-list.js';
 import r2ImageHandler from '../api/r2-image.js';
 import r2VideoHandler from '../api/r2-video.js';
+import { sanitizeDishImageUrl } from '../dataService.js';
+import { cloudflareR2Service } from '../cloudflareR2Service.js';
 
 // Helper to mock minimal Serverless req / res
 function createMockReqRes({ method = 'GET', url = '/', headers = {}, body = null, query = {} } = {}) {
@@ -289,5 +291,54 @@ test('STAGE 1: Live Tracker Video Streaming Endpoint (r2-video.js)', async (t) =
     const { req, res } = createMockReqRes({ method: 'GET', query: { key: 'videos/prep_kitchen.mp4' } });
     await r2VideoHandler(req, res);
     assert.notStrictEqual(res.statusCode, 400, 'videos/ folder paths must pass validation');
+  });
+});
+
+test('STAGE 2: Permanent R2 Image Proxy & 7-Day Expiry Prevention Suite', async (t) => {
+  await t.test('sanitizeDishImageUrl converts expired presigned URLs with X-Amz-Expires to permanent proxy URLs', () => {
+    const expiredPresignedUrl = 'https://ac8ec178ff831995f9cc03213674c306.r2.cloudflarestorage.com/smmtaj/dishes/malai_tikka.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20261025T120000Z&X-Amz-Expires=604800&X-Amz-Signature=abcdef123456';
+    const cleanUrl = sanitizeDishImageUrl(expiredPresignedUrl);
+    assert.strictEqual(cleanUrl, '/api/r2-image?key=dishes/malai_tikka.jpg');
+    assert.ok(!cleanUrl.includes('X-Amz-Expires'), 'URL must not contain expiration parameters');
+    assert.ok(!cleanUrl.includes('X-Amz-Signature'), 'URL must not contain presigned signatures');
+  });
+
+  await t.test('sanitizeDishImageUrl converts relative dishes/ key to permanent proxy URLs', () => {
+    const key = 'dishes/chicken_kassa.jpg';
+    assert.strictEqual(sanitizeDishImageUrl(key), '/api/r2-image?key=dishes/chicken_kassa.jpg');
+  });
+
+  await t.test('sanitizeDishImageUrl preserves already-proxied URLs without modification', () => {
+    const proxyUrl = '/api/r2-image?key=dishes/chicken_noodles.jpg';
+    assert.strictEqual(sanitizeDishImageUrl(proxyUrl), proxyUrl);
+  });
+
+  await t.test('sanitizeDishImageUrl preserves external third-party URLs (e.g. Unsplash)', () => {
+    const unsplashUrl = 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=80';
+    assert.strictEqual(sanitizeDishImageUrl(unsplashUrl), unsplashUrl);
+  });
+
+  await t.test('cloudflareR2Service.generatePresignedGetUrl generates permanent proxy URL when public domain is empty', async () => {
+    const origDomain = cloudflareR2Service.publicDomain;
+    cloudflareR2Service.publicDomain = '';
+    const generated = await cloudflareR2Service.generatePresignedGetUrl('dishes/tandoori_platter.jpg');
+    assert.strictEqual(generated, '/api/r2-image?key=dishes%2Ftandoori_platter.jpg');
+    assert.ok(!generated.includes('X-Amz-Expires'));
+    cloudflareR2Service.publicDomain = origDomain;
+  });
+
+  await t.test('POST /api/r2-upload rejects request without R2 credentials with 503 instead of generating broken URLs', async () => {
+    const token = createAdminToken();
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'x-filename': 'test_dish.jpg'
+      },
+      body: Buffer.from('fake-image-bytes')
+    });
+    await r2UploadHandler(req, res);
+    assert.strictEqual(res.statusCode, 503);
+    assert.ok(res.data.error.includes('credentials') || res.data.error.includes('Storage credentials not configured'));
   });
 });

@@ -600,14 +600,15 @@
               <span class="dot-sep">•</span>
               <span id="preview-eta-val">~15 mins ride</span>
             </div>
-            <span class="dist-sub-line" id="preview-dist-route-desc">Live calculated from Savera Paradise Kitchen to Customer Pinned Location</span>
+            <span class="dist-sub-line" id="preview-dist-route-desc">Direct distance to customer destination</span>
           </div>
         </div>
 
         <div class="preview-info-table">
-          <div class="preview-row highlight-route">
-            <span class="row-label"><i class="fa-solid fa-map-location-dot"></i> Delivery Route:</span>
-            <strong class="row-val route-val" id="preview-route-area">--</strong>
+          <div class="preview-row highlight-destination highlight-route">
+            <span class="row-label"><i class="fa-solid fa-location-dot"></i> Destination Address:</span>
+            <strong class="row-val address-val" id="preview-drop-address">Address</strong>
+            <span id="preview-route-area" style="display:none;" aria-hidden="true"></span>
           </div>
           <div class="preview-row">
             <span class="row-label"><i class="fa-solid fa-user"></i> Customer Name:</span>
@@ -616,10 +617,6 @@
           <div class="preview-row">
             <span class="row-label"><i class="fa-solid fa-phone"></i> Contact Phone:</span>
             <strong class="row-val row-phone" id="preview-customer-phone">--</strong>
-          </div>
-          <div class="preview-row">
-            <span class="row-label"><i class="fa-solid fa-location-dot"></i> Drop Address:</span>
-            <span class="row-val address-val" id="preview-drop-address">Address</span>
           </div>
           <div class="preview-row">
             <span class="row-label"><i class="fa-solid fa-utensils"></i> Packed Items:</span>
@@ -637,13 +634,13 @@
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="bag-preview-actions">
-          <button type="button" class="btn-cancel-modal" id="btn-cancel-bag-claim">Cancel</button>
-          <button type="button" class="btn-confirm-bag-claim" id="btn-confirm-bag-claim">
-            <i class="fa-solid fa-motorcycle"></i> Accept & Start Delivery
-          </button>
-        </div>
+      <div class="bag-preview-actions">
+        <button type="button" class="btn-cancel-modal" id="btn-cancel-bag-claim">Cancel</button>
+        <button type="button" class="btn-confirm-bag-claim" id="btn-confirm-bag-claim">
+          <i class="fa-solid fa-motorcycle"></i> Accept & Start Delivery
+        </button>
       </div>
     </div>
   </div>
