@@ -31,20 +31,6 @@ const ROUTES = {
   '/api/r2-video': r2VideoHandler
 };
 
-const CLEAN_URL_REWRITES = {
-  '/admin': '/admin.html',
-  '/delivery': '/delivery.html',
-  '/owner': '/owner.html',
-  '/poster': '/poster.html',
-  '/about': '/about.html',
-  '/contact': '/contact.html',
-  '/pricing': '/pricing.html',
-  '/terms': '/terms.html',
-  '/privacy': '/privacy.html',
-  '/refund': '/refund.html',
-  '/shipping': '/shipping.html'
-};
-
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -65,13 +51,6 @@ export default {
 
     // 2. Static Assets Dispatching via Cloudflare ASSETS binding
     if (env.ASSETS) {
-      if (CLEAN_URL_REWRITES[pathname]) {
-        const rewriteUrl = new URL(request.url);
-        rewriteUrl.pathname = CLEAN_URL_REWRITES[pathname];
-        const res = await env.ASSETS.fetch(new Request(rewriteUrl.toString(), request));
-        if (res.status !== 404) return res;
-      }
-
       return env.ASSETS.fetch(request);
     }
 
