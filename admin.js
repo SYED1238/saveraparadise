@@ -3538,6 +3538,25 @@ document.addEventListener('DOMContentLoaded', () => {
       couponPill.style.display = freeDelivWithCoupon ? 'inline-flex' : 'none';
     }
 
+    // Sync collapsed summary chips on card header
+    const summaryPromoCode = document.getElementById('summary-promo-code');
+    const summaryPromoDiscount = document.getElementById('summary-promo-discount');
+    const summaryPromoMinChip = document.getElementById('summary-promo-min-chip');
+    const summaryPromoDeliveryChip = document.getElementById('summary-promo-delivery-chip');
+    if (summaryPromoCode) summaryPromoCode.textContent = code;
+    if (summaryPromoDiscount) summaryPromoDiscount.textContent = discountTagText;
+    if (summaryPromoMinChip) {
+      if (minOrder > 0) {
+        summaryPromoMinChip.style.display = 'inline-flex';
+        summaryPromoMinChip.innerHTML = `<i class="fa-solid fa-cart-shopping"></i> Above ₹${minOrder}`;
+      } else {
+        summaryPromoMinChip.style.display = 'none';
+      }
+    }
+    if (summaryPromoDeliveryChip) {
+      summaryPromoDeliveryChip.style.display = freeDelivWithCoupon ? 'inline-flex' : 'none';
+    }
+
     const adminOfferStatusChip = document.getElementById('admin-offer-status-chip');
     const offerStatusDot = document.getElementById('offer-status-dot');
     const offerStatusChipText = document.getElementById('offer-status-chip-text');
@@ -3615,6 +3634,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (previewUnlockedTitle) previewUnlockedTitle.textContent = title;
     if (previewUnlockedBadgeDisplay) previewUnlockedBadgeDisplay.textContent = `${discountPct}% OFF`;
+
+    // Sync collapsed summary chips on card header
+    const summaryUnlockedMin = document.getElementById('summary-unlocked-min');
+    const summaryUnlockedDiscount = document.getElementById('summary-unlocked-discount');
+    if (summaryUnlockedMin) summaryUnlockedMin.textContent = `₹${minOrder}`;
+    if (summaryUnlockedDiscount) summaryUnlockedDiscount.textContent = `${discountPct}% OFF`;
     if (previewUnlockedMinPill) {
       previewUnlockedMinPill.innerHTML = `<i class="fa-solid fa-lock-open"></i> Unlocks at ₹${minOrder}+`;
     }
@@ -4291,6 +4316,103 @@ document.addEventListener('DOMContentLoaded', () => {
       formUnlockedDeals.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     });
   }
+
+  // ========================================================
+  // 5B. COLLAPSIBLE ACCORDION FOR OFFERS SETTINGS HUB
+  // ========================================================
+  function initOffersAccordion() {
+    const promoCard = document.getElementById('offer-card-promo');
+    const unlockedCard = document.getElementById('offer-card-unlocked');
+    const btnPromo = document.getElementById('btn-toggle-promo-offer');
+    const btnUnlocked = document.getElementById('btn-toggle-unlocked-deals');
+    const bodyPromo = document.getElementById('offer-body-promo');
+    const bodyUnlocked = document.getElementById('offer-body-unlocked');
+    const headerPromo = document.getElementById('offer-header-promo');
+    const headerUnlocked = document.getElementById('offer-header-unlocked');
+
+    function toggleOfferCard(card, body, btn, forceOpen = null) {
+      if (!card || !body || !btn) return;
+      const isOpen = card.classList.contains('is-open');
+      const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
+
+      if (shouldOpen) {
+        // When opening one card, collapse the other to save viewport space and avoid scrolling
+        if (card === promoCard) {
+          toggleOfferCard(unlockedCard, bodyUnlocked, btnUnlocked, false);
+        } else if (card === unlockedCard) {
+          toggleOfferCard(promoCard, bodyPromo, btnPromo, false);
+        }
+      }
+
+      card.classList.toggle('is-open', shouldOpen);
+      btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      const textSpan = btn.querySelector('.toggle-btn-text');
+      if (textSpan) {
+        textSpan.textContent = shouldOpen ? 'Close Settings' : 'Edit Settings';
+      }
+      body.style.display = shouldOpen ? 'block' : 'none';
+    }
+
+    if (btnPromo) {
+      btnPromo.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleOfferCard(promoCard, bodyPromo, btnPromo);
+      });
+    }
+    if (headerPromo) {
+      headerPromo.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, select, a, label')) return;
+        toggleOfferCard(promoCard, bodyPromo, btnPromo);
+      });
+      headerPromo.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('button, input, select, a, label')) return;
+          e.preventDefault();
+          toggleOfferCard(promoCard, bodyPromo, btnPromo);
+        }
+      });
+    }
+
+    if (btnUnlocked) {
+      btnUnlocked.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleOfferCard(unlockedCard, bodyUnlocked, btnUnlocked);
+      });
+    }
+    if (headerUnlocked) {
+      headerUnlocked.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, select, a, label')) return;
+        toggleOfferCard(unlockedCard, bodyUnlocked, btnUnlocked);
+      });
+      headerUnlocked.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('button, input, select, a, label')) return;
+          e.preventDefault();
+          toggleOfferCard(unlockedCard, bodyUnlocked, btnUnlocked);
+        }
+      });
+    }
+
+    // Close buttons inside expanded forms
+    document.querySelectorAll('.btn-close-offer-panel').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = btn.getAttribute('data-target');
+        if (targetId === 'offer-card-promo') {
+          toggleOfferCard(promoCard, bodyPromo, btnPromo, false);
+        } else if (targetId === 'offer-card-unlocked') {
+          toggleOfferCard(unlockedCard, bodyUnlocked, btnUnlocked, false);
+        }
+      });
+    });
+
+    // Initialize both cards collapsed by default so view is compact and fits without scrolling
+    toggleOfferCard(promoCard, bodyPromo, btnPromo, false);
+    toggleOfferCard(unlockedCard, bodyUnlocked, btnUnlocked, false);
+  }
+
+  initOffersAccordion();
+
 
   // Save delivery options form
   if (formStoreDelivery) {

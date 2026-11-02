@@ -659,249 +659,284 @@
       </div>
 
       <!-- 1. SPECIAL PROMOTIONAL OFFER & DISCOUNT CODE -->
-      <div class="admin-card-section offer-settings-section">
-        <div class="section-title-bar">
-          <div class="title-with-count">
-            <span class="section-icon">🎁</span>
-            <h2>Promotional Offer & Discount Code</h2>
-            <span class="count-pill offer-status-pill" id="offer-status-badge">Active</span>
-          </div>
-          <span class="section-hint">Customize the promo coupon code, discount percentage or flat amount, headline, and customer banners across your storefront.</span>
-        </div>
-
-        <form id="form-store-offer" class="admin-form store-offer-form" novalidate>
-          <!-- Active Toggle Switch -->
-          <div class="offer-toggle-row">
-            <div class="offer-toggle-info">
-              <strong>Promotional Offer Status</strong>
-              <span>Turn off to temporarily disable discount codes and hide promo banners on storefront</span>
+      <div class="admin-card-section offer-settings-section" id="offer-card-promo">
+        <div class="section-title-bar offer-collapsible-header" id="offer-header-promo" role="button" tabindex="0" aria-expanded="false" aria-controls="offer-body-promo">
+          <div class="offer-header-main">
+            <div class="title-with-count">
+              <span class="section-icon">🎁</span>
+              <h2>Promotional Offer & Discount Code</h2>
+              <span class="count-pill offer-status-pill" id="offer-status-badge">Active</span>
             </div>
-            <label class="admin-switch">
-              <input type="checkbox" id="input-offer-active" checked>
-              <span class="admin-slider round"></span>
-            </label>
-          </div>
-
-          <!-- Discount Type Selector (Percentage vs Flat Amount) -->
-          <div class="form-group">
-            <label class="field-label-bold"><i class="fa-solid fa-tags"></i> Discount Type</label>
-            <div class="discount-type-tabs" id="discount-type-tabs">
-              <button type="button" class="discount-type-tab active" data-type="percent" id="btn-type-percent">
-                <i class="fa-solid fa-percent"></i> Percentage Discount (% OFF)
-              </button>
-              <button type="button" class="discount-type-tab" data-type="flat" id="btn-type-flat">
-                <i class="fa-solid fa-money-bill-wave"></i> Flat Amount Off (e.g. ₹50 OFF)
-              </button>
+            <div class="offer-collapsed-summary" id="promo-collapsed-summary">
+              <span class="offer-summary-chip"><i class="fa-solid fa-ticket"></i> <strong id="summary-promo-code">SAVERA20</strong> (<span id="summary-promo-discount">20% OFF</span>)</span>
+              <span class="offer-summary-chip" id="summary-promo-min-chip"><i class="fa-solid fa-cart-shopping"></i> Above ₹300</span>
+              <span class="offer-summary-chip" id="summary-promo-delivery-chip"><i class="fa-solid fa-truck-fast"></i> Free Priority Delivery</span>
             </div>
-            <input type="hidden" id="input-offer-type" value="percent">
+            <span class="section-hint">Customize the promo coupon code, discount percentage or flat amount, headline, and customer banners across your storefront.</span>
           </div>
-
-          <!-- Coupon Code & Discount Value -->
-          <div class="form-row-2">
-            <div class="form-group">
-              <label for="input-offer-code"><i class="fa-solid fa-ticket"></i> Coupon Promo Code</label>
-              <input type="text" id="input-offer-code" value="SAVERA20" placeholder="e.g. SAVERA20, WEEKEND100" style="text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">
-            </div>
-
-            <div class="form-group">
-              <label for="input-offer-discount" id="label-discount-val"><i class="fa-solid fa-percent"></i> Discount Percentage (%)</label>
-              <input type="number" id="input-offer-discount" min="1" value="20" placeholder="e.g. 20 or 100">
-            </div>
-          </div>
-
-          <!-- Quick Discount Preset Pills (Dynamic based on % or Flat) -->
-          <div class="offer-discount-presets">
-            <span class="preset-label" id="preset-discount-label">Quick Discount Presets:</span>
-            <div class="rush-preset-pills" id="discount-presets-container">
-              <button type="button" class="offer-preset-btn" data-val="10">10% OFF</button>
-              <button type="button" class="offer-preset-btn" data-val="15">15% OFF</button>
-              <button type="button" class="offer-preset-btn active" data-val="20">20% OFF</button>
-              <button type="button" class="offer-preset-btn" data-val="25">25% OFF</button>
-              <button type="button" class="offer-preset-btn" data-val="30">30% OFF</button>
-              <button type="button" class="offer-preset-btn" data-val="50">50% OFF</button>
-            </div>
-          </div>
-
-          <!-- Minimum Order Value (Valid above orders 200 / 300) -->
-          <div class="form-group min-order-group">
-            <label for="input-offer-min-order">
-              <i class="fa-solid fa-cart-shopping"></i> Minimum Order Requirement (Valid on orders above)
-            </label>
-            <div class="input-currency-wrapper">
-              <span class="input-currency-prefix">₹</span>
-              <input type="number" id="input-offer-min-order" min="0" step="1" value="300" placeholder="e.g. 200, 300 (0 for no minimum)">
-            </div>
-            <div class="offer-discount-presets" style="margin-top: 8px;">
-              <span class="preset-label">Quick Minimum Presets:</span>
-              <div class="rush-preset-pills" id="min-order-presets-container">
-                <button type="button" class="min-order-preset-btn" data-min="0">No Min</button>
-                <button type="button" class="min-order-preset-btn" data-min="150">150+</button>
-                <button type="button" class="min-order-preset-btn" data-min="200">200+</button>
-                <button type="button" class="min-order-preset-btn active" data-min="300">300+</button>
-                <button type="button" class="min-order-preset-btn" data-min="500">500+</button>
-              </div>
-            </div>
-            <span class="admin-field-tip">Coupon will only apply if the customer's cart subtotal meets or exceeds this value (e.g. 100 off above 300, or 20% off above 200).</span>
-          </div>
-
-          <!-- Offer Title & Headline -->
-          <div class="form-group">
-            <label for="input-offer-title"><i class="fa-solid fa-heading"></i> Offer Headline / Title</label>
-            <input type="text" id="input-offer-title" value="Craving Savera Paradise Delicious Food? Get Special Discount Today!" placeholder="e.g. Craving Savera Paradise? Get Special Discount Today!">
-          </div>
-
-          <!-- Offer Subtext / Description -->
-          <div class="form-group">
-            <label for="input-offer-subtext"><i class="fa-solid fa-comment-dots"></i> Offer Description & Customer Message</label>
-            <input type="text" id="input-offer-subtext" value="Use coupon code at checkout for special discount." placeholder="e.g. Use coupon code at checkout for special discount.">
-          </div>
-
-          <!-- Free Delivery with Coupon Checkbox -->
-          <div class="form-group-checkbox">
-            <label class="custom-checkbox-label">
-              <input type="checkbox" id="input-offer-free-delivery" checked>
-              <span class="custom-checkbox-mark"></span>
-              <span class="custom-checkbox-text">
-                <strong>Include 100% Free Priority Delivery with Coupon</strong>
-                <small>Customers who apply this coupon code automatically receive free shipping</small>
-              </span>
-            </label>
-          </div>
-
-          <!-- Live Customer Storefront Preview Card -->
-          <div class="offer-preview-box">
-            <div class="preview-header">
-              <span class="preview-badge">LIVE STOREFRONT PREVIEW</span>
-              <span class="preview-status" id="preview-offer-status">Active on Storefront</span>
-            </div>
-            <div class="preview-card-inner">
-              <div class="preview-text-block">
-                <span class="preview-tag">🔥 SPECIAL PROMOTION</span>
-                <h4 class="preview-title" id="preview-offer-title">Craving Savera Paradise? Get Special Discount Today!</h4>
-                <p class="preview-desc" id="preview-offer-desc">Use coupon code <strong class="preview-code-tag" id="preview-offer-code">SAVERA20</strong> for <strong id="preview-offer-discount-text">20% OFF</strong> on orders above 300!</p>
-                <div class="preview-criteria-tags" id="preview-criteria-tags">
-                  <span class="criteria-pill" id="preview-min-order-pill"><i class="fa-solid fa-cart-shopping"></i> Min Order: 300</span>
-                  <span class="criteria-pill free-deliv-pill" id="preview-coupon-free-pill"><i class="fa-solid fa-truck-fast"></i> Free Priority Delivery Included</span>
-                </div>
-              </div>
-              <div class="preview-code-badge">
-                <span class="preview-badge-code" id="preview-badge-code-display">SAVERA20</span>
-                <span class="preview-badge-discount" id="preview-badge-discount-display">20% OFF</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="hours-card-actions">
-            <button type="submit" class="btn btn-brand-primary" id="btn-save-offer">
-              <i class="fa-solid fa-floppy-disk"></i> Save Promotional Offer
+          <div class="offer-header-actions">
+            <button type="button" class="btn-toggle-offer-accordion" id="btn-toggle-promo-offer" aria-expanded="false" aria-controls="offer-body-promo">
+              <span class="toggle-btn-text">Edit Settings</span>
+              <i class="fa-solid fa-chevron-down toggle-chevron"></i>
             </button>
           </div>
-        </form>
+        </div>
+
+        <div class="offer-collapsible-body" id="offer-body-promo" style="display: none;">
+          <form id="form-store-offer" class="admin-form store-offer-form" novalidate>
+            <!-- Active Toggle Switch -->
+            <div class="offer-toggle-row">
+              <div class="offer-toggle-info">
+                <strong>Promotional Offer Status</strong>
+                <span>Turn off to temporarily disable discount codes and hide promo banners on storefront</span>
+              </div>
+              <label class="admin-switch">
+                <input type="checkbox" id="input-offer-active" checked>
+                <span class="admin-slider round"></span>
+              </label>
+            </div>
+
+            <!-- Discount Type Selector (Percentage vs Flat Amount) -->
+            <div class="form-group">
+              <label class="field-label-bold"><i class="fa-solid fa-tags"></i> Discount Type</label>
+              <div class="discount-type-tabs" id="discount-type-tabs">
+                <button type="button" class="discount-type-tab active" data-type="percent" id="btn-type-percent">
+                  <i class="fa-solid fa-percent"></i> Percentage Discount (% OFF)
+                </button>
+                <button type="button" class="discount-type-tab" data-type="flat" id="btn-type-flat">
+                  <i class="fa-solid fa-money-bill-wave"></i> Flat Amount Off (e.g. ₹50 OFF)
+                </button>
+              </div>
+              <input type="hidden" id="input-offer-type" value="percent">
+            </div>
+
+            <!-- Coupon Code & Discount Value -->
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="input-offer-code"><i class="fa-solid fa-ticket"></i> Coupon Promo Code</label>
+                <input type="text" id="input-offer-code" value="SAVERA20" placeholder="e.g. SAVERA20, WEEKEND100" style="text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">
+              </div>
+
+              <div class="form-group">
+                <label for="input-offer-discount" id="label-discount-val"><i class="fa-solid fa-percent"></i> Discount Percentage (%)</label>
+                <input type="number" id="input-offer-discount" min="1" value="20" placeholder="e.g. 20 or 100">
+              </div>
+            </div>
+
+            <!-- Quick Discount Preset Pills (Dynamic based on % or Flat) -->
+            <div class="offer-discount-presets">
+              <span class="preset-label" id="preset-discount-label">Quick Discount Presets:</span>
+              <div class="rush-preset-pills" id="discount-presets-container">
+                <button type="button" class="offer-preset-btn" data-val="10">10% OFF</button>
+                <button type="button" class="offer-preset-btn" data-val="15">15% OFF</button>
+                <button type="button" class="offer-preset-btn active" data-val="20">20% OFF</button>
+                <button type="button" class="offer-preset-btn" data-val="25">25% OFF</button>
+                <button type="button" class="offer-preset-btn" data-val="30">30% OFF</button>
+                <button type="button" class="offer-preset-btn" data-val="50">50% OFF</button>
+              </div>
+            </div>
+
+            <!-- Minimum Order Value (Valid above orders 200 / 300) -->
+            <div class="form-group min-order-group">
+              <label for="input-offer-min-order">
+                <i class="fa-solid fa-cart-shopping"></i> Minimum Order Requirement (Valid on orders above)
+              </label>
+              <div class="input-currency-wrapper">
+                <span class="input-currency-prefix">₹</span>
+                <input type="number" id="input-offer-min-order" min="0" step="1" value="300" placeholder="e.g. 200, 300 (0 for no minimum)">
+              </div>
+              <div class="offer-discount-presets" style="margin-top: 8px;">
+                <span class="preset-label">Quick Minimum Presets:</span>
+                <div class="rush-preset-pills" id="min-order-presets-container">
+                  <button type="button" class="min-order-preset-btn" data-min="0">No Min</button>
+                  <button type="button" class="min-order-preset-btn" data-min="150">150+</button>
+                  <button type="button" class="min-order-preset-btn" data-min="200">200+</button>
+                  <button type="button" class="min-order-preset-btn active" data-min="300">300+</button>
+                  <button type="button" class="min-order-preset-btn" data-min="500">500+</button>
+                </div>
+              </div>
+              <span class="admin-field-tip">Coupon will only apply if the customer's cart subtotal meets or exceeds this value (e.g. 100 off above 300, or 20% off above 200).</span>
+            </div>
+
+            <!-- Offer Title & Headline -->
+            <div class="form-group">
+              <label for="input-offer-title"><i class="fa-solid fa-heading"></i> Offer Headline / Title</label>
+              <input type="text" id="input-offer-title" value="Craving Savera Paradise Delicious Food? Get Special Discount Today!" placeholder="e.g. Craving Savera Paradise? Get Special Discount Today!">
+            </div>
+
+            <!-- Offer Subtext / Description -->
+            <div class="form-group">
+              <label for="input-offer-subtext"><i class="fa-solid fa-comment-dots"></i> Offer Description & Customer Message</label>
+              <input type="text" id="input-offer-subtext" value="Use coupon code at checkout for special discount." placeholder="e.g. Use coupon code at checkout for special discount.">
+            </div>
+
+            <!-- Free Delivery with Coupon Checkbox -->
+            <div class="form-group-checkbox">
+              <label class="custom-checkbox-label">
+                <input type="checkbox" id="input-offer-free-delivery" checked>
+                <span class="custom-checkbox-mark"></span>
+                <span class="custom-checkbox-text">
+                  <strong>Include 100% Free Priority Delivery with Coupon</strong>
+                  <small>Customers who apply this coupon code automatically receive free shipping</small>
+                </span>
+              </label>
+            </div>
+
+            <!-- Live Customer Storefront Preview Card -->
+            <div class="offer-preview-box">
+              <div class="preview-header">
+                <span class="preview-badge">LIVE STOREFRONT PREVIEW</span>
+                <span class="preview-status" id="preview-offer-status">Active on Storefront</span>
+              </div>
+              <div class="preview-card-inner">
+                <div class="preview-text-block">
+                  <span class="preview-tag">🔥 SPECIAL PROMOTION</span>
+                  <h4 class="preview-title" id="preview-offer-title">Craving Savera Paradise? Get Special Discount Today!</h4>
+                  <p class="preview-desc" id="preview-offer-desc">Use coupon code <strong class="preview-code-tag" id="preview-offer-code">SAVERA20</strong> for <strong id="preview-offer-discount-text">20% OFF</strong> on orders above 300!</p>
+                  <div class="preview-criteria-tags" id="preview-criteria-tags">
+                    <span class="criteria-pill" id="preview-min-order-pill"><i class="fa-solid fa-cart-shopping"></i> Min Order: 300</span>
+                    <span class="criteria-pill free-deliv-pill" id="preview-coupon-free-pill"><i class="fa-solid fa-truck-fast"></i> Free Priority Delivery Included</span>
+                  </div>
+                </div>
+                <div class="preview-code-badge">
+                  <span class="preview-badge-code" id="preview-badge-code-display">SAVERA20</span>
+                  <span class="preview-badge-discount" id="preview-badge-discount-display">20% OFF</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="hours-card-actions">
+              <button type="submit" class="btn btn-brand-primary" id="btn-save-offer">
+                <i class="fa-solid fa-floppy-disk"></i> Save Promotional Offer
+              </button>
+              <button type="button" class="btn btn-secondary btn-close-offer-panel" data-target="offer-card-promo" style="margin-left: 8px;">
+                <i class="fa-solid fa-chevron-up"></i> Close Settings
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
 
       <!-- 2. DYNAMIC UNLOCKED DEALS & WHOLESALE PRICING (OPTIONAL THRESHOLD DEALS) -->
-      <div class="admin-card-section offer-settings-section" style="margin-top: 24px;">
-        <div class="section-title-bar">
-          <div class="title-with-count">
-            <span class="section-icon">⚡</span>
-            <h2>Dynamic Unlocked Pricing (Threshold Club Deals)</h2>
-            <span class="count-pill offer-status-pill" id="unlocked-deals-status-badge">Disabled</span>
+      <div class="admin-card-section offer-settings-section" id="offer-card-unlocked" style="margin-top: 24px;">
+        <div class="section-title-bar offer-collapsible-header" id="offer-header-unlocked" role="button" tabindex="0" aria-expanded="false" aria-controls="offer-body-unlocked">
+          <div class="offer-header-main">
+            <div class="title-with-count">
+              <span class="section-icon">⚡</span>
+              <h2>Dynamic Unlocked Pricing (Threshold Club Deals)</h2>
+              <span class="count-pill offer-status-pill" id="unlocked-deals-status-badge">Disabled</span>
+            </div>
+            <div class="offer-collapsed-summary" id="unlocked-collapsed-summary">
+              <span class="offer-summary-chip"><i class="fa-solid fa-lock-open"></i> Min Cart: <strong id="summary-unlocked-min">₹299</strong></span>
+              <span class="offer-summary-chip"><i class="fa-solid fa-tags"></i> <strong id="summary-unlocked-discount">15% OFF</strong> Deals</span>
+            </div>
+            <span class="section-hint">Blinkit / Zepto style automatic price drops: When customer's cart reaches a minimum amount (e.g. ₹299), all items automatically drop by the configured percentage! An animated progress bar pops up on storefront.</span>
           </div>
-          <span class="section-hint">Blinkit / Zepto style automatic price drops: When customer's cart reaches a minimum amount (e.g. ₹299), all items automatically drop by the configured percentage! An animated progress bar pops up on storefront.</span>
-        </div>
-
-        <form id="form-unlocked-deals" class="admin-form store-offer-form" novalidate>
-          <!-- Active Toggle Switch -->
-          <div class="offer-toggle-row">
-            <div class="offer-toggle-info">
-              <strong>Enable Unlocked Pricing Deals (Optional)</strong>
-              <span>Turn on to show locked deal prices (🔒 ₹X) on menu items and display the animated unlocking progress bar to customers</span>
-            </div>
-            <label class="admin-switch">
-              <input type="checkbox" id="input-unlocked-deals-active">
-              <span class="admin-slider round"></span>
-            </label>
-          </div>
-
-          <!-- Minimum Unlock Requirement & Discount Percentage -->
-          <div class="form-row-2">
-            <div class="form-group">
-              <label for="input-unlocked-deals-min"><i class="fa-solid fa-cart-shopping"></i> Minimum Cart Requirement to Unlock (₹)</label>
-              <div class="input-currency-wrapper">
-                <span class="input-currency-prefix">₹</span>
-                <input type="number" id="input-unlocked-deals-min" min="10" step="1" value="299" placeholder="e.g. 299">
-              </div>
-              <div class="offer-discount-presets" style="margin-top: 8px;">
-                <span class="preset-label">Quick Presets:</span>
-                <div class="rush-preset-pills" id="unlocked-min-presets">
-                  <button type="button" class="unlocked-min-btn" data-val="199">₹199</button>
-                  <button type="button" class="unlocked-min-btn" data-val="249">₹249</button>
-                  <button type="button" class="unlocked-min-btn active" data-val="299">₹299</button>
-                  <button type="button" class="unlocked-min-btn" data-val="399">₹399</button>
-                  <button type="button" class="unlocked-min-btn" data-val="499">₹499</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label for="input-unlocked-deals-pct"><i class="fa-solid fa-percent"></i> Unlocked Discount Percentage (%)</label>
-              <input type="number" id="input-unlocked-deals-pct" min="1" max="90" step="1" value="15" placeholder="e.g. 15 or 20">
-              <div class="offer-discount-presets" style="margin-top: 8px;">
-                <span class="preset-label">Quick Presets:</span>
-                <div class="rush-preset-pills" id="unlocked-pct-presets">
-                  <button type="button" class="unlocked-pct-btn" data-val="10">10% OFF</button>
-                  <button type="button" class="unlocked-pct-btn active" data-val="15">15% OFF</button>
-                  <button type="button" class="unlocked-pct-btn" data-val="20">20% OFF</button>
-                  <button type="button" class="unlocked-pct-btn" data-val="25">25% OFF</button>
-                  <button type="button" class="unlocked-pct-btn" data-val="30">30% OFF</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Deal Headline & Subtitle -->
-          <div class="form-row-2">
-            <div class="form-group">
-              <label for="input-unlocked-deals-title"><i class="fa-solid fa-heading"></i> Deal Title / Headline</label>
-              <input type="text" id="input-unlocked-deals-title" value="Wholesale Club Deals" placeholder="e.g. Wholesale Club Deals">
-            </div>
-            <div class="form-group">
-              <label for="input-unlocked-deals-subtext"><i class="fa-solid fa-comment-dots"></i> Progress Bar Message</label>
-              <input type="text" id="input-unlocked-deals-subtext" value="Shop for ₹299 to unlock special menu prices!" placeholder="e.g. Shop for ₹299 to unlock special menu prices!">
-            </div>
-          </div>
-
-          <!-- Live Customer Storefront Preview Box -->
-          <div class="offer-preview-box" style="border-left: 4px solid #10b981;">
-            <div class="preview-header">
-              <span class="preview-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">CUSTOMER STOREFRONT PREVIEW</span>
-              <span class="preview-status" id="preview-unlocked-status">Enabled on Storefront</span>
-            </div>
-            <div class="preview-card-inner">
-              <div class="preview-text-block">
-                <span class="preview-tag" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">⚡ AUTOMATIC THRESHOLD DEAL</span>
-                <h4 class="preview-title" id="preview-unlocked-title">Wholesale Club Deals</h4>
-                <p class="preview-desc" id="preview-unlocked-calc">
-                  Sample: Dish of <strong>₹200</strong> ➔ Drops to <strong style="color: #10b981;">₹170</strong> (15% OFF) when cart hits ₹299!
-                </p>
-                <div class="preview-criteria-tags">
-                  <span class="criteria-pill" id="preview-unlocked-min-pill" style="color: #10b981;"><i class="fa-solid fa-lock-open"></i> Unlocks at ₹299+</span>
-                  <span class="criteria-pill" id="preview-unlocked-pct-pill" style="color: #10b981;"><i class="fa-solid fa-tags"></i> 15% Automatic Discount</span>
-                </div>
-              </div>
-              <div class="preview-code-badge" style="background: linear-gradient(135deg, #10b981, #059669);">
-                <span class="preview-badge-code">🔒 DEAL</span>
-                <span class="preview-badge-discount" id="preview-unlocked-badge-display">15% OFF</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="hours-card-actions">
-            <button type="submit" class="btn btn-brand-primary" id="btn-save-unlocked-deals">
-              <i class="fa-solid fa-floppy-disk"></i> Save Unlocked Deals Settings
+          <div class="offer-header-actions">
+            <button type="button" class="btn-toggle-offer-accordion" id="btn-toggle-unlocked-deals" aria-expanded="false" aria-controls="offer-body-unlocked">
+              <span class="toggle-btn-text">Edit Settings</span>
+              <i class="fa-solid fa-chevron-down toggle-chevron"></i>
             </button>
           </div>
-        </form>
+        </div>
+
+        <div class="offer-collapsible-body" id="offer-body-unlocked" style="display: none;">
+          <form id="form-unlocked-deals" class="admin-form store-offer-form" novalidate>
+            <!-- Active Toggle Switch -->
+            <div class="offer-toggle-row">
+              <div class="offer-toggle-info">
+                <strong>Enable Unlocked Pricing Deals (Optional)</strong>
+                <span>Turn on to show locked deal prices (🔒 ₹X) on menu items and display the animated unlocking progress bar to customers</span>
+              </div>
+              <label class="admin-switch">
+                <input type="checkbox" id="input-unlocked-deals-active">
+                <span class="admin-slider round"></span>
+              </label>
+            </div>
+
+            <!-- Minimum Unlock Requirement & Discount Percentage -->
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="input-unlocked-deals-min"><i class="fa-solid fa-cart-shopping"></i> Minimum Cart Requirement to Unlock (₹)</label>
+                <div class="input-currency-wrapper">
+                  <span class="input-currency-prefix">₹</span>
+                  <input type="number" id="input-unlocked-deals-min" min="10" step="1" value="299" placeholder="e.g. 299">
+                </div>
+                <div class="offer-discount-presets" style="margin-top: 8px;">
+                  <span class="preset-label">Quick Presets:</span>
+                  <div class="rush-preset-pills" id="unlocked-min-presets">
+                    <button type="button" class="unlocked-min-btn" data-val="199">₹199</button>
+                    <button type="button" class="unlocked-min-btn" data-val="249">₹249</button>
+                    <button type="button" class="unlocked-min-btn active" data-val="299">₹299</button>
+                    <button type="button" class="unlocked-min-btn" data-val="399">₹399</button>
+                    <button type="button" class="unlocked-min-btn" data-val="499">₹499</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="input-unlocked-deals-pct"><i class="fa-solid fa-percent"></i> Unlocked Discount Percentage (%)</label>
+                <input type="number" id="input-unlocked-deals-pct" min="1" max="90" step="1" value="15" placeholder="e.g. 15 or 20">
+                <div class="offer-discount-presets" style="margin-top: 8px;">
+                  <span class="preset-label">Quick Presets:</span>
+                  <div class="rush-preset-pills" id="unlocked-pct-presets">
+                    <button type="button" class="unlocked-pct-btn" data-val="10">10% OFF</button>
+                    <button type="button" class="unlocked-pct-btn active" data-val="15">15% OFF</button>
+                    <button type="button" class="unlocked-pct-btn" data-val="20">20% OFF</button>
+                    <button type="button" class="unlocked-pct-btn" data-val="25">25% OFF</button>
+                    <button type="button" class="unlocked-pct-btn" data-val="30">30% OFF</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Deal Headline & Subtitle -->
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="input-unlocked-deals-title"><i class="fa-solid fa-heading"></i> Deal Title / Headline</label>
+                <input type="text" id="input-unlocked-deals-title" value="Wholesale Club Deals" placeholder="e.g. Wholesale Club Deals">
+              </div>
+              <div class="form-group">
+                <label for="input-unlocked-deals-subtext"><i class="fa-solid fa-comment-dots"></i> Progress Bar Message</label>
+                <input type="text" id="input-unlocked-deals-subtext" value="Shop for ₹299 to unlock special menu prices!" placeholder="e.g. Shop for ₹299 to unlock special menu prices!">
+              </div>
+            </div>
+
+            <!-- Live Customer Storefront Preview Box -->
+            <div class="offer-preview-box" style="border-left: 4px solid #10b981;">
+              <div class="preview-header">
+                <span class="preview-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">CUSTOMER STOREFRONT PREVIEW</span>
+                <span class="preview-status" id="preview-unlocked-status">Enabled on Storefront</span>
+              </div>
+              <div class="preview-card-inner">
+                <div class="preview-text-block">
+                  <span class="preview-tag" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">⚡ AUTOMATIC THRESHOLD DEAL</span>
+                  <h4 class="preview-title" id="preview-unlocked-title">Wholesale Club Deals</h4>
+                  <p class="preview-desc" id="preview-unlocked-calc">
+                    Sample: Dish of <strong>₹200</strong> ➔ Drops to <strong style="color: #10b981;">₹170</strong> (15% OFF) when cart hits ₹299!
+                  </p>
+                  <div class="preview-criteria-tags">
+                    <span class="criteria-pill" id="preview-unlocked-min-pill" style="color: #10b981;"><i class="fa-solid fa-lock-open"></i> Unlocks at ₹299+</span>
+                    <span class="criteria-pill" id="preview-unlocked-pct-pill" style="color: #10b981;"><i class="fa-solid fa-tags"></i> 15% Automatic Discount</span>
+                  </div>
+                </div>
+                <div class="preview-code-badge" style="background: linear-gradient(135deg, #10b981, #059669);">
+                  <span class="preview-badge-code">🔒 DEAL</span>
+                  <span class="preview-badge-discount" id="preview-unlocked-badge-display">15% OFF</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="hours-card-actions">
+              <button type="submit" class="btn btn-brand-primary" id="btn-save-unlocked-deals">
+                <i class="fa-solid fa-floppy-disk"></i> Save Unlocked Deals Settings
+              </button>
+              <button type="button" class="btn btn-secondary btn-close-offer-panel" data-target="offer-card-unlocked" style="margin-left: 8px;">
+                <i class="fa-solid fa-chevron-up"></i> Close Settings
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
 
     </section>
