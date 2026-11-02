@@ -456,7 +456,7 @@
     <!-- ============================================================== -->
     <!-- VIEW 3: STORE TIMINGS & KITCHEN RUSH CONTROL                   -->
     <!-- ============================================================== -->
-    <section class="admin-view" id="view-hours">
+        <section class="admin-view" id="view-hours">
       
       <!-- View Heading -->
       <div class="admin-view-header">
@@ -472,169 +472,205 @@
         </div>
       </div>
 
-      <!-- 1. KITCHEN RUSH & SNOOZE CONTROL (HERO CARD) -->
-      <div class="admin-card-section rush-control-card">
-        <div class="section-title-bar">
-          <div class="title-with-count">
-            <span class="section-icon">⚡</span>
-            <h2>Kitchen Rush Snooze (Pause Orders)</h2>
-            <span class="count-pill rush-mode-pill" id="rush-mode-badge">Active</span>
+      <!-- 1. KITCHEN RUSH & SNOOZE CONTROL (ACCORDION CARD) -->
+      <div class="admin-card-section offer-settings-section rush-control-card" id="hours-card-rush">
+        <div class="section-title-bar offer-collapsible-header" id="hours-header-rush" role="button" tabindex="0" aria-expanded="false" aria-controls="hours-body-rush">
+          <div class="offer-header-main">
+            <div class="title-with-count">
+              <span class="section-icon">⚡</span>
+              <h2>Kitchen Rush Snooze (Pause Orders)</h2>
+              <span class="count-pill rush-mode-pill" id="rush-mode-badge">Active</span>
+            </div>
+            <div class="offer-collapsed-summary" id="rush-collapsed-summary">
+              <span class="offer-summary-chip"><i class="fa-solid fa-fire"></i> <strong id="summary-rush-status">Kitchen Online</strong></span>
+              <span class="offer-summary-chip"><i class="fa-regular fa-clock"></i> Default: <strong id="summary-rush-mins">20 Mins</strong></span>
+              <span class="offer-summary-chip"><i class="fa-solid fa-bullhorn"></i> <span id="summary-rush-reason">High kitchen rush</span></span>
+            </div>
+            <span class="section-hint">Temporarily stops new orders on the homepage while the kitchen catches up.</span>
           </div>
-          <span class="section-hint">Temporarily stops new orders on the homepage while the kitchen catches up.</span>
-        </div>
-
-        <!-- ACTIVE PAUSE STATE BANNER (Shown when paused) -->
-        <div class="rush-active-state-box" id="rush-active-state-box" style="display: none;">
-          <div class="rush-active-content">
-            <div class="rush-active-icon-wrap">
-              <span class="rush-active-fire">⚡</span>
-            </div>
-            <div class="rush-active-details">
-              <div class="rush-active-badge">KITCHEN RUSH MODE ACTIVE</div>
-              <h3 class="rush-active-headline">New orders are temporarily paused</h3>
-              <p class="rush-active-sub" id="rush-active-reason">High kitchen rush — orders temporarily paused</p>
-              
-              <div class="rush-countdown-timer-group">
-                <div class="rush-countdown-unit">
-                  <span class="rush-time-num" id="rush-timer-min">00</span>
-                  <span class="rush-time-lbl">MINUTES</span>
-                </div>
-                <span class="rush-colon">:</span>
-                <div class="rush-countdown-unit">
-                  <span class="rush-time-num" id="rush-timer-sec">00</span>
-                  <span class="rush-time-lbl">SECONDS</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="rush-active-actions">
-              <button class="btn btn-extend-rush" id="btn-extend-rush-10">
-                <i class="fa-solid fa-plus"></i> +10 Mins Rush
-              </button>
-              <button class="btn btn-resume-live" id="btn-resume-orders">
-                <i class="fa-solid fa-circle-check"></i> 🟢 Resume Taking Orders Now
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- NEW PAUSE CONTROLLER (10-minute slide controller) -->
-        <div class="rush-setter-box" id="rush-setter-box">
-          <div class="rush-setter-header">
-            <div class="rush-slider-display">
-              <span class="slider-lead-label">Select Rush Pause Duration:</span>
-              <div class="slider-big-readout">
-                <span class="slider-big-val" id="rush-slider-val">20</span>
-                <span class="slider-big-unit">Minutes</span>
-              </div>
-            </div>
-
-            <!-- Quick 10-min presets -->
-            <div class="rush-preset-pills">
-              <button type="button" class="rush-preset-btn" data-mins="10">10m</button>
-              <button type="button" class="rush-preset-btn active" data-mins="20">20m</button>
-              <button type="button" class="rush-preset-btn" data-mins="30">30m</button>
-              <button type="button" class="rush-preset-btn" data-mins="40">40m</button>
-              <button type="button" class="rush-preset-btn" data-mins="50">50m</button>
-              <button type="button" class="rush-preset-btn" data-mins="60">60m</button>
-            </div>
-          </div>
-
-          <!-- 10-Minute Slide Control -->
-          <div class="rush-range-wrapper">
-            <input type="range" min="10" max="90" step="10" value="20" class="rush-range-slider" id="rush-range-slider">
-            <div class="slider-step-ticks">
-              <span>10m</span>
-              <span>20m</span>
-              <span>30m</span>
-              <span>40m</span>
-              <span>50m</span>
-              <span>60m</span>
-              <span>70m</span>
-              <span>80m</span>
-              <span>90m</span>
-            </div>
-          </div>
-
-          <div class="rush-optional-message">
-            <label for="rush-reason-input">Customer Notice Reason (shown on homepage):</label>
-            <input type="text" id="rush-reason-input" class="admin-input-text" value="High kitchen rush — orders temporarily paused" placeholder="e.g. Sizzling rush in kitchen! Resuming orders soon.">
-          </div>
-
-          <div class="rush-submit-row">
-            <button class="btn btn-trigger-rush" id="btn-trigger-rush">
-              <i class="fa-solid fa-hand"></i>
-              <span>Pause Orders for <strong id="btn-pause-target-mins">20</strong> Minutes</span>
+          <div class="offer-header-actions">
+            <button type="button" class="btn-toggle-offer-accordion" id="btn-toggle-rush" aria-expanded="false" aria-controls="hours-body-rush">
+              <span class="toggle-btn-text">Edit Settings</span>
+              <i class="fa-solid fa-chevron-down toggle-chevron"></i>
             </button>
           </div>
         </div>
 
+        <div class="offer-collapsible-body" id="hours-body-rush" style="display: none;">
+          <!-- ACTIVE PAUSE STATE BANNER (Shown when paused) -->
+          <div class="rush-active-state-box" id="rush-active-state-box" style="display: none;">
+            <div class="rush-active-content">
+              <div class="rush-active-icon-wrap">
+                <span class="rush-active-fire">⚡</span>
+              </div>
+              <div class="rush-active-details">
+                <div class="rush-active-badge">KITCHEN RUSH MODE ACTIVE</div>
+                <h3 class="rush-active-headline">New orders are temporarily paused</h3>
+                <p class="rush-active-sub" id="rush-active-reason">High kitchen rush — orders temporarily paused</p>
+                
+                <div class="rush-countdown-timer-group">
+                  <div class="rush-countdown-unit">
+                    <span class="rush-time-num" id="rush-timer-min">00</span>
+                    <span class="rush-time-lbl">MINUTES</span>
+                  </div>
+                  <span class="rush-colon">:</span>
+                  <div class="rush-countdown-unit">
+                    <span class="rush-time-num" id="rush-timer-sec">00</span>
+                    <span class="rush-time-lbl">SECONDS</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rush-active-actions">
+                <button class="btn btn-extend-rush" id="btn-extend-rush-10">
+                  <i class="fa-solid fa-plus"></i> +10 Mins Rush
+                </button>
+                <button class="btn btn-resume-live" id="btn-resume-orders">
+                  <i class="fa-solid fa-circle-check"></i> 🟢 Resume Taking Orders Now
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- NEW PAUSE CONTROLLER (10-minute slide controller) -->
+          <div class="rush-setter-box" id="rush-setter-box">
+            <div class="rush-setter-header">
+              <div class="rush-slider-display">
+                <span class="slider-lead-label">Select Rush Pause Duration:</span>
+                <div class="slider-big-readout">
+                  <span class="slider-big-val" id="rush-slider-val">20</span>
+                  <span class="slider-big-unit">Minutes</span>
+                </div>
+              </div>
+
+              <!-- Quick 10-min presets -->
+              <div class="rush-preset-pills">
+                <button type="button" class="rush-preset-btn" data-mins="10">10m</button>
+                <button type="button" class="rush-preset-btn active" data-mins="20">20m</button>
+                <button type="button" class="rush-preset-btn" data-mins="30">30m</button>
+                <button type="button" class="rush-preset-btn" data-mins="40">40m</button>
+                <button type="button" class="rush-preset-btn" data-mins="50">50m</button>
+                <button type="button" class="rush-preset-btn" data-mins="60">60m</button>
+              </div>
+            </div>
+
+            <!-- 10-Minute Slide Control -->
+            <div class="rush-range-wrapper">
+              <input type="range" min="10" max="90" step="10" value="20" class="rush-range-slider" id="rush-range-slider">
+              <div class="slider-step-ticks">
+                <span>10m</span>
+                <span>20m</span>
+                <span>30m</span>
+                <span>40m</span>
+                <span>50m</span>
+                <span>60m</span>
+                <span>70m</span>
+                <span>80m</span>
+                <span>90m</span>
+              </div>
+            </div>
+
+            <div class="rush-optional-message">
+              <label for="rush-reason-input">Customer Notice Reason (shown on homepage):</label>
+              <input type="text" id="rush-reason-input" class="admin-input-text" value="High kitchen rush — orders temporarily paused" placeholder="e.g. Sizzling rush in kitchen! Resuming orders soon.">
+            </div>
+
+            <div class="rush-submit-row">
+              <button class="btn btn-trigger-rush" id="btn-trigger-rush">
+                <i class="fa-solid fa-hand"></i>
+                <span>Pause Orders for <strong id="btn-pause-target-mins">20</strong> Minutes</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-close-hours-panel" data-target="hours-card-rush" style="margin-left: 8px;">
+                <i class="fa-solid fa-chevron-up"></i> Close Settings
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- 2. REGULAR OPERATING HOURS & RESTAURANT CONTACT -->
-      <div class="admin-card-section hours-section">
-        <div class="section-title-bar">
-          <div class="title-with-count">
-            <span class="section-icon">🕒</span>
-            <h2>Daily Restaurant Operating Timings & Helpline</h2>
-          </div>
-          <span class="section-hint">Displayed in the header, hero status tag, and pre-dispatch customer help cards (Accepted, Preparing, Ready to Dispatch).</span>
-        </div>
-
-        <form id="form-store-hours" class="admin-form store-hours-form" novalidate>
-          <!-- Master Kitchen Open/Closed Toggle -->
-          <div class="offer-toggle-row" style="margin-bottom: 1.25rem;">
-            <div class="offer-toggle-info">
-              <strong style="display: flex; align-items: center; gap: 8px;">
-                <span id="store-open-status-icon">🟢</span>
-                <span>Store Ordering Status: <span id="store-open-status-label" style="color: var(--color-success, #16a34a);">Store Open (Accepting Orders)</span></span>
-              </strong>
-              <span>Turn off to close the store for the night or emergency off-hours. When closed, customers cannot place orders.</span>
+      <!-- 2. REGULAR OPERATING HOURS & RESTAURANT CONTACT (ACCORDION CARD) -->
+      <div class="admin-card-section offer-settings-section hours-section" id="hours-card-schedule" style="margin-top: 24px;">
+        <div class="section-title-bar offer-collapsible-header" id="hours-header-schedule" role="button" tabindex="0" aria-expanded="false" aria-controls="hours-body-schedule">
+          <div class="offer-header-main">
+            <div class="title-with-count">
+              <span class="section-icon">🕒</span>
+              <h2>Daily Restaurant Operating Timings & Helpline</h2>
+              <span class="count-pill offer-status-pill" id="schedule-status-badge">Open</span>
             </div>
-            <label class="admin-switch">
-              <input type="checkbox" id="input-store-open" checked>
-              <span class="admin-slider round"></span>
-            </label>
-          </div>
-
-          <div class="form-group" id="group-store-closed-reason" style="display: none; margin-bottom: 1.25rem;">
-            <label for="input-store-closed-reason"><i class="fa-solid fa-moon"></i> Closed Notice (Shown to Customers)</label>
-            <input type="text" id="input-store-closed-reason" value="" placeholder="Optional: Custom notice (e.g. Closed for maintenance). Leave blank for auto time-aware notice.">
-          </div>
-          <div class="form-row-2">
-            <div class="form-group">
-              <label for="input-open-time"><i class="fa-regular fa-clock"></i> Kitchen Opening Time</label>
-              <input type="text" id="input-open-time" value="11:00 AM" placeholder="e.g. 11:00 AM">
+            <div class="offer-collapsed-summary" id="schedule-collapsed-summary">
+              <span class="offer-summary-chip"><i class="fa-solid fa-door-open"></i> <strong id="summary-schedule-status">Store Open</strong></span>
+              <span class="offer-summary-chip"><i class="fa-regular fa-clock"></i> <strong id="summary-schedule-hours">11:00 AM – 11:00 PM</strong></span>
+              <span class="offer-summary-chip"><i class="fa-solid fa-phone"></i> <strong id="summary-schedule-phone">+91 98450 12345</strong></span>
             </div>
-
-            <div class="form-group">
-              <label for="input-close-time"><i class="fa-solid fa-moon"></i> Kitchen Closing Time</label>
-              <input type="text" id="input-close-time" value="11:00 PM" placeholder="e.g. 11:00 PM">
-            </div>
+            <span class="section-hint">Displayed in the header, hero status tag, and pre-dispatch customer help cards.</span>
           </div>
-
-          <div class="form-group">
-            <label for="input-restaurant-phone"><i class="fa-solid fa-phone"></i> Restaurant Help & Support Phone Number</label>
-            <input type="tel" id="input-restaurant-phone" value="+91 98450 12345" placeholder="e.g. +91 98450 12345 or 9845012345">
-            <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">
-              <i class="fa-solid fa-circle-info"></i> Whichever phone number is set here will be automatically provided to customers for phone calls and WhatsApp support across all 3 steps before dispatch (Accepted, Preparing, Ready to Dispatch).
-            </small>
-          </div>
-
-          <div class="form-group">
-            <label for="input-status-notice"><i class="fa-solid fa-bullhorn"></i> Customer Status Notice Text</label>
-            <input type="text" id="input-status-notice" value="Open Now: 11:00 AM – 11:00 PM • Delivery & Pickup" placeholder="e.g. Open Now: 11:00 AM – 11:00 PM • Delivery & Pickup">
-            <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">
-              <i class="fa-solid fa-circle-info"></i> Automatically syncs from Kitchen Opening & Closing times above. Customize only if you want a special announcement (e.g. Festival Special).
-            </small>
-          </div>
-
-          <div class="hours-card-actions">
-            <button type="submit" class="btn btn-brand-primary" id="btn-save-hours">
-              <i class="fa-solid fa-floppy-disk"></i> Save Operating Timings, Notice & Help Number
+          <div class="offer-header-actions">
+            <button type="button" class="btn-toggle-offer-accordion" id="btn-toggle-schedule" aria-expanded="false" aria-controls="hours-body-schedule">
+              <span class="toggle-btn-text">Edit Settings</span>
+              <i class="fa-solid fa-chevron-down toggle-chevron"></i>
             </button>
           </div>
-        </form>
+        </div>
+
+        <div class="offer-collapsible-body" id="hours-body-schedule" style="display: none;">
+          <form id="form-store-hours" class="admin-form store-hours-form" novalidate>
+            <!-- Master Kitchen Open/Closed Toggle -->
+            <div class="offer-toggle-row" style="margin-bottom: 1.25rem;">
+              <div class="offer-toggle-info">
+                <strong style="display: flex; align-items: center; gap: 8px;">
+                  <span id="store-open-status-icon">🟢</span>
+                  <span>Store Ordering Status: <span id="store-open-status-label" style="color: var(--color-success, #16a34a);">Store Open (Accepting Orders)</span></span>
+                </strong>
+                <span>Turn off to close the store for the night or emergency off-hours. When closed, customers cannot place orders.</span>
+              </div>
+              <label class="admin-switch">
+                <input type="checkbox" id="input-store-open" checked>
+                <span class="admin-slider round"></span>
+              </label>
+            </div>
+
+            <div class="form-group" id="group-store-closed-reason" style="display: none; margin-bottom: 1.25rem;">
+              <label for="input-store-closed-reason"><i class="fa-solid fa-moon"></i> Closed Notice (Shown to Customers)</label>
+              <input type="text" id="input-store-closed-reason" value="" placeholder="Optional: Custom notice (e.g. Closed for maintenance). Leave blank for auto time-aware notice.">
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="input-open-time"><i class="fa-regular fa-clock"></i> Kitchen Opening Time</label>
+                <input type="text" id="input-open-time" value="11:00 AM" placeholder="e.g. 11:00 AM">
+              </div>
+
+              <div class="form-group">
+                <label for="input-close-time"><i class="fa-solid fa-moon"></i> Kitchen Closing Time</label>
+                <input type="text" id="input-close-time" value="11:00 PM" placeholder="e.g. 11:00 PM">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="input-restaurant-phone"><i class="fa-solid fa-phone"></i> Restaurant Help & Support Phone Number</label>
+              <input type="tel" id="input-restaurant-phone" value="+91 98450 12345" placeholder="e.g. +91 98450 12345 or 9845012345">
+              <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">
+                <i class="fa-solid fa-circle-info"></i> Whichever phone number is set here will be automatically provided to customers for phone calls and WhatsApp support across all 3 steps before dispatch (Accepted, Preparing, Ready to Dispatch).
+              </small>
+            </div>
+
+            <div class="form-group">
+              <label for="input-status-notice"><i class="fa-solid fa-bullhorn"></i> Customer Status Notice Text</label>
+              <input type="text" id="input-status-notice" value="Open Now: 11:00 AM – 11:00 PM • Delivery & Pickup" placeholder="e.g. Open Now: 11:00 AM – 11:00 PM • Delivery & Pickup">
+              <small class="field-hint" style="color: var(--admin-text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">
+                <i class="fa-solid fa-circle-info"></i> Automatically syncs from Kitchen Opening & Closing times above. Customize only if you want a special announcement (e.g. Festival Special).
+              </small>
+            </div>
+
+            <div class="hours-card-actions">
+              <button type="submit" class="btn btn-brand-primary" id="btn-save-hours">
+                <i class="fa-solid fa-floppy-disk"></i> Save Operating Timings, Notice & Help Number
+              </button>
+              <button type="button" class="btn btn-secondary btn-close-hours-panel" data-target="hours-card-schedule" style="margin-left: 8px;">
+                <i class="fa-solid fa-chevron-up"></i> Close Settings
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
 
     </section>
@@ -944,7 +980,7 @@
     <!-- ============================================================ -->
     <!-- VIEW 5: DELIVERY OPTIONS (Dedicated Delivery Management Hub) -->
     <!-- ============================================================ -->
-    <section class="admin-view" id="view-delivery">
+        <section class="admin-view" id="view-delivery">
       
       <!-- View Heading -->
       <div class="admin-view-header">
@@ -960,215 +996,266 @@
         </div>
       </div>
 
-      <!-- 1. FREE DELIVERY & MINIMUM ORDER REQUIREMENTS SETTING -->
-      <div class="admin-card-section delivery-settings-section">
-        <div class="section-title-bar">
-          <div class="title-with-count">
-            <span class="section-icon">🚚</span>
-            <h2>Delivery Options & Minimum Order Requirements</h2>
-            <span class="count-pill delivery-status-pill" id="delivery-status-badge">Active</span>
+      <!-- 1. FREE DELIVERY & MINIMUM ORDER REQUIREMENTS SETTING (ACCORDION CARD) -->
+      <div class="admin-card-section offer-settings-section delivery-settings-section" id="delivery-card-options">
+        <div class="section-title-bar offer-collapsible-header" id="delivery-header-options" role="button" tabindex="0" aria-expanded="false" aria-controls="delivery-body-options">
+          <div class="offer-header-main">
+            <div class="title-with-count">
+              <span class="section-icon">🚚</span>
+              <h2>Delivery Options & Minimum Order Requirements</h2>
+              <span class="count-pill delivery-status-pill" id="delivery-status-badge">Active</span>
+            </div>
+            <div class="offer-collapsed-summary" id="delivery-collapsed-summary">
+              <span class="offer-summary-chip"><i class="fa-solid fa-truck-fast"></i> Free Over: <strong id="summary-delivery-free">₹250</strong></span>
+              <span class="offer-summary-chip"><i class="fa-solid fa-receipt"></i> Standard Fee: <strong id="summary-delivery-fee">₹40</strong></span>
+              <span class="offer-summary-chip" id="summary-delivery-mov-chip"><i class="fa-solid fa-basket-shopping"></i> Min Order: <strong id="summary-delivery-mov">₹0 (No Limit)</strong></span>
+              <span class="offer-summary-chip"><i class="fa-solid fa-layer-group"></i> Max Orders: <strong id="summary-delivery-max-orders">2 Active</strong></span>
+            </div>
+            <span class="section-hint">Configure minimum cart order value to checkout, automatic free delivery thresholds, standard fees, and max active orders.</span>
           </div>
-          <span class="section-hint">Configure minimum cart order value to checkout, automatic free delivery thresholds, standard fees, and delivery radius.</span>
+          <div class="offer-header-actions">
+            <button type="button" class="btn-toggle-offer-accordion" id="btn-toggle-delivery-options" aria-expanded="false" aria-controls="delivery-body-options">
+              <span class="toggle-btn-text">Edit Settings</span>
+              <i class="fa-solid fa-chevron-down toggle-chevron"></i>
+            </button>
+          </div>
         </div>
 
-        <form id="form-store-delivery" class="admin-form store-delivery-form" novalidate>
-          <!-- Free Delivery Threshold Setting Box (Above 250 free delivery) -->
-          <div class="free-delivery-card-box">
-            <div class="offer-toggle-row">
-              <div class="offer-toggle-info">
-                <strong><i class="fa-solid fa-truck-fast" style="color: var(--admin-accent);"></i> Free Delivery Above Minimum Order</strong>
-                <span>Customers automatically get 100% FREE delivery when their cart reaches this amount</span>
+        <div class="offer-collapsible-body" id="delivery-body-options" style="display: none;">
+          <form id="form-store-delivery" class="admin-form store-delivery-form" novalidate>
+            <!-- Free Delivery Threshold Setting Box (Above 250 free delivery) -->
+            <div class="free-delivery-card-box">
+              <div class="offer-toggle-row">
+                <div class="offer-toggle-info">
+                  <strong><i class="fa-solid fa-truck-fast" style="color: var(--admin-accent);"></i> Free Delivery Above Minimum Order</strong>
+                  <span>Customers automatically get 100% FREE delivery when their cart reaches this amount</span>
+                </div>
+                <label class="admin-switch">
+                  <input type="checkbox" id="input-free-delivery-enabled" checked>
+                  <span class="admin-slider round"></span>
+                </label>
               </div>
-              <label class="admin-switch">
-                <input type="checkbox" id="input-free-delivery-enabled" checked>
-                <span class="admin-slider round"></span>
-              </label>
+
+              <div class="free-delivery-threshold-content" id="free-delivery-threshold-wrap">
+                <label for="input-free-delivery-threshold" class="threshold-label">
+                  Free Delivery on Orders Above:
+                </label>
+                <div class="input-currency-wrapper">
+                  <span class="input-currency-prefix">₹</span>
+                  <input type="number" id="input-free-delivery-threshold" min="0" step="1" value="250" placeholder="e.g. 250">
+                </div>
+                <div class="offer-discount-presets" style="margin-top: 8px;">
+                  <span class="preset-label">Quick Threshold Presets:</span>
+                  <div class="rush-preset-pills" id="threshold-presets-container">
+                    <button type="button" class="threshold-preset-btn" data-thresh="150">150</button>
+                    <button type="button" class="threshold-preset-btn" data-thresh="200">200</button>
+                    <button type="button" class="threshold-preset-btn active" data-thresh="250">250 (Recommended)</button>
+                    <button type="button" class="threshold-preset-btn" data-thresh="300">300</button>
+                    <button type="button" class="threshold-preset-btn" data-thresh="400">400</button>
+                  </div>
+                </div>
+                <span class="admin-field-tip" style="margin-top: 8px; display: block;">
+                  When cart reaches or exceeds this amount, the delivery fee becomes ₹0 / FREE automatically at checkout.
+                </span>
+              </div>
             </div>
 
-            <div class="free-delivery-threshold-content" id="free-delivery-threshold-wrap">
-              <label for="input-free-delivery-threshold" class="threshold-label">
-                Free Delivery on Orders Above:
+            <!-- Minimum Order Value (MOV) to Checkout -->
+            <div class="form-group" style="margin-top: 14px;">
+              <label for="input-min-order-value">
+                <i class="fa-solid fa-basket-shopping" style="color: var(--admin-accent);"></i> Minimum Order Value to Checkout
               </label>
               <div class="input-currency-wrapper">
                 <span class="input-currency-prefix">₹</span>
-                <input type="number" id="input-free-delivery-threshold" min="0" step="1" value="250" placeholder="e.g. 250">
+                <input type="number" id="input-min-order-value" min="0" step="1" value="0" placeholder="0 = No minimum order limit">
               </div>
               <div class="offer-discount-presets" style="margin-top: 8px;">
-                <span class="preset-label">Quick Threshold Presets:</span>
-                <div class="rush-preset-pills" id="threshold-presets-container">
-                  <button type="button" class="threshold-preset-btn" data-thresh="150">150</button>
-                  <button type="button" class="threshold-preset-btn" data-thresh="200">200</button>
-                  <button type="button" class="threshold-preset-btn active" data-thresh="250">250 (Recommended)</button>
-                  <button type="button" class="threshold-preset-btn" data-thresh="300">300</button>
-                  <button type="button" class="threshold-preset-btn" data-thresh="400">400</button>
+                <span class="preset-label">Quick MOV Presets:</span>
+                <div class="rush-preset-pills" id="mov-presets-container">
+                  <button type="button" class="mov-preset-btn active" data-mov="0">₹0 (No Limit)</button>
+                  <button type="button" class="mov-preset-btn" data-mov="99">₹99</button>
+                  <button type="button" class="mov-preset-btn" data-mov="149">₹149</button>
+                  <button type="button" class="mov-preset-btn" data-mov="199">₹199</button>
+                  <button type="button" class="mov-preset-btn" data-mov="249">₹249</button>
                 </div>
               </div>
-              <span class="admin-field-tip" style="margin-top: 8px; display: block;">
-                When cart reaches or exceeds this amount, the delivery fee becomes ₹0 / FREE automatically at checkout.
+              <span class="admin-field-tip" style="margin-top: 6px; display: block;">
+                Customers must have at least this cart subtotal to place an order. If cart is below this amount, checkout is disabled with a helpful prompt. Set to <strong>₹0</strong> to allow orders of any amount.
               </span>
             </div>
-          </div>
 
-          <!-- Minimum Order Value (MOV) to Checkout -->
-          <div class="form-group" style="margin-top: 14px;">
-            <label for="input-min-order-value">
-              <i class="fa-solid fa-basket-shopping" style="color: var(--admin-accent);"></i> Minimum Order Value to Checkout
-            </label>
-            <div class="input-currency-wrapper">
-              <span class="input-currency-prefix">₹</span>
-              <input type="number" id="input-min-order-value" min="0" step="1" value="0" placeholder="0 = No minimum order limit">
-            </div>
-            <div class="offer-discount-presets" style="margin-top: 8px;">
-              <span class="preset-label">Quick MOV Presets:</span>
-              <div class="rush-preset-pills" id="mov-presets-container">
-                <button type="button" class="mov-preset-btn active" data-mov="0">₹0 (No Limit)</button>
-                <button type="button" class="mov-preset-btn" data-mov="99">₹99</button>
-                <button type="button" class="mov-preset-btn" data-mov="149">₹149</button>
-                <button type="button" class="mov-preset-btn" data-mov="199">₹199</button>
-                <button type="button" class="mov-preset-btn" data-mov="249">₹249</button>
+            <!-- Standard Delivery Fee Below Threshold -->
+            <div class="form-group" style="margin-top: 14px;">
+              <label for="input-delivery-fee-standard">
+                <i class="fa-solid fa-receipt"></i> Standard Delivery Fee (For orders below free threshold)
+              </label>
+              <div class="input-currency-wrapper">
+                <span class="input-currency-prefix">₹</span>
+                <input type="number" id="input-delivery-fee-standard" min="0" step="1" value="40" placeholder="e.g. 40">
               </div>
+              <span class="admin-field-tip">Charged to customers whose orders do not qualify for free delivery.</span>
             </div>
-            <span class="admin-field-tip" style="margin-top: 6px; display: block;">
-              Customers must have at least this cart subtotal to place an order. If cart is below this amount, checkout is disabled with a helpful prompt. Set to <strong>₹0</strong> to allow orders of any amount.
-            </span>
-          </div>
 
-          <!-- Standard Delivery Fee Below Threshold -->
-          <div class="form-group" style="margin-top: 14px;">
-            <label for="input-delivery-fee-standard">
-              <i class="fa-solid fa-receipt"></i> Standard Delivery Fee (For orders below free threshold)
-            </label>
-            <div class="input-currency-wrapper">
-              <span class="input-currency-prefix">₹</span>
-              <input type="number" id="input-delivery-fee-standard" min="0" step="1" value="40" placeholder="e.g. 40">
+            <!-- Active Orders Limit Per Customer -->
+            <div class="form-group" style="margin-top: 14px;">
+              <label for="input-max-active-orders">
+                <i class="fa-solid fa-layer-group"></i> Max Concurrent Active Orders Per Customer
+              </label>
+              <div class="input-currency-wrapper">
+                <span class="input-currency-prefix"><i class="fa-solid fa-user-clock"></i></span>
+                <input type="number" id="input-max-active-orders" min="1" max="10" step="1" value="2" placeholder="e.g. 2">
+              </div>
+              <span class="admin-field-tip" style="margin-top: 6px; display: block;">
+                Customers cannot place more than this many concurrent orders. When set to <strong>2</strong>, a customer cannot place their <strong>3rd order</strong> until their <strong>1st order is delivered</strong>.
+              </span>
             </div>
-            <span class="admin-field-tip">Charged to customers whose orders do not qualify for free delivery.</span>
-          </div>
 
-          <!-- Active Orders Limit Per Customer (Max 2 concurrent orders, 3rd blocked until 1st delivered) -->
-          <div class="form-group" style="margin-top: 14px;">
-            <label for="input-max-active-orders">
-              <i class="fa-solid fa-layer-group"></i> Max Concurrent Active Orders Per Customer
-            </label>
-            <div class="input-currency-wrapper">
-              <span class="input-currency-prefix"><i class="fa-solid fa-user-clock"></i></span>
-              <input type="number" id="input-max-active-orders" min="1" max="10" step="1" value="2" placeholder="e.g. 2">
-            </div>
-            <span class="admin-field-tip" style="margin-top: 6px; display: block;">
-              Customers cannot place more than this many concurrent orders. When set to <strong>2</strong>, a customer cannot place their <strong>3rd order</strong> until their <strong>1st order is delivered</strong>.
-            </span>
-          </div>
-
-          <!-- Customer Cart Delivery Meter Live Preview -->
-          <div class="offer-preview-box delivery-preview-box" style="margin-top: 14px;">
-            <div class="preview-header">
-              <span class="preview-badge">LIVE STOREFRONT CART PREVIEW</span>
-              <span class="preview-status" id="preview-delivery-status">Live in Customer Basket</span>
-            </div>
-            <div class="preview-card-inner">
-              <div class="preview-text-block">
-                <span class="preview-tag">🛵 BASKET FREE SHIPPING METER</span>
-                <h4 class="preview-title" id="preview-delivery-title">Add ₹150 more for FREE Priority Delivery!</h4>
-                <div class="meter-preview-track" style="background: #E5E7EB; border-radius: 9999px; height: 8px; width: 100%; margin: 10px 0 6px; overflow: hidden;">
-                  <div id="preview-delivery-bar" style="background: var(--brand-primary); height: 100%; width: 60%; border-radius: 9999px; transition: width 0.3s ease;"></div>
+            <!-- Customer Cart Delivery Meter Live Preview -->
+            <div class="offer-preview-box delivery-preview-box" style="margin-top: 14px;">
+              <div class="preview-header">
+                <span class="preview-badge">LIVE STOREFRONT CART PREVIEW</span>
+                <span class="preview-status" id="preview-delivery-status">Live in Customer Basket</span>
+              </div>
+              <div class="preview-card-inner">
+                <div class="preview-text-block">
+                  <span class="preview-tag">🛵 BASKET FREE SHIPPING METER</span>
+                  <h4 class="preview-title" id="preview-delivery-title">Add ₹150 more for FREE Priority Delivery!</h4>
+                  <div class="meter-preview-track" style="background: #E5E7EB; border-radius: 9999px; height: 8px; width: 100%; margin: 10px 0 6px; overflow: hidden;">
+                    <div id="preview-delivery-bar" style="background: var(--brand-primary); height: 100%; width: 60%; border-radius: 9999px; transition: width 0.3s ease;"></div>
+                  </div>
+                  <p class="preview-desc" id="preview-delivery-desc" style="font-size: 0.82rem; color: var(--admin-text-muted);">
+                    Orders above <strong id="preview-delivery-thresh-display" style="color: var(--admin-accent);">250</strong> qualify for 100% Free Doorstep Delivery.
+                  </p>
                 </div>
-                <p class="preview-desc" id="preview-delivery-desc" style="font-size: 0.82rem; color: var(--admin-text-muted);">
-                  Orders above <strong id="preview-delivery-thresh-display" style="color: var(--admin-accent);">250</strong> qualify for 100% Free Doorstep Delivery.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div class="hours-card-actions">
-            <button type="submit" class="btn btn-brand-primary" id="btn-save-delivery">
-              <i class="fa-solid fa-floppy-disk"></i> Save Delivery Options
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <!-- 2. MAXIMUM DELIVERY DISTANCE & RADIUS (KM SLIDER) -->
-      <div class="admin-card-section delivery-radius-section">
-        <div class="section-title-bar">
-          <div class="title-with-count">
-            <span class="section-icon">🛵</span>
-            <h2>Delivery Distance Limit</h2>
-          </div>
-          <span class="section-hint">Select how many kilometers your store will deliver orders within (calculated from restaurant coordinates: 12°43'14.2"N 77°17'12.6"E).</span>
-        </div>
-
-        <div class="rush-setter-box delivery-radius-box">
-          <div class="rush-setter-header">
-            <div class="rush-slider-display">
-              <span class="slider-lead-label">Maximum Delivery Radius:</span>
-              <div class="slider-big-readout">
-                <span class="slider-big-val" id="radius-slider-val">7</span>
-                <span class="slider-big-unit">KM</span>
               </div>
             </div>
 
-            <!-- Quick KM presets -->
-            <div class="rush-preset-pills">
-              <button type="button" class="radius-preset-btn" data-km="3">3 km</button>
-              <button type="button" class="radius-preset-btn" data-km="5">5 km</button>
-              <button type="button" class="radius-preset-btn active" data-km="7">7 km</button>
-              <button type="button" class="radius-preset-btn" data-km="10">10 km</button>
-              <button type="button" class="radius-preset-btn" data-km="15">15 km</button>
-              <button type="button" class="radius-preset-btn" data-km="20">20 km</button>
-              <button type="button" class="radius-preset-btn" data-km="25">25 km</button>
-              <button type="button" class="radius-preset-btn" data-km="30">30 km</button>
+            <div class="hours-card-actions">
+              <button type="submit" class="btn btn-brand-primary" id="btn-save-delivery">
+                <i class="fa-solid fa-floppy-disk"></i> Save Delivery Options
+              </button>
+              <button type="button" class="btn btn-secondary btn-close-delivery-panel" data-target="delivery-card-options" style="margin-left: 8px;">
+                <i class="fa-solid fa-chevron-up"></i> Close Settings
+              </button>
             </div>
-          </div>
+          </form>
+        </div>
+      </div>
 
-          <!-- KM Slide Control -->
-          <div class="rush-range-wrapper">
-            <input type="range" min="1" max="30" step="1" value="7" class="rush-range-slider" id="delivery-radius-slider">
-            <div class="slider-step-ticks">
-              <span>1 km</span>
-              <span>5 km</span>
-              <span>10 km</span>
-              <span>15 km</span>
-              <span>20 km</span>
-              <span>25 km</span>
-              <span>30 km</span>
+      <!-- 2. MAXIMUM DELIVERY DISTANCE & RADIUS (ACCORDION CARD) -->
+      <div class="admin-card-section offer-settings-section delivery-radius-section" id="delivery-card-radius" style="margin-top: 24px;">
+        <div class="section-title-bar offer-collapsible-header" id="delivery-header-radius" role="button" tabindex="0" aria-expanded="false" aria-controls="delivery-body-radius">
+          <div class="offer-header-main">
+            <div class="title-with-count">
+              <span class="section-icon">🛵</span>
+              <h2>Delivery Distance Limit</h2>
+              <span class="count-pill delivery-status-pill" id="delivery-radius-badge">7 KM Limit</span>
             </div>
+            <div class="offer-collapsed-summary" id="radius-collapsed-summary">
+              <span class="offer-summary-chip"><i class="fa-solid fa-route"></i> Delivery Radius: <strong id="summary-delivery-radius">7 km</strong></span>
+              <span class="offer-summary-chip"><i class="fa-solid fa-location-dot"></i> From: <strong>Savera Paradise (Ramanagara)</strong></span>
+            </div>
+            <span class="section-hint">Select how many kilometers your store will deliver orders within (calculated from restaurant coordinates).</span>
           </div>
-
-          <div class="radius-info-badge" style="display: flex; align-items: center; gap: 8px; color: var(--admin-text-muted); font-size: 0.9rem; font-weight: 600; margin-bottom: 20px;">
-            <i class="fa-solid fa-circle-check" style="color: var(--admin-success); font-size: 1.05rem;"></i>
-            <span>Delivery available for orders within <strong id="radius-info-km" style="color: var(--brand-primary); font-weight: 800;">7 km</strong> radius</span>
-          </div>
-
-          <div class="hours-card-actions">
-            <button type="button" class="btn btn-brand-primary" id="btn-save-radius">
-              <i class="fa-solid fa-floppy-disk"></i> Save Delivery Radius
+          <div class="offer-header-actions">
+            <button type="button" class="btn-toggle-offer-accordion" id="btn-toggle-delivery-radius" aria-expanded="false" aria-controls="delivery-body-radius">
+              <span class="toggle-btn-text">Edit Settings</span>
+              <i class="fa-solid fa-chevron-down toggle-chevron"></i>
             </button>
+          </div>
+        </div>
+
+        <div class="offer-collapsible-body" id="delivery-body-radius" style="display: none;">
+          <div class="rush-setter-box delivery-radius-box">
+            <div class="rush-setter-header">
+              <div class="rush-slider-display">
+                <span class="slider-lead-label">Maximum Delivery Radius:</span>
+                <div class="slider-big-readout">
+                  <span class="slider-big-val" id="radius-slider-val">7</span>
+                  <span class="slider-big-unit">KM</span>
+                </div>
+              </div>
+
+              <!-- Quick KM presets -->
+              <div class="rush-preset-pills">
+                <button type="button" class="radius-preset-btn" data-km="3">3 km</button>
+                <button type="button" class="radius-preset-btn" data-km="5">5 km</button>
+                <button type="button" class="radius-preset-btn active" data-km="7">7 km</button>
+                <button type="button" class="radius-preset-btn" data-km="10">10 km</button>
+                <button type="button" class="radius-preset-btn" data-km="15">15 km</button>
+                <button type="button" class="radius-preset-btn" data-km="20">20 km</button>
+                <button type="button" class="radius-preset-btn" data-km="25">25 km</button>
+                <button type="button" class="radius-preset-btn" data-km="30">30 km</button>
+              </div>
+            </div>
+
+            <!-- KM Slide Control -->
+            <div class="rush-range-wrapper">
+              <input type="range" min="1" max="30" step="1" value="7" class="rush-range-slider" id="delivery-radius-slider">
+              <div class="slider-step-ticks">
+                <span>1 km</span>
+                <span>5 km</span>
+                <span>10 km</span>
+                <span>15 km</span>
+                <span>20 km</span>
+                <span>25 km</span>
+                <span>30 km</span>
+              </div>
+            </div>
+
+            <div class="radius-info-badge" style="display: flex; align-items: center; gap: 8px; color: var(--admin-text-muted); font-size: 0.9rem; font-weight: 600; margin-bottom: 20px;">
+              <i class="fa-solid fa-circle-check" style="color: var(--admin-success); font-size: 1.05rem;"></i>
+              <span>Delivery available for orders within <strong id="radius-info-km" style="color: var(--brand-primary); font-weight: 800;">7 km</strong> radius</span>
+            </div>
+
+            <div class="hours-card-actions">
+              <button type="button" class="btn btn-brand-primary" id="btn-save-radius">
+                <i class="fa-solid fa-floppy-disk"></i> Save Delivery Radius
+              </button>
+              <button type="button" class="btn btn-secondary btn-close-delivery-panel" data-target="delivery-card-radius" style="margin-left: 8px;">
+                <i class="fa-solid fa-chevron-up"></i> Close Settings
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- ========================================================== -->
-      <!-- SECTION 2: DELIVERY BOY FLEET DIRECTORY                    -->
-      <!-- ========================================================== -->
-      <div class="admin-card-section rider-fleet-section" id="admin-rider-fleet-section" style="margin-top: 24px;">
-        <div class="section-title-bar" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
-          <div>
+      <!-- 3. DELIVERY BOY FLEET DIRECTORY (ACCORDION CARD) -->
+      <div class="admin-card-section offer-settings-section rider-fleet-section" id="delivery-card-fleet" style="margin-top: 24px;">
+        <div class="section-title-bar offer-collapsible-header" id="delivery-header-fleet" role="button" tabindex="0" aria-expanded="false" aria-controls="delivery-body-fleet">
+          <div class="offer-header-main">
             <div class="title-with-count">
               <span class="section-icon">🏍️</span>
               <h2>Delivery Boy Fleet Directory</h2>
               <span class="count-badge" id="admin-riders-count-badge">0 Active</span>
             </div>
+            <div class="offer-collapsed-summary" id="fleet-collapsed-summary">
+              <span class="offer-summary-chip"><i class="fa-solid fa-motorcycle"></i> <strong id="summary-fleet-active">0 Active Riders</strong></span>
+              <span class="offer-summary-chip"><i class="fa-solid fa-shield-halved"></i> Owner Portal Controlled</span>
+            </div>
             <span class="section-hint">Delivery fleet onboarding and secret login PINs are managed securely in the Owner Portal. Kitchen staff can contact riders directly below to coordinate food pickups.</span>
           </div>
-
-          <div class="owner-managed-pill" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 9999px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #F59E0B; font-size: 0.82rem; font-weight: 700;">
-            <i class="fa-solid fa-shield-halved"></i> Managed by Owner Portal
+          <div class="offer-header-actions">
+            <button type="button" class="btn-toggle-offer-accordion" id="btn-toggle-delivery-fleet" aria-expanded="false" aria-controls="delivery-body-fleet">
+              <span class="toggle-btn-text">View Fleet</span>
+              <i class="fa-solid fa-chevron-down toggle-chevron"></i>
+            </button>
           </div>
         </div>
 
-        <!-- Rider Fleet Grid -->
-        <div class="admin-riders-grid" id="admin-riders-grid">
-          <!-- Populated dynamically via admin.js -->
+        <div class="offer-collapsible-body" id="delivery-body-fleet" style="display: none;">
+          <div class="owner-managed-pill" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 9999px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #F59E0B; font-size: 0.82rem; font-weight: 700; margin-bottom: 14px;">
+            <i class="fa-solid fa-shield-halved"></i> Managed by Owner Portal
+          </div>
+          <!-- Rider Fleet Grid -->
+          <div class="admin-riders-grid" id="admin-riders-grid">
+            <!-- Populated dynamically via admin.js -->
+          </div>
+          <div class="hours-card-actions" style="margin-top: 16px;">
+            <button type="button" class="btn btn-secondary btn-close-delivery-panel" data-target="delivery-card-fleet">
+              <i class="fa-solid fa-chevron-up"></i> Close Fleet
+            </button>
+          </div>
         </div>
       </div>
 

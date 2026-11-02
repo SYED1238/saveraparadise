@@ -3468,6 +3468,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (groupStoreClosedReason) {
       groupStoreClosedReason.style.display = isOpen ? 'none' : 'block';
     }
+    if (typeof syncHoursSummaryChips === 'function') {
+      syncHoursSummaryChips();
+    }
   }
 
   if (inputStoreOpen) {
@@ -3896,6 +3899,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (topRushBadge) topRushBadge.style.display = 'none';
       if (capsuleRushBadge) capsuleRushBadge.style.display = 'none';
     }
+
+    if (typeof syncHoursSummaryChips === 'function') {
+      syncHoursSummaryChips();
+    }
   }
 
   function startRushTicker() {
@@ -3946,6 +3953,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     startRushTicker();
+    if (typeof syncHoursSummaryChips === 'function') {
+      syncHoursSummaryChips();
+    }
   }
 
   function renderOffers() {
@@ -4033,6 +4043,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateDeliveryPreview();
     renderAdminRidersFleet();
+    if (typeof syncDeliverySummaryChips === 'function') {
+      syncDeliverySummaryChips();
+    }
   }
 
   // Range slider change
@@ -4147,6 +4160,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         await dataService.saveSettings(updated);
+        if (typeof syncHoursSummaryChips === 'function') {
+          syncHoursSummaryChips();
+        }
         showToast('💾 Store operating timings, notice & helpline updated!', 'success');
         if (saveBtn) {
           saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
@@ -4177,6 +4193,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const km = Number(btn.getAttribute('data-km'));
         btn.classList.toggle('active', km === val);
       });
+      if (typeof syncDeliverySummaryChips === 'function') {
+        syncDeliverySummaryChips();
+      }
     });
   }
 
@@ -4197,6 +4216,9 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSaveRadius.addEventListener('click', () => {
       const km = Number(deliveryRadiusSlider?.value || 7);
       dataService.setDeliveryRadius(km);
+      if (typeof syncDeliverySummaryChips === 'function') {
+        syncDeliverySummaryChips();
+      }
       showToast(`🛵 Maximum delivery radius saved: Delivering within ${km} km!`, 'success');
     });
   }
@@ -4540,6 +4562,383 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initOffersAccordion();
 
+  // ========================================================
+  // 5C. SUMMARY CHIPS SYNCHRONIZERS FOR HOURS & DELIVERY
+  // ========================================================
+  function syncHoursSummaryChips() {
+    const settings = dataService.getSettings();
+    const isClosed = settings.storeOpen === false || (typeof dataService.isStoreOpen === 'function' && !dataService.isStoreOpen());
+    const isPaused = !isClosed && settings.isRushPaused && settings.pauseUntil && Date.now() < settings.pauseUntil;
+
+    // 1. Kitchen Rush Snooze chips
+    const summaryRushStatus = document.getElementById('summary-rush-status');
+    const summaryRushMins = document.getElementById('summary-rush-mins');
+    const summaryRushReason = document.getElementById('summary-rush-reason');
+    const rushModeBadge = document.getElementById('rush-mode-badge');
+
+    if (summaryRushStatus) {
+      if (isClosed) {
+        summaryRushStatus.textContent = 'Store Closed';
+      } else if (isPaused) {
+        const remainingMs = Math.max(0, settings.pauseUntil - Date.now());
+        const mins = Math.ceil(remainingMs / 60000);
+        summaryRushStatus.textContent = `Paused (${mins}m left)`;
+      } else {
+        summaryRushStatus.textContent = 'Kitchen Online';
+      }
+    }
+
+    if (summaryRushMins) {
+      const minsVal = Number(rushRangeSlider?.value || settings.pauseMinutes || 20);
+      summaryRushMins.textContent = `${minsVal} Mins`;
+    }
+
+    if (summaryRushReason) {
+      const reasonText = (rushReasonInput?.value || settings.pauseReason || 'High kitchen rush').trim();
+      summaryRushReason.textContent = reasonText.length > 30 ? reasonText.slice(0, 27) + '...' : reasonText;
+    }
+
+    if (rushModeBadge) {
+      if (isClosed) {
+        rushModeBadge.textContent = 'Store Closed';
+        rushModeBadge.className = 'count-pill rush-mode-pill';
+        rushModeBadge.style.background = '#EF4444';
+        rushModeBadge.style.color = '#FFFFFF';
+      } else if (isPaused) {
+        rushModeBadge.textContent = 'Rush Paused';
+        rushModeBadge.className = 'count-pill rush-mode-pill paused';
+        rushModeBadge.style.background = '#F59E0B';
+        rushModeBadge.style.color = '#FFFFFF';
+      } else {
+        rushModeBadge.textContent = 'Active';
+        rushModeBadge.className = 'count-pill rush-mode-pill';
+        rushModeBadge.style.background = '#D1FAE5';
+        rushModeBadge.style.color = '#065F46';
+      }
+    }
+
+    // 2. Daily Operating Timings & Helpline chips
+    const summaryScheduleStatus = document.getElementById('summary-schedule-status');
+    const summaryScheduleHours = document.getElementById('summary-schedule-hours');
+    const summarySchedulePhone = document.getElementById('summary-schedule-phone');
+    const scheduleStatusBadge = document.getElementById('schedule-status-badge');
+
+    const storeIsOpen = inputStoreOpen ? inputStoreOpen.checked : (settings.storeOpen !== false);
+    const openTime = inputOpenTime?.value?.trim() || settings.openTime || '11:00 AM';
+    const closeTime = inputCloseTime?.value?.trim() || settings.closeTime || '11:00 PM';
+    const rawPhone = inputRestaurantPhone?.value?.trim() || settings.restaurantPhone || settings.helpline || '+91 98450 12345';
+    const phoneFormatted = formatStorePhoneNumber(rawPhone);
+
+    if (summaryScheduleStatus) {
+      summaryScheduleStatus.textContent = storeIsOpen ? 'Store Open' : 'Store Closed';
+      summaryScheduleStatus.style.color = storeIsOpen ? 'var(--color-success, #16a34a)' : '#ef4444';
+    }
+
+    if (summaryScheduleHours) {
+      summaryScheduleHours.textContent = `${openTime} – ${closeTime}`;
+    }
+
+    if (summarySchedulePhone) {
+      summarySchedulePhone.textContent = phoneFormatted;
+    }
+
+    if (scheduleStatusBadge) {
+      scheduleStatusBadge.textContent = storeIsOpen ? 'Open' : 'Closed';
+      scheduleStatusBadge.style.background = storeIsOpen ? '#D1FAE5' : '#FEE2E2';
+      scheduleStatusBadge.style.color = storeIsOpen ? '#065F46' : '#991B1B';
+    }
+  }
+
+  function syncDeliverySummaryChips() {
+    const settings = dataService.getSettings();
+
+    // 1. Delivery Options & Minimum Order Requirements chips
+    const summaryFree = document.getElementById('summary-delivery-free');
+    const summaryFee = document.getElementById('summary-delivery-fee');
+    const summaryMov = document.getElementById('summary-delivery-mov');
+    const summaryMaxOrders = document.getElementById('summary-delivery-max-orders');
+    const deliveryStatusBadge = document.getElementById('delivery-status-badge');
+
+    const freeEnabled = inputFreeDeliveryEnabled ? inputFreeDeliveryEnabled.checked : (settings.freeDeliveryEnabled !== false);
+    const freeThreshold = inputFreeDeliveryThreshold ? Number(inputFreeDeliveryThreshold.value || 250) : (settings.freeDeliveryThreshold !== undefined ? settings.freeDeliveryThreshold : 250);
+    const stdFee = inputDeliveryFeeStandard ? Number(inputDeliveryFeeStandard.value || 40) : (settings.deliveryFeeStandard !== undefined ? settings.deliveryFeeStandard : 40);
+    const mov = inputMinOrderValue ? Number(inputMinOrderValue.value || 0) : (settings.minOrderValue !== undefined ? settings.minOrderValue : (settings.minOrder ?? 0));
+    const maxActive = inputMaxActiveOrders ? Number(inputMaxActiveOrders.value || 2) : (settings.maxActiveOrdersPerCustomer !== undefined ? settings.maxActiveOrdersPerCustomer : 2);
+
+    if (summaryFree) {
+      summaryFree.textContent = freeEnabled && freeThreshold > 0 ? `₹${freeThreshold}` : 'Disabled';
+    }
+    if (summaryFee) {
+      summaryFee.textContent = `₹${stdFee}`;
+    }
+    if (summaryMov) {
+      summaryMov.textContent = mov > 0 ? `₹${mov}` : '₹0 (No Limit)';
+    }
+    if (summaryMaxOrders) {
+      summaryMaxOrders.textContent = `${maxActive} Active`;
+    }
+    if (deliveryStatusBadge) {
+      deliveryStatusBadge.textContent = 'Active';
+      deliveryStatusBadge.style.background = '#D1FAE5';
+      deliveryStatusBadge.style.color = '#065F46';
+    }
+
+    // 2. Delivery Radius chip
+    const currentRadius = Number(deliveryRadiusSlider?.value || settings.deliveryRadiusKm || 7);
+    const summaryRadius = document.getElementById('summary-delivery-radius');
+    const deliveryRadiusBadge = document.getElementById('delivery-radius-badge');
+    if (summaryRadius) {
+      summaryRadius.textContent = `${currentRadius} km`;
+    }
+    if (deliveryRadiusBadge) {
+      deliveryRadiusBadge.textContent = `${currentRadius} KM Limit`;
+    }
+
+    // 3. Delivery Fleet chip
+    const riders = (typeof dataService.getRiders === 'function' ? dataService.getRiders() : []) || [];
+    const summaryFleetActive = document.getElementById('summary-fleet-active');
+    const fleetBadge = document.getElementById('admin-riders-count-badge');
+    if (summaryFleetActive) {
+      summaryFleetActive.textContent = `${riders.length} Active Riders`;
+    }
+    if (fleetBadge) {
+      fleetBadge.textContent = `${riders.length} Active`;
+    }
+  }
+
+  // ========================================================
+  // 5D. COLLAPSIBLE ACCORDION FOR STORE HOURS & RUSH
+  // ========================================================
+  function initHoursAccordion() {
+    const rushCard = document.getElementById('hours-card-rush');
+    const scheduleCard = document.getElementById('hours-card-schedule');
+    const btnRush = document.getElementById('btn-toggle-rush');
+    const btnSchedule = document.getElementById('btn-toggle-schedule');
+    const bodyRush = document.getElementById('hours-body-rush');
+    const bodySchedule = document.getElementById('hours-body-schedule');
+    const headerRush = document.getElementById('hours-header-rush');
+    const headerSchedule = document.getElementById('hours-header-schedule');
+
+    function toggleHoursCard(card, body, btn, forceOpen = null) {
+      if (!card || !body || !btn) return;
+      const isOpen = card.classList.contains('is-open');
+      const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
+
+      if (shouldOpen) {
+        // When opening one card, collapse the other to save viewport space
+        if (card === rushCard) {
+          toggleHoursCard(scheduleCard, bodySchedule, btnSchedule, false);
+        } else if (card === scheduleCard) {
+          toggleHoursCard(rushCard, bodyRush, btnRush, false);
+        }
+      }
+
+      card.classList.toggle('is-open', shouldOpen);
+      btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      const textSpan = btn.querySelector('.toggle-btn-text');
+      if (textSpan) {
+        textSpan.textContent = shouldOpen ? 'Close Settings' : 'Edit Settings';
+      }
+      body.style.display = shouldOpen ? 'block' : 'none';
+    }
+
+    if (btnRush) {
+      btnRush.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleHoursCard(rushCard, bodyRush, btnRush);
+      });
+    }
+    if (headerRush) {
+      headerRush.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, select, a, label')) return;
+        toggleHoursCard(rushCard, bodyRush, btnRush);
+      });
+      headerRush.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('button, input, select, a, label')) return;
+          e.preventDefault();
+          toggleHoursCard(rushCard, bodyRush, btnRush);
+        }
+      });
+    }
+
+    if (btnSchedule) {
+      btnSchedule.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleHoursCard(scheduleCard, bodySchedule, btnSchedule);
+      });
+    }
+    if (headerSchedule) {
+      headerSchedule.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, select, a, label')) return;
+        toggleHoursCard(scheduleCard, bodySchedule, btnSchedule);
+      });
+      headerSchedule.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('button, input, select, a, label')) return;
+          e.preventDefault();
+          toggleHoursCard(scheduleCard, bodySchedule, btnSchedule);
+        }
+      });
+    }
+
+    // Close buttons inside expanded panels
+    document.querySelectorAll('.btn-close-hours-panel').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = btn.getAttribute('data-target');
+        if (targetId === 'hours-card-rush') {
+          toggleHoursCard(rushCard, bodyRush, btnRush, false);
+        } else if (targetId === 'hours-card-schedule') {
+          toggleHoursCard(scheduleCard, bodySchedule, btnSchedule, false);
+        }
+      });
+    });
+
+    // Initialize both cards collapsed by default so view is compact and fits without scrolling
+    toggleHoursCard(rushCard, bodyRush, btnRush, false);
+    toggleHoursCard(scheduleCard, bodySchedule, btnSchedule, false);
+  }
+
+  // ========================================================
+  // 5E. COLLAPSIBLE ACCORDION FOR DELIVERY OPTIONS HUB
+  // ========================================================
+  function initDeliveryAccordion() {
+    const optionsCard = document.getElementById('delivery-card-options');
+    const radiusCard = document.getElementById('delivery-card-radius');
+    const fleetCard = document.getElementById('delivery-card-fleet');
+
+    const btnOptions = document.getElementById('btn-toggle-delivery-options');
+    const btnRadius = document.getElementById('btn-toggle-delivery-radius');
+    const btnFleet = document.getElementById('btn-toggle-delivery-fleet');
+
+    const bodyOptions = document.getElementById('delivery-body-options');
+    const bodyRadius = document.getElementById('delivery-body-radius');
+    const bodyFleet = document.getElementById('delivery-body-fleet');
+
+    const headerOptions = document.getElementById('delivery-header-options');
+    const headerRadius = document.getElementById('delivery-header-radius');
+    const headerFleet = document.getElementById('delivery-header-fleet');
+
+    function toggleDeliveryCard(card, body, btn, forceOpen = null) {
+      if (!card || !body || !btn) return;
+      const isOpen = card.classList.contains('is-open');
+      const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
+
+      if (shouldOpen) {
+        // Mutual exclusion: when opening one card, collapse the others to save viewport space
+        if (card === optionsCard) {
+          toggleDeliveryCard(radiusCard, bodyRadius, btnRadius, false);
+          toggleDeliveryCard(fleetCard, bodyFleet, btnFleet, false);
+        } else if (card === radiusCard) {
+          toggleDeliveryCard(optionsCard, bodyOptions, btnOptions, false);
+          toggleDeliveryCard(fleetCard, bodyFleet, btnFleet, false);
+        } else if (card === fleetCard) {
+          toggleDeliveryCard(optionsCard, bodyOptions, btnOptions, false);
+          toggleDeliveryCard(radiusCard, bodyRadius, btnRadius, false);
+        }
+      }
+
+      card.classList.toggle('is-open', shouldOpen);
+      btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      const textSpan = btn.querySelector('.toggle-btn-text');
+      if (textSpan) {
+        if (card === fleetCard) {
+          textSpan.textContent = shouldOpen ? 'Close Fleet' : 'View Fleet';
+        } else {
+          textSpan.textContent = shouldOpen ? 'Close Settings' : 'Edit Settings';
+        }
+      }
+      body.style.display = shouldOpen ? 'block' : 'none';
+    }
+
+    if (btnOptions) {
+      btnOptions.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDeliveryCard(optionsCard, bodyOptions, btnOptions);
+      });
+    }
+    if (headerOptions) {
+      headerOptions.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, select, a, label')) return;
+        toggleDeliveryCard(optionsCard, bodyOptions, btnOptions);
+      });
+      headerOptions.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('button, input, select, a, label')) return;
+          e.preventDefault();
+          toggleDeliveryCard(optionsCard, bodyOptions, btnOptions);
+        }
+      });
+    }
+
+    if (btnRadius) {
+      btnRadius.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDeliveryCard(radiusCard, bodyRadius, btnRadius);
+      });
+    }
+    if (headerRadius) {
+      headerRadius.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, select, a, label')) return;
+        toggleDeliveryCard(radiusCard, bodyRadius, btnRadius);
+      });
+      headerRadius.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('button, input, select, a, label')) return;
+          e.preventDefault();
+          toggleDeliveryCard(radiusCard, bodyRadius, btnRadius);
+        }
+      });
+    }
+
+    if (btnFleet) {
+      btnFleet.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDeliveryCard(fleetCard, bodyFleet, btnFleet);
+      });
+    }
+    if (headerFleet) {
+      headerFleet.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, select, a, label')) return;
+        toggleDeliveryCard(fleetCard, bodyFleet, btnFleet);
+      });
+      headerFleet.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('button, input, select, a, label')) return;
+          e.preventDefault();
+          toggleDeliveryCard(fleetCard, bodyFleet, btnFleet);
+        }
+      });
+    }
+
+    // Close buttons inside expanded panels
+    document.querySelectorAll('.btn-close-delivery-panel').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = btn.getAttribute('data-target');
+        if (targetId === 'delivery-card-options') {
+          toggleDeliveryCard(optionsCard, bodyOptions, btnOptions, false);
+        } else if (targetId === 'delivery-card-radius') {
+          toggleDeliveryCard(radiusCard, bodyRadius, btnRadius, false);
+        } else if (targetId === 'delivery-card-fleet') {
+          toggleDeliveryCard(fleetCard, bodyFleet, btnFleet, false);
+        }
+      });
+    });
+
+    // Initialize all 3 cards collapsed by default
+    toggleDeliveryCard(optionsCard, bodyOptions, btnOptions, false);
+    toggleDeliveryCard(radiusCard, bodyRadius, btnRadius, false);
+    toggleDeliveryCard(fleetCard, bodyFleet, btnFleet, false);
+  }
+
+  // Initialize Hours & Delivery Accordions and initial chip values
+  initHoursAccordion();
+  initDeliveryAccordion();
+  syncHoursSummaryChips();
+  syncDeliverySummaryChips();
+
 
   // Save delivery options form
   if (formStoreDelivery) {
@@ -4570,6 +4969,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         updateDeliveryPreview();
+        if (typeof syncDeliverySummaryChips === 'function') {
+          syncDeliverySummaryChips();
+        }
         const freeMsg = freeDelivEnabled && freeDelivThreshold > 0
           ? `Free delivery on orders above ₹${freeDelivThreshold} is active!`
           : `Flat delivery fee of ₹${Math.round(stdFee)} is active!`;
@@ -4617,6 +5019,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (adminRidersCountBadge) {
       adminRidersCountBadge.textContent = `${riders.length} Active`;
+    }
+    if (typeof syncDeliverySummaryChips === 'function') {
+      syncDeliverySummaryChips();
     }
 
     if (!riders || riders.length === 0) {
