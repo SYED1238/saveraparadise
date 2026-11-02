@@ -75,6 +75,7 @@ function initStorefrontApp() {
       if (!img.getAttribute('data-fallback-tried')) {
         img.setAttribute('data-fallback-tried', 'true');
         img.src = '/biryani-plate-1.png';
+        if (img.complete && img.naturalWidth > 0) { onReady(); } else { img.addEventListener('load', onReady, { once: true }); }
         return;
       }
       img.classList.remove('img-is-ready');

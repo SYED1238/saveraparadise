@@ -2472,10 +2472,18 @@ document.addEventListener('DOMContentLoaded', () => {
     pendingClaimCode = code;
 
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
+    const payoutCfg = dataService.getPayoutConfig();
+    const allOrders = dataService.getOrders();
+    const deliveredCount = allOrders.filter(o => o.status === 'delivered' && o.assignedRiderPin === currentRider.pin).length;
+    const payout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);
+
     const dropCoords = getOrderDropCoordinates(order);
+    const tripDistanceKm = Number(payout.distanceKm);
     const riderOriginLat = riderLiveLocation.lat || RESTAURANT_COORDINATES.lat;
     const riderOriginLng = riderLiveLocation.lng || RESTAURANT_COORDINATES.lng;
-    const rawDistanceKm = calculateDistanceKm(riderOriginLat, riderOriginLng, dropCoords.lat, dropCoords.lng);
+    const rawDistanceKm = (tripDistanceKm && !isNaN(tripDistanceKm) && tripDistanceKm > 0)
+      ? tripDistanceKm
+      : calculateDistanceKm(riderOriginLat, riderOriginLng, dropCoords.lat, dropCoords.lng);
     const distanceKm = (!rawDistanceKm || isNaN(rawDistanceKm) || rawDistanceKm <= 0) ? 1.8 : rawDistanceKm;
     const estimatedMins = Math.max(5, Math.round(distanceKm * 3.5));
 
@@ -2507,11 +2515,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const isCod = isCashOnDelivery(order);
     const cashAmount = extractCashAmount(order.total);
     const paymentText = isCod ? `💵 COD: Collect ₹${cashAmount}` : `💳 Prepaid Online (₹0 to collect)`;
-
-    const payoutCfg = dataService.getPayoutConfig();
-    const allOrders = dataService.getOrders();
-    const deliveredCount = allOrders.filter(o => o.status === 'delivered' && o.assignedRiderPin === currentRider.pin).length;
-    const payout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);
 
     if (previewBagCodePill) previewBagCodePill.textContent = `BAG CODE: #${code}`;
     if (previewOrderId) previewOrderId.textContent = `Order #${String(order.id || code).replace(/^#/, '')}`;

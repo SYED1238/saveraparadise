@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import crypto from 'crypto';
 import https from 'https';
+import fs from 'fs';
 import { verifyAdminToken, verifyAdminPin, createAdminToken, getPinRole, signData, safeEqual } from './api/_auth.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -116,6 +117,15 @@ function r2DevMiddlewarePlugin() {
             res.statusCode = 400;
             res.setHeader('Content-Type', 'application/json');
             return res.end(JSON.stringify({ error: 'Invalid or missing image key' }));
+          }
+
+          // Local file fallback for static assets
+          const localImgPath = resolve(__dirname, 'public/images', cleanKey.replace(/^dishes\//, ''));
+          if (fs.existsSync(localImgPath) && fs.statSync(localImgPath).isFile()) {
+            const mime = localImgPath.endsWith('.png') ? 'image/png' : 'image/jpeg';
+            res.setHeader('Content-Type', mime);
+            res.setHeader('Cache-Control', 'public, max-age=604800');
+            return fs.createReadStream(localImgPath).pipe(res);
           }
 
           if (!R2_CONFIG.ACCESS_KEY_ID || !R2_CONFIG.SECRET_ACCESS_KEY) {
