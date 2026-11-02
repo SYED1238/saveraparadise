@@ -2,7 +2,7 @@
  * Savera Paradise - Interactive Logic & Animation Engine
  */
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h } from './dataService.js';
 import { supabase } from './supabaseClient.js';
 import {
   playNotificationSound,
@@ -1420,6 +1420,51 @@ function initStorefrontApp() {
 
   function renderCart() {
     updateMenuCardSteppers();
+    
+    // 1-Second Interval Ticker for Live Countdown Timers Across Storefront Cards
+    let dishScheduleTicker = null;
+    function startDishScheduleTicker() {
+      if (dishScheduleTicker) clearInterval(dishScheduleTicker);
+      dishScheduleTicker = setInterval(() => {
+        const now = new Date();
+        const dishes = dataService.getDishes();
+        const dishesMap = new Map(dishes.map(d => [d.id, d]));
+        let needsReEvaluation = false;
+
+        document.querySelectorAll('.countdown-ticker[data-dish-id]').forEach(ticker => {
+          const dishId = ticker.getAttribute('data-dish-id');
+          const dish = dishesMap.get(dishId);
+          if (dish) {
+            const sched = getDishScheduleStatus(dish, now);
+            if (sched.status === 'countdown') {
+              ticker.textContent = sched.countdownText;
+            } else {
+              needsReEvaluation = true;
+            }
+          }
+        });
+
+        // Detail Modal live countdown ticker
+        if (activeDetailItem && foodDetailBackdrop && foodDetailBackdrop.classList.contains('open')) {
+          const liveDish = dishesMap.get(activeDetailItem.id) || activeDetailItem;
+          const sched = getDishScheduleStatus(liveDish, now);
+          const countdownBox = document.getElementById('food-detail-countdown-box');
+          const countdownText = document.getElementById('food-detail-countdown-text');
+          if (sched.status === 'countdown') {
+            if (countdownBox) countdownBox.style.display = 'inline-flex';
+            if (countdownText) countdownText.textContent = sched.countdownText;
+          } else if (countdownBox) {
+            countdownBox.style.display = 'none';
+          }
+        }
+
+        if (needsReEvaluation) {
+          syncStorefrontCardsWithDataService();
+        }
+      }, 1000);
+    }
+    startDishScheduleTicker();
+
     const totalCount = cart.reduce((acc, i) => acc + i.quantity, 0);
     if (cartBadge) cartBadge.textContent = totalCount;
     if (cartItemsCount) cartItemsCount.textContent = `(${totalCount} item${totalCount === 1 ? '' : 's'})`;
@@ -1788,12 +1833,26 @@ function initStorefrontApp() {
     if (modalSubmitPrice) modalSubmitPrice.textContent = `₹${Math.round(total)}`;
     if (modalQtyText) modalQtyText.textContent = activeDetailQty;
 
+    const sched = getDishScheduleStatus(activeDetailItem, new Date());
     if (btnModalAddCart) {
       if (isOut) {
         btnModalAddCart.disabled = true;
         btnModalAddCart.innerHTML = `<span>⏳ Back Soon</span>`;
         btnModalAddCart.style.opacity = '0.65';
         btnModalAddCart.style.cursor = 'not-allowed';
+      } else if (!sched.isAvailable) {
+        btnModalAddCart.disabled = true;
+        btnModalAddCart.style.opacity = '0.75';
+        btnModalAddCart.style.cursor = 'not-allowed';
+        if (sched.status === 'countdown') {
+          btnModalAddCart.innerHTML = `<span><i class="fa-solid fa-clock"></i> ${sched.countdownText}</span>`;
+        } else if (sched.status === 'day_inactive') {
+          btnModalAddCart.innerHTML = `<span><i class="fa-regular fa-calendar-day"></i> ${sched.message}</span>`;
+        } else if (sched.status === 'ended_today') {
+          btnModalAddCart.innerHTML = `<span><i class="fa-solid fa-moon"></i> Service Ended Today</span>`;
+        } else {
+          btnModalAddCart.innerHTML = `<span>${sched.message || 'Unavailable'}</span>`;
+        }
       } else {
         btnModalAddCart.disabled = false;
         btnModalAddCart.innerHTML = `<span>Add to Basket</span> <span class="submit-separator">•</span> <span id="modal-submit-price">₹${Math.round(total)}</span>`;
@@ -1886,6 +1945,75 @@ function initStorefrontApp() {
       });
     }
 
+    // Schedule & Availability Banner in Food Detail Modal
+    const schedBanner = document.getElementById('food-detail-schedule-banner');
+    const schedHeadline = document.getElementById('food-detail-schedule-headline');
+    const schedHours = document.getElementById('food-detail-schedule-hours');
+    const schedIcon = document.getElementById('food-detail-schedule-icon');
+    const countdownBox = document.getElementById('food-detail-countdown-box');
+    const countdownText = document.getElementById('food-detail-countdown-text');
+    const daysStrip = document.getElementById('food-detail-days-strip');
+
+    if (schedBanner) {
+      const dishSched = getDishScheduleStatus(dish, new Date());
+      const hasTime = Boolean(dish.timeRestricted && dish.availableFrom && dish.availableTo);
+      const days = Array.isArray(dish.availableDays) && dish.availableDays.length > 0 ? dish.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      const hasCustomDays = days.length < 7;
+
+      if (hasTime || hasCustomDays) {
+        schedBanner.style.display = 'block';
+        if (hasTime) {
+          schedHours.textContent = `${formatTime12h(dish.availableFrom)} – ${formatTime12h(dish.availableTo)}`;
+          schedHeadline.textContent = 'Daily Serving Hours';
+        } else {
+          schedHours.textContent = 'Served on Scheduled Days';
+          schedHeadline.textContent = 'Day Availability';
+        }
+
+        if (dishSched.status === 'countdown') {
+          if (countdownBox) {
+            countdownBox.style.display = 'inline-flex';
+            countdownText.textContent = dishSched.countdownText;
+          }
+          if (schedIcon) {
+            schedIcon.innerHTML = '<i class="fa-solid fa-hourglass-start" style="color:#D97706;"></i>';
+            schedIcon.style.background = '#FEF3C7';
+          }
+        } else if (dishSched.status === 'active_window') {
+          if (countdownBox) countdownBox.style.display = 'none';
+          if (schedIcon) {
+            schedIcon.innerHTML = '<i class="fa-solid fa-fire" style="color:#10B981;"></i>';
+            schedIcon.style.background = '#D1FAE5';
+          }
+        } else if (dishSched.status === 'ended_today') {
+          if (countdownBox) {
+            countdownBox.style.display = 'inline-flex';
+            countdownText.textContent = 'Closed for today';
+          }
+          if (schedIcon) {
+            schedIcon.innerHTML = '<i class="fa-solid fa-moon" style="color:#64748B;"></i>';
+            schedIcon.style.background = '#F1F5F9';
+          }
+        } else {
+          if (countdownBox) countdownBox.style.display = 'none';
+        }
+
+        // Populate 7-day strip
+        if (daysStrip) {
+          const dayNames = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+          const dayLabels = { mon: 'M', tue: 'T', wed: 'W', thu: 'T', fri: 'F', sat: 'S', sun: 'S' };
+          const todayCode = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date().getDay()];
+          daysStrip.innerHTML = dayNames.map(d => {
+            const isActive = days.includes(d);
+            const isToday = d === todayCode;
+            return `<span class="modal-day-dot ${isActive ? 'active' : ''} ${isToday ? 'is-today' : ''}" title="${d.toUpperCase()}">${dayLabels[d]}</span>`;
+          }).join('');
+        }
+      } else {
+        schedBanner.style.display = 'none';
+      }
+    }
+
     updateModalSubmitPrice();
     if (foodDetailBackdrop) {
       foodDetailBackdrop.classList.add('open');
@@ -1955,6 +2083,19 @@ function initStorefrontApp() {
         showToast(`Sorry, "${activeDetailItem.name}" will be back soon! 🍗`, 'info');
         return;
       }
+      const sched = getDishScheduleStatus(activeDetailItem, new Date());
+      if (!sched.isAvailable) {
+        if (sched.status === 'countdown') {
+          showToast(`⏰ "${activeDetailItem.name}" serving starts in ${sched.countdownText.replace('Starts in ', '')} (at ${formatTime12h(activeDetailItem.availableFrom)}).`, 'info');
+        } else if (sched.status === 'day_inactive') {
+          showToast(`📅 "${activeDetailItem.name}" is ${sched.message}.`, 'info');
+        } else if (sched.status === 'ended_today') {
+          showToast(`🌙 "${activeDetailItem.name}" serving ended for today.`, 'info');
+        } else {
+          showToast(`Sorry, "${activeDetailItem.name}" is currently unavailable.`, 'info');
+        }
+        return;
+      }
       addToCart({
         id: activeDetailItem.id,
         name: activeDetailItem.name,
@@ -1974,6 +2115,23 @@ function initStorefrontApp() {
       const addBtn = e.target.closest('.btn-add-cart');
       if (addBtn) {
         e.stopPropagation();
+        const btnDishId = addBtn.getAttribute('data-id');
+        const liveDish = (typeof dataService.getDishById === 'function' ? dataService.getDishById(btnDishId) : null) || dataService.getDishes().find(d => d.id === btnDishId);
+        if (liveDish) {
+          const dishSched = getDishScheduleStatus(liveDish, new Date());
+          if (!dishSched.isAvailable) {
+            if (dishSched.status === 'countdown') {
+              showToast(`⏰ "${liveDish.name}" serving starts in ${dishSched.countdownText.replace('Starts in ', '')} (at ${formatTime12h(liveDish.availableFrom)}).`, 'info');
+            } else if (dishSched.status === 'day_inactive') {
+              showToast(`📅 "${liveDish.name}" is ${dishSched.message}.`, 'info');
+            } else if (dishSched.status === 'ended_today') {
+              showToast(`🌙 "${liveDish.name}" serving ended for today.`, 'info');
+            } else {
+              showToast(`Sorry, "${liveDish.name}" will be back soon!`, 'info');
+            }
+            return;
+          }
+        }
         if (addBtn.disabled || addBtn.hasAttribute('disabled')) {
           showToast('Sorry, this dish will be back soon! 🍗', 'info');
           return;
@@ -2172,12 +2330,53 @@ function initStorefrontApp() {
           card.querySelector('.recipe-card-inner')?.prepend(stockPill);
         }
       } else {
-        card.classList.remove('is-out-of-stock');
+                card.classList.remove('is-out-of-stock');
         const stockPill = card.querySelector('.recipe-card-stock-pill');
         if (stockPill) stockPill.remove();
       }
+
+      // 6b. Live Sync Schedule & Serving Hours (Countdown & Days)
+      const dishSchedule = getDishScheduleStatus(dish, new Date());
+      const innerEl = card.querySelector('.recipe-card-inner');
+      const oldSchedPill = card.querySelector('.recipe-card-schedule-pill');
+      if (oldSchedPill) oldSchedPill.remove();
+
+      if (!dishSchedule.isAvailable) {
+        if (dishSchedule.status === 'countdown') {
+          card.classList.add('is-scheduled-countdown');
+          card.classList.remove('is-scheduled-inactive');
+          const pill = document.createElement('span');
+          pill.className = 'recipe-card-schedule-pill countdown-pill';
+          pill.setAttribute('data-dish-id', dish.id);
+          pill.innerHTML = `<i class="fa-solid fa-clock"></i> <span class="countdown-ticker" data-dish-id="${dish.id}">${dishSchedule.countdownText}</span>`;
+          if (innerEl) innerEl.prepend(pill);
+        } else if (dishSchedule.status === 'day_inactive') {
+          card.classList.add('is-scheduled-inactive');
+          card.classList.remove('is-scheduled-countdown');
+          const pill = document.createElement('span');
+          pill.className = 'recipe-card-schedule-pill day-pill';
+          pill.innerHTML = `<i class="fa-regular fa-calendar-day"></i> <span>${dishSchedule.badgeText || 'Special Days'}</span>`;
+          if (innerEl) innerEl.prepend(pill);
+        } else if (dishSchedule.status === 'ended_today') {
+          card.classList.add('is-scheduled-inactive');
+          card.classList.remove('is-scheduled-countdown');
+          const pill = document.createElement('span');
+          pill.className = 'recipe-card-schedule-pill ended-pill';
+          pill.innerHTML = `<i class="fa-solid fa-moon"></i> <span>Closed for Today</span>`;
+          if (innerEl) innerEl.prepend(pill);
+        }
+      } else {
+        card.classList.remove('is-scheduled-countdown', 'is-scheduled-inactive');
+        if (dishSchedule.status === 'active_window' && dish.timeRestricted) {
+          const pill = document.createElement('span');
+          pill.className = 'recipe-card-schedule-pill active-window-pill';
+          pill.innerHTML = `<i class="fa-solid fa-fire"></i> <span>Till ${formatTime12h(dish.availableTo)}</span>`;
+          if (innerEl) innerEl.prepend(pill);
+        }
+      }
     });
 
+    // Remove any card whose dish was deleted in admin
     // Remove any card whose dish was deleted in admin
     const currentDishIds = new Set(dishes.map(d => `card-${d.id}`));
     document.querySelectorAll('.recipe-card').forEach(card => {

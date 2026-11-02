@@ -6646,3 +6646,239 @@ html, body, .admin-body {
     padding: 10px 14px;
   }
 }
+
+
+/* ========================================================
+   DISH SCHEDULE & SERVING AVAILABILITY STYLES
+   ======================================================== */
+.dish-schedule-box {
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-top: 14px;
+  margin-bottom: 16px;
+}
+
+.schedule-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #EDF2F7;
+}
+
+.schedule-box-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--admin-text-main, #1E293B);
+}
+
+.schedule-summary-badge {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #065F46;
+  background: #D1FAE5;
+  border: 1px solid #A7F3D0;
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.schedule-subhead-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.schedule-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--admin-text-main, #334155);
+}
+
+.schedule-label .sub-hint {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--admin-text-muted, #64748B);
+}
+
+.schedule-quick-days {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-day-quick {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-day-quick:hover {
+  background: #EFF6FF;
+  border-color: #3B82F6;
+  color: #2563EB;
+}
+
+.dish-days-picker {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 520px) {
+  .dish-days-picker {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    gap: 6px;
+  }
+}
+
+.dish-day-pill {
+  padding: 8px 4px;
+  text-align: center;
+  border-radius: 10px;
+  border: 1.5px solid #CBD5E1;
+  background: #FFFFFF;
+  color: #64748B;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  min-width: 42px;
+}
+
+.dish-day-pill:hover {
+  border-color: #94A3B8;
+  background: #F8FAFC;
+}
+
+.dish-day-pill.active {
+  background: #10B981;
+  color: #FFFFFF;
+  border-color: #10B981;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+  transform: translateY(-1px);
+}
+
+.schedule-section.time-section {
+  padding-top: 14px;
+  border-top: 1px solid #EDF2F7;
+}
+
+.schedule-time-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.toggle-text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.schedule-toggle-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--admin-text-main, #1E293B);
+}
+
+.schedule-toggle-sub {
+  font-size: 0.76rem;
+  color: var(--admin-text-muted, #64748B);
+  line-height: 1.35;
+}
+
+.dish-time-inputs-container {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #CBD5E1;
+}
+
+.dish-time-inputs-container input[type="time"] {
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1.5px solid #CBD5E1;
+  background: #FFFFFF;
+  color: #1E293B;
+  width: 100%;
+}
+
+.schedule-time-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.schedule-time-presets .presets-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--admin-text-muted, #64748B);
+  margin-right: 2px;
+}
+
+.btn-time-preset {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  color: #475569;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-time-preset:hover {
+  background: #FFF7ED;
+  border-color: #FF5A26;
+  color: #EA580C;
+}
+
+/* Dish Card Schedule Badges in Admin Dashboard */
+.dish-schedule-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+
+.dish-schedule-badge.time-badge {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+}
+
+.dish-schedule-badge.days-badge {
+  background: #DBEAFE;
+  color: #1E40AF;
+  border: 1px solid #BFDBFE;
+}

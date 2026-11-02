@@ -1411,6 +1411,75 @@
           <textarea id="dish-desc-input" rows="2" placeholder="Describe the flavors, seasoning, and texture..."></textarea>
         </div>
 
+        <!-- DISH SCHEDULE & SERVING AVAILABILITY -->
+        <div class="form-group dish-schedule-box">
+          <div class="schedule-box-header">
+            <div class="schedule-box-title">
+              <i class="fa-solid fa-clock-rotate-left" style="color: #FF5A26;"></i>
+              <span>Serving Hours & Day Availability</span>
+            </div>
+            <span class="schedule-summary-badge" id="admin-dish-schedule-summary">All 7 Days · All Day</span>
+          </div>
+
+          <!-- 7 Days Selector -->
+          <div class="schedule-section">
+            <div class="schedule-subhead-row">
+              <label class="schedule-label">Available Days of the Week <span class="sub-hint">(Tap day to toggle)</span></label>
+              <div class="schedule-quick-days">
+                <button type="button" class="btn-day-quick" data-days="all">All 7 Days</button>
+                <button type="button" class="btn-day-quick" data-days="weekdays">Mon - Fri</button>
+                <button type="button" class="btn-day-quick" data-days="weekends">Sat - Sun</button>
+              </div>
+            </div>
+            <div class="dish-days-picker" id="dish-days-picker">
+              <button type="button" class="dish-day-pill active" data-day="mon"><span>Mon</span></button>
+              <button type="button" class="dish-day-pill active" data-day="tue"><span>Tue</span></button>
+              <button type="button" class="dish-day-pill active" data-day="wed"><span>Wed</span></button>
+              <button type="button" class="dish-day-pill active" data-day="thu"><span>Thu</span></button>
+              <button type="button" class="dish-day-pill active" data-day="fri"><span>Fri</span></button>
+              <button type="button" class="dish-day-pill active" data-day="sat"><span>Sat</span></button>
+              <button type="button" class="dish-day-pill active" data-day="sun"><span>Sun</span></button>
+            </div>
+          </div>
+
+          <!-- Serving Hours Restriction Toggle -->
+          <div class="schedule-section time-section">
+            <div class="schedule-time-toggle-row">
+              <div class="toggle-text-block">
+                <span class="schedule-toggle-title"><strong>Set Serving Hours / Timing</strong></span>
+                <span class="schedule-toggle-sub">Turn ON for dishes served during specific hours (e.g. Biryani 12–4 PM, BBQ 3–11:30 PM). Shows live countdown on storefront before start time!</span>
+              </div>
+              <label class="admin-switch">
+                <input type="checkbox" id="input-dish-time-restricted">
+                <span class="admin-slider"></span>
+              </label>
+            </div>
+
+            <!-- Time Inputs (Hidden when toggle is off) -->
+            <div class="dish-time-inputs-container" id="dish-time-inputs-container" style="display: none;">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label for="input-dish-available-from"><i class="fa-regular fa-clock"></i> Starts Serving From</label>
+                  <input type="time" id="input-dish-available-from" value="12:00">
+                </div>
+                <div class="form-group">
+                  <label for="input-dish-available-to"><i class="fa-solid fa-clock"></i> Available Until (Closing)</label>
+                  <input type="time" id="input-dish-available-to" value="23:30">
+                </div>
+              </div>
+
+              <!-- Quick Presets -->
+              <div class="schedule-time-presets">
+                <span class="presets-label">Quick Meal Presets:</span>
+                <button type="button" class="btn-time-preset" data-from="11:30" data-to="16:00">Lunch (11:30 AM - 4 PM)</button>
+                <button type="button" class="btn-time-preset" data-from="15:00" data-to="23:30">BBQ / Evening (3 PM - 11:30 PM)</button>
+                <button type="button" class="btn-time-preset" data-from="19:00" data-to="23:30">Dinner (7 PM - 11:30 PM)</button>
+                <button type="button" class="btn-time-preset" data-from="07:00" data-to="11:30">Breakfast (7 AM - 11:30 AM)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- FOOD IMAGE SELECTION SECTION -->
         <div class="form-group image-selection-group">
           <div class="image-section-header-row">

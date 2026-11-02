@@ -12300,3 +12300,162 @@ body.order-modal-open .unlocked-deals-floating-bar {
   box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35);
   margin-left: 6px;
 }
+
+
+/* ========================================================
+   STOREFRONT DISH SCHEDULE & COUNTDOWN STYLES
+   ======================================================== */
+.recipe-card-schedule-pill {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 9px;
+  border-radius: 20px;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+.recipe-card-schedule-pill.countdown-pill {
+  background: rgba(17, 24, 39, 0.88);
+  color: #FBBF24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  animation: pulse-countdown-glow 2.5s infinite;
+}
+
+@keyframes pulse-countdown-glow {
+  0%, 100% {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+  }
+  50% {
+    box-shadow: 0 3px 14px rgba(245, 158, 11, 0.45);
+  }
+}
+
+.recipe-card-schedule-pill.day-pill {
+  background: rgba(30, 41, 59, 0.88);
+  color: #93C5FD;
+  border: 1px solid rgba(147, 197, 253, 0.35);
+}
+
+.recipe-card-schedule-pill.ended-pill {
+  background: rgba(31, 41, 55, 0.88);
+  color: #9CA3AF;
+  border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+.recipe-card-schedule-pill.active-window-pill {
+  background: rgba(6, 78, 59, 0.88);
+  color: #34D399;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.recipe-card.is-scheduled-countdown .recipe-img,
+.recipe-card.is-scheduled-inactive .recipe-img {
+  filter: brightness(0.85);
+}
+
+.recipe-card.is-scheduled-countdown .btn-glass-add,
+.recipe-card.is-scheduled-inactive .btn-glass-add {
+  background: rgba(17, 24, 39, 0.75);
+  border-color: rgba(255, 255, 255, 0.25);
+  opacity: 0.9;
+}
+
+/* Modal Schedule Banner */
+.food-schedule-banner {
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin: 14px 0 16px 0;
+}
+
+.schedule-banner-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.schedule-banner-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #EFF6FF;
+  color: #2563EB;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.schedule-banner-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.schedule-banner-headline {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.schedule-banner-hours {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1E293B;
+}
+
+.schedule-banner-countdown-box {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #B45309;
+}
+
+.schedule-banner-days-strip {
+  display: flex;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #E2E8F0;
+}
+
+.modal-day-dot {
+  flex: 1;
+  text-align: center;
+  padding: 4px 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 6px;
+  background: #E2E8F0;
+  color: #94A3B8;
+  border: 1px solid transparent;
+}
+
+.modal-day-dot.active {
+  background: #D1FAE5;
+  color: #065F46;
+  border-color: #A7F3D0;
+}
+
+.modal-day-dot.is-today {
+  box-shadow: 0 0 0 1.5px #10B981;
+}

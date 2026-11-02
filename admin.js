@@ -4,7 +4,7 @@
  * and data synchronization with dataService.
  */
 
-import { dataService, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress } from './dataService.js';
+import { dataService, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus } from './dataService.js';
 import { cloudflareR2Service } from './cloudflareR2Service.js';
 import {
   playNotificationSound,
@@ -898,6 +898,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="dish-bottom-info">
               ${['dish-chicken-3pcs', 'dish-pizza-chicken', 'dish-burger-crispy'].includes(dish.id) ? '<div class="dish-category-badge-chip hero-featured-chip" style="background:#FF5A26;color:#FFFFFF;font-weight:700;margin-bottom:4px;border:none;"><i class="fa-solid fa-star"></i> Home Hero Bubble</div>' : ''}
               ${safeBadge ? `<div class="dish-category-badge-chip">${safeBadge}</div>` : ''}
+              ${(dish.timeRestricted && dish.availableFrom && dish.availableTo) ? `<div class="dish-schedule-badge time-badge"><i class="fa-regular fa-clock"></i> ${formatTime12h(dish.availableFrom)} - ${formatTime12h(dish.availableTo)}</div>` : ''}
+              ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
               <h3 class="dish-title" title="${safeName}">${safeName}</h3>
               <div class="dish-meta-sub">
                 <span class="meta-price">₹${safePrice}</span>
@@ -1060,6 +1062,119 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  
+  // Dish Schedule & Availability Controls
+  const dishDaysPicker = document.getElementById('dish-days-picker');
+  const dishTimeRestricted = document.getElementById('input-dish-time-restricted');
+  const dishTimeContainer = document.getElementById('dish-time-inputs-container');
+  const dishAvailableFrom = document.getElementById('input-dish-available-from');
+  const dishAvailableTo = document.getElementById('input-dish-available-to');
+  const dishScheduleSummary = document.getElementById('admin-dish-schedule-summary');
+
+  function getSelectedDishDays() {
+    if (!dishDaysPicker) return ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const activePills = dishDaysPicker.querySelectorAll('.dish-day-pill.active');
+    const days = Array.from(activePills).map(p => p.getAttribute('data-day')).filter(Boolean);
+    return days.length > 0 ? days : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  }
+
+  function setSelectedDishDays(days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) {
+    if (!dishDaysPicker) return;
+    const lowerDays = (Array.isArray(days) ? days : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']).map(d => String(d).toLowerCase().trim());
+    dishDaysPicker.querySelectorAll('.dish-day-pill').forEach(pill => {
+      const day = pill.getAttribute('data-day');
+      if (lowerDays.includes(day)) {
+        pill.classList.add('active');
+      } else {
+        pill.classList.remove('active');
+      }
+    });
+    updateDishScheduleSummary();
+  }
+
+  function updateDishScheduleSummary() {
+    if (!dishScheduleSummary) return;
+    const selectedDays = getSelectedDishDays();
+    const isRestricted = dishTimeRestricted ? dishTimeRestricted.checked : false;
+    const fromVal = dishAvailableFrom ? dishAvailableFrom.value : '12:00';
+    const toVal = dishAvailableTo ? dishAvailableTo.value : '23:30';
+
+    let dayText = 'All 7 Days';
+    if (selectedDays.length === 7) {
+      dayText = 'All 7 Days';
+    } else if (selectedDays.length === 5 && !selectedDays.includes('sat') && !selectedDays.includes('sun')) {
+      dayText = 'Mon - Fri (Weekdays)';
+    } else if (selectedDays.length === 2 && selectedDays.includes('sat') && selectedDays.includes('sun')) {
+      dayText = 'Sat - Sun (Weekends)';
+    } else {
+      const labels = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+      dayText = selectedDays.map(d => labels[d] || d).join(', ');
+    }
+
+    if (isRestricted && fromVal && toVal) {
+      dishScheduleSummary.textContent = `${dayText} · ${formatTime12h(fromVal)} - ${formatTime12h(toVal)}`;
+      dishScheduleSummary.style.background = '#FEF3C7';
+      dishScheduleSummary.style.color = '#92400E';
+      dishScheduleSummary.style.borderColor = '#FDE68A';
+    } else {
+      dishScheduleSummary.textContent = `${dayText} · All Day`;
+      dishScheduleSummary.style.background = '#D1FAE5';
+      dishScheduleSummary.style.color = '#065F46';
+      dishScheduleSummary.style.borderColor = '#A7F3D0';
+    }
+  }
+
+  // Set up click handlers for Day Pills & Shortcuts
+  if (dishDaysPicker) {
+    dishDaysPicker.addEventListener('click', (e) => {
+      const pill = e.target.closest('.dish-day-pill');
+      if (!pill) return;
+      const wasActive = pill.classList.contains('active');
+      const activeCount = dishDaysPicker.querySelectorAll('.dish-day-pill.active').length;
+      if (wasActive && activeCount === 1) {
+        showToast('At least 1 day must remain selected for dish availability.', 'info');
+        return;
+      }
+      pill.classList.toggle('active');
+      updateDishScheduleSummary();
+    });
+  }
+
+  document.querySelectorAll('.btn-day-quick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.getAttribute('data-days');
+      if (type === 'all') {
+        setSelectedDishDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+      } else if (type === 'weekdays') {
+        setSelectedDishDays(['mon', 'tue', 'wed', 'thu', 'fri']);
+      } else if (type === 'weekends') {
+        setSelectedDishDays(['sat', 'sun']);
+      }
+    });
+  });
+
+  if (dishTimeRestricted) {
+    dishTimeRestricted.addEventListener('change', () => {
+      if (dishTimeContainer) {
+        dishTimeContainer.style.display = dishTimeRestricted.checked ? 'block' : 'none';
+      }
+      updateDishScheduleSummary();
+    });
+  }
+
+  if (dishAvailableFrom) dishAvailableFrom.addEventListener('input', updateDishScheduleSummary);
+  if (dishAvailableTo) dishAvailableTo.addEventListener('input', updateDishScheduleSummary);
+
+  document.querySelectorAll('.btn-time-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const from = btn.getAttribute('data-from');
+      const to = btn.getAttribute('data-to');
+      if (dishAvailableFrom) dishAvailableFrom.value = from;
+      if (dishAvailableTo) dishAvailableTo.value = to;
+      updateDishScheduleSummary();
+    });
+  });
+
   function openAddDishModal(defaultCategorySlug = '') {
     dishModalTitle.textContent = 'Add New Food Dish';
     dishEditId.value = '';
@@ -1085,6 +1200,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setModalDishStock(true);
     if (btnModalDeleteDish) btnModalDeleteDish.style.display = 'none';
+    setSelectedDishDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+    if (dishTimeRestricted) dishTimeRestricted.checked = false;
+    if (dishTimeContainer) dishTimeContainer.style.display = 'none';
+    if (dishAvailableFrom) dishAvailableFrom.value = '12:00';
+    if (dishAvailableTo) dishAvailableTo.value = '23:30';
+    updateDishScheduleSummary();
 
     const defaultImg = '/images/crispy-chicken.jpg';
     dishImageUrl.value = defaultImg;
@@ -1136,6 +1257,12 @@ document.addEventListener('DOMContentLoaded', () => {
     dishDietInput.value = dish.diet || 'Fresh Daily';
     dishDescInput.value = dish.desc || '';
     currentDishGdriveFileId = dish.gdriveFileId || '';
+    setSelectedDishDays(dish.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+    if (dishTimeRestricted) dishTimeRestricted.checked = Boolean(dish.timeRestricted);
+    if (dishTimeContainer) dishTimeContainer.style.display = dish.timeRestricted ? 'block' : 'none';
+    if (dishAvailableFrom) dishAvailableFrom.value = dish.availableFrom || '12:00';
+    if (dishAvailableTo) dishAvailableTo.value = dish.availableTo || '23:30';
+    updateDishScheduleSummary();
 
     setModalDishStock(dish.inStock !== false);
     if (btnModalDeleteDish) btnModalDeleteDish.style.display = 'inline-flex';

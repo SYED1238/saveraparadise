@@ -538,7 +538,11 @@ export const DEFAULT_DISHES = [
     "time": "20 - 25 mins",
     "diet": "Non-Veg",
     "desc": "Juicy Arabian-spiced whole chicken slow grilled on rotisserie skewers.",
-    "inStock": true
+    "inStock": true,
+      "availableDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "timeRestricted": true,
+      "availableFrom": "15:00",
+      "availableTo": "23:30"
   },
   {
     "id": "dish-grilled-chicken-half",
@@ -551,7 +555,11 @@ export const DEFAULT_DISHES = [
     "time": "18 - 20 mins",
     "diet": "Non-Veg",
     "desc": "Half portion rotisserie chicken spiced with garlic, pepper, and herbs.",
-    "inStock": true
+    "inStock": true,
+      "availableDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "timeRestricted": true,
+      "availableFrom": "15:00",
+      "availableTo": "23:30"
   },
   {
     "id": "dish-alfaham-chicken-full",
@@ -1747,7 +1755,11 @@ export const DEFAULT_DISHES = [
     "time": "8 - 10 mins",
     "diet": "Non-Veg",
     "desc": "Loaded with extra shredded rotisserie chicken, garlic toum, pickles, and french fries.",
-    "inStock": true
+    "inStock": true,
+      "availableDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "timeRestricted": true,
+      "availableFrom": "17:00",
+      "availableTo": "23:30"
   },
   {
     "id": "dish-shawarma-roll",
@@ -1760,7 +1772,11 @@ export const DEFAULT_DISHES = [
     "time": "8 - 10 mins",
     "diet": "Non-Veg",
     "desc": "Juicy Arabian chicken shawarma wrapped in warm rumali with creamy garlic sauce.",
-    "inStock": true
+    "inStock": true,
+      "availableDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "timeRestricted": true,
+      "availableFrom": "17:00",
+      "availableTo": "23:30"
   },
   {
     "id": "dish-shawarma-plate",
@@ -1773,7 +1789,11 @@ export const DEFAULT_DISHES = [
     "time": "10 - 12 mins",
     "diet": "Non-Veg",
     "desc": "Generous mound of rotisserie chicken shavings served with rumali roti, fries, salad, and garlic sauce.",
-    "inStock": true
+    "inStock": true,
+      "availableDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "timeRestricted": true,
+      "availableFrom": "17:00",
+      "availableTo": "23:30"
   },
   {
     "id": "dish-jumbo-shawarma",
@@ -2308,6 +2328,170 @@ export function cleanDeliveryAddress(addr) {
     .trim();
 }
 
+/**
+ * Formats a 24h time string ("14:30") to 12h AM/PM ("2:30 PM")
+ */
+export function formatTime12h(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return '';
+  const parts = timeStr.trim().split(':');
+  if (parts.length < 2) return timeStr;
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (isNaN(h) || isNaN(m)) return timeStr;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  const minuteStr = String(m).padStart(2, '0');
+  return `${hour12}:${minuteStr} ${period}`;
+}
+
+/**
+ * Evaluates live availability for a dish based on day of the week and serving hours.
+ */
+export function getDishScheduleStatus(dish, now = new Date()) {
+  if (!dish) {
+    return { isAvailable: true, status: 'available', message: '', countdownText: '', badgeText: '', availableDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] };
+  }
+
+  // Stock status takes priority
+  if (dish.inStock === false) {
+    return {
+      isAvailable: false,
+      status: 'out_of_stock',
+      message: 'Sold Out',
+      countdownText: '',
+      badgeText: 'Sold Out',
+      availableDays: Array.isArray(dish.availableDays) ? dish.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+    };
+  }
+
+  const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const DAY_LABELS = { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' };
+  const currentDayCode = DAY_NAMES[now.getDay()];
+
+  let availableDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  if (Array.isArray(dish.availableDays) && dish.availableDays.length > 0) {
+    availableDays = dish.availableDays.map(d => String(d).toLowerCase().trim());
+  } else if (typeof dish.availableDays === 'string') {
+    try {
+      const parsed = JSON.parse(dish.availableDays);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        availableDays = parsed.map(d => String(d).toLowerCase().trim());
+      }
+    } catch {}
+  }
+
+  const isAvailableToday = availableDays.includes(currentDayCode);
+  if (!isAvailableToday) {
+    let nextDayName = '';
+    for (let i = 1; i <= 7; i++) {
+      const nextIdx = (now.getDay() + i) % 7;
+      const nextCode = DAY_NAMES[nextIdx];
+      if (availableDays.includes(nextCode)) {
+        if (i === 1) nextDayName = 'Tomorrow';
+        else nextDayName = DAY_LABELS[nextCode];
+        break;
+      }
+    }
+    const daysLabel = availableDays.map(d => DAY_LABELS[d] || d).join(', ');
+    return {
+      isAvailable: false,
+      status: 'day_inactive',
+      message: nextDayName ? `Available ${nextDayName}` : `Available on ${daysLabel}`,
+      countdownText: '',
+      badgeText: nextDayName ? `Avail ${nextDayName}` : 'Specific Days',
+      availableDays
+    };
+  }
+
+  const isTimeRestricted = Boolean(dish.timeRestricted);
+  const fromStr = (dish.availableFrom || '').trim();
+  const toStr = (dish.availableTo || '').trim();
+
+  if (isTimeRestricted && fromStr && toStr) {
+    const [fromH, fromM] = fromStr.split(':').map(Number);
+    const [toH, toM] = toStr.split(':').map(Number);
+
+    const startTime = new Date(now);
+    startTime.setHours(fromH || 0, fromM || 0, 0, 0);
+
+    const endTime = new Date(now);
+    endTime.setHours(toH || 0, toM || 0, 0, 0);
+
+    // If serving extends past midnight (e.g. 18:00 to 01:00)
+    if (endTime <= startTime) {
+      if (now.getHours() < toH || (now.getHours() === toH && now.getMinutes() < toM)) {
+        startTime.setDate(startTime.getDate() - 1);
+      } else {
+        endTime.setDate(endTime.getDate() + 1);
+      }
+    }
+
+    const currentMillis = now.getTime();
+    const startMillis = startTime.getTime();
+    const endMillis = endTime.getTime();
+
+    if (currentMillis < startMillis) {
+      const diffSec = Math.max(0, Math.floor((startMillis - currentMillis) / 1000));
+      const hours = Math.floor(diffSec / 3600);
+      const mins = Math.floor((diffSec % 3600) / 60);
+      const secs = diffSec % 60;
+
+      let countdownFormatted = '';
+      if (hours > 0) {
+        countdownFormatted = `${hours}h ${String(mins).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
+      } else {
+        countdownFormatted = `${String(mins).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
+      }
+
+      const time12 = formatTime12h(fromStr);
+      return {
+        isAvailable: false,
+        status: 'countdown',
+        message: `Starts at ${time12}`,
+        countdownText: `Starts in ${countdownFormatted}`,
+        secondsRemaining: diffSec,
+        badgeText: `⏰ ${time12}`,
+        availableFrom: fromStr,
+        availableTo: toStr,
+        availableDays
+      };
+    }
+
+    if (currentMillis > endMillis) {
+      return {
+        isAvailable: false,
+        status: 'ended_today',
+        message: `Serving ended for today (${formatTime12h(fromStr)} - ${formatTime12h(toStr)})`,
+        countdownText: '',
+        badgeText: 'Closed Today',
+        availableFrom: fromStr,
+        availableTo: toStr,
+        availableDays
+      };
+    }
+
+    return {
+      isAvailable: true,
+      status: 'active_window',
+      message: `Serving now until ${formatTime12h(toStr)}`,
+      countdownText: '',
+      badgeText: `Until ${formatTime12h(toStr)}`,
+      availableFrom: fromStr,
+      availableTo: toStr,
+      availableDays
+    };
+  }
+
+  return {
+    isAvailable: true,
+    status: 'available',
+    message: '',
+    countdownText: '',
+    badgeText: '',
+    availableDays
+  };
+}
+
 // ========================================================
 // DATA ACCESS LAYER (LocalStorage + Live Supabase Sync)
 // ========================================================
@@ -2749,7 +2933,11 @@ class QuickBiteDataService {
               calories: d.calories || '',
               diet: d.diet || '',
               desc: d.description || d.desc || '',
-              inStock: d.in_stock !== false
+              inStock: d.in_stock !== false,
+                availableDays: (Array.isArray(d.available_days) && d.available_days.length > 0) ? d.available_days.map(x => String(x).toLowerCase()) : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+                timeRestricted: Boolean(d.time_restricted),
+                availableFrom: d.available_from || '',
+                availableTo: d.available_to || ''
             };
           });
 
@@ -4165,7 +4353,11 @@ class QuickBiteDataService {
     });
     this.dishesCache = list.map(d => ({
       ...d,
-      image: sanitizeDishImageUrl(d.image)
+      image: sanitizeDishImageUrl(d.image),
+        availableDays: (Array.isArray(d.availableDays) && d.availableDays.length > 0) ? d.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+        timeRestricted: Boolean(d.timeRestricted),
+        availableFrom: d.availableFrom || '',
+        availableTo: d.availableTo || ''
     }));
     return this.dishesCache;
   }
@@ -4292,7 +4484,11 @@ class QuickBiteDataService {
       calories: dishData.calories || '520 kcal',
       diet: dishData.diet || 'Fresh Daily',
       desc: dishData.desc || `${dishData.name} prepared fresh in our kitchen with premium ingredients.`,
-      inStock: dishData.inStock !== false
+      inStock: dishData.inStock !== false,
+        availableDays: (Array.isArray(dishData.availableDays) && dishData.availableDays.length > 0) ? dishData.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+        timeRestricted: Boolean(dishData.timeRestricted),
+        availableFrom: (dishData.availableFrom || '').trim(),
+        availableTo: (dishData.availableTo || '').trim()
     };
     list.unshift(newDish);
     this.saveDishes(list);
@@ -4315,7 +4511,11 @@ class QuickBiteDataService {
       calories: newDish.calories,
       diet: newDish.diet,
       description: newDish.desc,
-      in_stock: newDish.inStock
+      in_stock: newDish.inStock,
+        available_days: newDish.availableDays,
+        time_restricted: newDish.timeRestricted,
+        available_from: newDish.availableFrom,
+        available_to: newDish.availableTo
     }]).then(({ error }) => {
       if (error) console.warn('[Supabase] addDish error:', error.message);
     });
@@ -4344,7 +4544,11 @@ class QuickBiteDataService {
         calories: d.calories,
         diet: d.diet,
         description: d.desc,
-        in_stock: d.inStock
+        in_stock: d.inStock,
+          available_days: d.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+          time_restricted: Boolean(d.timeRestricted),
+          available_from: d.availableFrom || '',
+          available_to: d.availableTo || ''
       };
       // Guard: Only update image in Supabase if it's a valid remote/R2 URL and NOT raw Base64 data
       if (d.image && !d.image.startsWith('data:')) {
