@@ -1338,9 +1338,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    activeConfirmOrder = order;
-    confirmOrderId.value = order.id;
-
     // 500-Meter Doorstep Geofence Check (Anti-Delivery Arbitrage Defense)
     const dropCoords = getOrderDropCoordinates(order);
     const hasCustomerCoords = Boolean(dropCoords.hasCustomerCoords && dropCoords.lat && dropCoords.lng);
@@ -1349,10 +1346,24 @@ document.addEventListener('DOMContentLoaded', () => {
       : 0;
 
     if (hasCustomerCoords && distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
+      activeConfirmOrder = null;
+      if (confirmOrderId) confirmOrderId.value = '';
       const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
       showToast(`📍 Doorstep Geofence: You are ${distDisplay} away from the customer's delivery doorstep. You must be within a 500m radius of the delivery location to mark this order delivered.`, 'error');
+
+      // Trigger high-accuracy GPS update so location syncs within 1-2s if rider just arrived
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => handleGpsPosition(pos),
+          () => {},
+          { enableHighAccuracy: true, timeout: 3000, maximumAge: 2000 }
+        );
+      }
       return;
     }
+
+    activeConfirmOrder = order;
+    confirmOrderId.value = order.id;
 
     const isCod = isCashOnDelivery(order);
     const cash = extractCashAmount(order.total);
