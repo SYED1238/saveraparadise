@@ -1337,7 +1337,8 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const name = dishNameInput.value.trim();
     const category = dishCategorySelect.value;
-    const price = parseFloat(dishPriceInput.value) || 199;
+    const parsedPrice = parseFloat(dishPriceInput.value);
+    const price = Number.isFinite(parsedPrice) ? Math.max(0, parsedPrice) : 199;
     let badge = dishBadgeInput.value.trim();
     if (badge === 'Custom') {
       badge = dishBadgeCustomInput ? dishBadgeCustomInput.value.trim() : '';

@@ -4902,6 +4902,11 @@ function initStorefrontApp() {
               }
               newOrder.checkoutSignature = checkoutData.signature || checkoutData.checkoutToken || '';
             }
+          } else {
+            const checkoutErr = await checkoutRes.json().catch(() => ({}));
+            showToast(`⚠️ ${checkoutErr.error || checkoutErr.message || 'Order could not be verified. Please review your cart.'}`, 'error');
+            resetSubmitState();
+            return;
           }
         } catch (checkoutApiErr) {
           console.warn('[Checkout] /api/checkout verification fallback:', checkoutApiErr);

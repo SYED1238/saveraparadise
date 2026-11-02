@@ -238,8 +238,8 @@ export default async function handler(req, res) {
   let discount = 0;
   if (activePromo && settings.offerActive !== false) {
     const cleanCode = String(activePromo).trim().toUpperCase();
-    const hasCustomSettings = Boolean(storeSettings && typeof storeSettings === 'object' && (storeSettings.offerCode || storeSettings.offerMinOrder !== undefined || storeSettings.offerDiscountPercent !== undefined));
-    const configCode = String(settings.offerCode || 'SAVERA20').trim().toUpperCase();
+    const hasCustomSettings = Boolean(storeSettings && typeof storeSettings === 'object' && (storeSettings.offerPromoCode || storeSettings.offerCode || storeSettings.offerMinOrder !== undefined || storeSettings.offerDiscountPercent !== undefined));
+    const configCode = String(settings.offerPromoCode || settings.offerCode || 'SAVERA20').trim().toUpperCase();
 
     if (hasCustomSettings && cleanCode === configCode) {
       const minOrder = (settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
@@ -266,13 +266,19 @@ export default async function handler(req, res) {
   discount += unlockedDealDiscount;
   discount = Math.min(discount, computedSubtotal);
 
-  const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee);
+  // Platform fee: configurable via storeSettings or environment; defaults to 0 to prevent hidden charges
+  const platformFee = typeof settings.platformFee === 'number'
+    ? settings.platformFee
+    : ((process.env.PLATFORM_FEE !== undefined) ? Number(process.env.PLATFORM_FEE) : 0);
+
+  const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee + platformFee);
   const authoritativeTotal = `₹${Math.round(calculatedTotal)}`;
 
   // Generate tamper-proof HMAC verification token
   const checkoutToken = signPayload({
     subtotal: computedSubtotal,
     deliveryFee,
+    platformFee,
     discount,
     total: authoritativeTotal,
     numericTotal: calculatedTotal,
@@ -284,6 +290,7 @@ export default async function handler(req, res) {
     verified: true,
     subtotal: computedSubtotal,
     deliveryFee,
+    platformFee,
     discount,
     total: authoritativeTotal,
     numericTotal: calculatedTotal,
