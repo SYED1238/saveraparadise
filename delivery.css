@@ -5901,3 +5901,37 @@ input:checked + .slider:before {
 
 
 
+
+
+/* ========================================================
+   DOORSTEP 500M GEOFENCE PROXIMITY BADGE & ANTI-ARBITRAGE
+   ======================================================== */
+.doorstep-geofence-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.doorstep-geofence-badge.in-range {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #059669;
+}
+
+.doorstep-geofence-badge.out-of-range {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #DC2626;
+}
+
+.doorstep-geofence-badge.manual-verify {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #2563EB;
+}

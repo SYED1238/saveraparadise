@@ -749,6 +749,23 @@ document.addEventListener('DOMContentLoaded', () => {
     return parseFloat(roadKm.toFixed(1));
   }
 
+  // Maximum allowed radius from customer drop location to mark order delivered (Anti-Arbitrage Defense)
+  const MAX_DOORSTEP_GEOFENCE_METERS = 500;
+
+  // Direct straight-line distance in meters between two lat/lng coordinates for geofence validation
+  function calculateStraightDistanceMeters(lat1, lon1, lat2, lon2) {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
+    const R = 6371000; // Earth radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c);
+  }
+
   // Intelligent coordinate resolver: guarantees rider navigates to customer's exact pinned doorstep
   // Intelligent coordinate resolver: guarantees rider navigates to customer's exact pinned doorstep
   function getOrderDropCoordinates(order) {
@@ -1324,6 +1341,19 @@ document.addEventListener('DOMContentLoaded', () => {
     activeConfirmOrder = order;
     confirmOrderId.value = order.id;
 
+    // 500-Meter Doorstep Geofence Check (Anti-Delivery Arbitrage Defense)
+    const dropCoords = getOrderDropCoordinates(order);
+    const hasCustomerCoords = Boolean(dropCoords.hasCustomerCoords && dropCoords.lat && dropCoords.lng);
+    const distMeters = hasCustomerCoords
+      ? calculateStraightDistanceMeters(riderLiveLocation.lat, riderLiveLocation.lng, dropCoords.lat, dropCoords.lng)
+      : 0;
+
+    if (hasCustomerCoords && distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
+      const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
+      showToast(`📍 Doorstep Geofence: You are ${distDisplay} away from the customer's delivery doorstep. You must be within a 500m radius of the delivery location to mark this order delivered.`, 'error');
+      return;
+    }
+
     const isCod = isCashOnDelivery(order);
     const cash = extractCashAmount(order.total);
 
@@ -1346,7 +1376,18 @@ document.addEventListener('DOMContentLoaded', () => {
       ? (cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : escapeHtml(rawPhone))
       : 'Phone not provided';
 
+    const proximityHtml = hasCustomerCoords
+      ? `<div class="doorstep-geofence-badge in-range">
+           <span><i class="fa-solid fa-location-crosshairs"></i> Doorstep Proximity:</span>
+           <span>✓ Within 500m Radius (${distMeters}m away)</span>
+         </div>`
+      : `<div class="doorstep-geofence-badge manual-verify">
+           <span><i class="fa-solid fa-map-pin"></i> Doorstep Verification:</span>
+           <span>Manual Address Verified</span>
+         </div>`;
+
     confirmOrderDetails.innerHTML = `
+      ${proximityHtml}
       <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
         <strong>Order ID:</strong> <span>${escapeHtml(order.id)}</span>
       </div>
@@ -1536,6 +1577,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const isDoorstepUpi = (isCod && currentDoorstepPaymentMode === 'upi');
       const cashCollected = isDoorstepUpi ? 0 : (isCod ? Number(cash) : 0);
       const finalPaymentMethod = isDoorstepUpi ? 'doorstep_upi' : (isCod ? 'cod' : 'online');
+
+      // 500-Meter Doorstep Geofence Enforcement Defense
+      const dropCoords = getOrderDropCoordinates(activeConfirmOrder);
+      const hasCustomerCoords = Boolean(dropCoords.hasCustomerCoords && dropCoords.lat && dropCoords.lng);
+      const distMeters = hasCustomerCoords
+        ? calculateStraightDistanceMeters(riderLiveLocation.lat, riderLiveLocation.lng, dropCoords.lat, dropCoords.lng)
+        : 0;
+
+      if (hasCustomerCoords && distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
+        const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
+        showToast(`⚠️ Delivery Blocked: You are ${distDisplay} away from customer doorstep. You must stay within a 500m radius to complete delivery.`, 'error');
+        return;
+      }
 
       // Clear any active doorstep waiting countdown for this order
       const cleanOrderId = String(orderId).trim().replace(/^#/, '');
@@ -1831,6 +1885,22 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCnrSafedrop.addEventListener('click', () => {
       if (!activeCnrOrder) return;
       const orderId = activeCnrOrder.id;
+
+      // 500-Meter Doorstep Geofence Check for Safe Drop
+      const dropCoords = getOrderDropCoordinates(activeCnrOrder);
+      if (dropCoords.hasCustomerCoords && dropCoords.lat && dropCoords.lng) {
+        const distMeters = calculateStraightDistanceMeters(
+          riderLiveLocation.lat,
+          riderLiveLocation.lng,
+          dropCoords.lat,
+          dropCoords.lng
+        );
+        if (distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
+          const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
+          showToast(`⚠️ Safe Drop Blocked: You are ${distDisplay} away. Safe Drop requires being at the customer's doorstep (within 500m).`, 'error');
+          return;
+        }
+      }
       const cleanId = String(orderId).replace(/^#/, '');
       const note = (cnrSafedropNote?.value || '').trim() || 'Left at customer doorstep / with building security';
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
