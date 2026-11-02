@@ -4153,7 +4153,7 @@ class QuickBiteDataService {
     const defaultDishMap = new Map(DEFAULT_DISHES.map(d => [d.id, d]));
     list = list.map(d => {
       const def = defaultDishMap.get(d.id);
-      if (def && (!d.image || d.image.includes('1792955739401') || (d.image.includes('unsplash.com') && !def.image.includes('unsplash.com')))) {
+      if (def && (!d.image || (d.image.includes('unsplash.com') && !def.image.includes('unsplash.com')))) {
         d.image = def.image;
       }
       return d;

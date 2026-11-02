@@ -1295,6 +1295,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           // 4. Cloud photo upload
+          let uploadSucceeded = false;
           try {
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
             const r2Res = await Promise.race([cloudflareR2Service.uploadImage(file, file.name), timeoutPromise]);
@@ -1306,19 +1307,25 @@ document.addEventListener('DOMContentLoaded', () => {
               dishImageUrl.value = finalUrl;
               currentDishGdriveFileId = finalFileId;
               fileChosenText.textContent = `✓ Saved photo: ${file.name}`;
+              uploadSucceeded = true;
+              successCount++;
+            } else {
+              fileChosenText.textContent = `⚠️ Photo upload issue. Please retry.`;
             }
           } catch (r2Err) {
             console.warn('[Upload] Photo storage notice:', r2Err?.message || r2Err);
             fileChosenText.textContent = `⚠️ Photo upload issue. Please retry.`;
           }
 
-          successCount++;
+          if (!uploadSucceeded) {
+            showToast('⚠️ Cloud photo upload could not be completed. Please ensure admin session is active and retry.', 'warning');
+          }
         } catch (err) {
           console.error('Error processing upload file:', file.name, err);
         }
       }
 
-      if (firstUploadedUrl) {
+      if (firstUploadedUrl && successCount > 0) {
         await renderPresetGalleryStrip(dishImageUrl.value || firstUploadedUrl);
         showToast(
           successCount > 1 
@@ -1326,6 +1333,8 @@ document.addEventListener('DOMContentLoaded', () => {
             : '✓ Photo ready and saved to gallery! Click Save Food Dish to publish.', 
           'success'
         );
+      } else if (files.length > 0 && successCount === 0) {
+        showToast('⚠️ Image upload failed. Please verify connection and retry.', 'error');
       }
     } finally {
       if (uploadSpinner) uploadSpinner.style.display = 'none';

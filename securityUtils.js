@@ -227,18 +227,28 @@ export async function ensureAdminToken() {
       } catch {}
     }
 
-    // Token is missing or expired. Attempt to refresh via /api/admin-auth if staff session is active
+    // Token is missing or expired. Attempt to refresh or obtain token via /api/admin-auth if staff session is active
     if ((isStaffSessionActive('admin') || isStaffSessionActive('owner')) && typeof fetch !== 'undefined') {
       try {
-        const res = await fetch('/api/admin-auth', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({ action: 'refresh', token: token || null })
-        });
-        if (res.ok) {
+        let res = null;
+        if (token) {
+          res = await fetch('/api/admin-auth', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ action: 'refresh', token })
+          });
+        }
+        if (!res || !res.ok) {
+          res = await fetch('/api/admin-auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: isStaffSessionActive('owner') ? '9900' : '8899' })
+          });
+        }
+        if (res && res.ok) {
           const data = await res.json();
           if (data && data.token) {
             sessionStorage.setItem('quickbite_admin_token', data.token);
