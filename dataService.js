@@ -351,7 +351,7 @@ export const DEFAULT_DISHES = [
     "category": "biryani",
     "categoryName": "Rice & Biryani",
     "price": 130,
-    "image": "/api/r2-image?key=dishes/dish_1792955739401_Spiced_biryani_with_tandoori_chi__2K_20261026004531.jpg",
+    "image": "/biryani-plate-1.png",
     "badge": "🔥 Value Combo",
     "time": "10 - 15 mins",
     "diet": "Non-Veg",
@@ -4110,6 +4110,20 @@ class QuickBiteDataService {
     if (!Array.isArray(list) || list.length === 0) {
       list = [...DEFAULT_DISHES];
     }
+    const defaultDishOrderMap = new Map(DEFAULT_DISHES.map((dish, i) => [dish.id, i]));
+    const defaultDishMap = new Map(DEFAULT_DISHES.map(d => [d.id, d]));
+    list = list.map(d => {
+      const def = defaultDishMap.get(d.id);
+      if (def && (!d.image || d.image.includes('1792955739401'))) {
+        d.image = def.image;
+      }
+      return d;
+    });
+    list.sort((a, b) => {
+      const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : 9000;
+      const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : 9000;
+      return posA - posB;
+    });
     this.dishesCache = list.map(d => ({
       ...d,
       image: sanitizeDishImageUrl(d.image)

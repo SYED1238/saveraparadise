@@ -75,7 +75,11 @@ function initStorefrontApp() {
       if (!img.getAttribute('data-fallback-tried')) {
         img.setAttribute('data-fallback-tried', 'true');
         img.src = '/biryani-plate-1.png';
-        if (img.complete && img.naturalWidth > 0) { onReady(); } else { img.addEventListener('load', onReady, { once: true }); }
+        if (img.complete && img.naturalWidth > 0) {
+          onReady();
+        } else {
+          img.addEventListener("load", onReady, { once: true });
+        }
         return;
       }
       img.classList.remove('img-is-ready');
@@ -89,8 +93,12 @@ function initStorefrontApp() {
       }
     };
 
-    if (img.complete && img.naturalWidth > 0) {
-      onReady();
+    if (img.complete) {
+      if (img.naturalWidth > 0) {
+        onReady();
+      } else {
+        onError();
+      }
     } else {
       img.classList.remove('img-is-ready');
       if (container) {
