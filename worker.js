@@ -34,7 +34,7 @@ const ROUTES = {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const pathname = url.pathname;
+    const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
     // 1. API Route Dispatching
     if (ROUTES[pathname]) {

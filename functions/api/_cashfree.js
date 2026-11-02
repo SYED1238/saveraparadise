@@ -94,7 +94,8 @@ export async function createPgOrder({
         'x-client-secret': cfg.secretKey,
         'x-api-version': '2023-08-01',
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify(payload)
     });
 
     const data = await resp.json();

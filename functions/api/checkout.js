@@ -148,8 +148,8 @@ export async function onRequest(context) {
       if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(Number(rawQty))) {
         return jsonResponse({ error: `Invalid quantity for item "${item.name || 'dish'}"` }, 400, Object.fromEntries(corsHeaders.entries()));
       }
-      if (quantity > 20) {
-        return jsonResponse({ error: `Maximum quantity per item is 20 (received ${quantity} for "${item.name || 'dish'}")` }, 400, Object.fromEntries(corsHeaders.entries()));
+      if (quantity > 50) {
+        return jsonResponse({ error: `Maximum quantity per item is 50 (received ${quantity} for "${item.name || 'dish'}")` }, 400, Object.fromEntries(corsHeaders.entries()));
       }
 
       let authoritativePrice = null;
@@ -194,14 +194,25 @@ export async function onRequest(context) {
 
     if (promoCode && typeof promoCode === 'string') {
       const code = promoCode.trim().toUpperCase();
-      if (code === 'SAVERA20' && subtotal >= 199) {
-        discount = Math.min(Math.round(subtotal * 0.20), 100);
+      if (storeSettings && storeSettings.offerPromoCode && code === String(storeSettings.offerPromoCode).trim().toUpperCase()) {
+        const discountType = storeSettings.offerDiscountType || 'percent';
+        const discountPct = Number(storeSettings.offerDiscountPercent || 20);
+        const discountAmt = Number(storeSettings.offerDiscountAmount || 50);
+        const minOrder = Number(storeSettings.offerMinOrder || 150);
+        if (subtotal >= minOrder) {
+          discount = (discountType === 'flat' || discountType === 'fixed' || discountType === 'amount')
+            ? Math.min(subtotal, discountAmt)
+            : Math.round((subtotal * discountPct) / 100);
+          appliedPromo = code;
+        }
+      } else if (code === 'SAVERA20' && subtotal >= 199) {
+        discount = Math.min(subtotal, Math.round((subtotal * 20) / 100));
         appliedPromo = 'SAVERA20';
       } else if (code === 'SAVE10' && subtotal >= 149) {
-        discount = Math.min(Math.round(subtotal * 0.10), 50);
+        discount = Math.min(subtotal, Math.round((subtotal * 10) / 100));
         appliedPromo = 'SAVE10';
-      } else if ((code === 'FIRSTORDER' || code === 'WELCOME50') && subtotal >= 150) {
-        discount = 50;
+      } else if (code === 'FIRSTORDER' || code === 'WELCOME50') {
+        discount = Math.min(subtotal, 50);
         appliedPromo = code;
       }
     }
@@ -244,11 +255,17 @@ export async function onRequest(context) {
       }
     }
 
-    const effectiveDiscount = Math.max(discount, dealDiscount);
-    const finalAppliedType = dealDiscount > discount ? 'unlocked_deal' : (discount > 0 ? 'promo' : null);
+    // Stack discounts (unlocked threshold deal + coupon promo), capped at subtotal
+    const effectiveDiscount = Math.min(subtotal, discount + dealDiscount);
+    const finalAppliedType = (discount > 0 && dealDiscount > 0)
+      ? 'combined_deals_promo'
+      : (dealDiscount > 0 ? 'unlocked_deal' : (discount > 0 ? 'promo' : null));
 
     const deliveryFee = subtotal >= 250 ? 0 : 40;
-    const platformFee = 5;
+    // Platform fee: configurable via storeSettings or environment; defaults to 0 to prevent hidden charges
+    const platformFee = typeof storeSettings?.platformFee === 'number'
+      ? storeSettings.platformFee
+      : ((env && env.PLATFORM_FEE !== undefined) ? Number(env.PLATFORM_FEE) : 0);
     const total = Math.max(0, subtotal - effectiveDiscount + deliveryFee + platformFee);
 
     const checkoutPayload = {

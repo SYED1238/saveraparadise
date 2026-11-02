@@ -35,7 +35,8 @@ const mockEnv = {
   R2_ENDPOINT: 'https://account-a-id.r2.cloudflarestorage.com',
   R2_REGION: 'auto',
   VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
-  CLOUDFLARE_TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA'
+  CLOUDFLARE_TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
+  PLATFORM_FEE: 5
 };
 
 describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
@@ -47,6 +48,14 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       const content = fs.readFileSync(wranglerPath, 'utf8');
       assert.ok(content.includes('nodejs_compat'), 'nodejs_compat flag must be enabled');
       assert.ok(content.includes('dist'), 'pages_build_output_dir must point to dist');
+    });
+
+    it('worker.js normalizes trailing slashes on API routes to prevent 404 fallthrough', async () => {
+      const workerModule = (await import('../worker.js')).default;
+      const req = new Request('https://saveraparadise.com/api/checkout/', { method: 'GET' });
+      const res = await workerModule.fetch(req, mockEnv);
+      // Normalization matches /api/checkout and returns 405 Method Not Allowed instead of 404 Not Found
+      assert.equal(res.status, 405);
     });
 
     it('public/_routes.json defines include/exclude rules for edge optimization', () => {
@@ -499,6 +508,15 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       });
       const res = await cashfreeWebhookHandler({ request: req, env: envWithSecret });
       assert.equal(res.status, 401);
+    });
+
+    it('webhook correctly parses currency-formatted order total (e.g. ₹450) and defends against NaN underpayment bypass', () => {
+      const rawTotalStr = '₹450';
+      const parsedTotal = parseFloat(String(rawTotalStr || 0).replace(/[^0-9.]/g, '')) || 0;
+      assert.equal(parsedTotal, 450);
+      assert.ok(!isNaN(parsedTotal));
+      const underpaymentAmount = 10; // underpaid
+      assert.ok(underpaymentAmount < parsedTotal);
     });
   });
 

@@ -98,7 +98,7 @@ export async function onRequest(context) {
             }
 
             // Amount check: Prevent underpaid orders from being falsely marked as Paid
-            const orderTotal = Number(existingOrder.total || 0);
+            const orderTotal = parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0;
             if (orderTotal > 0 && paymentAmount < orderTotal) {
               console.warn(`[Cashfree Webhook] Amount discrepancy for order ${cleanOrderId}: paid ${paymentAmount}, expected ${orderTotal}`);
               return jsonResponse({
