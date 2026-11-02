@@ -1959,14 +1959,48 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Realtime notification when Owner confirms cash taken
-  dataService.subscribeToChanges('cash_settled', () => {
+  dataService.subscribeToChanges('cash_settled', (detail) => {
+    const activeRider = dataService.getActiveRider();
+    if (!detail?.riderPin || (activeRider && String(activeRider.pin) === String(detail.riderPin))) {
+      playNotificationSound('accepted');
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([100, 50, 100]);
+      }
+      const amtStr = detail?.amount ? `₹${Number(detail.amount).toLocaleString('en-IN')} ` : '';
+      showToast(`💵 Cash Settled: Restaurant manager confirmed ${amtStr}cash receipt!`, 'success');
+      sendSystemNotification({
+        title: '💵 Cash Handover Confirmed!',
+        body: `Restaurant received ${amtStr}cash deposit. Your drawer liability is now cleared!`,
+        tag: 'rider-cash-settled',
+        data: { url: '/delivery.html' }
+      });
+      flashTabTitle('💵 CASH SETTLED');
+    }
     renderPortal();
   });
 
   // Realtime notification when Owner updates payout model, rates, or marks payout paid
   dataService.subscribeToChanges('payout_config_updated', () => renderPortal());
   dataService.subscribeToChanges('km_rate_updated', () => renderPortal());
-  dataService.subscribeToChanges('payout_paid', () => renderPortal());
+  dataService.subscribeToChanges('payout_paid', (detail) => {
+    const activeRider = dataService.getActiveRider();
+    if (!detail?.riderPin || (activeRider && String(activeRider.pin) === String(detail.riderPin))) {
+      playNotificationSound('payout_received');
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([150, 80, 150, 80, 250]);
+      }
+      const amtStr = detail?.amount ? `₹${Number(detail.amount).toLocaleString('en-IN')}` : 'Your shift earnings';
+      showToast(`💰 Payout Received: ${amtStr} has been transferred!`, 'success');
+      sendSystemNotification({
+        title: '💰 Payout Received!',
+        body: `${amtStr} has been transferred to your account!`,
+        tag: 'rider-payout-paid',
+        data: { url: '/delivery.html' }
+      });
+      flashTabTitle('💰 PAYOUT RECEIVED!');
+    }
+    renderPortal();
+  });
 
   // ========================================================
   // SHIFT PAYOUT & EARNINGS BREAKDOWN MODAL

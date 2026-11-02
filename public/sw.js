@@ -147,11 +147,13 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       // Find matching client that has the targetUrl path
+      const normalize = (p) => { const c = (p || '/').replace(/\.html$/, '').replace(/\/$/, '') || '/'; return c === '/index' ? '/' : c; };
       const targetPath = new URL(targetUrl, self.location.origin).pathname;
+      const normalizedTarget = normalize(targetPath);
       for (const client of windowClients) {
         if ('focus' in client) {
           const clientPath = new URL(client.url).pathname;
-          if (clientPath === targetPath) {
+          if (normalize(clientPath) === normalizedTarget) {
             return client.focus();
           }
         }

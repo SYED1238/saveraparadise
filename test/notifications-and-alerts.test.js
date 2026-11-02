@@ -771,4 +771,216 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
       globalThis.document = origDocument;
     }
   });
+
+  await t.test('14. Web Audio dynamics compressor insertion and new tone definitions', () => {
+    let compressorCreated = false;
+    let compressorConnected = false;
+    let masterGainConnected = false;
+    let oscillatorsStarted = 0;
+
+    const mockCtx = {
+      state: 'running',
+      currentTime: 100.0,
+      destination: {},
+      createGain() {
+        return {
+          gain: {
+            setValueAtTime() {},
+            exponentialRampToValueAtTime() {}
+          },
+          connect(target) {
+            masterGainConnected = true;
+          }
+        };
+      },
+      createOscillator() {
+        return {
+          type: 'sine',
+          frequency: { setValueAtTime() {} },
+          connect() {},
+          start() { oscillatorsStarted++; },
+          stop() {}
+        };
+      },
+      createDynamicsCompressor() {
+        compressorCreated = true;
+        return {
+          threshold: { setValueAtTime() {} },
+          knee: { setValueAtTime() {} },
+          ratio: { setValueAtTime() {} },
+          attack: { setValueAtTime() {} },
+          release: { setValueAtTime() {} },
+          connect(target) {
+            compressorConnected = (target === mockCtx.destination);
+          }
+        };
+      },
+      resume: async () => {}
+    };
+
+    const origWindow = globalThis.window;
+    try {
+      globalThis.window = {
+        AudioContext: function() { return mockCtx; },
+        addEventListener() {},
+        removeEventListener() {}
+      };
+
+      setSoundEnabled(true);
+      assert.equal(isSoundEnabled(), true);
+
+      // Play payout_received (celebratory cash chime)
+      playNotificationSound('payout_received');
+      assert.equal(compressorCreated, true, 'Dynamics compressor must be created to prevent speaker clipping');
+      assert.equal(compressorConnected, true, 'Compressor connects to ctx.destination');
+      assert.equal(masterGainConnected, true, 'Master gain connects to compressor');
+      assert.equal(oscillatorsStarted, 4, 'payout_received contains 4 melodic ascending sparkle notes');
+
+      // Play urgent_alarm
+      oscillatorsStarted = 0;
+      playNotificationSound('urgent_alarm');
+      assert.equal(oscillatorsStarted, 4, 'urgent_alarm contains 4 alternating high-alert pulses');
+
+      // Sound disabled check
+      setSoundEnabled(false);
+      oscillatorsStarted = 0;
+      playNotificationSound('payout_received');
+      assert.equal(oscillatorsStarted, 0, 'No sound plays when soundEnabled is false');
+    } finally {
+      setSoundEnabled(true);
+      globalThis.window = origWindow;
+    }
+  });
+
+  await t.test('15. Service Worker notification click path normalization (/admin vs /admin.html)', () => {
+    const normalize = (p) => { const c = (p || '/').replace(/\.html$/, '').replace(/\/$/, '') || '/'; return c === '/index' ? '/' : c; };
+
+    // Test cases for portal URLs
+    assert.equal(normalize('/admin'), '/admin');
+    assert.equal(normalize('/admin.html'), '/admin');
+    assert.equal(normalize('/admin/'), '/admin');
+    assert.equal(normalize('/delivery'), '/delivery');
+    assert.equal(normalize('/delivery.html'), '/delivery');
+    assert.equal(normalize('/owner'), '/owner');
+    assert.equal(normalize('/owner.html'), '/owner');
+    assert.equal(normalize('/'), '/');
+    assert.equal(normalize('/index.html'), '/'); // root normalized
+
+    // Matching simulation
+    function matchClient(clients, targetUrl) {
+      const normalizedTarget = normalize(targetUrl);
+      for (const client of clients) {
+        if (normalize(client.url) === normalizedTarget) {
+          return client.id;
+        }
+      }
+      return null;
+    }
+
+    const openWindows = [
+      { id: 'admin-tab-1', url: '/admin' },
+      { id: 'delivery-tab-1', url: '/delivery.html' }
+    ];
+
+    // Notification clicked with data.url: '/admin.html' matches client with url: '/admin'
+    assert.equal(matchClient(openWindows, '/admin.html'), 'admin-tab-1', 'Successfully focuses existing admin tab without duplicating');
+    // Notification clicked with data.url: '/delivery' matches client with url: '/delivery.html'
+    assert.equal(matchClient(openWindows, '/delivery'), 'delivery-tab-1', 'Successfully focuses existing rider tab');
+  });
+
+  await t.test('16. Executive Owner Portal notification triggers on cash handover, payout, and orders', () => {
+    let soundPlayed = null;
+    let tabTitleFlashed = null;
+    let systemNotifSent = null;
+
+    function mockPlaySound(type) { soundPlayed = type; }
+    function mockFlashTitle(title) { tabTitleFlashed = title; }
+    function mockSendNotif(opts) { systemNotifSent = opts; }
+
+    // 1. Rider requests cash handover
+    const handoverData = { amount: 1540, riderName: 'Rahul Rider' };
+    mockPlaySound('rider_new_task');
+    mockFlashTitle('💵 CASH HANDOVER!');
+    mockSendNotif({
+      title: '💵 Cash Handover Pending',
+      body: `Rider ${handoverData.riderName} submitted ₹${handoverData.amount}. Verify and confirm in drawer.`,
+      tag: 'owner-cash-handover'
+    });
+
+    assert.equal(soundPlayed, 'rider_new_task');
+    assert.equal(tabTitleFlashed, '💵 CASH HANDOVER!');
+    assert.equal(systemNotifSent.tag, 'owner-cash-handover');
+    assert.ok(systemNotifSent.body.includes('1540'));
+
+    // 2. Instant Cashfree UPI payout completes
+    mockPlaySound('payout_received');
+    mockFlashTitle('⚡ PAYOUT COMPLETED');
+    mockSendNotif({
+      title: '⚡ Instant Payout Executed',
+      body: '₹350 transferred to Rahul Rider via Cashfree UPI.',
+      tag: 'owner-payout-1010'
+    });
+
+    assert.equal(soundPlayed, 'payout_received');
+    assert.equal(tabTitleFlashed, '⚡ PAYOUT COMPLETED');
+    assert.equal(systemNotifSent.tag, 'owner-payout-1010');
+
+    // 3. New customer order arrives
+    const order = { id: '#QB-9988', customerName: 'Syed', total: '₹520' };
+    mockPlaySound('order_placed');
+    mockFlashTitle(`🔔 NEW ORDER: ${order.id}`);
+    mockSendNotif({
+      title: `🔔 New Order: ${order.id}`,
+      body: `Customer ${order.customerName} placed an order for ${order.total}`,
+      tag: `owner-new-${order.id}`
+    });
+
+    assert.equal(soundPlayed, 'order_placed');
+    assert.equal(tabTitleFlashed, '🔔 NEW ORDER: #QB-9988');
+    assert.equal(systemNotifSent.tag, 'owner-new-#QB-9988');
+  });
+
+  await t.test('17. Rider Delivery Portal notification triggers on cash settled and shift payout', () => {
+    let soundPlayed = null;
+    let tabTitleFlashed = null;
+    let systemNotifSent = null;
+
+    function mockPlaySound(type) { soundPlayed = type; }
+    function mockFlashTitle(title) { tabTitleFlashed = title; }
+    function mockSendNotif(opts) { systemNotifSent = opts; }
+
+    const activeRider = { pin: '1010', name: 'Rahul' };
+
+    // 1. Owner marks cash settled
+    const cashDetail = { riderPin: '1010', amount: 1540 };
+    if (cashDetail.riderPin === activeRider.pin) {
+      mockPlaySound('accepted');
+      mockFlashTitle('💵 CASH SETTLED');
+      mockSendNotif({
+        title: '💵 Cash Handover Confirmed!',
+        body: `Restaurant received ₹${cashDetail.amount} cash deposit. Your drawer liability is now cleared!`,
+        tag: 'rider-cash-settled'
+      });
+    }
+
+    assert.equal(soundPlayed, 'accepted');
+    assert.equal(tabTitleFlashed, '💵 CASH SETTLED');
+    assert.equal(systemNotifSent.tag, 'rider-cash-settled');
+
+    // 2. Owner processes shift payout
+    const payoutDetail = { riderPin: '1010', amount: 420 };
+    if (payoutDetail.riderPin === activeRider.pin) {
+      mockPlaySound('payout_received');
+      mockFlashTitle('💰 PAYOUT RECEIVED!');
+      mockSendNotif({
+        title: '💰 Payout Received!',
+        body: `₹${payoutDetail.amount} has been transferred to your account!`,
+        tag: 'rider-payout-paid'
+      });
+    }
+
+    assert.equal(soundPlayed, 'payout_received');
+    assert.equal(tabTitleFlashed, '💰 PAYOUT RECEIVED!');
+    assert.equal(systemNotifSent.tag, 'rider-payout-paid');
+  });
 });

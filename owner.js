@@ -14,7 +14,17 @@ import {
   clearStaffSession,
   ensureAdminToken
 } from './securityUtils.js';
-import { showSamsungToast } from './notificationService.js';
+import {
+  showSamsungToast,
+  playNotificationSound,
+  sendSystemNotification,
+  flashTabTitle,
+  triggerDeviceVibration,
+  requestSystemNotificationPermission,
+  getSystemNotificationPermission,
+  isSoundEnabled,
+  setSoundEnabled
+} from './notificationService.js';
 
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
@@ -1523,15 +1533,114 @@ function initActions() {
     riderForm.addEventListener('submit', handleOwnerRiderSubmit);
   }
 
+  // Track known orders on startup so existing orders don't re-trigger alerts
+  const knownOwnerOrderIds = new Set((dataService.getOrders() || []).map(o => o.id));
+
+  // Executive Notifications & Sound Controls
+  const notifBanner = document.getElementById('owner-notif-optin-banner');
+  const btnEnableNotifs = document.getElementById('btn-owner-enable-notifs');
+  const btnDismissNotifs = document.getElementById('btn-owner-dismiss-notifs');
+  const btnSoundTest = document.getElementById('btn-owner-sound-test');
+
+  try {
+    if (getSystemNotificationPermission() === 'default' && notifBanner) {
+      const dismissed = sessionStorage.getItem('quickbite_owner_notif_dismissed');
+      if (!dismissed) notifBanner.style.display = 'block';
+    }
+  } catch {}
+
+  if (btnEnableNotifs) {
+    btnEnableNotifs.addEventListener('click', async () => {
+      const res = await requestSystemNotificationPermission();
+      if (notifBanner) notifBanner.style.display = 'none';
+      if (res === 'granted') {
+        showToast('🔔 Executive alerts activated successfully!', 'success');
+        playNotificationSound('payout_received');
+        sendSystemNotification({
+          title: '🔔 Executive Alerts Active',
+          body: 'You will receive real-time chimes for cash handovers, payouts, and orders.',
+          tag: 'owner-welcome'
+        });
+      } else {
+        showToast('⚠️ Notifications not granted. Sound chimes will still play.', 'warning');
+      }
+    });
+  }
+
+  if (btnDismissNotifs) {
+    btnDismissNotifs.addEventListener('click', () => {
+      if (notifBanner) notifBanner.style.display = 'none';
+      try { sessionStorage.setItem('quickbite_owner_notif_dismissed', 'true'); } catch {}
+    });
+  }
+
+  if (btnSoundTest) {
+    btnSoundTest.addEventListener('click', () => {
+      playNotificationSound('payout_received');
+      triggerDeviceVibration([80, 40, 80]);
+      showToast('🔔 Playing Executive alert sound test...', 'info');
+      if (getSystemNotificationPermission() === 'default') {
+        requestSystemNotificationPermission().catch(() => {});
+      }
+    });
+  }
+
   // Cross-tab and Realtime synchronization for riders, orders, cash handovers & payouts
   dataService.subscribeToChanges('riders', () => renderDashboard());
-  dataService.subscribeToChanges('orders', () => renderDashboard());
-  dataService.subscribeToChanges('cash_handover_requested', (data) => {
-    showToast(`🔔 Cash Handover: Rider submitted ₹${Number(data?.amount || 0).toLocaleString('en-IN')}!`, 'warning');
+  dataService.subscribeToChanges('orders', () => {
+    const orders = dataService.getOrders();
+    let hasNewOrder = false;
+    let latestNewOrder = null;
+    orders.forEach(o => {
+      if (o && o.id && !knownOwnerOrderIds.has(o.id)) {
+        knownOwnerOrderIds.add(o.id);
+        if (o.status === 'accepted' || o.status === 'pending') {
+          hasNewOrder = true;
+          latestNewOrder = o;
+        }
+      }
+    });
+
+    if (hasNewOrder && latestNewOrder) {
+      playNotificationSound('order_placed');
+      flashTabTitle(`🔔 NEW ORDER: ${latestNewOrder.id}`);
+      showToast(`🔔 New order received: ${latestNewOrder.id} (${latestNewOrder.total || '₹0'})`, 'info');
+      sendSystemNotification({
+        title: `🔔 New Order: ${latestNewOrder.id}`,
+        body: `Customer ${latestNewOrder.customerName || 'Guest'} placed an order for ${latestNewOrder.total || '₹0'}`,
+        tag: `owner-new-${latestNewOrder.id}`,
+        data: { url: '/owner.html' }
+      });
+    }
+
     renderDashboard();
   });
-  dataService.subscribeToChanges('cash_settled', () => renderDashboard());
-  dataService.subscribeToChanges('payout_paid', () => renderDashboard());
+
+  dataService.subscribeToChanges('cash_handover_requested', (data) => {
+    const amt = Number(data?.amount || 0).toLocaleString('en-IN');
+    playNotificationSound('rider_new_task');
+    triggerDeviceVibration([200, 100, 200]);
+    flashTabTitle('💵 CASH HANDOVER!');
+    showToast(`🔔 Cash Handover: Rider submitted ₹${amt}!`, 'warning');
+    sendSystemNotification({
+      title: '💵 Cash Handover Pending',
+      body: `Rider ${data?.riderName || ''} submitted ₹${amt}. Verify and confirm in drawer.`,
+      tag: 'owner-cash-handover',
+      data: { url: '/owner.html' }
+    });
+    renderDashboard();
+  });
+
+  dataService.subscribeToChanges('cash_settled', () => {
+    playNotificationSound('accepted');
+    renderDashboard();
+  });
+
+  dataService.subscribeToChanges('payout_paid', () => {
+    playNotificationSound('payout_received');
+    renderDashboard();
+  });
+
   dataService.subscribeToChanges('km_rate_updated', () => renderDashboard());
   dataService.subscribeToChanges('payout_config_updated', () => renderDashboard());
 }
@@ -2425,7 +2534,16 @@ function renderKmPayoutsView(orders) {
         const res = await resp.json();
         if (res && res.success) {
           dataService.markRiderPayoutPaid(pin, amount);
+          playNotificationSound('payout_received');
+          triggerDeviceVibration([120, 60, 180]);
+          flashTabTitle('⚡ PAYOUT COMPLETED');
           showToast(`⚡ Instant Payout of ₹${amount.toLocaleString('en-IN')} sent to ${name} via Cashfree!`, 'success');
+          sendSystemNotification({
+            title: '⚡ Instant Payout Executed',
+            body: `₹${amount.toLocaleString('en-IN')} transferred to ${name} via Cashfree UPI.`,
+            tag: `owner-payout-${pin}`,
+            data: { url: '/owner.html' }
+          });
           renderDashboard();
         } else {
           throw new Error(res.message || 'Payout transfer failed');

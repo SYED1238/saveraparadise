@@ -121,6 +121,12 @@
           <span id="owner-live-clock">--:-- --</span>
         </div>
 
+        <!-- Sound & Alert Status Button -->
+        <button type="button" class="btn-owner-action" id="btn-owner-sound-test" title="Test Executive Alert Sounds">
+          <i class="fa-solid fa-bell" id="owner-sound-icon"></i>
+          <span class="hide-mobile" id="owner-sound-text">Alerts: Active</span>
+        </button>
+
         <!-- Quick Action Buttons -->
         <button type="button" class="btn-owner-action" id="btn-owner-refresh" title="Refresh Live Data">
           <i class="fa-solid fa-rotate"></i>
@@ -143,6 +149,27 @@
         </button>
       </div>
     </header>
+
+    <!-- Real-time Notification Permission Opt-In Banner -->
+    <div class="owner-notif-optin-banner" id="owner-notif-optin-banner" style="display: none;" role="region" aria-label="Notification Setup">
+      <div class="owner-notif-optin-content" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.22)); border-bottom: 1px solid rgba(245, 158, 11, 0.35); color: #FFF; font-size: 0.88rem;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <i class="fa-solid fa-bell" style="color: #f59e0b; font-size: 1.1rem;"></i>
+          <div>
+            <strong style="color: #fbbf24;">Enable Executive Audio & Push Alerts:</strong>
+            <span style="opacity: 0.9;"> Hear instant chimes when riders request Cash Handovers, when UPI Payouts execute, and when new Orders arrive.</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <button type="button" class="btn-owner-action" id="btn-owner-enable-notifs" style="background: #f59e0b; color: #000; font-weight: 700; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer;">
+            <i class="fa-solid fa-check"></i> Enable Alerts
+          </button>
+          <button type="button" id="btn-owner-dismiss-notifs" aria-label="Dismiss" style="background: transparent; color: #FFF; border: none; font-size: 1.1rem; cursor: pointer; padding: 4px 8px;">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Main Content Area -->
     <main class="owner-main">

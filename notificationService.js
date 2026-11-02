@@ -62,6 +62,22 @@ function autoUnlockAudio() {
   window.addEventListener('keydown', unlock, { passive: true });
   window.addEventListener('touchstart', unlock, { passive: true });
   window.addEventListener('click', unlock, { passive: true });
+
+  // Passive persistent tap resume to recover instantly if mobile browser suspends audio
+  window.addEventListener('pointerdown', () => {
+    if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+      globalAudioCtx.resume().catch(() => {});
+    }
+  }, { passive: true });
+
+  // Mobile background visibility restore
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && globalAudioCtx && globalAudioCtx.state === 'suspended') {
+        globalAudioCtx.resume().catch(() => {});
+      }
+    }, { passive: true });
+  }
 }
 
 if (typeof window !== 'undefined') {
@@ -101,7 +117,20 @@ export function playNotificationSound(type = 'general_alert') {
     // Master volume
     const masterGain = ctx.createGain();
     masterGain.gain.setValueAtTime(0.7, now);
-    masterGain.connect(ctx.destination);
+
+    // Dynamics Compressor (brickwall limiter & leveler to prevent mobile speaker distortion/clipping)
+    let outputNode = ctx.destination;
+    if (typeof ctx.createDynamicsCompressor === 'function') {
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-6, now);
+      compressor.knee.setValueAtTime(10, now);
+      compressor.ratio.setValueAtTime(12, now);
+      compressor.attack.setValueAtTime(0.003, now);
+      compressor.release.setValueAtTime(0.15, now);
+      compressor.connect(ctx.destination);
+      outputNode = compressor;
+    }
+    masterGain.connect(outputNode);
 
     // Tone definitions for different notification events
     let notes = [];
@@ -186,6 +215,29 @@ export function playNotificationSound(type = 'general_alert') {
           { freq: 392.00, start: 0.00, dur: 0.16, gain: 0.55, type: 'triangle' },
           { freq: 311.13, start: 0.18, dur: 0.18, gain: 0.60, type: 'triangle' },
           { freq: 261.63, start: 0.38, dur: 0.40, gain: 0.65, type: 'triangle' }
+        ];
+        break;
+
+      case 'payout_received':
+      case 'cash_received':
+      case 'cash_register':
+        // Crisp, sparkling celebratory cash register chime (C6 -> E6 -> G6 -> C7 sparkle)
+        notes = [
+          { freq: 1046.50, start: 0.00, dur: 0.09, gain: 0.50, type: 'sine' },
+          { freq: 1318.51, start: 0.08, dur: 0.09, gain: 0.55, type: 'sine' },
+          { freq: 1567.98, start: 0.16, dur: 0.12, gain: 0.60, type: 'sine' },
+          { freq: 2093.00, start: 0.26, dur: 0.35, gain: 0.65, type: 'triangle' }
+        ];
+        break;
+
+      case 'urgent_alarm':
+      case 'warning_alarm':
+        // Rapid pulsing high alert chime (1200Hz - 900Hz alternating)
+        notes = [
+          { freq: 1200.00, start: 0.00, dur: 0.10, gain: 0.60, type: 'triangle' },
+          { freq: 900.00, start: 0.12, dur: 0.10, gain: 0.60, type: 'triangle' },
+          { freq: 1200.00, start: 0.24, dur: 0.10, gain: 0.65, type: 'triangle' },
+          { freq: 900.00, start: 0.36, dur: 0.20, gain: 0.65, type: 'triangle' }
         ];
         break;
 
