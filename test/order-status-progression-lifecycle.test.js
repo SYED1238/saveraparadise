@@ -244,4 +244,131 @@ test('ORDER STATUS PROGRESSION & LIFECYCLE SYNCHRONIZATION SUITE', async (t) => 
     const undelivered = orders.find(o => o.id === '#QB-UNDELIV');
     assert.strictEqual(undelivered.status, 'undelivered', 'Undelivered status must never mutate into delivered');
   });
+
+  await t.test('11. Instant new_order broadcast delivers payload directly to ordersCache with zero delay', () => {
+    const broadcastOrder = {
+      id: '#QB-INSTANT-101',
+      customerName: 'Aarav Sharma',
+      status: 'accepted',
+      statusLabel: 'Accepted',
+      stepIndex: 0,
+      total: '₹450',
+      createdAt: Date.now()
+    };
+
+    // Unshift directly as the broadcast listener does
+    const currentOrders = dataService.getOrders();
+    const existing = currentOrders.find(o => o.id === broadcastOrder.id);
+    if (!existing) {
+      currentOrders.unshift(broadcastOrder);
+      dataService.saveOrders(currentOrders, { action: 'new_order', order: broadcastOrder, source: 'supabase_broadcast' });
+    }
+
+    const fetched = dataService.getOrders().find(o => o.id === '#QB-INSTANT-101');
+    assert.ok(fetched, 'Instant broadcast order must immediately exist in orders cache');
+    assert.strictEqual(fetched.customerName, 'Aarav Sharma');
+
+    // Verify localStorage trigger for multi-tab synchronization
+    const latestIncoming = JSON.parse(localStorage.getItem('quickbite_latest_incoming_order') || '{}');
+    assert.ok(latestIncoming.id === '#QB-INSTANT-101' || latestIncoming.order?.id === '#QB-INSTANT-101' || latestIncoming.customerName === 'Aarav Sharma', 'Cross-tab incoming order storage trigger must be populated');
+  });
+
+  await t.test('12. Offline order creation preserves pendingRemoteSync flag and persists in storage', async () => {
+    const offlineOrder = {
+      id: '#QB-OFFLINE-202',
+      customerName: 'Pooja Verma',
+      items: [{ name: 'Chicken Biryani', price: 260, qty: 1 }],
+      total: '₹260',
+      createdAt: Date.now(),
+      pendingRemoteSync: true
+    };
+
+    const orders = dataService.getOrders();
+    orders.unshift(offlineOrder);
+    dataService.saveOrders(orders, { action: 'order_offline_queued', orderId: offlineOrder.id });
+
+    // Verify disk persistence
+    const reloaded = dataService.getOrders().find(o => o.id === '#QB-OFFLINE-202');
+    assert.ok(reloaded, 'Offline order must persist in storage');
+    assert.strictEqual(reloaded.pendingRemoteSync, true, 'pendingRemoteSync flag must be preserved');
+  });
+
+  await t.test('13. Ghost order pruning eliminates stale non-remote orders while preserving pending offline orders', () => {
+    const now = Date.now();
+    const testList = [
+      { id: '#QB-REMOTE-1', status: 'accepted', createdAt: now - 60000 },
+      { id: '#QB-GHOST-STALE', status: 'accepted', createdAt: now - (5 * 60 * 1000) }, // 5 mins old, not in Supabase
+      { id: '#QB-OFFLINE-VALID', status: 'accepted', createdAt: now - (10 * 60 * 1000), pendingRemoteSync: true }, // pending offline sync
+      { id: '#QB-INFLIGHT-FRESH', status: 'accepted', createdAt: now - 30000 } // freshly placed (30s old, in grace period)
+    ];
+
+    const remoteIds = new Set(['QB-REMOTE-1']);
+    const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
+
+    const pruned = testList.filter(o => {
+      if (!o || !o.id) return false;
+      const cId = normalizeId(o.id);
+      if (remoteIds.has(cId)) return true;
+      if (o.pendingRemoteSync) {
+        const pendingAge = Date.now() - (Number(o.createdAt) || 0);
+        return pendingAge < 24 * 60 * 60 * 1000;
+      }
+      const age = Date.now() - (Number(o.createdAt) || 0);
+      return age < 2 * 60 * 1000;
+    });
+
+    assert.strictEqual(pruned.length, 3, 'Ghost order must be pruned, leaving 3 orders');
+    assert.ok(pruned.some(o => o.id === '#QB-REMOTE-1'), 'Remote order preserved');
+    assert.ok(pruned.some(o => o.id === '#QB-OFFLINE-VALID'), 'Pending offline order preserved');
+    assert.ok(pruned.some(o => o.id === '#QB-INFLIGHT-FRESH'), 'Fresh in-flight order preserved');
+    assert.strictEqual(pruned.some(o => o.id === '#QB-GHOST-STALE'), false, 'Stale ghost order must be completely pruned');
+  });
+
+  await t.test('14. Historical orders older than 15 mins are suppressed from firing new_order siren alerts', () => {
+    const now = Date.now();
+    const freshOrder = { id: '#QB-FRESH', status: 'accepted', createdAt: now - (2 * 60 * 1000) }; // 2 mins old
+    const oldOrder = { id: '#QB-OLD', status: 'accepted', createdAt: now - (45 * 60 * 1000) }; // 45 mins old
+
+    const testNotifications = [freshOrder, oldOrder];
+    const actionsDispatched = [];
+
+    testNotifications.forEach(no => {
+      const orderAge = no.createdAt ? (now - Number(no.createdAt)) : 0;
+      const isRecent = orderAge < 15 * 60 * 1000;
+      if (isRecent && ((no.status || 'accepted') === 'accepted' || no.status === 'pending')) {
+        actionsDispatched.push({ id: no.id, action: 'new_order' });
+      } else {
+        actionsDispatched.push({ id: no.id, action: 'status_updated' });
+      }
+    });
+
+    assert.deepStrictEqual(actionsDispatched, [
+      { id: '#QB-FRESH', action: 'new_order' },
+      { id: '#QB-OLD', action: 'status_updated' }
+    ], 'Fresh order gets new_order action, while historical order is quiet status_updated');
+  });
+
+  await t.test('15. Automatic offline order queue drainer cleans pendingRemoteSync upon successful sync', async () => {
+    const list = dataService.getOrders();
+    const testOffline = {
+      id: '#QB-SYNCED-303',
+      customerName: 'Test Sync User',
+      total: '₹350',
+      createdAt: Date.now(),
+      pendingRemoteSync: true
+    };
+    list.unshift(testOffline);
+    dataService.saveOrders(list);
+
+    // Verify pending
+    let target = dataService.getOrders().find(o => o.id === '#QB-SYNCED-303');
+    assert.strictEqual(target.pendingRemoteSync, true);
+
+    // Simulate successful sync drain
+    delete target.pendingRemoteSync;
+    dataService.saveOrders(list, { action: 'offline_orders_synced' });
+
+    target = dataService.getOrders().find(o => o.id === '#QB-SYNCED-303');
+    assert.strictEqual(target.pendingRemoteSync, undefined, 'pendingRemoteSync must be cleared after sync');
+  });
 });

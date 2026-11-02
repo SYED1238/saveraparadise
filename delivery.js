@@ -2206,6 +2206,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Suppress audio alerts for stale/historical orders (>30 mins old)
+    const orderAge = order.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
+    if (orderAge > 30 * 60 * 1000) {
+      renderPortal();
+      return;
+    }
+
     playNotificationSound('rider_new_task');
     showToast(`📦 New parcel packed & ready on restaurant kitchen counter!`, 'success');
 
@@ -2284,7 +2291,8 @@ document.addEventListener('DOMContentLoaded', () => {
         knownDeliveryIds.add(o.id);
         knownDeliveryIds.add(normalizeId(o.id));
       });
-      const readyArrivals = newArrivals.filter(o => o.status === 'ready_for_pickup');
+      const nowScan = Date.now();
+      const readyArrivals = newArrivals.filter(o => o.status === 'ready_for_pickup' && (!o.createdAt || (nowScan - Number(o.createdAt)) < 30 * 60 * 1000));
       if (readyArrivals.length > 0) {
         handleRiderIncomingOrder(readyArrivals[0]);
       } else {

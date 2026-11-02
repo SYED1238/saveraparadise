@@ -1591,10 +1591,13 @@ function initActions() {
     const orders = dataService.getOrders();
     let hasNewOrder = false;
     let latestNewOrder = null;
+    const now = Date.now();
     orders.forEach(o => {
       if (o && o.id && !knownOwnerOrderIds.has(o.id)) {
         knownOwnerOrderIds.add(o.id);
-        if (o.status === 'accepted' || o.status === 'pending') {
+        const orderAge = o.createdAt ? (now - Number(o.createdAt)) : 0;
+        // Suppress alarms for stale/historical orders (>15 mins old)
+        if ((o.status === 'accepted' || o.status === 'pending') && orderAge < 15 * 60 * 1000) {
           hasNewOrder = true;
           latestNewOrder = o;
         }

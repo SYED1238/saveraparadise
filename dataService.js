@@ -2366,6 +2366,18 @@ class QuickBiteDataService {
             this.dishesCache = null;
           }
         });
+
+        window.addEventListener('online', () => {
+          console.log('[DataService] Network online detected. Triggering offline queue sync...');
+          this.syncOfflinePendingOrders();
+          if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
+            if (this.isStaffAuthorized()) {
+              this.syncOrdersFromSupabase(true);
+            }
+          } else {
+            this.syncCustomerActiveOrders(true);
+          }
+        });
       }
     } catch {}
 
@@ -2730,6 +2742,9 @@ class QuickBiteDataService {
 
     this._isSyncingOrders = (async () => {
       try {
+        // Drain pending offline orders to Supabase first so remote query reflects them
+        await this.syncOfflinePendingOrders();
+
         const { data, error } = await supabase
           .from('orders')
           .select('*')
@@ -2848,7 +2863,12 @@ class QuickBiteDataService {
             if (!o || !o.id) return false;
             const cId = normalizeId(o.id);
             if (remoteCleanIds.has(cId)) return true;
-            if (o.status && o.status !== 'delivered' && o.status !== 'cancelled') return true;
+            // Safely preserve pending offline orders queued for cloud synchronization
+            if (o.pendingRemoteSync) {
+              const pendingAge = Date.now() - (Number(o.createdAt) || 0);
+              return pendingAge < 24 * 60 * 60 * 1000;
+            }
+            // Allow 2-minute optimistic grace period for freshly placed orders awaiting DB index
             const age = Date.now() - (Number(o.createdAt) || 0);
             return age < 2 * 60 * 1000;
           });
@@ -2862,8 +2882,11 @@ class QuickBiteDataService {
             this.ordersCache = localList;
             localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(localList));
 
+            const nowNotify = Date.now();
             newOrdersToNotify.forEach(no => {
-              if ((no.status || 'accepted') === 'accepted' || no.status === 'pending') {
+              const orderAge = no.createdAt ? (nowNotify - Number(no.createdAt)) : 0;
+              const isRecent = orderAge < 15 * 60 * 1000;
+              if (isRecent && ((no.status || 'accepted') === 'accepted' || no.status === 'pending')) {
                 this.notifyChange('orders', { action: 'new_order', order: no, source: 'supabase' });
               } else {
                 this.notifyChange('orders', { action: 'status_updated', orderId: no.id, order: no, source: 'supabase' });
@@ -2951,6 +2974,7 @@ class QuickBiteDataService {
         if (status === 'SUBSCRIBED') {
           this.isSupabaseConnected = true;
           console.log('[DataService] Supabase Realtime connected successfully.');
+          this.syncOfflinePendingOrders();
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[DataService] Supabase Realtime channel error:', status, err);
           setTimeout(() => {
@@ -2976,6 +3000,37 @@ class QuickBiteDataService {
       });
 
       this.sharedBroadcastChannel
+        .on('broadcast', { event: 'new_order' }, (event) => {
+          const payload = event?.payload || {};
+          const order = payload.order;
+          if (!order || !order.id) return;
+          console.log('[Supabase Realtime] Received instant cross-device new_order broadcast:', order.id);
+
+          const orders = this.getOrders();
+          const norm = (id) => String(id || '').trim().replace(/^#/, '');
+          const targetNorm = norm(order.id);
+          const existingIdx = orders.findIndex(o => o && norm(o.id) === targetNorm);
+
+          if (existingIdx !== -1) {
+            Object.assign(orders[existingIdx], order);
+            this.ordersCache = orders;
+            try {
+              localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+            } catch {}
+          } else {
+            orders.unshift(order);
+            this.ordersCache = orders;
+            try {
+              localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+            } catch {}
+            this.notifyChange('orders', {
+              action: 'new_order',
+              order,
+              source: 'supabase_broadcast',
+              timestamp: payload.timestamp || Date.now()
+            });
+          }
+        })
         .on('broadcast', { event: 'stop_alarm' }, (event) => {
           const payload = event?.payload || {};
           console.log('[Supabase Realtime] Received cross-device stop_alarm broadcast:', payload);
@@ -3071,6 +3126,94 @@ class QuickBiteDataService {
   /**
    * Sync active orders relevant to this customer in real time.
    */
+  /**
+   * Automatically drain and synchronize queued offline orders to Supabase cloud database.
+   */
+  async syncOfflinePendingOrders() {
+    if (this._isSyncingOfflineOrders) return this._isSyncingOfflineOrders;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (!supabase) return;
+
+    this._isSyncingOfflineOrders = (async () => {
+      try {
+        const list = this.getOrders();
+        const pendingOrders = list.filter(o => o && o.pendingRemoteSync === true);
+        if (pendingOrders.length === 0) return;
+
+        console.log(`[DataService] Draining ${pendingOrders.length} pending offline orders to Supabase...`);
+        let anySynced = false;
+
+        for (const orderData of pendingOrders) {
+          const cleanPayload = {
+            id: orderData.id,
+            created_at: Number(orderData.createdAt) || Date.now(),
+            customer_name: orderData.customerName || 'Online Guest',
+            customer_phone: orderData.customerPhone || orderData.phone || null,
+            customer_email: orderData.customerEmail || null,
+            user_id: orderData.userId || null,
+            delivery_address: orderData.deliveryAddress || 'Express Delivery',
+            pickup_code: orderData.pickupCode || null,
+            payment_method: orderData.paymentMethod || 'Cash on Delivery (COD)',
+            payment_status: orderData.paymentStatus || 'Cash on Delivery',
+            step_index: typeof orderData.stepIndex === 'number' ? orderData.stepIndex : 0,
+            status: orderData.status || 'accepted',
+            status_label: orderData.statusLabel || 'Accepted',
+            eta: orderData.eta || '25 - 35 Minutes',
+            items_summary: orderData.itemsSummary || '',
+            items: orderData.items || [],
+            total: orderData.total || '₹0',
+            lat: (orderData.lat !== undefined && !isNaN(Number(orderData.lat))) ? Number(orderData.lat) : (orderData.addressDetails?.lat ? Number(orderData.addressDetails.lat) : null),
+            lng: (orderData.lng !== undefined && !isNaN(Number(orderData.lng))) ? Number(orderData.lng) : (orderData.addressDetails?.lng ? Number(orderData.addressDetails.lng) : null),
+            address_details: orderData.addressDetails || null
+          };
+
+          try {
+            const { data, error } = await supabase.from('orders').insert([cleanPayload]).select('tracking_token');
+            const isDuplicate = error && (error.code === '23505' || String(error.message || '').includes('duplicate key') || String(error.message || '').includes('unique constraint'));
+
+            if (!error || isDuplicate) {
+              console.log(`[DataService] Offline order ${orderData.id} successfully synced to Supabase.`);
+              delete orderData.pendingRemoteSync;
+              if (data && data[0]?.tracking_token) {
+                orderData.trackingToken = data[0].tracking_token;
+              }
+              anySynced = true;
+
+              try {
+                if (this.sharedBroadcastChannel) {
+                  this.sharedBroadcastChannel.send({
+                    type: 'broadcast',
+                    event: 'new_order',
+                    payload: { order: orderData, timestamp: Date.now() }
+                  }).catch(() => {});
+                }
+              } catch {}
+            } else {
+              console.warn(`[DataService] Failed to sync offline order ${orderData.id}:`, error);
+              if (String(error?.message || '').toLowerCase().includes('fetch failed') || String(error?.message || '').toLowerCase().includes('networkerror')) {
+                break;
+              }
+            }
+          } catch (err) {
+            console.warn(`[DataService] Offline sync exception for ${orderData.id}:`, err);
+            break;
+          }
+        }
+
+        if (anySynced) {
+          this.saveOrders(list, { action: 'offline_orders_synced', timestamp: Date.now() });
+          this.notifyChange('orders', { action: 'offline_orders_synced' });
+        }
+      } catch (e) {
+        console.warn('[DataService] syncOfflinePendingOrders error:', e);
+      }
+    })().finally(() => {
+      this._isSyncingOfflineOrders = null;
+    });
+
+    return this._isSyncingOfflineOrders;
+  }
+
   async syncCustomerActiveOrders(force = false) {
     try {
       let userId = null;
@@ -3195,6 +3338,8 @@ class QuickBiteDataService {
 
     this._isSyncingCustomerOrders = (async () => {
       try {
+        await this.syncOfflinePendingOrders();
+
         let query = supabase
           .from('orders')
           .select('*')
@@ -3351,7 +3496,12 @@ class QuickBiteDataService {
             if (this.isOrderForCustomer(mapped, userId, email, phone)) {
               localList.unshift(mapped);
               changed = true;
-              this.notifyChange('orders', { action: 'new_order', order: mapped, source: 'supabase' });
+              const orderAge = mapped.createdAt ? (Date.now() - Number(mapped.createdAt)) : 0;
+              if (orderAge < 15 * 60 * 1000 && (mapped.status === 'accepted' || mapped.status === 'pending')) {
+                this.notifyChange('orders', { action: 'new_order', order: mapped, source: 'supabase' });
+              } else {
+                this.notifyChange('orders', { action: 'status_updated', orderId: mapped.id, order: mapped, source: 'supabase' });
+              }
             }
           }
         });
@@ -4489,6 +4639,17 @@ class QuickBiteDataService {
       }));
     } catch {}
 
+    // Instant sub-50ms peer-to-peer WebSocket broadcast across kitchen POS, owner, and rider tablets
+    try {
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'new_order',
+          payload: { order: orderData, timestamp: Date.now() }
+        }).catch(() => {});
+      }
+    } catch {}
+
     // Direct clean insertion to Supabase cloud database
     const cleanPayload = {
       id: orderData.id,
@@ -4530,12 +4691,22 @@ class QuickBiteDataService {
         if (isNetworkError) {
           console.info('[DataService] Network offline during addOrder. Order preserved locally for fulfillment:', orderData.id);
           orderData.pendingRemoteSync = true;
-          return orderData;
+          this.saveOrders(this.getOrders(), { action: 'order_offline_queued', orderId: orderData.id });
+          return { success: true, pendingRemoteSync: true, ...orderData };
         }
 
         // Roll back optimistic local mutation on authoritative database rejection (e.g. RLS or constraint error)
         const rollbackList = this.getOrders().filter(o => o.id !== orderData.id);
         this.saveOrders(rollbackList, { action: 'order_rollback', orderId: orderData.id });
+        try {
+          if (this.sharedBroadcastChannel) {
+            this.sharedBroadcastChannel.send({
+              type: 'broadcast',
+              event: 'order_status_updated',
+              payload: { orderId: orderData.id, status: 'cancelled', source: 'rollback', timestamp: Date.now() }
+            }).catch(() => {});
+          }
+        } catch {}
         try {
           const latest = JSON.parse(localStorage.getItem('quickbite_latest_incoming_order') || '{}');
           if (latest && (latest.id === orderData.id || latest.order?.id === orderData.id)) {
@@ -4568,6 +4739,7 @@ class QuickBiteDataService {
       if (isNetworkError) {
         console.info('[DataService] Network offline during addOrder exception. Order preserved locally:', orderData.id);
         orderData.pendingRemoteSync = true;
+        this.saveOrders(this.getOrders(), { action: 'order_offline_queued', orderId: orderData.id });
         return { success: true, pendingRemoteSync: true, ...orderData };
       }
 
