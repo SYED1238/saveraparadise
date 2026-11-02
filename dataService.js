@@ -351,7 +351,7 @@ export const DEFAULT_DISHES = [
     "category": "biryani",
     "categoryName": "Rice & Biryani",
     "price": 130,
-    "image": "/biryani-plate-1.png",
+    "image": "/api/r2-image?key=dishes/dish_1792955739401_Spiced_biryani_with_tandoori_chi__2K_20261026004531.jpg",
     "badge": "🔥 Value Combo",
     "time": "10 - 15 mins",
     "diet": "Non-Veg",
@@ -390,7 +390,7 @@ export const DEFAULT_DISHES = [
     "category": "biryani",
     "categoryName": "Rice & Biryani",
     "price": 95,
-    "image": "/biryani-plate-1.png",
+    "image": "/api/r2-image?key=dishes/dish_1793096978656_1000168929.jpg",
     "badge": "Popular",
     "time": "5 - 10 mins",
     "diet": "Non-Veg",
@@ -403,7 +403,7 @@ export const DEFAULT_DISHES = [
     "category": "biryani",
     "categoryName": "Rice & Biryani",
     "price": 82,
-    "image": "/biryani-plate-1.png",
+    "image": "/api/r2-image?key=dishes/dish_1793097204110_1000168931.jpg",
     "badge": "",
     "time": "5 - 10 mins",
     "diet": "Non-Veg",
@@ -2714,6 +2714,13 @@ class QuickBiteDataService {
             };
           });
 
+          // Order dishes deterministically matching DEFAULT_DISHES storefront order so Admin matches Storefront
+          const defaultDishOrderMap = new Map(DEFAULT_DISHES.map((dish, i) => [dish.id, i]));
+          mapped.sort((a, b) => {
+            const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : 9000;
+            const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : 9000;
+            return posA - posB;
+          });
           this.saveDishes(mapped);
           this.populateUploadedImagesFromDishes();
           this.isSupabaseConnected = true;

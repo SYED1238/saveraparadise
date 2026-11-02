@@ -812,10 +812,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Filter by search query within this category
     let filteredDishes = categoryDishes;
     if (catDishSearchQuery) {
-      filteredDishes = filteredDishes.filter(d =>
-        d.name.toLowerCase().includes(catDishSearchQuery) ||
-        (d.desc && d.desc.toLowerCase().includes(catDishSearchQuery))
-      );
+      const tokens = catDishSearchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+      filteredDishes = filteredDishes.filter(d => {
+        const fullText = `${d.name || ''} ${d.desc || ''} ${d.badge || ''} ${d.diet || ''}`.toLowerCase();
+        return tokens.every(token => fullText.includes(token));
+      });
     }
 
     if (!categoryDishesGrid) return;
