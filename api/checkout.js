@@ -226,7 +226,7 @@ export default async function handler(req, res) {
   let unlockedDealDiscount = 0;
   if (settings.unlockedDealsEnabled) {
     const rawMin = Number(settings.unlockedDealsMinOrder);
-    const dealsMin = Number.isFinite(rawMin) ? Math.max(50, rawMin) : 299;
+    const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
     const rawPct = Number(settings.unlockedDealsDiscountPct);
     const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
     if (computedSubtotal >= dealsMin) {

@@ -5231,6 +5231,8 @@ function initStorefrontApp() {
       updateStoreStatusUI();
       updateStoreOfferUI();
       renderCartOrderLimitUI();
+      syncStorefrontCardsWithDataService();
+      renderCartDrawer();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open') && activeOrderId) {
         renderOrderTracker(activeOrderId);
       }
@@ -5271,6 +5273,8 @@ function initStorefrontApp() {
       updateStoreStatusUI();
       updateStoreOfferUI();
       renderCartOrderLimitUI();
+      syncStorefrontCardsWithDataService();
+      renderCartDrawer();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open') && activeOrderId) {
         renderOrderTracker(activeOrderId);
       }

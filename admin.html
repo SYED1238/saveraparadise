@@ -581,7 +581,7 @@
           <span class="section-hint">Displayed in the header, hero status tag, and pre-dispatch customer help cards (Accepted, Preparing, Ready to Dispatch).</span>
         </div>
 
-        <form id="form-store-hours" class="admin-form store-hours-form">
+        <form id="form-store-hours" class="admin-form store-hours-form" novalidate>
           <!-- Master Kitchen Open/Closed Toggle -->
           <div class="offer-toggle-row" style="margin-bottom: 1.25rem;">
             <div class="offer-toggle-info">
@@ -669,7 +669,7 @@
           <span class="section-hint">Customize the promo coupon code, discount percentage or flat amount, headline, and customer banners across your storefront.</span>
         </div>
 
-        <form id="form-store-offer" class="admin-form store-offer-form">
+        <form id="form-store-offer" class="admin-form store-offer-form" novalidate>
           <!-- Active Toggle Switch -->
           <div class="offer-toggle-row">
             <div class="offer-toggle-info">
@@ -729,7 +729,7 @@
             </label>
             <div class="input-currency-wrapper">
               <span class="input-currency-prefix">₹</span>
-              <input type="number" id="input-offer-min-order" min="0" step="10" value="300" placeholder="e.g. 200, 300 (0 for no minimum)">
+              <input type="number" id="input-offer-min-order" min="0" step="1" value="300" placeholder="e.g. 200, 300 (0 for no minimum)">
             </div>
             <div class="offer-discount-presets" style="margin-top: 8px;">
               <span class="preset-label">Quick Minimum Presets:</span>
@@ -810,7 +810,7 @@
           <span class="section-hint">Blinkit / Zepto style automatic price drops: When customer's cart reaches a minimum amount (e.g. ₹299), all items automatically drop by the configured percentage! An animated progress bar pops up on storefront.</span>
         </div>
 
-        <form id="form-unlocked-deals" class="admin-form store-offer-form">
+        <form id="form-unlocked-deals" class="admin-form store-offer-form" novalidate>
           <!-- Active Toggle Switch -->
           <div class="offer-toggle-row">
             <div class="offer-toggle-info">
@@ -829,7 +829,7 @@
               <label for="input-unlocked-deals-min"><i class="fa-solid fa-cart-shopping"></i> Minimum Cart Requirement to Unlock (₹)</label>
               <div class="input-currency-wrapper">
                 <span class="input-currency-prefix">₹</span>
-                <input type="number" id="input-unlocked-deals-min" min="50" step="10" value="299" placeholder="e.g. 299">
+                <input type="number" id="input-unlocked-deals-min" min="10" step="1" value="299" placeholder="e.g. 299">
               </div>
               <div class="offer-discount-presets" style="margin-top: 8px;">
                 <span class="preset-label">Quick Presets:</span>
@@ -845,7 +845,7 @@
 
             <div class="form-group">
               <label for="input-unlocked-deals-pct"><i class="fa-solid fa-percent"></i> Unlocked Discount Percentage (%)</label>
-              <input type="number" id="input-unlocked-deals-pct" min="1" max="90" value="15" placeholder="e.g. 15 or 20">
+              <input type="number" id="input-unlocked-deals-pct" min="1" max="90" step="1" value="15" placeholder="e.g. 15 or 20">
               <div class="offer-discount-presets" style="margin-top: 8px;">
                 <span class="preset-label">Quick Presets:</span>
                 <div class="rush-preset-pills" id="unlocked-pct-presets">
@@ -936,7 +936,7 @@
           <span class="section-hint">Configure minimum cart order value to checkout, automatic free delivery thresholds, standard fees, and delivery radius.</span>
         </div>
 
-        <form id="form-store-delivery" class="admin-form store-delivery-form">
+        <form id="form-store-delivery" class="admin-form store-delivery-form" novalidate>
           <!-- Free Delivery Threshold Setting Box (Above 250 free delivery) -->
           <div class="free-delivery-card-box">
             <div class="offer-toggle-row">
@@ -956,7 +956,7 @@
               </label>
               <div class="input-currency-wrapper">
                 <span class="input-currency-prefix">₹</span>
-                <input type="number" id="input-free-delivery-threshold" min="0" step="10" value="250" placeholder="e.g. 250">
+                <input type="number" id="input-free-delivery-threshold" min="0" step="1" value="250" placeholder="e.g. 250">
               </div>
               <div class="offer-discount-presets" style="margin-top: 8px;">
                 <span class="preset-label">Quick Threshold Presets:</span>

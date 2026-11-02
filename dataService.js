@@ -5512,13 +5512,24 @@ class QuickBiteDataService {
     const current = this.getSettings();
     const rawMin = Number(dealsData.unlockedDealsMinOrder);
     const rawPct = Number(dealsData.unlockedDealsDiscountPct);
+    const minOrder = Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 299;
+    const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(90, Math.round(rawPct)) : 15;
+    const title = (dealsData.unlockedDealsTitle || 'Wholesale Club Deals').trim();
+    const subtext = (dealsData.unlockedDealsSubtext || `Shop for ₹${minOrder} to unlock special menu prices!`).trim();
     const updated = {
       ...current,
       unlockedDealsEnabled: Boolean(dealsData.unlockedDealsEnabled),
-      unlockedDealsMinOrder: Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 299,
-      unlockedDealsDiscountPct: Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(90, Math.round(rawPct)) : 15,
-      unlockedDealsTitle: (dealsData.unlockedDealsTitle || 'Wholesale Club Deals').trim(),
-      unlockedDealsSubtext: (dealsData.unlockedDealsSubtext || 'Shop for ₹299 to unlock special menu prices!').trim()
+      unlockedDealsMinOrder: minOrder,
+      unlockedDealsDiscountPct: discountPct,
+      unlockedDealsTitle: title,
+      unlockedDealsSubtext: subtext,
+      unlockedDealsThresholds: [
+        {
+          minSpend: minOrder,
+          discountPercent: discountPct,
+          label: title
+        }
+      ]
     };
     this.saveSettings(updated);
     return updated;

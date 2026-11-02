@@ -3812,11 +3812,11 @@ document.addEventListener('DOMContentLoaded', () => {
     updateOfferPreview();
 
     // Populate unlocked deals
-    if (inputUnlockedDealsActive) inputUnlockedDealsActive.checked = Boolean(settings.unlockedDealsEnabled);
-    if (inputUnlockedDealsMin) inputUnlockedDealsMin.value = settings.unlockedDealsMinOrder || 299;
-    if (inputUnlockedDealsPct) inputUnlockedDealsPct.value = settings.unlockedDealsDiscountPct || 15;
-    if (inputUnlockedDealsTitle) inputUnlockedDealsTitle.value = settings.unlockedDealsTitle || 'Wholesale Club Deals';
-    if (inputUnlockedDealsSubtext) inputUnlockedDealsSubtext.value = settings.unlockedDealsSubtext || 'Shop for ₹299 to unlock special menu prices!';
+    if (inputUnlockedDealsActive && document.activeElement !== inputUnlockedDealsActive) inputUnlockedDealsActive.checked = Boolean(settings.unlockedDealsEnabled);
+    if (inputUnlockedDealsMin && document.activeElement !== inputUnlockedDealsMin) inputUnlockedDealsMin.value = settings.unlockedDealsMinOrder || 299;
+    if (inputUnlockedDealsPct && document.activeElement !== inputUnlockedDealsPct) inputUnlockedDealsPct.value = settings.unlockedDealsDiscountPct || 15;
+    if (inputUnlockedDealsTitle && document.activeElement !== inputUnlockedDealsTitle) inputUnlockedDealsTitle.value = settings.unlockedDealsTitle || 'Wholesale Club Deals';
+    if (inputUnlockedDealsSubtext && document.activeElement !== inputUnlockedDealsSubtext) inputUnlockedDealsSubtext.value = settings.unlockedDealsSubtext || 'Shop for ₹299 to unlock special menu prices!';
 
     document.querySelectorAll('#unlocked-min-presets .unlocked-min-btn').forEach(btn => {
       btn.classList.toggle('active', Number(btn.getAttribute('data-val')) === Number(inputUnlockedDealsMin?.value));
@@ -4256,6 +4256,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const val = Number(btn.getAttribute('data-val'));
         if (inputUnlockedDealsMin) inputUnlockedDealsMin.value = val;
         document.querySelectorAll('#unlocked-min-presets .unlocked-min-btn').forEach(b => b.classList.toggle('active', b === btn));
+        if (inputUnlockedDealsSubtext) {
+          const cur = inputUnlockedDealsSubtext.value || '';
+          if (!cur || /^Shop for ₹\d+ to unlock special menu prices!$/i.test(cur)) {
+            inputUnlockedDealsSubtext.value = `Shop for ₹${val} to unlock special menu prices!`;
+          }
+        }
         updateUnlockedDealsPreview();
       });
     });
@@ -4273,11 +4279,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnSaveUnlockedDeals && formUnlockedDeals) {
     btnSaveUnlockedDeals.addEventListener('click', (e) => {
       e.preventDefault();
-      if (typeof formUnlockedDeals.requestSubmit === 'function') {
-        formUnlockedDeals.requestSubmit();
-      } else {
-        formUnlockedDeals.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-      }
+      formUnlockedDeals.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     });
   }
 

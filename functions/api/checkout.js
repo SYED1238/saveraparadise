@@ -221,14 +221,21 @@ export async function onRequest(context) {
     let appliedDeal = null;
 
     const serverDealsEnabled = storeSettings?.unlockedDealsEnabled ?? false;
-    const serverThresholds = Array.isArray(storeSettings?.unlockedDealsThresholds)
-      ? storeSettings.unlockedDealsThresholds
-      : [
-          { minSpend: 1000, discountPercent: 15, label: 'Super Saver (15% Off)' },
-          { minSpend: 2000, discountPercent: 20, label: 'Mega Wholesale (20% Off)' }
-        ];
+    if (serverDealsEnabled) {
+      let serverThresholds = Array.isArray(storeSettings?.unlockedDealsThresholds) && storeSettings.unlockedDealsThresholds.length > 0
+        ? storeSettings.unlockedDealsThresholds
+        : null;
 
-    if (serverDealsEnabled && serverThresholds.length > 0) {
+      if (!serverThresholds) {
+        const rawMin = Number(storeSettings?.unlockedDealsMinOrder);
+        const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
+        const rawPct = Number(storeSettings?.unlockedDealsDiscountPct);
+        const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
+        serverThresholds = [
+          { minSpend: dealsMin, discountPercent: dealsPct, label: storeSettings?.unlockedDealsTitle || 'Wholesale Deal' }
+        ];
+      }
+
       const sorted = [...serverThresholds].sort((a, b) => b.minSpend - a.minSpend);
       const matched = sorted.find(t => subtotal >= t.minSpend);
       if (matched) {
@@ -240,18 +247,18 @@ export async function onRequest(context) {
           discountPercent: safePct,
           minSpend: matched.minSpend
         };
-      }
-    } else if (clientOrderThresholdDeal && typeof clientOrderThresholdDeal === 'object' && serverDealsEnabled) {
-      const minSpend = Number(clientOrderThresholdDeal.minSpend) || 0;
-      const rawPct = Number(clientOrderThresholdDeal.discountPercent) || 0;
-      const safePct = Math.min(Math.max(rawPct, 0), 50);
-      if (minSpend > 0 && subtotal >= minSpend && safePct > 0) {
-        dealDiscount = Math.round(subtotal * (safePct / 100));
-        appliedDeal = {
-          label: String(clientOrderThresholdDeal.label || `${safePct}% Deal`).slice(0, 50),
-          discountPercent: safePct,
-          minSpend
-        };
+      } else if (clientOrderThresholdDeal && typeof clientOrderThresholdDeal === 'object') {
+        const minSpend = Number(clientOrderThresholdDeal.minSpend) || 0;
+        const rawPct = Number(clientOrderThresholdDeal.discountPercent) || 0;
+        const safePct = Math.min(Math.max(rawPct, 0), 50);
+        if (minSpend > 0 && subtotal >= minSpend && safePct > 0) {
+          dealDiscount = Math.round(subtotal * (safePct / 100));
+          appliedDeal = {
+            label: String(clientOrderThresholdDeal.label || `${safePct}% Deal`).slice(0, 50),
+            discountPercent: safePct,
+            minSpend
+          };
+        }
       }
     }
 

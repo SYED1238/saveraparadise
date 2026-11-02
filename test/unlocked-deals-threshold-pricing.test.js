@@ -225,4 +225,68 @@ test('DYNAMIC UNLOCKED DEALS & THRESHOLD PRICING SUITE', async (t) => {
     const calculatedTotal = computedSubtotal - unlockedDealDiscount;
     assert.strictEqual(calculatedTotal, 312);
   });
+
+  await t.test('9. dataService.setUnlockedDeals() persists quick presets and auto-syncs unlockedDealsThresholds', () => {
+    const presets = [199, 249, 399, 499];
+    for (const presetVal of presets) {
+      const saved = dataService.setUnlockedDeals({
+        unlockedDealsEnabled: true,
+        unlockedDealsMinOrder: presetVal,
+        unlockedDealsDiscountPct: 20,
+        unlockedDealsTitle: 'Member Deal'
+      });
+      assert.strictEqual(saved.unlockedDealsEnabled, true);
+      assert.strictEqual(saved.unlockedDealsMinOrder, presetVal);
+      assert.strictEqual(saved.unlockedDealsDiscountPct, 20);
+      assert.ok(Array.isArray(saved.unlockedDealsThresholds));
+      assert.strictEqual(saved.unlockedDealsThresholds[0].minSpend, presetVal);
+      assert.strictEqual(saved.unlockedDealsThresholds[0].discountPercent, 20);
+
+      const current = dataService.getSettings();
+      assert.strictEqual(current.unlockedDealsMinOrder, presetVal);
+      assert.strictEqual(current.unlockedDealsDiscountPct, 20);
+    }
+
+    dataService.setUnlockedDeals({ unlockedDealsEnabled: false, unlockedDealsMinOrder: 299, unlockedDealsDiscountPct: 15 });
+  });
+
+  await t.test('10. /api/checkout applies discount at custom preset minimum threshold (₹199)', async () => {
+    const mockReq = {
+      method: 'POST',
+      headers: { origin: 'http://localhost:5173' },
+      body: {
+        items: [
+          { id: 'dish-1', name: 'Chicken Biryani Full', price: 210, quantity: 1 }
+        ],
+        storeSettings: {
+          unlockedDealsEnabled: true,
+          unlockedDealsMinOrder: 199,
+          unlockedDealsDiscountPct: 20,
+          freeDeliveryEnabled: true,
+          freeDeliveryThreshold: 250
+        }
+      }
+    };
+
+    let responseData = null;
+    let statusCode = 200;
+    const mockRes = {
+      setHeader: () => {},
+      status: (code) => {
+        statusCode = code;
+        return {
+          json: (data) => { responseData = data; return data; },
+          end: () => {}
+        };
+      }
+    };
+
+    await checkoutHandler(mockReq, mockRes);
+
+    assert.strictEqual(statusCode, 200);
+    assert.strictEqual(responseData.subtotal, 210);
+    assert.strictEqual(responseData.discount, 42);
+    assert.strictEqual(responseData.deliveryFee, 40);
+    assert.strictEqual(responseData.total, '₹208');
+  });
 });
