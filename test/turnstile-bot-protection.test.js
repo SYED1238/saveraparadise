@@ -118,15 +118,13 @@ test('CLOUDFLARE TURNSTILE INVISIBLE BOT PROTECTION SUITE', async (t) => {
     assert.equal(res.statusCode, 403, 'Rejects direct unverified order creation with 403 Forbidden');
   });
 
-  await t.test('8. vercel.json Content-Security-Policy whitelists Cloudflare Turnstile', () => {
-    const vercelConfig = JSON.parse(fs.readFileSync(path.resolve('vercel.json'), 'utf8'));
-    const allHeaders = vercelConfig.headers.flatMap(h => h.headers || []);
-    const csp = allHeaders.find(h => h.key === 'Content-Security-Policy')?.value || '';
+  await t.test('8. Cloudflare _headers Content-Security-Policy whitelists Cloudflare Turnstile', () => {
+    const headersContent = fs.readFileSync(path.resolve('public/_headers'), 'utf8');
 
-    assert.ok(csp.includes('script-src'), 'CSP defines script-src');
-    assert.ok(csp.includes('https://challenges.cloudflare.com'), 'CSP whitelists https://challenges.cloudflare.com');
-    assert.ok(csp.includes('frame-src'), 'CSP defines frame-src');
-    assert.ok(csp.includes('connect-src'), 'CSP defines connect-src');
+    assert.ok(headersContent.includes('script-src'), 'CSP defines script-src');
+    assert.ok(headersContent.includes('https://challenges.cloudflare.com'), 'CSP whitelists https://challenges.cloudflare.com');
+    assert.ok(headersContent.includes('frame-src'), 'CSP defines frame-src');
+    assert.ok(headersContent.includes('connect-src'), 'CSP defines connect-src');
   });
 
   await t.test('9. index.html includes Cloudflare Turnstile script and widget container', () => {

@@ -214,11 +214,11 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       assert.ok(ownerCss.includes('.payout-actions-cell'), 'owner.css must style .payout-actions-cell');
     });
 
-    test('vercel.json whitelists Cashfree domains in CSP connect-src and frame-src', () => {
-      const vercelJson = fs.readFileSync(path.join(rootDir, 'vercel.json'), 'utf8');
-      assert.ok(vercelJson.includes('https://*.cashfree.com'), 'Must whitelist cashfree.com');
-      assert.ok(vercelJson.includes('https://sdk.cashfree.com'), 'Must whitelist sdk.cashfree.com');
-      assert.ok(vercelJson.includes('https://sandbox.cashfree.com'), 'Must whitelist sandbox.cashfree.com');
+    test('Cloudflare _headers whitelists Cashfree domains in CSP connect-src and frame-src', () => {
+      const headersContent = fs.readFileSync(path.join(rootDir, 'public', '_headers'), 'utf8');
+      assert.ok(headersContent.includes('https://*.cashfree.com'), 'Must whitelist cashfree.com');
+      assert.ok(headersContent.includes('https://sdk.cashfree.com'), 'Must whitelist sdk.cashfree.com');
+      assert.ok(headersContent.includes('https://sandbox.cashfree.com'), 'Must whitelist sandbox.cashfree.com');
     });
   });
 
