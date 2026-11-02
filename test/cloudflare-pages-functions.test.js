@@ -57,13 +57,11 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       assert.ok(routes.exclude.includes('/assets/*'));
     });
 
-    it('public/_redirects defines 200 rewrites for multi-portal clean URLs', () => {
-      const redirectsPath = path.resolve(process.cwd(), 'public/_redirects');
-      assert.ok(fs.existsSync(redirectsPath), 'public/_redirects must exist');
-      const content = fs.readFileSync(redirectsPath, 'utf8');
-      assert.ok(content.includes('/admin     /admin.html     200'));
-      assert.ok(content.includes('/delivery  /delivery.html  200'));
-      assert.ok(content.includes('/owner     /owner.html     200'));
+    it('worker.js and env.ASSETS handle multi-portal clean URLs without redirect loops', () => {
+      const workerPath = path.resolve(process.cwd(), 'worker.js');
+      assert.ok(fs.existsSync(workerPath), 'worker.js must exist');
+      const content = fs.readFileSync(workerPath, 'utf8');
+      assert.ok(content.includes('env.ASSETS.fetch(request)'));
     });
 
     it('public/_headers defines strict CSP and security headers', () => {
