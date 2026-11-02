@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const FALLBACK_URL = 'https://your-project.supabase.co';
-const FALLBACK_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder';
+const FALLBACK_URL = 'https://zrgkglwqkdxmwrgepnqh.supabase.co';
+const FALLBACK_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpyZ2tnbHdxa2R4bXdyZ2VwbnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4MTQ2NzIsImV4cCI6MjEwODM5MDY3Mn0.yBECp5V7Fo8emd9mq85k4ES6vk85av1mOtv8fcWQgJY';
 
 let envUrl = '';
 let envKey = '';
