@@ -2493,6 +2493,45 @@ class QuickBiteDataService {
         localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(DEFAULT_ORDERS));
       }
 
+      // Automated Store Renewal & Clean Test Data Reset
+      const STORE_RENEW_VERSION = 'savera_paradise_renew_v1';
+      try {
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('savera_store_renew_version') !== STORE_RENEW_VERSION) {
+          this.ordersCache = [];
+          localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
+          localStorage.removeItem('quickbite_my_order_ids');
+          localStorage.removeItem('quickbite_order_status_sync');
+          localStorage.removeItem('quickbite_acknowledged_alarms');
+          localStorage.removeItem('quickbite_last_notified_order');
+          localStorage.removeItem('quickbite_rider_payouts');
+          localStorage.removeItem('quickbite_owner_handover_reconciled');
+
+          Object.keys(localStorage).forEach(k => {
+            if (k.startsWith('quickbite_cnr_start_') || k.startsWith('quickbite_order_') || k.startsWith('quickbite_payout_')) {
+              localStorage.removeItem(k);
+            }
+          });
+
+          this.dishesCache = [...DEFAULT_DISHES];
+          localStorage.setItem(STORAGE_KEYS.DISHES, JSON.stringify(DEFAULT_DISHES));
+          this.categoriesCache = [...DEFAULT_CATEGORIES];
+          localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES));
+
+          try {
+            if (typeof supabase !== 'undefined' && supabase && typeof supabase.from === 'function') {
+              supabase.from('orders').delete().neq('id', 'NON_EXISTENT_DUMMY_ID').then(({ error }) => {
+                if (error) console.warn('[Supabase] Orders wipe notice:', error.message);
+                else console.info('[Supabase] All test orders wiped successfully.');
+              }).catch(() => {});
+            }
+          } catch {}
+
+          localStorage.setItem('savera_store_renew_version', STORE_RENEW_VERSION);
+        }
+      } catch (renewErr) {
+        console.warn('[DataService] Store renew notice:', renewErr);
+      }
+
       // Populate uploaded images gallery from existing dish photos if any
       this.populateUploadedImagesFromDishes();
 
@@ -5156,7 +5195,7 @@ class QuickBiteDataService {
     return false;
   }
 
-  clearAllOrders() {
+  async clearAllOrders() {
     this.ordersCache = [];
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
     try {
@@ -5164,8 +5203,34 @@ class QuickBiteDataService {
       localStorage.removeItem('quickbite_order_status_sync');
       localStorage.removeItem('quickbite_acknowledged_alarms');
       localStorage.removeItem('quickbite_last_notified_order');
+      localStorage.removeItem('quickbite_rider_payouts');
+      localStorage.removeItem('quickbite_owner_handover_reconciled');
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('quickbite_cnr_start_') || k.startsWith('quickbite_order_') || k.startsWith('quickbite_payout_')) {
+          localStorage.removeItem(k);
+        }
+      });
     } catch {}
+
+    try {
+      if (typeof supabase !== 'undefined' && supabase && typeof supabase.from === 'function') {
+        await supabase.from('orders').delete().neq('id', 'NON_EXISTENT_DUMMY_ID');
+      }
+    } catch (e) {
+      console.warn('[Supabase] Clear orders error:', e);
+    }
+
     this.notifyChange('orders', { action: 'orders_cleared' });
+    return true;
+  }
+
+  restoreDefaultDishes() {
+    this.dishesCache = [...DEFAULT_DISHES];
+    localStorage.setItem(STORAGE_KEYS.DISHES, JSON.stringify(DEFAULT_DISHES));
+    this.categoriesCache = [...DEFAULT_CATEGORIES];
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES));
+    this.notifyChange('dishes');
+    this.notifyChange('categories');
     return true;
   }
 

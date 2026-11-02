@@ -141,6 +141,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const btnClearAllOrders = document.getElementById('btn-clear-all-orders');
+  if (btnClearAllOrders) {
+    btnClearAllOrders.addEventListener('click', async () => {
+      const confirmed = confirm('⚠️ Are you sure you want to clear all test orders and renew store data?');
+      if (!confirmed) return;
+      await dataService.clearAllOrders();
+      dataService.restoreDefaultDishes();
+      renderOrders();
+      renderDishes();
+      renderCategories();
+      calculateOrderKPIs([]);
+      showToast('✓ All test orders cleared and store data renewed!', 'success');
+    });
+  }
+
   // Initial gate check
   checkAdminSession();
 
