@@ -154,13 +154,14 @@ export function getPinRole(inputPin, env = null) {
   if (!/^\d{4,8}$/.test(cleanPin)) return null;
 
   const expectedOwnerPin = getOwnerPin(env);
-  if (safeEqual(cleanPin, '9900')) return 'owner';
+  const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+  if (!isProd && safeEqual(cleanPin, '9900')) return 'owner';
   if (expectedOwnerPin && safeEqual(cleanPin, expectedOwnerPin)) {
     return 'owner';
   }
 
   const expectedAdminPin = getAdminPin(env);
-  if (safeEqual(cleanPin, '8899')) return 'admin';
+  if (!isProd && safeEqual(cleanPin, '8899')) return 'admin';
   if (expectedAdminPin && safeEqual(cleanPin, expectedAdminPin)) {
     return 'admin';
   }
