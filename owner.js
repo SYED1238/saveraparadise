@@ -96,7 +96,7 @@ function isOwnerSessionValid() {
 // 1. DOM INITIALIZATION
 // ==============================================================
 if (typeof document !== 'undefined') {
-document.addEventListener('DOMContentLoaded', async () => {
+  const initOwnerApp = async () => {
   initClock();
   initPasscodeLock();
   initPeriodFilters();
@@ -178,7 +178,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     dataService.on('riders', () => renderDashboard());
     dataService.on('cash_settled', () => renderDashboard());
   }
-});
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initOwnerApp);
+  } else {
+    initOwnerApp();
+  }
 }
 
 // ==============================================================
@@ -352,10 +358,14 @@ function unlockOwnerPortal() {
   if (lockOverlay) lockOverlay.style.display = 'none';
   if (dashboard) dashboard.style.display = 'flex';
 
-  // Initial Sync & Render
-  dataService.syncOrdersFromSupabase(true).catch(() => {});
-  dataService.syncRidersFromSupabase().catch(() => {});
+  // Initial Sync & Render with immediate reactivity
   renderDashboard();
+  Promise.allSettled([
+    dataService.syncOrdersFromSupabase(true),
+    dataService.syncRidersFromSupabase()
+  ]).then(() => {
+    renderDashboard();
+  }).catch(() => {});
 }
 
 function showPasscodeLock() {
@@ -651,6 +661,11 @@ function renderKPICards(orders) {
   let storefrontPrepaidCount = 0;
   let deliveredCount = 0;
   let activeLiveCount = 0;
+  let activeLiveRevenue = 0;
+  let activeCodCount = 0;
+  let activeCodRevenue = 0;
+  let activeOnlineCount = 0;
+  let activeOnlineRevenue = 0;
   let cancelledCount = 0;
   let undeliveredCount = 0;
   let totalFleetKms = 0;
@@ -691,6 +706,14 @@ function renderKPICards(orders) {
       totalFleetKms += dist;
     } else if (['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup', 'on_the_way'].includes(status)) {
       activeLiveCount++;
+      activeLiveRevenue = Math.round((activeLiveRevenue + rawTotal) * 100) / 100;
+      if (isOnline) {
+        activeOnlineCount++;
+        activeOnlineRevenue = Math.round((activeOnlineRevenue + rawTotal) * 100) / 100;
+      } else {
+        activeCodCount++;
+        activeCodRevenue = Math.round((activeCodRevenue + rawTotal) * 100) / 100;
+      }
     } else if (status === 'cancelled') {
       cancelledCount++;
     } else if (status === 'undelivered') {
@@ -698,36 +721,71 @@ function renderKPICards(orders) {
     }
   });
 
-  const aov = deliveredCount > 0 ? Math.round(totalRevenue / deliveredCount) : 0;
+  const aov = deliveredCount > 0 ? Math.round(totalRevenue / deliveredCount) : (activeLiveCount > 0 ? Math.round(activeLiveRevenue / activeLiveCount) : 0);
   const avgKm = deliveredCount > 0 ? Math.round((totalFleetKms / deliveredCount) * 10) / 10 : 0;
 
-  const codPercent = totalRevenue > 0 ? Math.round((codRevenue / totalRevenue) * 100) : 0;
-  const onlinePercent = totalRevenue > 0 ? (100 - codPercent) : 0;
+  // Display revenue: if delivered orders exist show delivered sales; if only in-flight/active orders exist, show active revenue pipeline
+  const displayTotalRevenue = deliveredCount > 0 ? totalRevenue : activeLiveRevenue;
+  const displayCodRevenue = deliveredCount > 0 ? codRevenue : activeCodRevenue;
+  const displayOnlineRevenue = deliveredCount > 0 ? onlineRevenue : activeOnlineRevenue;
+
+  const effectiveTotal = displayTotalRevenue > 0 ? displayTotalRevenue : (totalRevenue + activeLiveRevenue);
+  const codPercent = effectiveTotal > 0 ? Math.round((displayCodRevenue / effectiveTotal) * 100) : 0;
+  const onlinePercent = effectiveTotal > 0 ? (100 - codPercent) : 0;
 
   // DOM Injections
   const kpiTotalRev = document.getElementById('kpi-total-revenue');
   const kpiDeliveredCount = document.getElementById('kpi-delivered-count');
+  const kpiDeliveredTag = document.getElementById('kpi-delivered-revenue-tag');
   const kpiAov = document.getElementById('kpi-aov');
 
-  if (kpiTotalRev) kpiTotalRev.textContent = `₹${totalRevenue.toLocaleString('en-IN')}`;
-  if (kpiDeliveredCount) kpiDeliveredCount.textContent = `${deliveredCount} delivered`;
-  if (kpiAov) kpiAov.textContent = `AOV: ₹${aov}`;
+  if (kpiTotalRev) kpiTotalRev.textContent = `₹${displayTotalRevenue.toLocaleString('en-IN')}`;
+  if (kpiDeliveredTag) {
+    kpiDeliveredTag.textContent = deliveredCount > 0 ? 'Delivered Orders' : (activeLiveCount > 0 ? 'Live in Prep' : 'Delivered Orders');
+  }
+  if (kpiDeliveredCount) {
+    if (deliveredCount > 0) {
+      kpiDeliveredCount.textContent = activeLiveCount > 0 ? `${deliveredCount} delivered (${activeLiveCount} live)` : `${deliveredCount} delivered`;
+    } else {
+      kpiDeliveredCount.textContent = activeLiveCount > 0 ? `0 delivered (${activeLiveCount} live in prep)` : '0 orders delivered';
+    }
+  }
+  if (kpiAov) {
+    kpiAov.textContent = deliveredCount > 0 ? `AOV: ₹${aov}` : (activeLiveCount > 0 ? `Live AOV: ₹${aov}` : 'AOV: ₹0');
+  }
 
   const kpiCodRev = document.getElementById('kpi-cod-revenue');
   const kpiCodPercent = document.getElementById('kpi-cod-percent');
   const kpiCodOrdersCount = document.getElementById('kpi-cod-orders-count');
 
-  if (kpiCodRev) kpiCodRev.textContent = `₹${codRevenue.toLocaleString('en-IN')}`;
-  if (kpiCodPercent) kpiCodPercent.textContent = `${codPercent}% of Total`;
-  if (kpiCodOrdersCount) kpiCodOrdersCount.textContent = `${codCount} cash orders`;
+  if (kpiCodRev) kpiCodRev.textContent = `₹${displayCodRevenue.toLocaleString('en-IN')}`;
+  if (kpiCodPercent) {
+    kpiCodPercent.textContent = deliveredCount > 0 ? `${codPercent}% of Total` : (activeCodCount > 0 ? `${activeCodCount} Live Cash` : '0% of Total');
+  }
+  if (kpiCodOrdersCount) {
+    if (deliveredCount > 0) {
+      kpiCodOrdersCount.textContent = activeCodCount > 0 ? `${codCount} cash (${activeCodCount} in transit)` : `${codCount} cash orders`;
+    } else {
+      kpiCodOrdersCount.textContent = activeCodCount > 0 ? `${activeCodCount} cash orders in prep` : '0 cash orders';
+    }
+  }
 
   const kpiOnlineRev = document.getElementById('kpi-online-revenue');
   const kpiOnlinePercent = document.getElementById('kpi-online-percent');
   const kpiOnlineOrdersCount = document.getElementById('kpi-online-orders-count');
 
-  if (kpiOnlineRev) kpiOnlineRev.textContent = `₹${onlineRevenue.toLocaleString('en-IN')}`;
-  if (kpiOnlinePercent) kpiOnlinePercent.textContent = `${onlinePercent}% of Total`;
-  if (kpiOnlineOrdersCount) kpiOnlineOrdersCount.textContent = doorstepUpiCount > 0 ? `${onlineCount} prepaid (${doorstepUpiCount} Doorstep UPI)` : `${onlineCount} prepaid orders`;
+  if (kpiOnlineRev) kpiOnlineRev.textContent = `₹${displayOnlineRevenue.toLocaleString('en-IN')}`;
+  if (kpiOnlinePercent) {
+    kpiOnlinePercent.textContent = deliveredCount > 0 ? `${onlinePercent}% of Total` : (activeOnlineCount > 0 ? `${activeOnlineCount} Live Online` : '0% of Total');
+  }
+  if (kpiOnlineOrdersCount) {
+    if (deliveredCount > 0) {
+      const activeText = activeOnlineCount > 0 ? ` (${activeOnlineCount} in transit)` : '';
+      kpiOnlineOrdersCount.textContent = doorstepUpiCount > 0 ? `${onlineCount} prepaid (${doorstepUpiCount} Doorstep UPI)${activeText}` : `${onlineCount} prepaid orders${activeText}`;
+    } else {
+      kpiOnlineOrdersCount.textContent = activeOnlineCount > 0 ? `${activeOnlineCount} prepaid in prep` : '0 prepaid orders';
+    }
+  }
 
   const kpiFleetKms = document.getElementById('kpi-fleet-kms');
   const kpiAvgKmTag = document.getElementById('kpi-avg-km-tag');
@@ -744,13 +802,15 @@ function renderKPICards(orders) {
   const kpiSuccessRate = document.getElementById('kpi-success-rate');
 
   const totalAttempted = deliveredCount + cancelledCount + undeliveredCount;
-  const successRate = totalAttempted > 0 ? Math.round((deliveredCount / totalAttempted) * 100) : 100;
+  const successRate = totalAttempted > 0 ? Math.round((deliveredCount / totalAttempted) * 100) : (activeLiveCount > 0 ? 100 : 0);
 
   if (kpiTotalOrders) kpiTotalOrders.textContent = orders.length;
-  if (kpiActiveLiveTag) kpiActiveLiveTag.textContent = `${activeLiveCount} Live Right Now`;
+  if (kpiActiveLiveTag) {
+    kpiActiveLiveTag.textContent = activeLiveRevenue > 0 ? `${activeLiveCount} Live (₹${activeLiveRevenue.toLocaleString('en-IN')})` : `${activeLiveCount} Live Right Now`;
+  }
   const failureText = undeliveredCount > 0 ? `${cancelledCount} cancelled • ${undeliveredCount} undelivered` : `${cancelledCount} cancelled`;
   if (kpiCancelledCount) kpiCancelledCount.textContent = failureText;
-  if (kpiSuccessRate) kpiSuccessRate.textContent = `${successRate}% completion`;
+  if (kpiSuccessRate) kpiSuccessRate.textContent = deliveredCount > 0 ? `${successRate}% completion` : (activeLiveCount > 0 ? 'In Preparation' : '0% completion');
 
   // Ratio Bar
   const barCash = document.getElementById('bar-segment-cash');
