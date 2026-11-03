@@ -3010,20 +3010,22 @@ class QuickBiteDataService {
             const fallbackPickupCode = digits.length >= 4 ? digits.slice(-4) : (digits || '1001');
 
             // Database is the authoritative Single Source of Truth
-            // Allow short optimistic window (15s) only if staff just performed a local action
+            // Allow short optimistic window (15s) only if staff just performed a local action or status sync is pending
             const isOptimistic = Boolean(local?._optimisticTimestamp && (Date.now() - local._optimisticTimestamp < 15000));
+            const hasPendingStatus = Boolean(local?.pendingStatusSync);
             const remoteRank = remote.status && ORDER_STATUS_RANKS[remote.status] !== undefined ? ORDER_STATUS_RANKS[remote.status] : -1;
             const localRank = local?.status && ORDER_STATUS_RANKS[local.status] !== undefined ? ORDER_STATUS_RANKS[local.status] : -1;
-            let effectiveStatus = (isOptimistic && remote.status !== 'cancelled' && localRank > remoteRank)
+            const preserveLocalStatus = (hasPendingStatus || (isOptimistic && (localRank > remoteRank || local?.status === 'cancelled'))) && remote.status !== 'cancelled';
+            let effectiveStatus = preserveLocalStatus
               ? local.status
               : (remote.status || local?.status || 'accepted');
-            const effectiveStepIndex = (isOptimistic && localRank > remoteRank && local && typeof local.stepIndex === 'number')
+            const effectiveStepIndex = (preserveLocalStatus && local && typeof local.stepIndex === 'number')
               ? local.stepIndex
               : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : 0));
-            const effectiveStatusLabel = (isOptimistic && localRank > remoteRank && local?.statusLabel)
+            const effectiveStatusLabel = (preserveLocalStatus && local?.statusLabel)
               ? local.statusLabel
               : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted');
-            const effectiveEta = (isOptimistic && localRank > remoteRank && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
+            const effectiveEta = (preserveLocalStatus && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
 
             const mergedOrder = {
               ...(local || {}),
@@ -3431,6 +3433,41 @@ class QuickBiteDataService {
           } catch (err) {
             console.warn(`[DataService] Offline sync exception for ${orderData.id}:`, err);
             break;
+          }
+        }
+
+        const pendingStatusOrders = list.filter(o => o && o.pendingStatusSync === true);
+        if (pendingStatusOrders.length > 0) {
+          console.log(`[DataService] Draining ${pendingStatusOrders.length} pending offline status updates to Supabase...`);
+          for (const orderData of pendingStatusOrders) {
+            try {
+              const fullPayload = {
+                status: orderData.status,
+                step_index: typeof orderData.stepIndex === 'number' ? orderData.stepIndex : 0,
+                status_label: orderData.statusLabel || 'Accepted',
+                eta: orderData.eta || '20 - 30 Minutes'
+              };
+              if (orderData.cancellationReason) fullPayload.cancellation_reason = orderData.cancellationReason;
+              if (orderData.deliveredAt) fullPayload.delivered_at = Number(orderData.deliveredAt);
+              if (orderData.assignedRiderPin) fullPayload.assigned_rider_pin = orderData.assignedRiderPin;
+              if (orderData.assignedRiderName) fullPayload.assigned_rider_name = orderData.assignedRiderName;
+              if (orderData.assignedRiderPhone) fullPayload.assigned_rider_phone = orderData.assignedRiderPhone;
+
+              const cleanId = String(orderData.id || '').replace(/^#/, '');
+              const hashId = `#${cleanId}`;
+
+              const { error } = await supabase.from('orders')
+                .update(fullPayload)
+                .or(`id.eq.${cleanId},id.eq.${hashId}`)
+                .neq('status', 'cancelled');
+
+              if (!error) {
+                delete orderData.pendingStatusSync;
+                anySynced = true;
+              }
+            } catch (statusErr) {
+              console.warn(`[DataService] Failed to sync pending status for ${orderData.id}:`, statusErr);
+            }
           }
         }
 
@@ -5146,6 +5183,7 @@ class QuickBiteDataService {
       order.statusLabel = 'Cancelled';
       order.eta = 'Order Cancelled';
       order.cancelledAt = Date.now();
+      order._optimisticTimestamp = Date.now();
       if (extraData?.cancellationReason) {
         order.cancellationReason = extraData.cancellationReason;
       }
@@ -5363,15 +5401,24 @@ class QuickBiteDataService {
       };
 
       const doUpdate = async (targetId) => {
-        const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId);
-        if (error) {
-          await supabase.from('orders').update(basePayload).eq('id', targetId);
+        try {
+          const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId).neq('status', 'cancelled');
+          if (error) {
+            const { error: baseErr } = await supabase.from('orders').update(basePayload).eq('id', targetId).neq('status', 'cancelled');
+            if (baseErr) {
+              order.pendingStatusSync = true;
+            }
+          }
+        } catch (updateErr) {
+          order.pendingStatusSync = true;
         }
       };
 
       doUpdate(orderId).then(() => {
         const altId = orderId.startsWith('#') ? cleanId : hashId;
         doUpdate(altId);
+      }).catch(() => {
+        order.pendingStatusSync = true;
       });
     } catch (err) {}
 

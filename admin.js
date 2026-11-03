@@ -11,6 +11,7 @@ import {
   sendSystemNotification,
   flashTabTitle,
   stopFlashingTabTitle,
+  getAudioContext,
   unlockAudioContext,
   requestSystemNotificationPermission,
   getSystemNotificationPermission,
@@ -1611,17 +1612,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // 4. LIVE ORDERS MANAGEMENT & TRACKING
   // ========================================================
   function calculateOrderKPIs(orders) {
-    const total = orders.length;
-    const accepted = orders.filter(o => o.status === 'accepted' || o.status === 'pending').length;
-    const cooking = orders.filter(o => o.status === 'cooking').length;
-    const ready = orders.filter(o => o.status === 'ready_for_pickup').length;
-    const outForDelivery = orders.filter(o => o.status === 'on_the_way').length;
-    const delivered = orders.filter(o => o.status === 'delivered').length;
-    const undelivered = orders.filter(o => o.status === 'undelivered').length;
-    const cancelled = orders.filter(o => o.status === 'cancelled').length;
+    const list = Array.isArray(orders) ? orders.filter(Boolean) : [];
+    const total = list.length;
+    const accepted = list.filter(o => o.status === 'accepted' || o.status === 'pending').length;
+    const cooking = list.filter(o => o.status === 'cooking').length;
+    const ready = list.filter(o => o.status === 'ready_for_pickup').length;
+    const outForDelivery = list.filter(o => o.status === 'on_the_way').length;
+    const delivered = list.filter(o => o.status === 'delivered').length;
+    const undelivered = list.filter(o => o.status === 'undelivered').length;
+    const cancelled = list.filter(o => o.status === 'cancelled').length;
 
     let revenue = 0;
-    orders.forEach(o => {
+    list.forEach(o => {
       // Exclude cancelled and undelivered returned orders from revenue
       if (o.status !== 'cancelled' && o.status !== 'undelivered') {
         const num = parseFloat(String(o.total ?? '0').replace(/[^0-9.]/g, ''));
@@ -1751,11 +1753,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const orders = dataService.getOrders();
     calculateOrderKPIs(orders);
 
-    let filtered = orders;
+    let filtered = Array.isArray(orders) ? orders.filter(Boolean) : [];
 
     // Status filter
     if (activeOrderFilter && activeOrderFilter !== 'all') {
       filtered = filtered.filter(o => {
+        if (!o) return false;
         const st = o.status || 'accepted';
         if (activeOrderFilter === 'accepted') {
           return st === 'accepted' || st === 'pending';
@@ -1766,11 +1769,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Search query
     if (orderSearchQuery) {
-      filtered = filtered.filter(o => 
-        o.id.toLowerCase().includes(orderSearchQuery) ||
-        (o.itemsSummary && o.itemsSummary.toLowerCase().includes(orderSearchQuery)) ||
-        (o.customerName && o.customerName.toLowerCase().includes(orderSearchQuery))
-      );
+      const q = String(orderSearchQuery).toLowerCase().trim();
+      filtered = filtered.filter(o => {
+        if (!o) return false;
+        const oid = String(o.id || '').toLowerCase();
+        const items = String(o.itemsSummary || '').toLowerCase();
+        const cname = String(o.customerName || '').toLowerCase();
+        const cphone = String(o.customerPhone || o.phone || '').toLowerCase();
+        const pcode = String(o.pickupCode || '').toLowerCase();
+        return oid.includes(q) ||
+               items.includes(q) ||
+               cname.includes(q) ||
+               cphone.includes(q) ||
+               pcode.includes(q);
+      });
     }
 
     if (filtered.length === 0) {
@@ -2140,7 +2152,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (orderDetailAddress) orderDetailAddress.textContent = cleanDeliveryAddress(order.deliveryAddress || 'Express Street Food Delivery');
 
     if (orderDetailNotesCard) {
-      const notes = (order.kitchenNotes || '').trim();
+      const notes = (order.kitchenNotes || order.notes || order.customerNotes || (order.addressDetails && order.addressDetails.instructions) || '').trim();
       if (notes) {
         orderDetailNotesCard.style.display = 'block';
         if (orderDetailNotes) orderDetailNotes.textContent = notes;
@@ -2153,6 +2165,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (orderDetailTotal) {
       orderDetailTotal.textContent = order.total || '₹0';
+    }
+
+    const orderDetailPaymentTag = document.getElementById('order-detail-payment-tag');
+    if (orderDetailPaymentTag) {
+      if (order.isPaidOnline === true || order.paymentMethod === 'online') {
+        orderDetailPaymentTag.className = 'readonly-payment-tag payment-online';
+        orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-circle-check"></i> Paid Online';
+      } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi') {
+        orderDetailPaymentTag.className = 'readonly-payment-tag payment-upi';
+        orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-qrcode"></i> Paid via Doorstep UPI';
+      } else {
+        orderDetailPaymentTag.className = 'readonly-payment-tag payment-cod';
+        orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-money-bill-wave"></i> Cash on Delivery (COD)';
+      }
     }
 
     updateModalStatusUI(order);
@@ -2431,6 +2457,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const rawPhone = extractPhoneFromOrder(order, dataService.getAllAddressesRaw()) || order.customerPhone || order.phone || 'N/A';
     const cleanAddr = cleanDeliveryAddress(order.address || order.deliveryAddress || 'Doorstep Delivery');
+    const bagCode = String(order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000')).padStart(4, '0');
+    const noteText = (order.notes || order.kitchenNotes || order.customerNotes || (order.addressDetails && order.addressDetails.instructions) || '').trim();
+
+    let paymentLabel = 'CASH ON DELIVERY (COD)';
+    if (order.isPaidOnline === true || order.paymentMethod === 'online') {
+      paymentLabel = 'PAID ONLINE';
+    } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi') {
+      paymentLabel = 'DOORSTEP UPI';
+    }
+
     const dateStr = new Date(order.createdAt || Date.now()).toLocaleString('en-IN', {
       day: '2-digit',
       month: 'short',
@@ -2441,13 +2477,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const items = Array.isArray(order.items) ? order.items : [];
-    const itemsRows = items.map(item => `
+    const itemsRows = items.length > 0 ? items.map(item => `
       <tr>
         <td style="text-align: left; padding: 3px 0; font-weight: 700; width: 15%;">${item.quantity || 1}x</td>
         <td style="text-align: left; padding: 3px 0; width: 60%;">${escapeHtml(item.name || 'Food Item')}</td>
         <td style="text-align: right; padding: 3px 0; font-weight: 700; width: 25%;">₹${Math.round((item.price || 0) * (item.quantity || 1))}</td>
       </tr>
-    `).join('');
+    `).join('') : `
+      <tr>
+        <td style="text-align: left; padding: 3px 0; font-weight: 700; width: 15%;">1x</td>
+        <td style="text-align: left; padding: 3px 0; width: 60%;">${escapeHtml(order.itemsSummary || 'Assorted Dishes')}</td>
+        <td style="text-align: right; padding: 3px 0; font-weight: 700; width: 25%;">${escapeHtml(order.total || '₹0')}</td>
+      </tr>
+    `;
 
     printArea.innerHTML = `
       <div class="kot-receipt-ticket">
@@ -2457,8 +2499,9 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="kot-divider">================================</div>
         <div class="kot-row"><span>ORDER NO:</span> <strong>${escapeHtml(order.id)}</strong></div>
+        <div class="kot-row"><span>BAG PICKUP CODE:</span> <strong style="font-size:15px; letter-spacing: 1px;">#${escapeHtml(bagCode)}</strong></div>
         <div class="kot-row"><span>DATE/TIME:</span> <span>${dateStr}</span></div>
-        <div class="kot-row"><span>PAYMENT:</span> <strong>${order.paymentMethod === 'online' ? 'PAID ONLINE' : 'CASH ON DELIVERY (COD)'}</strong></div>
+        <div class="kot-row"><span>PAYMENT:</span> <strong>${paymentLabel}</strong></div>
         <div class="kot-divider">--------------------------------</div>
         <div class="kot-section-title">CUSTOMER DETAILS:</div>
         <div class="kot-row"><span>Name:</span> <strong>${escapeHtml(order.customerName || 'Online Guest')}</strong></div>
@@ -2466,7 +2509,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="margin-top: 4px; font-size: 11px;">
           <strong>Address:</strong><br>${escapeHtml(cleanAddr)}
         </div>
-        ${order.notes ? `<div style="margin-top: 4px; font-size: 11px; background: #e5e7eb; padding: 4px; border-radius: 4px;"><strong>Note:</strong> ${escapeHtml(order.notes)}</div>` : ''}
+        ${noteText ? `<div style="margin-top: 4px; font-size: 11px; background: #e5e7eb; padding: 4px; border-radius: 4px;"><strong>Note:</strong> ${escapeHtml(noteText)}</div>` : ''}
         <div class="kot-divider">--------------------------------</div>
         <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
           <thead>
@@ -2523,6 +2566,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cancelOrderNote) cancelOrderNote.value = '';
     modalCancelOrderBackdrop.classList.add('open');
     modalCancelOrderBackdrop.style.display = 'flex';
+    backNav.pushStep('modal-cancel-order', () => {
+      if (modalCancelOrderBackdrop) {
+        modalCancelOrderBackdrop.classList.remove('open');
+        modalCancelOrderBackdrop.style.display = 'none';
+      }
+    });
   }
 
   function closeCancelOrderModal() {
@@ -2530,6 +2579,7 @@ document.addEventListener('DOMContentLoaded', () => {
       modalCancelOrderBackdrop.classList.remove('open');
       modalCancelOrderBackdrop.style.display = 'none';
     }
+    backNav.removeStepDirect('modal-cancel-order');
   }
 
   if (btnModalRejectOrder) {
@@ -2934,7 +2984,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isKitchenAlarmRinging) {
         stopKitchenAlarm(true);
       } else {
-        const ctx = getKitchenAudioContext();
+        const ctx = getAudioContext();
         if (ctx && ctx.state === 'suspended') {
           ctx.resume().catch(() => {});
         }
@@ -2954,7 +3004,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Unlock audio on any user gesture across the admin portal (persists across gestures for iPad/tablet longevity)
   const unlockAudioOnGesture = () => {
-    const ctx = getKitchenAudioContext();
+    const ctx = getAudioContext();
     if (ctx && ctx.state === 'suspended') {
       ctx.resume().catch(() => {});
     }
@@ -3109,6 +3159,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ringingOrdersQueue.splice(ringIdx, 1);
         if (ringingOrdersQueue.length === 0 && isKitchenAlarmRinging) {
           stopKitchenAlarm(false);
+        } else if (ringingOrdersQueue.length > 0 && isKitchenAlarmRinging) {
+          const nextOrder = ringingOrdersQueue[0];
+          if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id;
+          if (alarmBannerCustomer) alarmBannerCustomer.textContent = nextOrder.customerName || 'Customer';
         }
       }
     }
@@ -3177,6 +3231,16 @@ document.addEventListener('DOMContentLoaded', () => {
         tag: `admin-undelivered-${orderId}`
       });
       flashTabTitle(`⚠️ UNDELIVERED: ${orderId}`);
+    } else if (status === 'cancelled') {
+      playNotificationSound('cancelled');
+      const actorLabel = payload.source === 'customer' || payload.actor === 'customer' ? 'Customer' : 'Staff';
+      showToast(`❌ Order ${orderId} was CANCELLED by ${actorLabel}! (${customer})`, 'error');
+      sendSystemNotification({
+        title: `❌ Order ${orderId} Cancelled!`,
+        body: `Order for ${customer} has been cancelled. Do not prepare.`,
+        tag: `admin-cancelled-${orderId}`
+      });
+      flashTabTitle(`❌ CANCELLED: ${orderId}`);
     }
 
     renderOrders();
@@ -5180,6 +5244,10 @@ document.addEventListener('DOMContentLoaded', () => {
   backNav.registerFallbackChecker({
     isOpen: () => modalCategoryBackdrop && modalCategoryBackdrop.classList.contains('open'),
     close: () => closeCategoryModal()
+  });
+  backNav.registerFallbackChecker({
+    isOpen: () => modalCancelOrderBackdrop && modalCancelOrderBackdrop.classList.contains('open'),
+    close: () => closeCancelOrderModal()
   });
   backNav.registerFallbackChecker({
     isOpen: () => modalOrderBackdrop && modalOrderBackdrop.classList.contains('open'),

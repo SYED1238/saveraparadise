@@ -6319,7 +6319,7 @@ body.kitchen-alarm-ringing::before {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    width: 76mm !important; /* Perfect standard thermal POS roll width */
+    width: 100% !important; /* Scales cleanly on both 58mm and 80mm thermal POS rolls without clipping */
     max-width: 76mm !important;
     margin: 0 !important;
     padding: 2mm 3mm !important;
