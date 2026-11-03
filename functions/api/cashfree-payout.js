@@ -49,8 +49,12 @@ export async function onRequest(context) {
       return jsonResponse({ error: 'Bad Request', message: 'riderPin and valid amount are required' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
 
+    const cleanTransferId = (body?.transferId && typeof body.transferId === 'string' && /^payout_[a-zA-Z0-9_-]{4,64}$/.test(body.transferId))
+      ? body.transferId
+      : `payout_${riderPin}_${Date.now()}`;
+
     const result = await initiateRiderPayout({
-      transferId: `payout_${riderPin}_${Date.now()}`,
+      transferId: cleanTransferId,
       amount: Number(amount),
       riderPin,
       upiVpa,

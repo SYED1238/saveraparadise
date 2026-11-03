@@ -293,11 +293,22 @@ export async function initiateRiderPayout({
       };
     }
 
+    const status = String(data.status || 'PENDING').toUpperCase();
+    if (status === 'FAILED' || status === 'REJECTED') {
+      return {
+        success: false,
+        error: data.message || `Cashfree transfer rejected (${status})`,
+        status,
+        transferId: cleanTransferId,
+        code: data.code
+      };
+    }
+
     return {
       success: true,
       transferId: cleanTransferId,
       amount: cleanAmount,
-      status: data.status || 'PENDING',
+      status,
       utr: data.utr || null,
       paidAt: Date.now()
     };

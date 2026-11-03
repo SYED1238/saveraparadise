@@ -2983,7 +2983,7 @@ class QuickBiteDataService {
           .from('orders')
           .select('*')
           .order('created_at', { ascending: false })
-          .limit(60);
+          .limit(250);
 
         if (!error && Array.isArray(data)) {
           this._lastOrdersSyncTime = Date.now();
@@ -6465,6 +6465,13 @@ class QuickBiteDataService {
 
     // Sync to Supabase Cloud
     if (supabase) {
+      const parseBigintTs = (val) => {
+        if (!val) return null;
+        if (typeof val === 'number') return Math.round(val);
+        const parsed = Date.parse(val);
+        return !isNaN(parsed) ? parsed : (parseInt(val, 10) || null);
+      };
+
       supabase.from('riders').upsert([{
         pin: updatedRider.pin,
         id: updatedRider.id,
@@ -6474,7 +6481,7 @@ class QuickBiteDataService {
         status: updatedRider.status,
         avatar: updatedRider.avatar,
         avatar_img: updatedRider.avatarImg,
-        cash_settled_at: updatedRider.cashSettledAt
+        cash_settled_at: parseBigintTs(updatedRider.cashSettledAt)
       }], { onConflict: 'pin' }).then(({ error }) => {
         if (error) console.warn('[DataService] saveOrUpdateRider supabase error:', error.message);
       }, (err) => {
@@ -6814,16 +6821,21 @@ class QuickBiteDataService {
     });
 
     const codOrders = riderDelivered.filter(o => {
+      if (!o) return false;
+      if (o.doorstepUpi === true || o.doorstep_upi === true) return false;
+      if (o.isPaidOnline === true || o.is_paid_online === true) return false;
       const pay = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-      if (pay.includes('online') || pay.includes('upi') || pay.includes('card') || pay.includes('prepaid') || o.isPaidOnline === true) {
+      if (pay.includes('online') || pay.includes('upi') || pay.includes('card') || pay.includes('prepaid')) {
         return false;
       }
       return pay.includes('cash') || pay.includes('cod') || !pay;
     });
 
     const cashInHand = codOrders.reduce((sum, o) => {
-      const num = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
-      return sum + num;
+      const num = (typeof o.cashCollected === 'number' && o.cashCollected > 0)
+        ? o.cashCollected
+        : (Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0);
+      return Math.round((sum + num) * 100) / 100;
     }, 0);
 
     return {
@@ -6839,21 +6851,7 @@ class QuickBiteDataService {
   }
 
   settleRiderCash(riderPin) {
-    const cleanPin = String(riderPin || '').trim();
-    const riders = this.getRiders();
-    const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
-    if (idx >= 0) {
-      const settledTime = Date.now();
-      riders[idx].cashSettledAt = settledTime;
-      riders[idx].cashHandoverStatus = 'taken';
-      riders[idx].cashTakenAt = settledTime;
-      riders[idx].cashHandoverAmount = 0;
-      this.saveRiders(riders);
-      this.saveOrUpdateRider(riders[idx]);
-      this.notifyChange('cash_settled', { riderPin: cleanPin, settledAt: settledTime });
-      return { success: true, settledAt: settledTime, rider: riders[idx] };
-    }
-    return { success: false };
+    return this.confirmRiderCashTaken(riderPin);
   }
 
   requestRiderCashHandover(riderPin) {
@@ -6880,8 +6878,22 @@ class QuickBiteDataService {
     const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
     if (idx >= 0) {
       const summary = this.getRiderCashSummary(cleanPin);
-      const amount = Number(riders[idx].cashHandoverAmount || summary.cashInHand || 0);
-      const settledTime = Date.now();
+      // Dynamic handover reconciliation: capture the full cash in hand even if a COD order was delivered mid-handover
+      const amount = Math.max(Number(riders[idx].cashHandoverAmount || 0), Number(summary.cashInHand || 0));
+
+      // Guard against device clock drift: ensure settledTime is strictly >= all delivered order timestamps
+      const parseTs = (val) => {
+        if (!val) return 0;
+        if (typeof val === 'number') return val;
+        const p = Date.parse(val);
+        return isNaN(p) ? (Number(val) || 0) : p;
+      };
+      const maxDeliveredTs = (summary.codOrders || []).reduce((max, o) => {
+        const ts = parseTs(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
+        return Math.max(max, ts);
+      }, 0);
+      const settledTime = Math.max(Date.now(), maxDeliveredTs + 1000);
+
       riders[idx].cashSettledAt = settledTime;
       riders[idx].cashHandoverStatus = 'taken';
       riders[idx].cashTakenAt = settledTime;
@@ -7122,7 +7134,17 @@ class QuickBiteDataService {
       return matchesPin || matchesName;
     });
 
-    const payoutResult = this.calculateRiderPayout(delivered, cfg);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStartMs = todayStart.getTime();
+
+    // Bound delivered orders to today's shift window to prevent historical carryover from inflating milestone surge
+    const shiftDelivered = delivered.filter(o => {
+      const deliveredTime = parseTs(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
+      return deliveredTime >= todayStartMs;
+    });
+
+    const payoutResult = this.calculateRiderPayout(shiftDelivered, cfg);
 
     const paidTs = parseTs(rider.payoutPaidAt);
     const paidDate = paidTs ? new Date(paidTs) : null;
@@ -7130,8 +7152,8 @@ class QuickBiteDataService {
     const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
     const paidAmount = Number(rider.payoutAmountPaid) || 0;
 
-    // Filter orders delivered AFTER last payout payment
-    const unpaidOrders = delivered.filter(o => {
+    // Filter orders delivered AFTER last payout payment during today's shift
+    const unpaidOrders = shiftDelivered.filter(o => {
       if (!isPaidToday || !paidTs) return true;
       const deliveredTime = parseTs(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
       return deliveredTime > paidTs;
@@ -7194,6 +7216,7 @@ class QuickBiteDataService {
       riders[idx].payoutPaidAt = paidTime;
       riders[idx].payoutAmountPaid = Number(amount) || 0;
       this.saveRiders(riders);
+      this.saveOrUpdateRider(riders[idx]);
       this.notifyChange('payout_paid', { riderPin: cleanPin, paidAt: paidTime, amount });
       return { success: true, paidAt: paidTime, amount, rider: riders[idx] };
     }

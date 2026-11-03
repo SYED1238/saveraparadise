@@ -49,8 +49,53 @@ let ownerOrdersPage = 1;
 const OWNER_ORDERS_PER_PAGE = 25;
 
 // ==============================================================
+// In-flight payout lock tracking to prevent race conditions during 15s polls
+const activeInFlightPayoutPins = new Set();
+
+// Client-side brute-force lockout tracking for Owner PIN keypad
+let ownerFailedAttempts = 0;
+let ownerLockoutUntil = 0;
+
+/**
+ * Standardized predicate to determine whether an order is paid online
+ * across all Owner views (Overview, Fleet, Orders, Invoices, CSV, Payouts).
+ */
+export function isOnlineOrderPayment(order) {
+  if (!order) return false;
+  if (order.doorstepUpi === true || order.doorstep_upi === true) return true;
+  if (order.isPaidOnline === true || order.is_paid_online === true) return true;
+  const pm = String(order.paymentMethod || order.payment_method || '').toLowerCase();
+  return pm.includes('online') || pm.includes('upi') || pm.includes('card') || pm.includes('prepaid');
+}
+
+/**
+ * Validates whether an active owner session exists with a cryptographically valid token.
+ */
+function isOwnerSessionValid() {
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview')) {
+    return true;
+  }
+  if (!isStaffSessionActive('owner')) return false;
+  if (typeof sessionStorage === 'undefined') return false;
+  const token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token');
+  if (!token || !token.includes('.')) return false;
+  try {
+    const parts = token.split('.');
+    if (parts.length === 2) {
+      const base64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
+      const json = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+      const payload = JSON.parse(json);
+      if (payload.role === 'owner' && payload.exp && (payload.exp - Date.now() > 0)) {
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
 // 1. DOM INITIALIZATION
 // ==============================================================
+if (typeof document !== 'undefined') {
 document.addEventListener('DOMContentLoaded', async () => {
   initClock();
   initPasscodeLock();
@@ -59,8 +104,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initNavigation();
   initActions();
 
-  // Check existing session using cryptographic token
-  if (isStaffSessionActive('owner') || (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview'))) {
+  // Check existing session using cryptographic token and expiry validation
+  if (isOwnerSessionValid()) {
     if (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview') && dataService.getOrders().length === 0) {
       try {
         const now = new Date().toISOString();
@@ -137,13 +182,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Periodic poll fallback (every 15s)
   setInterval(() => {
-    if (isOwnerAuthenticated && !document.hidden) {
+    if (isOwnerAuthenticated && typeof document !== 'undefined' && !document.hidden) {
       dataService.syncOrdersFromSupabase(true).catch(() => {});
       dataService.syncRidersFromSupabase().catch(() => {});
       renderDashboard();
     }
   }, 15000);
 });
+}
 
 // ==============================================================
 // 2. PASSCODE LOCK & AUTHENTICATION
@@ -177,6 +223,16 @@ function initPasscodeLock() {
 }
 
 function handlePinInput(key) {
+  if (ownerLockoutUntil > Date.now()) {
+    const remainingSecs = Math.ceil((ownerLockoutUntil - Date.now()) / 1000);
+    const errorEl = document.getElementById('owner-lock-error');
+    if (errorEl) {
+      errorEl.style.display = 'block';
+      errorEl.textContent = `⏳ Security Lockout: Too many failed attempts. Please wait ${remainingSecs}s.`;
+    }
+    return;
+  }
+
   const errorEl = document.getElementById('owner-lock-error');
   if (errorEl) errorEl.style.display = 'none';
 
@@ -262,6 +318,8 @@ async function verifyOwnerPin(pin) {
   }
 
   if (isValid) {
+    ownerFailedAttempts = 0;
+    ownerLockoutUntil = 0;
     // If legacy plaintext pin was used, migrate to salted hash and delete plaintext
     if (settings.ownerPin) {
       settings.ownerPinHash = inputHash;
@@ -272,10 +330,17 @@ async function verifyOwnerPin(pin) {
     setStaffSessionActive('owner');
     unlockOwnerPortal();
   } else {
+    ownerFailedAttempts += 1;
+    const isLocked = ownerFailedAttempts >= 5;
+    if (isLocked) {
+      ownerLockoutUntil = Date.now() + 30000;
+    }
     const errorEl = document.getElementById('owner-lock-error');
     if (errorEl) {
       errorEl.style.display = 'block';
-      errorEl.textContent = '❌ Incorrect Owner PIN. Please try again.';
+      errorEl.textContent = isLocked
+        ? '⏳ Security Lockout: Too many failed attempts. Please wait 30s.'
+        : `❌ Incorrect Owner PIN. (${Math.max(0, 5 - ownerFailedAttempts)} attempts remaining)`;
     }
     const pinDisplay = document.getElementById('owner-pin-display');
     if (pinDisplay) {
@@ -444,14 +509,16 @@ function getPeriodDateBounds(period) {
   }
 
   if (period === 'week') {
-    const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    // 7 days including today (today + 6 past days = 7 days)
+    const start = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
     start.setHours(0, 0, 0, 0);
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     return { start, end, label: `Last 7 Days (${start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})` };
   }
 
   if (period === 'month') {
-    const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    // 30 days including today (today + 29 past days = 30 days)
+    const start = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000);
     start.setHours(0, 0, 0, 0);
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     return { start, end, label: `Last 30 Days (${start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})` };
@@ -476,12 +543,68 @@ function getFilteredOrders() {
   return allOrders.filter(o => {
     if (!o) return false;
     const orderTimestamp = o.createdAt ? new Date(o.createdAt).getTime() : (o.updatedAt ? new Date(o.updatedAt).getTime() : 0);
-    if (!orderTimestamp) return true; // Include if untimestamped
+    if (!orderTimestamp) return currentPeriod === 'all';
     return orderTimestamp >= bounds.start.getTime() && orderTimestamp <= bounds.end.getTime();
   });
 }
 
 // ==============================================================
+/**
+ * Unconditionally updates the Cash Drawer Summary card on the Overview Tab
+ * (#owner-drawer-summary-card: #drawer-cod-total, #drawer-payout-total, #drawer-net-total, #drawer-net-sub-total)
+ * based on period-matched COD food cash collected vs. period-matched rider delivery payouts.
+ */
+function updateCounterCashDrawerSummary(orders, codRevenue) {
+  const drawerCodEl = document.getElementById('drawer-cod-total');
+  const drawerPayoutEl = document.getElementById('drawer-payout-total');
+  const drawerNetEl = document.getElementById('drawer-net-total');
+  const drawerNetSubEl = document.getElementById('drawer-net-sub-total');
+
+  const deliveredOrders = (orders || []).filter(o => o && String(o.status || '').toLowerCase() === 'delivered');
+  const codOrders = deliveredOrders.filter(o => !isOnlineOrderPayment(o));
+  const periodCodTotal = (typeof codRevenue === 'number')
+    ? codRevenue
+    : codOrders.reduce((sum, o) => {
+        const cash = (typeof o.cashCollected === 'number' && o.cashCollected > 0)
+          ? o.cashCollected
+          : (Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0);
+        return Math.round((sum + cash) * 100) / 100;
+      }, 0);
+
+  // Group delivered orders by rider to calculate period payouts accurately
+  const payoutConfig = dataService.getPayoutConfig();
+  let periodPayoutTotal = 0;
+
+  const ordersByRider = new Map();
+  deliveredOrders.forEach(o => {
+    const rPin = String(o.assignedRiderPin || '').trim();
+    const rName = (o.assignedRiderName || '').trim().toLowerCase();
+    const key = rPin || rName || 'unassigned';
+    if (!ordersByRider.has(key)) ordersByRider.set(key, []);
+    ordersByRider.get(key).push(o);
+  });
+
+  ordersByRider.forEach((rOrders) => {
+    const payoutResult = dataService.calculateRiderPayout(rOrders, payoutConfig);
+    periodPayoutTotal = Math.round((periodPayoutTotal + (payoutResult.exactPayout || payoutResult.totalPayout || 0)) * 100) / 100;
+  });
+
+  const periodNetTotal = Math.round((periodCodTotal - periodPayoutTotal) * 100) / 100;
+
+  if (drawerCodEl) drawerCodEl.textContent = `₹${periodCodTotal.toLocaleString('en-IN')}`;
+  if (drawerPayoutEl) drawerPayoutEl.textContent = `₹${periodPayoutTotal.toLocaleString('en-IN')}`;
+  if (drawerNetEl) {
+    if (periodNetTotal >= 0) {
+      drawerNetEl.textContent = `₹${periodNetTotal.toLocaleString('en-IN')}`;
+      drawerNetEl.className = 'drawer-headline-amount num-emerald';
+    } else {
+      drawerNetEl.textContent = `−₹${Math.abs(periodNetTotal).toLocaleString('en-IN')}`;
+      drawerNetEl.className = 'drawer-headline-amount num-amber';
+    }
+  }
+  if (drawerNetSubEl) drawerNetSubEl.textContent = `₹${periodNetTotal.toLocaleString('en-IN')}`;
+}
+
 // 6. DASHBOARD MASTER RENDERER
 // ==============================================================
 function renderDashboard() {
@@ -494,7 +617,10 @@ function renderDashboard() {
   // 1. Render Financial & Operations KPIs (Always calculated for KPI cards and header)
   renderKPICards(orders);
 
-  // 2. Selective View Rendering: only render DOM elements for the currently active tab
+  // 2. Unconditionally sync Cash Drawer Summary on Overview Tab
+  updateCounterCashDrawerSummary(orders);
+
+  // 3. Selective View Rendering: only render DOM elements for the currently active tab
   if (activeView === 'view-fleet') {
     renderRiderFleetTable(orders);
   } else if (activeView === 'view-orders') {
@@ -504,10 +630,16 @@ function renderDashboard() {
   } else if (activeView === 'view-payouts') {
     renderKmPayoutsView(orders);
   } else if (activeView === 'view-overview' || !activeView) {
-    // Overview tab is active; renderKPICards already populated the KPI metrics
+    // Overview tab is active; renderKPICards & updateCounterCashDrawerSummary populated the cards
   }
 
-  // 3. Update Navigation Badges
+  // 4. Live Reactivity: If invoice receipt modal is open, refresh with fresh order data
+  if (activeModalOrder && document.getElementById('owner-invoice-modal')?.style.display === 'flex') {
+    const freshOrder = orders.find(o => o && (o.id === activeModalOrder.id || o.cleanId === activeModalOrder.cleanId));
+    if (freshOrder) openInvoiceModal(freshOrder);
+  }
+
+  // 5. Update Navigation Badges
   updateNavigationBadges(orders);
 }
 
@@ -518,8 +650,15 @@ function renderKPICards(orders) {
   let totalRevenue = 0;
   let codRevenue = 0;
   let onlineRevenue = 0;
+  let doorstepUpiRevenue = 0;
+  let storefrontPrepaidRevenue = 0;
+  let subtotalRevenue = 0;
+  let deliveryFeeRevenue = 0;
+  let discountTotal = 0;
   let codCount = 0;
   let onlineCount = 0;
+  let doorstepUpiCount = 0;
+  let storefrontPrepaidCount = 0;
   let deliveredCount = 0;
   let activeLiveCount = 0;
   let cancelledCount = 0;
@@ -529,18 +668,31 @@ function renderKPICards(orders) {
   orders.forEach(o => {
     const status = String(o.status || '').toLowerCase();
     const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
-    const payment = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-    const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || Boolean(o.isPaidOnline);
+    const subtotal = Number(o.subtotal || o.subTotal || 0) || (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (Number(it.price || 0) * (it.quantity || 1)), 0) : rawTotal);
+    const delFee = Number(o.deliveryFee || o.delivery_fee || 0);
+    const disc = Number(o.discount || o.discountAmount || 0);
+    const isOnline = isOnlineOrderPayment(o);
+    const isDoorstep = Boolean(o.doorstepUpi || o.doorstep_upi || String(o.paymentMethod || o.payment_method || '').toLowerCase().includes('doorstep'));
 
     if (status === 'delivered') {
       deliveredCount++;
-      totalRevenue += rawTotal;
+      totalRevenue = Math.round((totalRevenue + rawTotal) * 100) / 100;
+      subtotalRevenue = Math.round((subtotalRevenue + subtotal) * 100) / 100;
+      deliveryFeeRevenue = Math.round((deliveryFeeRevenue + delFee) * 100) / 100;
+      discountTotal = Math.round((discountTotal + disc) * 100) / 100;
 
       if (isOnline) {
-        onlineRevenue += rawTotal;
+        onlineRevenue = Math.round((onlineRevenue + rawTotal) * 100) / 100;
         onlineCount++;
+        if (isDoorstep) {
+          doorstepUpiRevenue = Math.round((doorstepUpiRevenue + rawTotal) * 100) / 100;
+          doorstepUpiCount++;
+        } else {
+          storefrontPrepaidRevenue = Math.round((storefrontPrepaidRevenue + rawTotal) * 100) / 100;
+          storefrontPrepaidCount++;
+        }
       } else {
-        codRevenue += rawTotal;
+        codRevenue = Math.round((codRevenue + rawTotal) * 100) / 100;
         codCount++;
       }
 
@@ -585,7 +737,7 @@ function renderKPICards(orders) {
 
   if (kpiOnlineRev) kpiOnlineRev.textContent = `₹${onlineRevenue.toLocaleString('en-IN')}`;
   if (kpiOnlinePercent) kpiOnlinePercent.textContent = `${onlinePercent}% of Total`;
-  if (kpiOnlineOrdersCount) kpiOnlineOrdersCount.textContent = `${onlineCount} prepaid orders`;
+  if (kpiOnlineOrdersCount) kpiOnlineOrdersCount.textContent = doorstepUpiCount > 0 ? `${onlineCount} prepaid (${doorstepUpiCount} Doorstep UPI)` : `${onlineCount} prepaid orders`;
 
   const kpiFleetKms = document.getElementById('kpi-fleet-kms');
   const kpiAvgKmTag = document.getElementById('kpi-avg-km-tag');
@@ -676,8 +828,7 @@ function renderRiderFleetTable(orders) {
     stat.totalKms += dist;
 
     const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
-    const payment = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-    const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || payment.includes('prepaid') || Boolean(o.isPaidOnline) || Boolean(o.doorstepUpi);
+    const isOnline = isOnlineOrderPayment(o);
 
     if (isOnline) {
       stat.onlineOrdersCount++;
@@ -850,7 +1001,7 @@ function renderRiderFleetTable(orders) {
           statusClass = 'pay';
           statusTitle = 'PAY RIDER FROM DRAWER';
           statusText = `Pay ₹${Math.abs(netDeposit).toLocaleString('en-IN')}`;
-          statusFormula = `Delivered ${online} online orders (no COD collected)`;
+          statusFormula = online > 0 ? `Delivered ${online} online orders • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}` : `COD Handed Over • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}`;
         } else if (netDeposit === 0 && deliveryCount > 0) {
           statusClass = 'balanced';
           statusTitle = 'ALL BALANCED & SETTLED';
@@ -1021,8 +1172,7 @@ function renderOrdersTable(orders) {
   let displayedOrders = orders.filter(o => {
     if (!o) return false;
     const status = String(o.status || '').toLowerCase();
-    const payment = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-    const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || Boolean(o.isPaidOnline);
+    const isOnline = isOnlineOrderPayment(o);
 
     if (orderStatusFilter === 'active') {
       if (!['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup', 'on_the_way'].includes(status)) return false;
@@ -1103,8 +1253,7 @@ function renderOrdersTable(orders) {
     const itemsSummary = items.map(it => `${it.quantity || 1}x ${it.name}`).join(', ') || 'Food items';
 
     const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
-    const payment = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-    const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || Boolean(o.isPaidOnline);
+    const isOnline = isOnlineOrderPayment(o);
 
     const riderName = o.assignedRiderName ? escapeHtml(o.assignedRiderName) : '<span style="color:#64748b;">Unassigned</span>';
 
@@ -1190,8 +1339,7 @@ function renderOrdersTable(orders) {
         const items = Array.isArray(o.items) ? o.items : [];
         const itemsSummary = items.map(it => `${it.quantity || 1}x ${it.name}`).join(', ') || 'Food items';
         const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
-        const payment = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-        const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || Boolean(o.isPaidOnline);
+        const isOnline = isOnlineOrderPayment(o);
         const riderName = o.assignedRiderName ? escapeHtml(o.assignedRiderName) : 'Unassigned';
         const status = String(o.status || 'pending').toLowerCase();
 
@@ -1336,8 +1484,10 @@ function openInvoiceModal(order) {
 
   const items = Array.isArray(order.items) ? order.items : [];
   const rawTotal = Number(String(order.total || '0').replace(/[^0-9.]/g, '')) || 0;
-  const payment = String(order.paymentMethod || order.payment_method || '').toLowerCase();
-  const isOnline = payment.includes('online') || payment.includes('upi') || payment.includes('card') || Boolean(order.isPaidOnline);
+  const subtotal = Number(order.subtotal || order.subTotal || 0) || items.reduce((s, it) => s + (Number(it.price || 0) * (it.quantity || 1)), 0);
+  const delFee = Number(order.deliveryFee || order.delivery_fee || 0);
+  const disc = Number(order.discount || order.discountAmount || 0);
+  const isOnline = isOnlineOrderPayment(order);
 
   modalBody.innerHTML = `
     <div style="background: #F8FAFC; padding: 14px; border-radius: 10px; border: 1px solid var(--owner-border);">
@@ -1374,6 +1524,23 @@ function openInvoiceModal(order) {
     </div>
 
     <div style="background: #FEF3C7; padding: 14px; border-radius: 10px; border: 1px solid #FDE68A;">
+      ${subtotal > 0 && (delFee > 0 || disc > 0) ? `
+      <div style="display: flex; justify-content: space-between; font-size: 0.84rem; color: #78350F; margin-bottom: 4px;">
+        <span>Food Subtotal:</span>
+        <span style="font-weight: 600;">₹${subtotal.toLocaleString('en-IN')}</span>
+      </div>
+      ${delFee > 0 ? `
+      <div style="display: flex; justify-content: space-between; font-size: 0.84rem; color: #78350F; margin-bottom: 4px;">
+        <span>Delivery Fee:</span>
+        <span style="font-weight: 600;">+₹${delFee.toLocaleString('en-IN')}</span>
+      </div>` : ''}
+      ${disc > 0 ? `
+      <div style="display: flex; justify-content: space-between; font-size: 0.84rem; color: #047857; margin-bottom: 6px;">
+        <span>Discount Savings:</span>
+        <span style="font-weight: 600;">−₹${disc.toLocaleString('en-IN')}</span>
+      </div>` : ''}
+      <div style="border-top: 1px dashed #FCD34D; margin: 6px 0;"></div>
+      ` : ''}
       <div style="display: flex; justify-content: space-between; font-size: 1.05rem; font-weight: 800; color: var(--owner-text);">
         <span>Total Bill Amount:</span>
         <span style="color: #B45309;">₹${rawTotal.toLocaleString('en-IN')}</span>
@@ -1736,13 +1903,40 @@ function handleOwnerRiderSubmit(e) {
     pin = dataService.generateUniqueRiderPin();
   }
 
-  // If changing PIN, remove old PIN entry
+  let saved;
+  const formattedPhone = phone.startsWith('+') ? phone : (cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : phone);
+
   if (originalPin && originalPin !== pin) {
+    const existingRider = dataService.getRiderByPin(originalPin) || {};
+    const updatedRider = {
+      ...existingRider,
+      pin,
+      name,
+      phone: formattedPhone,
+      vehicle
+    };
+
+    // Reassign existing orders pointing to originalPin so deliveries and cash records are preserved
+    const allOrders = dataService.getOrders();
+    let ordersChanged = false;
+    allOrders.forEach(o => {
+      if (o && String(o.assignedRiderPin) === String(originalPin)) {
+        o.assignedRiderPin = pin;
+        o.assignedRiderName = name;
+        ordersChanged = true;
+      }
+    });
+    if (ordersChanged) {
+      dataService.saveOrders(allOrders);
+    }
+
+    // Delete old PIN entry and save updated rider
     dataService.deleteRider(originalPin);
+    saved = dataService.saveOrUpdateRider(updatedRider);
+  } else {
+    saved = dataService.saveOrUpdateRider({ pin, name, phone: formattedPhone, vehicle });
   }
 
-  const formattedPhone = phone.startsWith('+') ? phone : (cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : phone);
-  const saved = dataService.saveOrUpdateRider({ pin, name, phone: formattedPhone, vehicle });
   closeOwnerRiderModal();
   renderDashboard();
   showToast(`✅ Delivery boy "${saved.name}" saved! Secret Login PIN: ${saved.pin}`, 'success');
@@ -2476,6 +2670,9 @@ function renderKmPayoutsView(orders) {
     const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
     const paidAmount = Number(r.payoutAmountPaid) || (payoutSummary ? payoutSummary.paidAmount : calculatedPayout);
 
+    const hasUnpaidBalance = (payoutBalance !== undefined) ? payoutBalance > 0 : (!isPaidToday && calculatedPayout > 0);
+    const currentPayable = (payoutBalance !== undefined && payoutBalance > 0) ? payoutBalance : calculatedPayout;
+
     return {
       pin: r.pin,
       name: r.name,
@@ -2485,6 +2682,10 @@ function renderKmPayoutsView(orders) {
       kms: roundedKms,
       modelBadge,
       calculatedPayout,
+      exactPayout: payoutResult.exactPayout,
+      payoutBalance,
+      hasUnpaidBalance,
+      currentPayable,
       cashInHand,
       isPaidToday,
       paidTime,
@@ -2501,8 +2702,11 @@ function renderKmPayoutsView(orders) {
 
       const hasUnpaidBalance = (st.payoutBalance !== undefined) ? st.payoutBalance > 0 : (!st.isPaidToday && st.calculatedPayout > 0);
       const currentPayable = (st.payoutBalance !== undefined && st.payoutBalance > 0) ? st.payoutBalance : st.calculatedPayout;
-      const actionBtn = hasUnpaidBalance
-        ? `
+      let actionBtn = '';
+      if (activeInFlightPayoutPins.has(st.pin)) {
+        actionBtn = `<button type="button" class="btn-payout-upi" disabled style="opacity:0.7; cursor:wait;"><i class="fa-solid fa-spinner fa-spin"></i> Processing...</button>`;
+      } else if (hasUnpaidBalance) {
+        actionBtn = `
           <div style="display:flex; gap:6px; justify-content:center;">
             <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${currentPayable}" title="Mark Paid in Cash from Drawer">
               <i class="fa-solid fa-money-bill-wave"></i> Cash (₹${currentPayable})
@@ -2511,8 +2715,10 @@ function renderKmPayoutsView(orders) {
               <i class="fa-solid fa-bolt"></i> UPI (₹${currentPayable})
             </button>
           </div>
-        `
-        : `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-check"></i> Paid</button>`;
+        `;
+      } else {
+        actionBtn = `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-check"></i> Paid</button>`;
+      }
 
       return `
         <tr>
@@ -2581,20 +2787,24 @@ function renderKmPayoutsView(orders) {
             <div style="font-size: 0.78rem; color: var(--owner-text-muted);">
               COD Cash: <strong class="num-amber">₹${st.cashInHand.toLocaleString('en-IN')}</strong>
             </div>
-            ${st.isPaidToday ? `
-              <button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;">
-                <i class="fa-solid fa-check"></i> Paid Today
+            ${activeInFlightPayoutPins.has(st.pin) ? `
+              <button type="button" class="btn-payout-upi" disabled style="opacity:0.7; cursor:wait;">
+                <i class="fa-solid fa-spinner fa-spin"></i> Processing...
               </button>
-            ` : `
+            ` : (st.hasUnpaidBalance ? `
               <div style="display:flex; gap:6px;">
-                <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${st.calculatedPayout}">
+                <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}">
                   <i class="fa-solid fa-money-bill-wave"></i> Cash
                 </button>
-                <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${st.calculatedPayout}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}">
+                <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}">
                   <i class="fa-solid fa-bolt"></i> UPI
                 </button>
               </div>
-            `}
+            ` : `
+              <button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;">
+                <i class="fa-solid fa-check"></i> Paid
+              </button>
+            `)}
           </div>
         </div>
       `;
@@ -2624,27 +2834,32 @@ function renderKmPayoutsView(orders) {
       const amount = Number(btn.getAttribute('data-amount')) || 0;
       const name = btn.getAttribute('data-name') || 'Delivery Partner';
       const phone = btn.getAttribute('data-phone') || '';
-      if (!pin || amount <= 0) return;
+      if (!pin || amount <= 0 || activeInFlightPayoutPins.has(pin)) return;
 
       const confirmed = confirm(`⚡ Initiate Cashfree Instant UPI Payout of ₹${amount.toLocaleString('en-IN')} to ${name} (${phone || 'Rider'})?`);
       if (!confirmed) return;
 
+      activeInFlightPayoutPins.add(pin);
       btn.disabled = true;
       btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
 
       try {
         const token = (typeof ensureAdminToken === 'function')
           ? await ensureAdminToken('owner')
-          : (sessionStorage.getItem('quickbite_admin_token') || '');
+          : (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || '');
+        const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const deterministicTransferId = `payout_${pin}_${dateKey}_${Date.now()}`;
+
         const resp = await fetch('/api/cashfree-payout', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token || sessionStorage.getItem('quickbite_admin_token') || ''}`,
-            'x-admin-token': token || sessionStorage.getItem('quickbite_admin_token') || ''
+            'Authorization': `Bearer ${token || ''}`,
+            'x-admin-token': token || ''
           },
           body: JSON.stringify({
             riderPin: pin,
+            transferId: deterministicTransferId,
             amount,
             phone,
             name,
@@ -2652,7 +2867,7 @@ function renderKmPayoutsView(orders) {
           })
         });
         const res = await resp.json();
-        if (res && res.success) {
+        if (res && res.success && (res.status === 'SUCCESS' || res.status === 'RECEIVED' || res.status === 'PENDING' || !res.status)) {
           dataService.markRiderPayoutPaid(pin, amount);
           playNotificationSound('payout_received');
           triggerDeviceVibration([120, 60, 180]);
@@ -2664,15 +2879,15 @@ function renderKmPayoutsView(orders) {
             tag: `owner-payout-${pin}`,
             data: { url: '/owner.html' }
           });
-          renderDashboard();
         } else {
           throw new Error(res.message || 'Payout transfer failed');
         }
       } catch (err) {
         console.error('[OwnerPayout] Instant transfer error:', err);
         showToast(`❌ Cashfree payout failed: ${err.message || 'Transfer could not be completed'}`, 'error');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Cashfree UPI';
+      } finally {
+        activeInFlightPayoutPins.delete(pin);
+        renderDashboard();
       }
     };
   });
@@ -2695,8 +2910,7 @@ function printExecutiveReport() {
       deliveredCount++;
       const num = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
       totalRev += num;
-      const payStr = String(o.paymentMethod || o.payment_method || '').toLowerCase();
-      const isOnline = payStr.includes('online') || payStr.includes('upi') || payStr.includes('card') || Boolean(o.isPaidOnline) || Boolean(o.doorstepUpi);
+      const isOnline = isOnlineOrderPayment(o);
       if (isOnline) onlineRev += num;
       else codRev += num;
 
@@ -2751,6 +2965,23 @@ function printExecutiveReport() {
   window.print();
 }
 
+/**
+ * Neutralizes CSV Formula Injection (CWE-1236).
+ * Any cell value starting with =, +, -, @, \t, or \r is prefixed with a single quote (')
+ * to force spreadsheet programs (Excel, Calc, Sheets) to treat it strictly as text.
+ */
+export function sanitizeCsvCell(val) {
+  if (val === null || val === undefined) return '""';
+  let str = String(val);
+  const trimmed = str.trim();
+  const firstRaw = str.charAt(0);
+  const firstTrimmed = trimmed.charAt(0);
+  if (firstRaw === '\t' || firstRaw === '\r' || firstTrimmed === '=' || firstTrimmed === '+' || firstTrimmed === '-' || firstTrimmed === '@') {
+    str = "'" + str;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
 function exportOrdersToCSV() {
   const bounds = getPeriodDateBounds(currentPeriod);
   const orders = getFilteredOrders();
@@ -2777,32 +3008,26 @@ function exportOrdersToCSV() {
     const dateStr = dateObj.toLocaleDateString('en-IN');
     const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-    const custName = `"${String(o.customerName || o.customer_name || 'Customer').replace(/"/g, '""')}"`;
-    const phone = `"${String(extractPhoneFromOrder(o) || '').replace(/"/g, '""')}"`;
-    const addr = `"${String(cleanDeliveryAddress(o.deliveryAddress || o.delivery_address || '')).replace(/"/g, '""')}"`;
     const dist = Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0).toFixed(1);
-
     const payment = String(o.paymentMethod || o.payment_method || 'COD');
     const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
     const status = String(o.status || 'pending');
-    const rider = `"${String(o.assignedRiderName || 'Unassigned').replace(/"/g, '""')}"`;
-
     const items = Array.isArray(o.items) ? o.items : [];
-    const itemsStr = `"${items.map(it => `${it.quantity || 1}x ${it.name}`).join('; ').replace(/"/g, '""')}"`;
+    const itemsSummary = items.map(it => `${it.quantity || 1}x ${it.name}`).join('; ');
 
     return [
-      cleanId,
-      dateStr,
-      timeStr,
-      custName,
-      phone,
-      addr,
-      dist,
-      payment,
-      rawTotal,
-      status,
-      rider,
-      itemsStr
+      sanitizeCsvCell(cleanId),
+      sanitizeCsvCell(dateStr),
+      sanitizeCsvCell(timeStr),
+      sanitizeCsvCell(o.customerName || o.customer_name || 'Customer'),
+      sanitizeCsvCell(extractPhoneFromOrder(o) || ''),
+      sanitizeCsvCell(cleanDeliveryAddress(o.deliveryAddress || o.delivery_address || '')),
+      sanitizeCsvCell(dist),
+      sanitizeCsvCell(payment),
+      sanitizeCsvCell(rawTotal),
+      sanitizeCsvCell(status),
+      sanitizeCsvCell(o.assignedRiderName || 'Unassigned'),
+      sanitizeCsvCell(itemsSummary)
     ].join(',');
   });
 

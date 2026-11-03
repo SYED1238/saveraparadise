@@ -33,6 +33,24 @@ export default async function handler(req, res) {
     const eventType = payload.type || '';
     const eventData = payload.data || {};
 
+    // Process payout transfer webhooks (TRANSFER_SUCCESS, TRANSFER_FAILED, etc.)
+    if (eventType.startsWith('TRANSFER_')) {
+      const transferId = String(eventData.transfer_id || eventData.transferId || '');
+      const transferStatus = String(eventData.status || eventType.replace('TRANSFER_', '')).toUpperCase();
+      const utr = String(eventData.utr || '');
+      const amount = Number(eventData.transfer_amount || eventData.amount || 0);
+
+      return res.status(200).json({
+        success: true,
+        transferId,
+        status: transferStatus,
+        utr,
+        amount,
+        eventType,
+        message: 'Payout transfer webhook acknowledged'
+      });
+    }
+
     // Process payment success
     if (eventType === 'PAYMENT_SUCCESS_WEBHOOK' || eventType === 'PAYMENT_CAPTURED') {
       const cfOrderId = eventData.order?.order_id || '';

@@ -210,9 +210,10 @@ export function getAdminAuthHeaders() {
  * If token is missing or expired, fetches a fresh token via /api/admin-auth.
  * @returns {Promise<string|null>}
  */
-export async function ensureAdminToken() {
+export async function ensureAdminToken(requiredRole = 'admin') {
   if (typeof sessionStorage !== 'undefined') {
-    let token = sessionStorage.getItem('quickbite_admin_token');
+    const tokenKey = requiredRole === 'owner' ? 'quickbite_owner_token' : 'quickbite_admin_token';
+    let token = sessionStorage.getItem(tokenKey) || sessionStorage.getItem('quickbite_admin_token');
     if (token && token.includes('.')) {
       try {
         const parts = token.split('.');
@@ -220,15 +221,17 @@ export async function ensureAdminToken() {
           const base64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
           const json = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
           const payload = JSON.parse(json);
-          if (payload.exp && (payload.exp - Date.now() > 60000)) {
+          const hasRole = !requiredRole || requiredRole === 'admin' ? (payload.role === 'admin' || payload.role === 'owner') : payload.role === requiredRole;
+          if (hasRole && payload.exp && (payload.exp - Date.now() > 60000)) {
             return token;
           }
         }
       } catch {}
     }
 
-    // Token is missing or expired. Attempt to refresh or obtain token via /api/admin-auth if staff session is active
-    if ((isStaffSessionActive('admin') || isStaffSessionActive('owner')) && typeof fetch !== 'undefined') {
+    // Token is missing or expired. Attempt to refresh token via /api/admin-auth if staff session is active
+    const isTargetStaffActive = requiredRole === 'owner' ? isStaffSessionActive('owner') : (isStaffSessionActive('admin') || isStaffSessionActive('owner'));
+    if (isTargetStaffActive && typeof fetch !== 'undefined') {
       try {
         let res = null;
         if (token) {
@@ -239,13 +242,6 @@ export async function ensureAdminToken() {
               'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({ action: 'refresh', token })
-          });
-        }
-        if (!res || !res.ok) {
-          res = await fetch('/api/admin-auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pin: isStaffSessionActive('owner') ? '9900' : '8899' })
           });
         }
         if (res && res.ok) {
