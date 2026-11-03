@@ -1804,12 +1804,60 @@ function initNavigation() {
     });
   }
 
-  // 3 Payout Compensation Method Buttons Selection (Opens Settings Directly)
+  // Payout Settings Panel Visibility State & Helpers
+  let isPayoutSettingsOpen = false;
+
+  function openPayoutSettingsPanel(scroll = true) {
+    const panel = document.getElementById('payout-settings-panel');
+    if (!panel) return;
+    isPayoutSettingsOpen = true;
+    panel.style.display = 'block';
+    panel.classList.remove('panel-opened-pulse');
+    void panel.offsetWidth;
+    panel.classList.add('panel-opened-pulse');
+
+    if (scroll) {
+      setTimeout(() => {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 40);
+    }
+    updatePayoutButtonHints();
+  }
+
+  function closePayoutSettingsPanel() {
+    const panel = document.getElementById('payout-settings-panel');
+    if (!panel) return;
+    isPayoutSettingsOpen = false;
+    panel.style.display = 'none';
+    updatePayoutButtonHints();
+  }
+
+  function updatePayoutButtonHints() {
+    const cfg = dataService.getPayoutConfig();
+    const currentMethod = cfg.activeMethod || 'tiered_standard';
+    document.querySelectorAll('.payout-method-card').forEach(card => {
+      const m = card.getAttribute('data-method');
+      const isAct = m === currentMethod;
+      const hint = card.querySelector('.pm-open-hint');
+      if (hint) {
+        if (isAct) {
+          hint.innerHTML = isPayoutSettingsOpen 
+            ? '<i class="fa-solid fa-sliders"></i> Settings Open ▾' 
+            : '<i class="fa-solid fa-pen-to-square"></i> Tap to Edit Settings';
+        } else {
+          hint.innerHTML = '<i class="fa-solid fa-arrow-down"></i> Open Settings';
+        }
+      }
+    });
+  }
+
+  // 3 Payout Compensation Method Buttons Selection (Opens Settings Directly or Toggles)
   document.querySelectorAll('.payout-method-card').forEach(card => {
     card.addEventListener('click', () => {
       const method = card.getAttribute('data-method');
       if (!method) return;
       const cfg = dataService.getPayoutConfig();
+      const prevMethod = cfg.activeMethod;
       cfg.activeMethod = method;
       dataService.savePayoutConfig(cfg);
       syncPayoutConfigUI();
@@ -1819,17 +1867,14 @@ function initNavigation() {
         'tiered_milestone': 'Tiered + Milestone Volume Incentive',
         'flat_linear': 'Flat Linear Rate'
       };
-      showToast(`⚙️ Settings Opened: ${methodNames[method] || method}`, 'success');
 
-      // Direct smooth scroll to settings panel so owner never has to scroll through long lists
-      const settingsPanel = document.getElementById('payout-settings-panel');
-      if (settingsPanel) {
-        settingsPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        settingsPanel.classList.remove('panel-opened-pulse');
-        void settingsPanel.offsetWidth;
-        settingsPanel.classList.add('panel-opened-pulse');
+      if (prevMethod === method && isPayoutSettingsOpen) {
+        closePayoutSettingsPanel();
+        showToast(`Settings closed for ${methodNames[method] || method}`, 'info');
+      } else {
+        openPayoutSettingsPanel(true);
+        showToast(`⚙️ Settings Opened: ${methodNames[method] || method}`, 'success');
       }
-      return;
     });
   });
 
@@ -1899,7 +1944,7 @@ function initNavigation() {
     });
   }
 
-  // Save Payout Settings Button
+  // Save Payout Settings Button (Saves and Automatically Closes Settings)
   const btnSavePayout = document.getElementById('btn-save-payout-config');
   if (btnSavePayout) {
     btnSavePayout.addEventListener('click', () => {
@@ -1907,7 +1952,20 @@ function initNavigation() {
       const saved = dataService.savePayoutConfig(newCfg);
       syncPayoutConfigUI();
       renderDashboard();
-      showToast('🎉 Payout settings saved and applied to all delivery partner accounts!', 'success');
+
+      // Automatically close settings panel after saving
+      closePayoutSettingsPanel();
+
+      showToast('✓ Payout settings saved & closed!', 'success');
+    });
+  }
+
+  // Close Payout Settings Button (without saving)
+  const btnClosePayout = document.getElementById('btn-close-payout-config');
+  if (btnClosePayout) {
+    btnClosePayout.addEventListener('click', () => {
+      closePayoutSettingsPanel();
+      showToast('Payout settings closed', 'info');
     });
   }
 

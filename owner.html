@@ -642,13 +642,16 @@
           </div>
 
           <!-- INTERACTIVE PARAMETER CONFIGURATION & STEPPERS PANEL -->
-          <div class="payout-settings-panel" id="payout-settings-panel">
+          <div class="payout-settings-panel" id="payout-settings-panel" style="display: none;">
             <div class="panel-header-row">
               <div class="panel-title-wrap">
                 <h4 class="panel-title"><i class="fa-solid fa-sliders"></i> <span id="panel-active-title">Tiered Standard Base Pay Settings</span></h4>
                 <p class="panel-subtitle">Use the <strong>+</strong> and <strong>−</strong> buttons to adjust rates. All changes calculate instantly.</p>
               </div>
               <div class="panel-actions">
+                <button type="button" class="btn-close-payout-config" id="btn-close-payout-config" title="Close settings panel without saving">
+                  <i class="fa-solid fa-xmark"></i> Close
+                </button>
                 <button type="button" class="btn-save-payout-config" id="btn-save-payout-config">
                   <i class="fa-solid fa-floppy-disk"></i> Save Payout Settings
                 </button>

@@ -2804,10 +2804,42 @@ body.owner-body .lock-footer-info {
 }
 
 .payout-methods-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
   gap: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  padding: 4px 4px 14px 4px;
   margin-bottom: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: #A5B4FC #F1F5F9;
+}
+
+.payout-methods-grid::-webkit-scrollbar {
+  height: 6px;
+}
+
+.payout-methods-grid::-webkit-scrollbar-track {
+  background: #F1F5F9;
+  border-radius: 9999px;
+}
+
+.payout-methods-grid::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+.payout-methods-grid::-webkit-scrollbar-thumb:hover {
+  background: #818CF8;
+}
+
+@media (min-width: 992px) {
+  .payout-methods-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    overflow-x: visible;
+    padding-bottom: 4px;
+  }
 }
 
 .payout-method-card {
@@ -2825,7 +2857,16 @@ body.owner-body .lock-footer-info {
   text-align: left;
   outline: none;
   font-family: inherit;
-  width: 100%;
+  flex: 0 0 250px;
+  min-width: 240px;
+  scroll-snap-align: start;
+}
+
+@media (min-width: 992px) {
+  .payout-method-card {
+    flex: unset;
+    min-width: 0;
+  }
 }
 
 .payout-method-card:hover {
@@ -3462,9 +3503,17 @@ body.owner-body .lock-footer-info {
 
 @media (max-width: 640px) {
   .payout-methods-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    gap: 10px;
     margin-bottom: 12px;
+  }
+  .payout-method-card {
+    flex: 0 0 240px;
+    min-width: 230px;
+    scroll-snap-align: start;
   }
 
   .payout-method-card {
@@ -3517,4 +3566,26 @@ body.owner-body .lock-footer-info {
   .payout-method-card {
     padding: 10px 12px;
   }
+}
+
+.btn-close-payout-config {
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-close-payout-config:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+  border-color: #94A3B8;
 }

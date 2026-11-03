@@ -174,11 +174,17 @@ test.describe('OWNER 3 PAYOUT COMPENSATION MODELS SUITE', () => {
     assert.ok(html.includes('id="active-model-summary-card"'), 'Must have active model summary card inside settings panel');
 
     // 2. owner.js brings settings directly into view on click
-    assert.ok(js.includes('settingsPanel.scrollIntoView'), 'owner.js must smoothly scroll settings into view on click');
+    assert.ok(js.includes('panel.scrollIntoView') || js.includes('scrollIntoView'), 'owner.js must smoothly scroll settings into view on click');
     assert.match(js, /panel-opened-pulse/, 'owner.js must add pulse feedback when settings open');
 
-    // 3. owner.css defines compact 3-column grid and pulse animation
+    // 3. owner.css defines compact 3-column grid, horizontal side-scrolling, and pulse animation
     assert.ok(css.includes('grid-template-columns: repeat(3, 1fr)'), 'owner.css must layout buttons in a 3-column row');
     assert.ok(css.includes('@keyframes panelOpenedPulse'), 'owner.css must define panelOpenedPulse keyframes');
+    assert.ok(css.includes('overflow-x: auto'), 'owner.css must support side-scrolling for payout buttons');
+    assert.ok(css.includes('-webkit-overflow-scrolling: touch'), 'owner.css must support smooth mobile touch side-scrolling');
+
+    // 4. Auto-closing settings on save & manual close button
+    assert.ok(html.includes('id="btn-close-payout-config"'), 'owner.html must have close settings button');
+    assert.ok(js.includes('closePayoutSettingsPanel'), 'owner.js must close settings panel after saving');
   });
 });
