@@ -3957,7 +3957,8 @@ class QuickBiteDataService {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed && parsed.lat && parsed.lng) {
-          if (Date.now() - (parsed.timestamp || 0) < 900000) {
+          const matchesOrder = !orderId || parsed.orderId === orderId || (Array.isArray(parsed.orderIds) && parsed.orderIds.includes(orderId));
+          if (matchesOrder && Date.now() - (parsed.timestamp || 0) < 900000) {
             return parsed;
           }
         }
@@ -5196,6 +5197,29 @@ class QuickBiteDataService {
         if (order.id !== cleanId) doUpdate(cleanId);
         if (order.id !== hashId) doUpdate(hashId);
       }
+
+      // Broadcast cancellation across all connected devices via Supabase Realtime channel
+      try {
+        if (this.sharedBroadcastChannel) {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'order_status_updated',
+            payload: {
+              orderId: order.id,
+              status: 'cancelled',
+              prevStatus,
+              statusLabel: 'Cancelled',
+              stepIndex: -1,
+              eta: 'Order Cancelled',
+              cancellationReason: order.cancellationReason,
+              order,
+              source,
+              timestamp: Date.now()
+            }
+          }).catch(() => {});
+        }
+      } catch {}
+
       return order;
     }
 

@@ -3406,6 +3406,7 @@ function initStorefrontApp() {
   let trackerLiveMap = null;
   let trackerRiderMarker = null;
   let trackerHomeMarker = null;
+  let trackerKitchenMarker = null;
   let trackerRemainingLine = null;
   let activeTrackingOrderId = null;
   let trackerSimulationInterval = null;
@@ -3598,7 +3599,11 @@ function initStorefrontApp() {
         ? dataService.getSavedAddresses(currentUser?.id, currentUser?.email)
         : (typeof dataService.getAllAddressesRaw === 'function' ? dataService.getAllAddressesRaw() : []);
       if (Array.isArray(addrs) && addrs.length > 0) {
-        const found = addrs.find(a => order.deliveryAddress && a.address && order.deliveryAddress.includes(a.address)) || addrs[0];
+        const found = addrs.find(a => {
+          if (!order.deliveryAddress) return false;
+          const matchStr = a.details || a.fullText || a.street || a.area || a.address;
+          return matchStr && order.deliveryAddress.includes(matchStr);
+        }) || addrs[0];
         if (found && !isNaN(Number(found.lat)) && !isNaN(Number(found.lng))) {
           return { lat: Number(found.lat), lng: Number(found.lng) };
         }
@@ -3635,6 +3640,7 @@ function initStorefrontApp() {
     }
     trackerRiderMarker = null;
     trackerHomeMarker = null;
+    trackerKitchenMarker = null;
     trackerRemainingLine = null;
     activeTrackingOrderId = null;
     lastRiderCoords = null;
@@ -3794,6 +3800,18 @@ function initStorefrontApp() {
         attribution: '&copy; Google Maps'
       });
       streetLayer.addTo(trackerLiveMap);
+
+      // 0. Kitchen Origin Marker (Savera Paradise Restaurant)
+      const restCoords = (typeof dataService.getRestaurantCoordinates === 'function')
+        ? dataService.getRestaurantCoordinates()
+        : { lat: 12.7208891, lng: 77.2805103 };
+      const kitchenIcon = L.divIcon({
+        className: 'tracker-custom-marker-wrap',
+        html: `<div class="tracker-pin-marker rest"><span class="marker-emoji">🏪</span><span class="marker-tooltip">Savera Kitchen</span></div>`,
+        iconSize: [38, 38],
+        iconAnchor: [19, 19]
+      });
+      trackerKitchenMarker = L.marker([restCoords.lat, restCoords.lng], { icon: kitchenIcon }).addTo(trackerLiveMap);
 
       // 1. Delivery Location Marker (Doorstep destination)
       const homeIcon = L.divIcon({
@@ -3979,15 +3997,12 @@ function initStorefrontApp() {
     const itemsPreview = document.getElementById('order-items-preview');
     const btnOrderMore = document.getElementById('btn-order-more');
 
-    // Rule: in the live tracker, only show active orders up to delivered!
-    // Delivered orders move to My Orders.
+    // Multi-order switcher visibility
     if (activeOrders.length <= 1) {
       if (selectorWrap) selectorWrap.style.display = 'none';
-      if (itemsPreview) itemsPreview.style.display = 'none';
       if (btnOrderMore) btnOrderMore.style.display = 'none';
     } else {
       if (selectorWrap) selectorWrap.style.display = 'block';
-      if (itemsPreview) itemsPreview.style.display = 'flex';
       if (btnOrderMore) btnOrderMore.style.display = 'block';
       if (countEl) countEl.textContent = `${activeOrders.length} Active Orders`;
 
@@ -4018,12 +4033,28 @@ function initStorefrontApp() {
           });
         });
       }
+    }
 
-      // Update items preview card
-      const itemsTextEl = document.getElementById('items-preview-text');
-      const itemsPriceEl = document.getElementById('items-preview-price');
-      if (itemsTextEl) itemsTextEl.textContent = order.itemsSummary || 'Delicious Crispy Chicken meal';
-      if (itemsPriceEl) itemsPriceEl.textContent = order.total || '₹330';
+    // Always render order items summary, total, bag code, payment & address
+    if (itemsPreview) itemsPreview.style.display = 'flex';
+    const itemsTextEl = document.getElementById('items-preview-text');
+    const itemsPriceEl = document.getElementById('items-preview-price');
+    const itemsMetaEl = document.getElementById('items-preview-meta');
+    if (itemsTextEl) itemsTextEl.textContent = order.itemsSummary || (Array.isArray(order.items) ? order.items.map(i => `${i.quantity}x ${i.name}`).join(', ') : 'Delicious meal');
+    if (itemsPriceEl) itemsPriceEl.textContent = order.total || '₹0';
+    if (itemsMetaEl) {
+      const metaParts = [];
+      if (order.pickupCode) {
+        metaParts.push(`🏷️ Bag: <strong>${escapeHtml(order.pickupCode)}</strong>`);
+      }
+      if (order.paymentMethod) {
+        metaParts.push(`💵 ${escapeHtml(order.paymentMethod)}`);
+      }
+      if (order.deliveryAddress) {
+        const cleanAddr = order.deliveryAddress.replace(/\[Phone:.*?\]/g, '').trim();
+        metaParts.push(`📍 ${escapeHtml(cleanAddr)}`);
+      }
+      itemsMetaEl.innerHTML = metaParts.join(' • ');
     }
 
     // Update order ID
@@ -4061,8 +4092,10 @@ function initStorefrontApp() {
     if (modalSub) {
       const safeOrderId = escapeHtml(order.id);
       if (order.status === 'cancelled') {
+        const isCustomerCancelled = order.cancelledBy === 'customer' || order.cancellationReason === 'Cancelled by customer';
+        const cancelActor = isCustomerCancelled ? 'you' : 'the kitchen';
         const reasonHtml = order.cancellationReason ? `<br><span style="color:#B91C1C; font-size:0.86rem; display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-weight:600;"><i class="fa-solid fa-circle-exclamation"></i> Reason: ${escapeHtml(order.cancellationReason)}</span>` : '';
-        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was cancelled by the kitchen.${reasonHtml}`;
+        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was cancelled by ${cancelActor}.${reasonHtml}`;
       } else if (order.status === 'undelivered') {
         const reasonHtml = order.undeliveredReason || order.cancellationReason ? `<br><span style="color:#B91C1C; font-size:0.86rem; display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Reason: ${escapeHtml(order.undeliveredReason || order.cancellationReason)}</span>` : '';
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was marked undelivered. Our rider waited at your doorstep for 10 minutes but could not reach you. Parcel returned to Savera Paradise kitchen.${reasonHtml}`;
@@ -4291,7 +4324,7 @@ function initStorefrontApp() {
       'ready_for_pickup': 2,
       'on_the_way': 3,
       'delivered': 4,
-      'undelivered': 4,
+      'undelivered': -2,
       'cancelled': -1
     };
     const stepIndex = STATUS_TO_STEP_INDEX[order.status] !== undefined
@@ -4306,9 +4339,11 @@ function initStorefrontApp() {
     ];
 
     const isCancelled = order.status === 'cancelled';
+    const isUndelivered = order.status === 'undelivered';
+    const isFailedOrCancelled = isCancelled || isUndelivered;
     const trackerTimelineEl = document.getElementById('order-tracker-timeline');
     if (trackerTimelineEl) {
-      if (isCancelled) {
+      if (isFailedOrCancelled) {
         trackerTimelineEl.style.opacity = '0.35';
         trackerTimelineEl.style.filter = 'grayscale(1)';
       } else {
@@ -4329,6 +4364,8 @@ function initStorefrontApp() {
     if (liveBadgeTextEl) {
       if (isCancelled) {
         liveBadgeTextEl.textContent = 'Order Cancelled';
+      } else if (isUndelivered) {
+        liveBadgeTextEl.textContent = 'Delivery Attempt Failed — Returned to Kitchen';
       } else {
         liveBadgeTextEl.textContent = STATUS_BADGE_MESSAGES[stepIndex] || 'Order in Progress';
       }
@@ -4337,7 +4374,7 @@ function initStorefrontApp() {
     // Animate the connecting progress wave fill & fallback bar
     const waveFillEl = document.getElementById('tracker-wave-fill');
     const totalIntervals = stepElements.length - 1; // 4 segments (0%, 25%, 50%, 75%, 100%)
-    const progressPercent = (!isCancelled && stepIndex >= 0)
+    const progressPercent = (!isFailedOrCancelled && stepIndex >= 0)
       ? Math.min(100, (stepIndex / totalIntervals) * 100)
       : 0;
 
@@ -4359,7 +4396,7 @@ function initStorefrontApp() {
         // Retain and preserve each step emoji permanently across all order stages (never wipe on dispatch)
         circle.textContent = DEFAULT_STEP_ICONS[idx] || circle.textContent;
       }
-      if (!isCancelled) {
+      if (!isFailedOrCancelled) {
         if (idx < stepIndex) {
           el.classList.add('active');
         } else if (idx === stepIndex) {
@@ -4379,6 +4416,14 @@ function initStorefrontApp() {
         btnCustomerCancelOrder.onclick = () => {
           handleCustomerCancelOrder(order.id);
         };
+        const remainingMs = Math.max(0, 120000 - elapsedMs);
+        if (remainingMs > 0) {
+          setTimeout(() => {
+            if (activeOrderId === order.id && btnCustomerCancelOrder) {
+              btnCustomerCancelOrder.style.display = 'none';
+            }
+          }, remainingMs);
+        }
       } else {
         btnCustomerCancelOrder.style.display = 'none';
       }
@@ -4635,8 +4680,10 @@ function initStorefrontApp() {
         }
       }
 
-      // Strict Rule: Customers can ONLY cancel an order when it is in 'pending' or 'accepted' status
-      const canCancel = !isPast && (order.status === 'accepted' || order.status === 'pending');
+      // Strict Rule: Customers can ONLY cancel an order when it is in 'pending' or 'accepted' status within 2 minutes
+      const elapsedCancelMs = Date.now() - Number(order.createdAt || 0);
+      const withinTwoMins = elapsedCancelMs >= 0 && elapsedCancelMs <= 2 * 60 * 1000;
+      const canCancel = !isPast && (order.status === 'accepted' || order.status === 'pending') && withinTwoMins;
       const cancelBtnHtml = canCancel ? `
         <button type="button" class="btn-card-cancel-order" data-cancel-id="${safeId}" title="Cancel Order">
           <i class="fa-solid fa-xmark"></i> Cancel
@@ -4747,7 +4794,7 @@ function initStorefrontApp() {
     });
   }
 
-  function openMyOrdersModal(filter = 'all') {
+  function openMyOrdersModal(filter = 'all', skipPushStep = false) {
     // If order tracker modal is open, close it cleanly first to prevent overlay overlap and popstate collision
     if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) {
       closeOrderModalInternal();
@@ -4776,7 +4823,9 @@ function initStorefrontApp() {
       modalMyOrdersBackdrop.classList.add('open');
       document.body.style.overflow = 'hidden';
       setActiveCapsuleBtn(navBtnTrack);
-      backNav.pushStep('my-orders-modal', () => closeMyOrdersModalInternal());
+      if (!skipPushStep) {
+        backNav.pushStep('my-orders-modal', () => closeMyOrdersModalInternal());
+      }
     }
   }
 
@@ -4827,8 +4876,13 @@ function initStorefrontApp() {
   if (btnTrackerOpenMyOrders) {
     btnTrackerOpenMyOrders.addEventListener('click', () => {
       closeOrderModalInternal();
-      backNav.removeStepDirect('order-modal');
-      openMyOrdersModal('all');
+      if (backNav.isTopStep('order-modal')) {
+        backNav.replaceTopStep('my-orders-modal', () => closeMyOrdersModalInternal());
+        openMyOrdersModal('all', true);
+      } else {
+        backNav.removeStepDirect('order-modal');
+        openMyOrdersModal('all');
+      }
     });
   }
 
@@ -4836,8 +4890,13 @@ function initStorefrontApp() {
   if (btnEmptyViewHistory) {
     btnEmptyViewHistory.addEventListener('click', () => {
       closeOrderModalInternal();
-      backNav.removeStepDirect('order-modal');
-      openMyOrdersModal('all');
+      if (backNav.isTopStep('order-modal')) {
+        backNav.replaceTopStep('my-orders-modal', () => closeMyOrdersModalInternal());
+        openMyOrdersModal('all', true);
+      } else {
+        backNav.removeStepDirect('order-modal');
+        openMyOrdersModal('all');
+      }
     });
   }
 

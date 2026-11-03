@@ -534,6 +534,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleGpsPosition(pos) {
+    if (pos.coords && pos.coords.accuracy && pos.coords.accuracy > 150) {
+      // Discard low-accuracy GPS fixes (>150m) to prevent erratic tracker map jitter
+      return;
+    }
     riderLiveLocation.lat = pos.coords.latitude;
     riderLiveLocation.lng = pos.coords.longitude;
     riderLiveLocation.accuracy = Math.round(pos.coords.accuracy || 10);

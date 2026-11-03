@@ -4393,7 +4393,11 @@ body.pwa-customer-installed .header-pwa-dock {
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.9);
 }
 
-.order-modal-card.has-video-bg .items-preview-price {
+.order-modal-card.has-video-bg .items-preview-meta {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.items-preview-price {
   color: #FFB070;
   font-weight: 800;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.95);
@@ -4650,6 +4654,18 @@ body.pwa-customer-installed .header-pwa-dock {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.items-preview-meta {
+  font-size: 0.76rem;
+  color: var(--text-muted, #64748B);
+  margin-top: 3px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.order-modal-card.has-video-bg .items-preview-meta {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .items-preview-price {
