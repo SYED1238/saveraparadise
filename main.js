@@ -3028,6 +3028,14 @@ function initStorefrontApp() {
       if (foodDetailBackdrop && foodDetailBackdrop.classList.contains('open')) {
         closeFoodDetail();
       }
+      if (modalAddressBackdrop && modalAddressBackdrop.classList.contains('open')) {
+        const swiggyStepForm = document.getElementById('swiggy-step-form');
+        if (swiggyStepForm && swiggyStepForm.style.display !== 'none') {
+          backToMapStep();
+        } else {
+          closeAddressModal();
+        }
+      }
     }
   });
 
@@ -5986,11 +5994,13 @@ function initStorefrontApp() {
   // ==========================================
   // TOAST NOTIFICATION ENGINE (Samsung One UI Top Floating Pill)
   // ==========================================
-  function showToast(message, type = 'info') {
+  function showToast(message, type = 'info', opts = {}) {
+    const customDuration = typeof opts === 'number' ? opts : (opts && opts.duration ? opts.duration : 3800);
     return showSamsungToast(message, type, {
       container: toastContainer,
       appName: 'Savera Paradise',
-      duration: 3800
+      duration: customDuration,
+      ...(typeof opts === 'object' ? opts : {})
     });
   }
   window.showToast = showToast;
@@ -6173,6 +6183,23 @@ function initStorefrontApp() {
     const swiggyCardLocalityText = document.getElementById('swiggy-card-locality-text');
     const swiggyDetailsTopbarTitle = document.getElementById('swiggy-details-topbar-title');
 
+    if (!hasPinnedLocation && !hasDetectedLocation) {
+      if (swiggySheetAreaTitle) {
+        swiggySheetAreaTitle.textContent = 'Pin your location';
+      }
+      if (swiggySheetFullAddr) {
+        swiggySheetFullAddr.textContent = 'Tap the map or drag the pin to your exact delivery doorstep';
+      }
+      if (swiggyCardLocalityText) {
+        swiggyCardLocalityText.textContent = 'Pin location on map to proceed';
+      }
+      if (autoCard) autoCard.classList.add('unpinned');
+      if (autoTitle) autoTitle.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Compulsory Step 1: Detect Location';
+      if (autoDisplay) autoDisplay.textContent = 'Please tap the map or press "Current location" first.';
+      if (autoSub) autoSub.innerHTML = '<i class="fa-solid fa-circle-info"></i> Pinning and address will activate once location is detected.';
+      return;
+    }
+
     const areaName = (detectedAddressDetails.area || '').split(',')[0].trim() || 'Current Location';
     const resolvedText = fullText || detectedAddressDetails.fullText || `Pinned Doorstep (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
 
@@ -6187,14 +6214,6 @@ function initStorefrontApp() {
     }
     if (swiggyDetailsTopbarTitle) {
       swiggyDetailsTopbarTitle.textContent = areaName || 'Location Details';
-    }
-
-    if (!hasPinnedLocation && !hasDetectedLocation) {
-      if (autoCard) autoCard.classList.add('unpinned');
-      if (autoTitle) autoTitle.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Compulsory Step 1: Detect Location';
-      if (autoDisplay) autoDisplay.textContent = 'Please press the "Detect My Location" button below the map first.';
-      if (autoSub) autoSub.innerHTML = '<i class="fa-solid fa-circle-info"></i> Pinning and address will activate once location is detected.';
-      return;
     }
 
     if (autoCard) autoCard.classList.remove('unpinned');
@@ -6350,73 +6369,70 @@ function initStorefrontApp() {
       console.warn('Ola Maps reverse geocoding fallback:', olaErr);
     }
     try {
-      // 1. Try BigDataCloud free client reverse geocoding (fast, never blocked by CORS/Referer)
+      // 1. Primary: OpenStreetMap Nominatim (high precision: house number, building, road, suburb)
       try {
-        const bdcRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`);
-        if (bdcRes.ok) {
-          const bdcData = await bdcRes.json();
-          if (bdcData) {
-            const locality = bdcData.locality || bdcData.principalSubdivision || '';
-            const city = bdcData.city || bdcData.locality || 'Ramanagara';
-            const pincode = bdcData.postcode || '';
-            const full = [locality, city, pincode].filter(Boolean).join(', ');
-            if (full) {
-              detectedAddressDetails = {
-                flatNo: 'Pinned Doorstep',
-                area: locality || 'Doorstep Area',
-                city: city,
-                pincode: pincode,
-                fullText: full
-              };
-              if (addrInputFlat) addrInputFlat.value = detectedAddressDetails.flatNo;
-              if (addrInputArea) addrInputArea.value = detectedAddressDetails.area;
-              if (addrInputCity) addrInputCity.value = detectedAddressDetails.city;
-              if (addrInputPincode) addrInputPincode.value = detectedAddressDetails.pincode;
-              updateDetectedAddressUI(lat, lng, detectedAddressDetails.fullText, false);
-              return;
-            }
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+          headers: { 'Accept-Language': 'en' }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.address) {
+            const addr = data.address;
+            const houseNo = addr.house_number || addr.building || '';
+            const road = addr.road || addr.residential || addr.street || '';
+            const suburb = addr.suburb || addr.neighbourhood || addr.quarter || addr.subdistrict || '';
+            const city = addr.city || addr.town || addr.municipality || addr.village || addr.county || 'Ramanagara';
+            const pincode = addr.postcode || '';
+
+            const areaParts = [houseNo, road, suburb].filter(Boolean);
+            const areaText = areaParts.length > 0 ? areaParts.join(', ') : (suburb || road || 'Doorstep Area');
+
+            detectedAddressDetails = {
+              flatNo: houseNo ? `House #${houseNo}` : 'Pinned Doorstep',
+              area: areaText,
+              city: city,
+              pincode: pincode,
+              fullText: [areaText, city, pincode].filter(Boolean).join(', ')
+            };
+
+            if (addrInputFlat) addrInputFlat.value = detectedAddressDetails.flatNo;
+            if (addrInputArea) addrInputArea.value = detectedAddressDetails.area;
+            if (addrInputCity) addrInputCity.value = detectedAddressDetails.city;
+            if (addrInputPincode) addrInputPincode.value = detectedAddressDetails.pincode;
+
+            updateDetectedAddressUI(lat, lng, detectedAddressDetails.fullText, false);
+            return;
           }
         }
-      } catch (bdcErr) {}
+      } catch (_) {}
 
-      // 2. Fallback to OpenStreetMap Nominatim
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
-        headers: { 'Accept-Language': 'en' }
-      });
-      if (!res.ok) {
-        fallbackDetectedAddress(lat, lng);
-        return;
+      // 2. Secondary fallback: BigDataCloud free client reverse geocoding
+      const bdcRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`);
+      if (bdcRes.ok) {
+        const bdcData = await bdcRes.json();
+        if (bdcData) {
+          const locality = bdcData.locality || bdcData.principalSubdivision || '';
+          const city = bdcData.city || bdcData.locality || 'Ramanagara';
+          const pincode = bdcData.postcode || '';
+          const full = [locality, city, pincode].filter(Boolean).join(', ');
+          if (full) {
+            detectedAddressDetails = {
+              flatNo: 'Pinned Doorstep',
+              area: locality || 'Doorstep Area',
+              city: city,
+              pincode: pincode,
+              fullText: full
+            };
+            if (addrInputFlat) addrInputFlat.value = detectedAddressDetails.flatNo;
+            if (addrInputArea) addrInputArea.value = detectedAddressDetails.area;
+            if (addrInputCity) addrInputCity.value = detectedAddressDetails.city;
+            if (addrInputPincode) addrInputPincode.value = detectedAddressDetails.pincode;
+            updateDetectedAddressUI(lat, lng, detectedAddressDetails.fullText, false);
+            return;
+          }
+        }
       }
-      const data = await res.json();
-      if (!data || !data.address) {
-        fallbackDetectedAddress(lat, lng);
-        return;
-      }
-
-      const addr = data.address;
-      const houseNo = addr.house_number || addr.building || '';
-      const road = addr.road || addr.residential || addr.street || '';
-      const suburb = addr.suburb || addr.neighbourhood || addr.quarter || addr.subdistrict || '';
-      const city = addr.city || addr.town || addr.municipality || addr.village || addr.county || 'Ramanagara';
-      const pincode = addr.postcode || '';
-
-      const areaParts = [houseNo, road, suburb].filter(Boolean);
-      const areaText = areaParts.length > 0 ? areaParts.join(', ') : (suburb || road || 'Doorstep Area');
-
-      detectedAddressDetails = {
-        flatNo: houseNo ? `House #${houseNo}` : 'Pinned Doorstep',
-        area: areaText,
-        city: city,
-        pincode: pincode,
-        fullText: [areaText, city, pincode].filter(Boolean).join(', ')
-      };
-
-      if (addrInputFlat) addrInputFlat.value = detectedAddressDetails.flatNo;
-      if (addrInputArea) addrInputArea.value = detectedAddressDetails.area;
-      if (addrInputCity) addrInputCity.value = detectedAddressDetails.city;
-      if (addrInputPincode) addrInputPincode.value = detectedAddressDetails.pincode;
-
-      updateDetectedAddressUI(lat, lng, detectedAddressDetails.fullText, false);
+      fallbackDetectedAddress(lat, lng);
     } catch (e) {
       fallbackDetectedAddress(lat, lng);
     }
@@ -6446,6 +6462,7 @@ function initStorefrontApp() {
 
     const check = dataService.checkDeliveryAvailability(lat, lng);
     if (modalMapDistanceBadge && modalDistanceText && modalDistanceDot) {
+      modalMapDistanceBadge.style.display = 'flex';
       if (hasPinnedLocation) {
         if (check.deliverable) {
           modalDistanceDot.className = 'distance-dot in-zone';
@@ -6533,6 +6550,26 @@ function initStorefrontApp() {
           accuracyCircle.setRadius(8);
         }
         updateMapLocation(e.latlng.lat, e.latlng.lng, true, true);
+      });
+
+      // Synchronize marker to center of map when user pans canvas
+      addressMap.on('moveend', () => {
+        if (addressMap && addressMarker) {
+          const center = addressMap.getCenter();
+          const markerPos = addressMarker.getLatLng();
+          const dist = Math.abs(center.lat - markerPos.lat) + Math.abs(center.lng - markerPos.lng);
+          if (dist > 0.00005) {
+            hasDetectedLocation = true;
+            hasPinnedLocation = true;
+            setDetectBtnRefinedUI();
+            addressMarker.setLatLng(center);
+            if (accuracyCircle) {
+              accuracyCircle.setLatLng(center);
+              accuracyCircle.setRadius(8);
+            }
+            updateMapLocation(center.lat, center.lng, true, true);
+          }
+        }
       });
 
       // Setup layer switch buttons [ Street | Satellite HD ]
@@ -6825,7 +6862,7 @@ function initStorefrontApp() {
         pincode: existing.pincode || '',
         fullText: [existing.flatNo, existing.area, existing.city, existing.pincode].filter(Boolean).join(', ')
       };
-      if (swiggyInputStreet) swiggyInputStreet.value = existing.street || '';
+      if (swiggyInputStreet) swiggyInputStreet.value = existing.street || existing.flatNo || '';
       if (swiggySaveAsInput) swiggySaveAsInput.value = existing.tag || 'Home';
       if (addrInputFlat) addrInputFlat.value = detectedAddressDetails.flatNo;
       if (addrInputArea) addrInputArea.value = detectedAddressDetails.area;
@@ -6858,6 +6895,13 @@ function initStorefrontApp() {
       updateDetectedAddressUI(RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng, null, false);
     }
 
+    const addrInputName = document.getElementById('addr-input-name');
+    if (addrInputName) {
+      addrInputName.value = existing ? (existing.name || '') : (currentUser?.user_metadata?.full_name || currentUser?.user_metadata?.name || '');
+    }
+    if (addrInputPhone) {
+      addrInputPhone.value = existing ? (existing.phone || '') : (currentUser?.user_metadata?.phone || '');
+    }
     if (addrInputDefault) {
       addrInputDefault.checked = existing ? Boolean(existing.isDefault) : (addresses.length === 0);
     }
@@ -6903,6 +6947,14 @@ function initStorefrontApp() {
       clearTimeout(gpsRefineTimeout);
       gpsRefineTimeout = null;
     }
+    if (backNav) {
+      backNav.removeStepDirect('address-step-2');
+    }
+    const swiggyStepMap = document.getElementById('swiggy-step-map');
+    const swiggyStepForm = document.getElementById('swiggy-step-form');
+    if (swiggyStepForm) swiggyStepForm.style.display = 'none';
+    if (swiggyStepMap) swiggyStepMap.style.display = 'flex';
+
     if (modalAddressBackdrop) {
       modalAddressBackdrop.classList.remove('open');
       const anyModalOpen = (authModalBackdrop && authModalBackdrop.classList.contains('open')) ||
@@ -6917,12 +6969,17 @@ function initStorefrontApp() {
   }
 
   function closeAddressModal() {
-    if (backNav.isTopStep('address-modal')) {
-      backNav.stepBack();
-    } else {
-      closeAddressModalInternal();
+    if (backNav) {
+      if (backNav.isTopStep('address-step-2')) {
+        backNav.removeStepDirect('address-step-2');
+      }
+      if (backNav.isTopStep('address-modal')) {
+        backNav.stepBack();
+        return;
+      }
       backNav.removeStepDirect('address-modal');
     }
+    closeAddressModalInternal();
   }
 
   if (modalAddressClose) modalAddressClose.addEventListener('click', closeAddressModal);
@@ -6951,6 +7008,10 @@ function initStorefrontApp() {
       if (swiggyStepMap) swiggyStepMap.style.display = 'none';
       if (swiggyStepForm) swiggyStepForm.style.display = 'block';
 
+      if (backNav) {
+        backNav.pushStep('address-step-2', () => backToMapStepInternal());
+      }
+
       const areaName = (detectedAddressDetails.area || '').split(',')[0].trim() || 'Location Details';
       const swiggyDetailsTopbarTitle = document.getElementById('swiggy-details-topbar-title');
       if (swiggyDetailsTopbarTitle) swiggyDetailsTopbarTitle.textContent = areaName;
@@ -6966,7 +7027,7 @@ function initStorefrontApp() {
   }
 
   // SWIGGY STEP 2 -> STEP 1 (Back to Map)
-  function backToMapStep() {
+  function backToMapStepInternal() {
     const swiggyStepMap = document.getElementById('swiggy-step-map');
     const swiggyStepForm = document.getElementById('swiggy-step-form');
     if (swiggyStepForm) swiggyStepForm.style.display = 'none';
@@ -6974,6 +7035,15 @@ function initStorefrontApp() {
     setTimeout(() => {
       if (addressMap) addressMap.invalidateSize();
     }, 100);
+  }
+
+  function backToMapStep() {
+    if (backNav && backNav.isTopStep('address-step-2')) {
+      backNav.stepBack();
+    } else {
+      if (backNav) backNav.removeStepDirect('address-step-2');
+      backToMapStepInternal();
+    }
   }
 
   const btnBackToMap = document.getElementById('btn-back-to-map');
@@ -7316,12 +7386,25 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       const instructionsVal = swiggyInputInstructions?.value?.trim() || '';
       const saveAsVal = swiggySaveAsInput?.value?.trim() || 'Home';
 
+      if (!streetVal) {
+        showToast('⚠️ Please enter House/Flat No, Building or Street name', 'warning');
+        if (swiggyInputStreet) {
+          swiggyInputStreet.focus();
+          swiggyInputStreet.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+      }
+
       // Determine Contact Name & Phone Number
-      let name = '';
-      if (swiggyUseAccountCheckbox && swiggyUseAccountCheckbox.checked) {
-        name = (currentUser?.user_metadata?.full_name || currentUser?.user_metadata?.name || 'Customer').trim();
-      } else {
-        name = addrInputName?.value?.trim() || (currentUser?.user_metadata?.full_name || 'Customer').trim();
+      const addrInputName = document.getElementById('addr-input-name');
+      const name = addrInputName?.value?.trim() || (currentUser?.user_metadata?.full_name || currentUser?.user_metadata?.name || '').trim();
+      if (!name) {
+        showToast('⚠️ Please enter receiver contact name', 'warning');
+        if (addrInputName) {
+          addrInputName.focus();
+          addrInputName.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
       }
 
       // Read phone directly from the visible mobile input or user metadata
@@ -7331,8 +7414,8 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       }
       const phoneDigits = phone.replace(/\D/g, '').slice(-10);
 
-      if (!phoneDigits || phoneDigits.length < 10) {
-        showToast('⚠️ Please enter a valid 10-digit mobile number for delivery calls', 'warning');
+      if (!phoneDigits || !/^[6-9]\d{9}$/.test(phoneDigits)) {
+        showToast('⚠️ Please enter a valid 10-digit Indian mobile number (starting with 6, 7, 8, or 9)', 'warning');
         if (addrInputPhone) {
           addrInputPhone.focus();
           addrInputPhone.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -7340,12 +7423,6 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         return;
       }
       phone = phoneDigits;
-
-      if (!name) {
-        showToast('⚠️ Please enter recipient contact name', 'warning');
-        if (addrInputName) addrInputName.focus();
-        return;
-      }
 
       const lat = Number(addrInputLat?.value) || currentAddressCoords.lat || RESTAURANT_COORDINATES.lat;
       const lng = Number(addrInputLng?.value) || currentAddressCoords.lng || RESTAURANT_COORDINATES.lng;
@@ -7377,7 +7454,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         name,
         phone,
         tag,
-        flatNo: '',
+        flatNo: streetVal || detectedAddressDetails.flatNo || 'Pinned Doorstep',
         floor: '',
         street: streetVal,
         instructions: instructionsVal,
@@ -8679,6 +8756,13 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   }
 
   // Register DOM fallback checkers for bulletproof single-step back navigation
+  backNav.registerFallbackChecker({
+    isOpen: () => {
+      const swiggyStepForm = document.getElementById('swiggy-step-form');
+      return modalAddressBackdrop && modalAddressBackdrop.classList.contains('open') && swiggyStepForm && swiggyStepForm.style.display !== 'none';
+    },
+    close: () => backToMapStep()
+  });
   backNav.registerFallbackChecker({
     isOpen: () => modalAddressBackdrop && modalAddressBackdrop.classList.contains('open'),
     close: () => closeAddressModal()

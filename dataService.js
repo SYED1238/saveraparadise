@@ -5897,10 +5897,10 @@ class QuickBiteDataService {
           } catch (e) {}
         }
 
-        // SAFETY NET: If user has 0 matching addresses, but this device has saved addresses,
-        // never show 0 / erased to the customer! Return the local addresses.
-        if (userAddrs.length === 0 && list.length > 0) {
-          return list;
+        // If authenticated user has 0 matching addresses, only return unassigned guest addresses (never another user's addresses)
+        if (userAddrs.length === 0) {
+          const guestAddrs = list.filter(a => !a.userId && !a.userEmail);
+          return guestAddrs;
         }
 
         return userAddrs;
@@ -5965,12 +5965,14 @@ class QuickBiteDataService {
       name: (addressData.name || '').trim(),
       phone: (addressData.phone || '').trim(),
       tag: addressData.tag || 'Home',
-      flatNo: (addressData.flatNo || '').trim(),
+      flatNo: (addressData.flatNo || addressData.street || '').trim(),
+      street: (addressData.street || addressData.flatNo || '').trim(),
+      instructions: (addressData.instructions || '').trim(),
       area: (addressData.area || '').trim(),
       city: (addressData.city || '').trim(),
       pincode: (addressData.pincode || '').trim(),
-      details: (addressData.details || addressData.fullText || `${addressData.flatNo || ''}, ${addressData.area || ''}`).trim(),
-      fullText: (addressData.fullText || addressData.details || `${addressData.flatNo || ''}, ${addressData.area || ''}`).trim(),
+      details: (addressData.details || addressData.fullText || `${addressData.flatNo || addressData.street || ''}, ${addressData.area || ''}`).trim(),
+      fullText: (addressData.fullText || addressData.details || `${addressData.flatNo || addressData.street || ''}, ${addressData.area || ''}`).trim(),
       lat,
       lng,
       distanceKm: Number(distanceKm) || 0,

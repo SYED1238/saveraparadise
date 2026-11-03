@@ -5087,7 +5087,10 @@
             <input type="hidden" id="addr-input-area" />
             <input type="hidden" id="addr-input-city" />
             <input type="hidden" id="addr-input-pincode" />
-            <input type="checkbox" id="addr-input-default" checked style="display: none;" />
+            <label class="swiggy-default-checkbox-wrap" style="display: flex; align-items: center; gap: 8px; margin: 12px 0 6px 0; font-size: 0.88rem; cursor: pointer;">
+                <input type="checkbox" id="addr-input-default" checked />
+                <span>Set as default delivery address</span>
+              </label>
             <textarea id="addr-input-details" style="display: none;"></textarea>
 
             <!-- 1. Location Details Section -->
@@ -5109,7 +5112,7 @@
 
               <!-- Inputs -->
               <div class="swiggy-field-wrap">
-                <input type="text" id="swiggy-input-street" class="swiggy-field-input" placeholder="Building / Street / Landmark (Optional)" />
+                <input type="text" id="swiggy-input-street" class="swiggy-field-input" placeholder="House / Flat / Building / Street *" required />
               </div>
 
               <!-- Area / Locality preview card with Edit button -->
@@ -5128,6 +5131,19 @@
             <!-- 2. Receiver Details Section -->
             <div class="swiggy-card-section">
               <h4 class="swiggy-card-section-title">Receiver Details</h4>
+
+              <!-- Receiver Name -->
+              <div class="swiggy-field-wrap">
+                <label class="swiggy-field-sublabel" for="addr-input-name">Receiver Name *</label>
+                <input 
+                  type="text" 
+                  id="addr-input-name" 
+                  class="swiggy-field-input" 
+                  placeholder="Receiver's name (e.g. Syed)" 
+                  required 
+                  maxlength="50"
+                />
+              </div>
 
               <!-- Receiver Mobile Number -->
               <div class="swiggy-field-wrap swiggy-phone-field-wrap" id="swiggy-phone-wrap">
