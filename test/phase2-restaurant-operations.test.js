@@ -213,4 +213,30 @@ test('PHASE 2: RESTAURANT OPERATIONS & GEOFENCING DEFENSE SUITE', async (t) => {
       'style.css must define visual state for .swiggy-floating-gps-btn.refine'
     );
   });
+
+  await t.test('11. Live Tracker Map Offline Caching & Low-Network Smooth Transition', () => {
+    const swJs = fs.readFileSync(path.join(rootDir, 'public', 'sw.js'), 'utf8');
+    const mainJs = fs.readFileSync(path.join(rootDir, 'main.js'), 'utf8');
+    const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+    const styleCss = fs.readFileSync(path.join(rootDir, 'style.css'), 'utf8');
+
+    // 1. Service Worker permanent Cache-First strategy for map tiles
+    assert.match(swJs, /MAP_CACHE_NAME\s*=\s*['"]savera-map-tiles-v1['"]/, 'sw.js must define dedicated MAP_CACHE_NAME');
+    assert.match(swJs, /isMapTile\s*=/, 'sw.js must detect map tile requests (Google, OSM, Ola)');
+    assert.match(swJs, /caches\.open\(MAP_CACHE_NAME\)\.then/, 'sw.js must implement Cache-First handler for map tiles');
+    assert.match(swJs, /key !== 'savera-map-tiles-v1'/, 'sw.js activate must preserve MAP_CACHE_NAME across app updates');
+
+    // 2. Client-side idle precaching & road geometry cache
+    assert.match(mainJs, /function precacheNearbyMapTiles/, 'main.js must implement precacheNearbyMapTiles');
+    assert.match(mainJs, /function getCachedRoadRoute/, 'main.js must implement getCachedRoadRoute');
+    assert.match(mainJs, /function setCachedRoadRoute/, 'main.js must implement setCachedRoadRoute');
+
+    // 3. Smooth transition: avoid initial random zigzag jumping on map
+    assert.match(mainJs, /opacity:\s*cachedRoute\s*\?\s*0\.95\s*:\s*0/, 'main.js must hide initial placeholder route line until real road arrives');
+
+    // 4. Loading indicator pill & blueprint grid viewport
+    assert.ok(indexHtml.includes('id="tracker-map-loading-indicator"'), 'index.html must include tracker-map-loading-indicator');
+    assert.match(styleCss, /\.tracker-map-loading-indicator/, 'style.css must style .tracker-map-loading-indicator');
+    assert.match(styleCss, /\.tracker-map-viewport/, 'style.css must style .tracker-map-viewport with blueprint pattern');
+  });
 });

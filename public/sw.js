@@ -41,7 +41,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          if (key !== CACHE_NAME && key !== 'savera-map-tiles-v1') {
             console.log('[SW] Deleting stale cache:', key);
             return caches.delete(key);
           }
@@ -55,6 +55,33 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
+
+  // Map Tiles Caching (Google Maps Street & OpenStreetMap) with Cache-First Strategy
+  const isMapTile = (url.hostname.includes('google.com') && url.pathname.includes('/vt/')) ||
+                    url.hostname.includes('tile.openstreetmap.org') ||
+                    (url.origin === self.location.origin && url.pathname.includes('/api/ola-maps'));
+
+  if (isMapTile) {
+    const MAP_CACHE_NAME = 'savera-map-tiles-v1';
+    event.respondWith(
+      caches.open(MAP_CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(event.request);
+        if (cached) {
+          return cached;
+        }
+        try {
+          const networkRes = await fetch(event.request, { mode: 'cors' });
+          if (networkRes && networkRes.status === 200) {
+            cache.put(event.request, networkRes.clone()).catch(() => {});
+          }
+          return networkRes;
+        } catch (fetchErr) {
+          return cached || new Response(null, { status: 504 });
+        }
+      })
+    );
+    return;
+  }
 
   // Only handle same-origin requests in the service worker
   // Let the browser manage cross-origin CDNs, tile servers, and APIs natively

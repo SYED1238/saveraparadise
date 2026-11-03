@@ -43,6 +43,12 @@ if (typeof window !== 'undefined') {
 }
 
 function initStorefrontApp() {
+  // Pre-cache nearby restaurant neighborhood map tiles in background idle time
+  if (typeof window !== 'undefined') {
+    setTimeout(() => {
+      try { precacheNearbyMapTiles(); } catch {}
+    }, 2500);
+  }
   // Navigation Back Stack Controller (Single-step back navigation for storefront)
   const backNav = createBackNavigationManager('storefront');
 
@@ -3151,11 +3157,88 @@ function initStorefrontApp() {
     ];
   }
 
+  // Slippy map tile coordinate math
+  function lon2tile(lon, zoom) {
+    return Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
+  }
+  function lat2tile(lat, zoom) {
+    return Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+  }
+
+  // Pre-cache nearby map tiles (Hotel to Customer Home) in background CacheStorage
+  async function precacheNearbyMapTiles(customerLat = null, customerLng = null) {
+    if (typeof window === 'undefined' || !('caches' in window)) return;
+    try {
+      const cache = await caches.open('savera-map-tiles-v1');
+      const restLat = RESTAURANT_COORDINATES.lat;
+      const restLng = RESTAURANT_COORDINATES.lng;
+
+      const points = [{ lat: restLat, lng: restLng }];
+      if (customerLat && customerLng) {
+        points.push({ lat: Number(customerLat), lng: Number(customerLng) });
+      }
+
+      // Pre-warm street zoom levels (14, 15, and 16)
+      const zoomLevels = [14, 15, 16];
+      const urlsToPrecache = new Set();
+
+      points.forEach(pt => {
+        zoomLevels.forEach(z => {
+          const centerX = lon2tile(pt.lng, z);
+          const centerY = lat2tile(pt.lat, z);
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              const x = centerX + dx;
+              const y = centerY + dy;
+              urlsToPrecache.add(`https://mt1.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}&hl=en&gl=IN`);
+            }
+          }
+        });
+      });
+
+      const urls = Array.from(urlsToPrecache).slice(0, 36);
+      for (const url of urls) {
+        const existing = await cache.match(url);
+        if (!existing) {
+          fetch(url, { mode: 'cors' })
+            .then(res => {
+              if (res.ok) cache.put(url, res);
+            })
+            .catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn('Map tile pre-caching skipped:', e);
+    }
+  }
+
+  // Persistent road route caching
+  function getCachedRoadRoute(key) {
+    if (trackerRouteCache.has(key)) return trackerRouteCache.get(key);
+    try {
+      const stored = sessionStorage.getItem(`savera_route_${key}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        trackerRouteCache.set(key, parsed);
+        return parsed;
+      }
+    } catch {}
+    return null;
+  }
+
+  function setCachedRoadRoute(key, data) {
+    trackerRouteCache.set(key, data);
+    try {
+      sessionStorage.setItem(`savera_route_${key}`, JSON.stringify(data));
+    } catch {}
+  }
+
   async function fetchRoadRoute(startLat, startLng, endLat, endLng) {
     if (!startLat || !startLng || !endLat || !endLng) return null;
     const key = `${startLat.toFixed(4)},${startLng.toFixed(4)}->${endLat.toFixed(4)},${endLng.toFixed(4)}`;
-    if (trackerRouteCache.has(key)) {
-      return trackerRouteCache.get(key);
+    const cached = getCachedRoadRoute(key);
+    if (cached) {
+      return cached;
     }
 
     // Try primary OSRM, then secondary OSM mirror
@@ -3177,7 +3260,7 @@ function initStorefrontApp() {
               distanceMeters: route.distance,
               durationSeconds: route.duration
             };
-            trackerRouteCache.set(key, result);
+            setCachedRoadRoute(key, result);
             return result;
           }
         }
@@ -3249,6 +3332,11 @@ function initStorefrontApp() {
     if (riderAnimFrame) {
       cancelAnimationFrame(riderAnimFrame);
       riderAnimFrame = null;
+    }
+    const trackerLoadingPill = document.getElementById('tracker-map-loading-indicator');
+    if (trackerLoadingPill) {
+      trackerLoadingPill.style.display = 'none';
+      trackerLoadingPill.classList.remove('is-hidden');
     }
     const mapCard = document.getElementById('tracker-live-map-card');
     if (mapCard) {
@@ -3378,6 +3466,7 @@ function initStorefrontApp() {
     const restLat = RESTAURANT_COORDINATES.lat;
     const restLng = RESTAURANT_COORDINATES.lng;
     const dropCoords = resolveOrderCustomerCoords(order);
+    precacheNearbyMapTiles(dropCoords.lat, dropCoords.lng);
 
     const liveRider = dataService.getRiderLiveLocation(order.id, order.assignedRiderPin);
     let riderLat = liveRider?.lat ?? (restLat + (dropCoords.lat - restLat) * 0.55);
@@ -3449,25 +3538,49 @@ function initStorefrontApp() {
       trackerRiderMarker = L.marker([riderLat, riderLng], { icon: riderIcon, zIndexOffset: 1000 }).addTo(trackerLiveMap);
 
       // 3. Real Road Route Polyline (Following actual streets & turns)
-      const initialRoadCoords = generateRoadAlignedPath(riderLat, riderLng, dropCoords.lat, dropCoords.lng);
+      const routeKey = `${riderLat.toFixed(4)},${riderLng.toFixed(4)}->${dropCoords.lat.toFixed(4)},${dropCoords.lng.toFixed(4)}`;
+      const cachedRoute = getCachedRoadRoute(routeKey);
+
+      // Never draw a crude zigzag across houses before road data arrives!
+      const initialRoadCoords = cachedRoute?.coords || [];
       trackerRemainingLine = L.polyline(initialRoadCoords, {
         color: '#FF5A26',
         weight: 5,
-        opacity: 0.95,
+        opacity: cachedRoute ? 0.95 : 0, // Keep invisible until real road coordinates are ready
         lineCap: 'round',
         lineJoin: 'round'
       }).addTo(trackerLiveMap);
 
-      // Immediately display road distance and ETA estimate so badge never displays "Calculating route..."
-      const initDistKm = calculateDistanceKm(riderLat, riderLng, dropCoords.lat, dropCoords.lng);
-      const initMins = Math.max(3, Math.ceil(initDistKm * 3.2 + 2));
-      updateTrackerDistanceAndEta(initDistKm, initMins, Boolean(liveRider));
+      // Show sleek loading pill while tiles & street route stream in
+      const trackerLoadingPill = document.getElementById('tracker-map-loading-indicator');
+      if (trackerLoadingPill) {
+        trackerLoadingPill.style.display = cachedRoute ? 'none' : 'inline-flex';
+        trackerLoadingPill.classList.remove('is-hidden');
+      }
 
-      // Immediately fetch and render real turn-by-turn road route
+      // Immediately display road distance and ETA estimate so badge never displays "Calculating route..."
+      if (cachedRoute) {
+        const distKm = Math.round((cachedRoute.distanceMeters / 1000) * 10) / 10;
+        const estMins = Math.max(2, Math.ceil(cachedRoute.durationSeconds / 60));
+        updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider));
+      } else {
+        const initDistKm = calculateDistanceKm(riderLat, riderLng, dropCoords.lat, dropCoords.lng);
+        const initMins = Math.max(3, Math.ceil(initDistKm * 3.2 + 2));
+        updateTrackerDistanceAndEta(initDistKm, initMins, Boolean(liveRider));
+      }
+
+      // Fetch turn-by-turn road route and fade in smoothly
       fetchRoadRoute(riderLat, riderLng, dropCoords.lat, dropCoords.lng).then(routeData => {
         if (!trackerLiveMap) return;
+        if (trackerLoadingPill) {
+          trackerLoadingPill.classList.add('is-hidden');
+          setTimeout(() => { trackerLoadingPill.style.display = 'none'; }, 400);
+        }
         if (routeData?.coords && routeData.coords.length > 0) {
-          if (trackerRemainingLine) trackerRemainingLine.setLatLngs(routeData.coords);
+          if (trackerRemainingLine) {
+            trackerRemainingLine.setLatLngs(routeData.coords);
+            trackerRemainingLine.setStyle({ opacity: 0.95 }); // Smoothly reveal real street turns
+          }
           const b = L.latLngBounds(routeData.coords);
           trackerLiveMap.fitBounds(b, { padding: [45, 45], maxZoom: 17 });
 
