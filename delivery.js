@@ -84,8 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
     lat: RESTAURANT_COORDINATES.lat,
     lng: RESTAURANT_COORDINATES.lng,
     accuracy: 25,
-    hasGps: true,
-    lastUpdated: Date.now()
+    hasGps: false,
+    lastUpdated: 0
   };
 
   // ========================================================
@@ -571,33 +571,22 @@ document.addEventListener('DOMContentLoaded', () => {
   let gpsFallbackTimeout = null;
 
   function initRiderLiveGeolocation(forceRetry = false) {
-    // Immediately anchor to Ramanagara Hub so coordinates and badge are active right away
-    riderLiveLocation.lat = riderLiveLocation.lat || RESTAURANT_COORDINATES.lat;
-    riderLiveLocation.lng = riderLiveLocation.lng || RESTAURANT_COORDINATES.lng;
-    riderLiveLocation.hasGps = true;
-    riderLiveLocation.accuracy = riderLiveLocation.accuracy || 25;
-
     if (!('geolocation' in navigator)) {
-      updateGpsStatusBadge('active', '📍 Ramanagara Hub (Live)');
+      updateGpsStatusBadge('error', '⚠️ GPS Not Supported');
       return;
     }
 
-    if (!forceRetry && riderLiveLocation.accuracy <= 20) {
+    if (riderLiveLocation.hasGps && riderLiveLocation.accuracy <= 20) {
       updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
     } else {
-      updateGpsStatusBadge('active', '📍 Ramanagara Hub (Live)');
+      updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
     }
 
-    // Safety fallback timer: Ensure coordinates remain anchored to restaurant if navigator delays
+    // Safety fallback timer
     clearTimeout(gpsFallbackTimeout);
     gpsFallbackTimeout = setTimeout(() => {
       if (!riderLiveLocation.hasGps) {
-        riderLiveLocation.lat = RESTAURANT_COORDINATES.lat;
-        riderLiveLocation.lng = RESTAURANT_COORDINATES.lng;
-        riderLiveLocation.hasGps = true;
-        riderLiveLocation.accuracy = 25;
-        updateGpsStatusBadge('active', '📍 Ramanagara Hub (Live)');
-        updateLivePositionsOnMiniMaps();
+        updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
       }
     }, 2000);
 
@@ -609,7 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       (err) => {
         console.warn('[Rider GPS] High-accuracy fix standby:', err.message);
-        // Fallback attempt: low accuracy (resolves instantly via Wi-Fi/IP in desktop browsers)
+        // Fallback attempt: low accuracy (resolves instantly via Wi-Fi/cell in mobile browsers)
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             clearTimeout(gpsFallbackTimeout);
@@ -617,12 +606,8 @@ document.addEventListener('DOMContentLoaded', () => {
           },
           () => {
             clearTimeout(gpsFallbackTimeout);
-            riderLiveLocation.lat = RESTAURANT_COORDINATES.lat;
-            riderLiveLocation.lng = RESTAURANT_COORDINATES.lng;
-            riderLiveLocation.hasGps = true;
-            riderLiveLocation.accuracy = 25;
-            updateGpsStatusBadge('active', '📍 Ramanagara Hub (Live)');
-            updateLivePositionsOnMiniMaps();
+            riderLiveLocation.hasGps = false;
+            updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
           },
           { enableHighAccuracy: false, timeout: 2500, maximumAge: 60000 }
         );
@@ -789,34 +774,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
-    // 3. Match from user's saved addresses in dataService
-    try {
-      const rawAddrs = dataService.getAllAddressesRaw();
-      if (Array.isArray(rawAddrs) && rawAddrs.length > 0) {
-        const matched = rawAddrs.find(a => 
-          (order.deliveryAddress && a.flatNo && order.deliveryAddress.includes(a.flatNo)) ||
-          (order.deliveryAddress && a.area && order.deliveryAddress.includes(a.area)) ||
-          (order.customerPhone && a.phone && a.phone.replace(/\D/g, '') === (order.customerPhone || '').replace(/\D/g, '')) ||
-          (order.userId && a.userId === order.userId)
-        ) || rawAddrs.find(a => a.isDefault);
-
-        if (matched && matched.lat && matched.lng && !isNaN(Number(matched.lat))) {
-          if (!order.addressDetails) order.addressDetails = {};
-          order.addressDetails.lat = Number(matched.lat);
-          order.addressDetails.lng = Number(matched.lng);
-          order.lat = Number(matched.lat);
-          order.lng = Number(matched.lng);
-          return {
-            lat: Number(matched.lat),
-            lng: Number(matched.lng),
-            hasCustomerCoords: true,
-            source: 'user_addresses'
-          };
-        }
-      }
-    } catch {}
-
-    // 4. Fallback: restaurant central coordinates
+    // 3. Fallback: restaurant central coordinates
     return {
       lat: RESTAURANT_COORDINATES.lat,
       lng: RESTAURANT_COORDINATES.lng,
@@ -1341,25 +1299,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // 500-Meter Doorstep Geofence Check (Anti-Delivery Arbitrage Defense)
     const dropCoords = getOrderDropCoordinates(order);
     const hasCustomerCoords = Boolean(dropCoords.hasCustomerCoords && dropCoords.lat && dropCoords.lng);
-    const distMeters = hasCustomerCoords
-      ? calculateStraightDistanceMeters(riderLiveLocation.lat, riderLiveLocation.lng, dropCoords.lat, dropCoords.lng)
-      : 0;
+    let distMeters = 0;
 
-    if (hasCustomerCoords && distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
-      activeConfirmOrder = null;
-      if (confirmOrderId) confirmOrderId.value = '';
-      const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
-      showToast(`📍 Doorstep Geofence: You are ${distDisplay} away from the customer's delivery doorstep. You must be within a 500m radius of the delivery location to mark this order delivered.`, 'error');
-
-      // Trigger high-accuracy GPS update so location syncs within 1-2s if rider just arrived
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => handleGpsPosition(pos),
-          () => {},
-          { enableHighAccuracy: true, timeout: 3000, maximumAge: 2000 }
-        );
+    if (hasCustomerCoords) {
+      if (!riderLiveLocation.hasGps || (Date.now() - (riderLiveLocation.lastUpdated || 0) > 180000)) {
+        showToast('📍 Live GPS required: Please wait for GPS signal to verify you are at the customer doorstep.', 'warning');
+        return;
       }
-      return;
+      distMeters = calculateStraightDistanceMeters(riderLiveLocation.lat, riderLiveLocation.lng, dropCoords.lat, dropCoords.lng);
+      if (distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
+        activeConfirmOrder = null;
+        if (confirmOrderId) confirmOrderId.value = '';
+        const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
+        showToast(`📍 Doorstep Geofence: You are ${distDisplay} away from the customer's delivery doorstep. You must be within a 500m radius of the delivery location to mark this order delivered.`, 'error');
+
+        // Trigger high-accuracy GPS update so location syncs within 1-2s if rider just arrived
+        if ('geolocation' in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => handleGpsPosition(pos),
+            () => {},
+            { enableHighAccuracy: true, timeout: 3000, maximumAge: 2000 }
+          );
+        }
+        return;
+      }
     }
 
     activeConfirmOrder = order;
@@ -1594,14 +1557,19 @@ document.addEventListener('DOMContentLoaded', () => {
       // 500-Meter Doorstep Geofence Enforcement Defense
       const dropCoords = getOrderDropCoordinates(activeConfirmOrder);
       const hasCustomerCoords = Boolean(dropCoords.hasCustomerCoords && dropCoords.lat && dropCoords.lng);
-      const distMeters = hasCustomerCoords
-        ? calculateStraightDistanceMeters(riderLiveLocation.lat, riderLiveLocation.lng, dropCoords.lat, dropCoords.lng)
-        : 0;
+      let distMeters = 0;
 
-      if (hasCustomerCoords && distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
-        const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
-        showToast(`⚠️ Delivery Blocked: You are ${distDisplay} away from customer doorstep. You must stay within a 500m radius to complete delivery.`, 'error');
-        return;
+      if (hasCustomerCoords) {
+        if (!riderLiveLocation.hasGps || (Date.now() - (riderLiveLocation.lastUpdated || 0) > 180000)) {
+          showToast('📍 GPS Location Required: Please enable GPS to confirm doorstep delivery.', 'error');
+          return;
+        }
+        distMeters = calculateStraightDistanceMeters(riderLiveLocation.lat, riderLiveLocation.lng, dropCoords.lat, dropCoords.lng);
+        if (distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
+          const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
+          showToast(`⚠️ Delivery Blocked: You are ${distDisplay} away from customer doorstep. You must stay within a 500m radius to complete delivery.`, 'error');
+          return;
+        }
       }
 
       // Clear any active doorstep waiting countdown for this order
@@ -1692,6 +1660,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const cleanId = String(orderId || '').trim().replace(/^#/, '');
     const order = list.find(o => o && String(o.id || '').trim().replace(/^#/, '') === cleanId);
     if (!order) return;
+
+    // 500-Meter Doorstep Geofence Check before starting Doorstep Unreachable protocol
+    const dropCoords = getOrderDropCoordinates(order);
+    const hasCustomerCoords = Boolean(dropCoords.hasCustomerCoords && dropCoords.lat && dropCoords.lng);
+    if (hasCustomerCoords) {
+      if (!riderLiveLocation.hasGps || (Date.now() - (riderLiveLocation.lastUpdated || 0) > 180000)) {
+        showToast('📍 Live GPS required: Please wait for a GPS signal to verify you are at the customer doorstep.', 'warning');
+        return;
+      }
+      const distMeters = calculateStraightDistanceMeters(
+        riderLiveLocation.lat,
+        riderLiveLocation.lng,
+        dropCoords.lat,
+        dropCoords.lng
+      );
+      if (distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
+        const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
+        showToast(`📍 Geofence Alert: You are ${distDisplay} away from customer doorstep. The 10-minute waiting protocol can only be started when you have arrived at the customer doorstep (within 500m).`, 'error');
+        return;
+      }
+    }
 
     activeCnrOrder = order;
 
@@ -2536,6 +2525,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (order.status === 'delivered' || order.status === 'cancelled' || order.status === 'undelivered') {
         showToast(`⚠️ Order ${order.id} is already marked as ${order.status}.`, 'warning');
+        return;
+      }
+      if (order.status !== 'ready_for_pickup') {
+        const statusMap = {
+          placed: 'is newly placed and awaiting kitchen acceptance',
+          pending: 'is newly placed and awaiting kitchen acceptance',
+          accepted: 'is accepted by kitchen and in queue',
+          cooking: 'is currently cooking in the kitchen'
+        };
+        const statusDesc = statusMap[order.status] || `is currently in status "${order.status}"`;
+        showToast(`⏳ Order ${order.id} ${statusDesc}. Please wait until the kitchen marks it "Ready for Pickup".`, 'warning');
         return;
       }
 

@@ -3528,19 +3528,25 @@ class QuickBiteDataService {
       this.heartbeatTimer.unref();
     }
 
-    // Throttled sync on tab focus or visibility restore (only if tab was away for at least 30s)
+    // Throttled sync on tab focus or visibility restore
     if (typeof document !== 'undefined') {
       const handleTabResume = () => {
         if (document.hidden) return;
         const now = Date.now();
+        if (now - (this._lastSettingsSyncTime || 0) > 15000) {
+          this.syncSettingsFromSupabase();
+        }
+        if (now - (this._lastDishesSyncTime || 0) > 20000) {
+          this.syncDishesFromSupabase();
+        }
         if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
-          if (this.isStaffAuthorized() && now - this._lastOrdersSyncTime > 30000) {
+          if (this.isStaffAuthorized() && now - this._lastOrdersSyncTime > 15000) {
             this.syncOrdersFromSupabase();
           }
         } else {
           const orders = this.getOrders();
           const hasActiveOrders = orders.some(o => o && o.status !== 'delivered' && o.status !== 'cancelled');
-          if (hasActiveOrders && now - this._lastCustomerOrdersSyncTime > 30000) {
+          if (hasActiveOrders && now - this._lastCustomerOrdersSyncTime > 15000) {
             this.syncCustomerActiveOrders();
           }
         }
@@ -4957,6 +4963,20 @@ class QuickBiteDataService {
           orderData.pendingRemoteSync = true;
           this.saveOrders(this.getOrders(), { action: 'order_offline_queued', orderId: orderData.id });
           return { success: true, pendingRemoteSync: true, ...orderData };
+        }
+
+        if (error.code === '23505' || String(error.message || '').includes('duplicate key')) {
+          const freshSuffix = Math.floor(1000 + Math.random() * 9000);
+          const freshTime = Date.now().toString(36).toUpperCase().slice(-4);
+          orderData.id = `#QB-${freshTime}-${freshSuffix}`;
+          orderData.pickupCode = String(freshSuffix);
+          cleanPayload.id = orderData.id;
+          cleanPayload.pickup_code = orderData.pickupCode;
+          const retryRes = await supabase.from('orders').insert([cleanPayload]).select('tracking_token');
+          if (!retryRes.error) {
+            orderData.trackingToken = retryRes.data?.[0]?.tracking_token || null;
+            return { success: true, trackingToken: orderData.trackingToken, ...orderData };
+          }
         }
 
         // Roll back optimistic local mutation on authoritative database rejection (e.g. RLS or constraint error)
@@ -6470,6 +6490,21 @@ class QuickBiteDataService {
     }
     if (order.status === 'cancelled') {
       return { success: false, reason: 'cancelled', message: `Order ${order.id} was cancelled.` };
+    }
+
+    if (order.status !== 'ready_for_pickup') {
+      const statusMap = {
+        placed: 'is newly placed and waiting for kitchen acceptance',
+        pending: 'is newly placed and waiting for kitchen acceptance',
+        accepted: 'is accepted by kitchen and waiting to cook',
+        cooking: 'is currently cooking in the kitchen'
+      };
+      const statusDesc = statusMap[order.status] || `is in status "${order.status}"`;
+      return {
+        success: false,
+        reason: 'not_ready',
+        message: `Order ${order.id} ${statusDesc} and is not packed for pickup yet.`
+      };
     }
 
     const cleanPin = riderPin ? String(riderPin).trim() : null;
