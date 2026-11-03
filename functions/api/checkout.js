@@ -169,10 +169,14 @@ export async function onRequest(context) {
       return jsonResponse({ error: 'Order exceeds maximum item limit (50 items)' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
 
-    const [catalogDishes, storeSettings] = await Promise.all([
+    const [catalogDishes, authoritativeSettings] = await Promise.all([
       fetchAuthoritativeDishes(env),
       fetchAuthoritativeSettings(env)
     ]);
+
+    const storeSettings = (authoritativeSettings && typeof authoritativeSettings === 'object' && Object.keys(authoritativeSettings).length > 0)
+      ? { ...(body?.storeSettings || {}), ...authoritativeSettings }
+      : ((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {}));
 
     const catalogMap = new Map();
     if (Array.isArray(catalogDishes)) {
@@ -299,34 +303,33 @@ export async function onRequest(context) {
 
     const serverDealsEnabled = storeSettings?.unlockedDealsEnabled ?? false;
     if (serverDealsEnabled) {
-      let serverThresholds = Array.isArray(storeSettings?.unlockedDealsThresholds) && storeSettings.unlockedDealsThresholds.length > 0
-        ? storeSettings.unlockedDealsThresholds
-        : null;
+      const rawMin = Number(storeSettings?.unlockedDealsMinOrder);
+      const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 199;
+      const rawPct = Number(storeSettings?.unlockedDealsDiscountPct);
+      const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
 
-      if (!serverThresholds) {
-        const rawMin = Number(storeSettings?.unlockedDealsMinOrder);
-        const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
-        const rawPct = Number(storeSettings?.unlockedDealsDiscountPct);
-        const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
-        serverThresholds = [
-          { minSpend: dealsMin, discountPercent: dealsPct, label: storeSettings?.unlockedDealsTitle || 'Wholesale Deal' }
-        ];
-      }
-
-      const sorted = [...serverThresholds].sort((a, b) => b.minSpend - a.minSpend);
-      const matched = sorted.find(t => subtotal >= t.minSpend);
-      if (matched) {
-        const rawPct = Number(matched.discountPercent) || 0;
-        const safePct = Math.min(Math.max(rawPct, 0), 50);
-        dealDiscount = Math.round(subtotal * (safePct / 100));
+      if (subtotal >= dealsMin) {
+        dealDiscount = Math.round(subtotal * (dealsPct / 100));
         appliedDeal = {
-          label: matched.label || `${safePct}% Deal`,
-          discountPercent: safePct,
-          minSpend: matched.minSpend
+          label: storeSettings?.unlockedDealsTitle || `${dealsPct}% Wholesale Deal`,
+          discountPercent: dealsPct,
+          minSpend: dealsMin
         };
+      } else if (Array.isArray(storeSettings?.unlockedDealsThresholds) && storeSettings.unlockedDealsThresholds.length > 0) {
+        const sorted = [...storeSettings.unlockedDealsThresholds].sort((a, b) => b.minSpend - a.minSpend);
+        const matched = sorted.find(t => subtotal >= t.minSpend);
+        if (matched) {
+          const rawPct = Number(matched.discountPercent) || 0;
+          const safePct = Math.min(Math.max(rawPct, 0), 50);
+          dealDiscount = Math.round(subtotal * (safePct / 100));
+          appliedDeal = {
+            label: matched.label || `${safePct}% Deal`,
+            discountPercent: safePct,
+            minSpend: matched.minSpend
+          };
+        }
       }
     }
-
     const combinedDiscount = discount + dealDiscount;
     const effectiveDiscount = Math.min(combinedDiscount, subtotal);
     const finalAppliedType = (discount > 0 && dealDiscount > 0)

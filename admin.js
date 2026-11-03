@@ -3791,9 +3791,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateUnlockedDealsPreview() {
     const isEnabled = inputUnlockedDealsActive ? inputUnlockedDealsActive.checked : false;
     const rawMin = Number(inputUnlockedDealsMin?.value);
-    const minOrder = Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 299;
+    const minOrder = Number.isFinite(rawMin) && rawMin >= 50 ? Math.round(rawMin) : 199;
     const rawPct = Number(inputUnlockedDealsPct?.value);
-    const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(90, Math.round(rawPct)) : 15;
+    const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(50, Math.round(rawPct)) : 15;
     const title = inputUnlockedDealsTitle?.value?.trim() || 'Wholesale Club Deals';
 
     if (unlockedDealsStatusBadge) {
@@ -4444,9 +4444,9 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const isEnabled = inputUnlockedDealsActive ? inputUnlockedDealsActive.checked : false;
       const rawMin = Number(inputUnlockedDealsMin?.value);
-      const minOrder = Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 299;
+      const minOrder = Number.isFinite(rawMin) && rawMin >= 50 ? Math.round(rawMin) : 199;
       const rawPct = Number(inputUnlockedDealsPct?.value);
-      const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(90, Math.round(rawPct)) : 15;
+      const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(50, Math.round(rawPct)) : 15;
       const title = inputUnlockedDealsTitle?.value?.trim() || 'Wholesale Club Deals';
       const subtext = inputUnlockedDealsSubtext?.value?.trim() || `Shop for ₹${minOrder} to unlock special menu prices!`;
 
@@ -4468,6 +4468,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateUnlockedDealsPreview();
         const statusMsg = isEnabled ? `Active (${discountPct}% OFF above ₹${minOrder})` : 'Disabled';
+        // Auto-close unlocked deals panel on save
+        document.querySelector('.btn-close-offer-panel[data-target="offer-card-unlocked"]')?.click();
         showToast(`🎉 Unlocked Deals saved! Status: ${statusMsg}`, 'success');
         if (saveBtn) {
           saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';

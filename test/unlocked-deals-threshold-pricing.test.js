@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 if (typeof global.localStorage === 'undefined') {
   const store = new Map();
@@ -288,5 +289,42 @@ test('DYNAMIC UNLOCKED DEALS & THRESHOLD PRICING SUITE', async (t) => {
     assert.strictEqual(responseData.discount, 42);
     assert.strictEqual(responseData.deliveryFee, 40);
     assert.strictEqual(responseData.total, '₹208');
+  });
+  await t.test('11. Cloudflare functions/api/checkout.js merges body.storeSettings and applies unlocked deals', () => {
+    const fnCheckoutJs = fs.readFileSync(new URL('../functions/api/checkout.js', import.meta.url), 'utf8');
+    assert.ok(
+      fnCheckoutJs.includes('storeSettings = (authoritativeSettings && typeof authoritativeSettings') &&
+      fnCheckoutJs.includes('subtotal >= dealsMin'),
+      'Cloudflare checkout must merge body.storeSettings and validate unlockedDealsMinOrder'
+    );
+  });
+
+  await t.test('12. Admin configuration caps discount percentage at 50% and minimum order at >= 50', () => {
+    const adminHtml = fs.readFileSync(new URL('../admin.html', import.meta.url), 'utf8');
+    assert.ok(adminHtml.includes('id="input-unlocked-deals-pct" min="1" max="50"'), 'admin.html must cap discount at max 50%');
+
+    const saved = dataService.setUnlockedDeals({
+      unlockedDealsEnabled: true,
+      unlockedDealsMinOrder: 149,
+      unlockedDealsDiscountPct: 75 // Try 75%
+    });
+    assert.strictEqual(saved.unlockedDealsDiscountPct, 50, 'dataService must clamp discount to 50% max');
+  });
+
+  await t.test('13. admin.html contains one-tap ₹149 preset pill in unlocked-min-presets', () => {
+    const adminHtml = fs.readFileSync(new URL('../admin.html', import.meta.url), 'utf8');
+    assert.ok(
+      adminHtml.includes('class="unlocked-min-btn" data-val="149"'),
+      'admin.html must contain quick-preset button for ₹149'
+    );
+  });
+
+  await t.test('14. main.js dynamically switches lock icon to fa-lock-open when deals threshold is unlocked', () => {
+    const mainJs = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+    assert.ok(
+      mainJs.includes('icon.classList.add(\'fa-lock-open\')') &&
+      mainJs.includes('icon.style.color = \'#10b981\''),
+      'main.js must toggle dish card lock icons to fa-lock-open with emerald color when unlocked'
+    );
   });
 });

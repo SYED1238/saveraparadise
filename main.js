@@ -2601,7 +2601,22 @@ function initStorefrontApp() {
     const barFill = document.getElementById('unlocked-progress-fill');
     const barIcon = document.getElementById('unlocked-bar-icon');
 
-    if (subtotal >= minOrder) {
+    const isUnlocked = subtotal >= minOrder;
+
+    // Dynamically toggle lock icons on all storefront cards & modals
+    document.querySelectorAll('.meta-deal-price i').forEach(icon => {
+      if (isUnlocked) {
+        icon.classList.remove('fa-lock');
+        icon.classList.add('fa-lock-open');
+        icon.style.color = '#10b981';
+      } else {
+        icon.classList.remove('fa-lock-open');
+        icon.classList.add('fa-lock');
+        icon.style.color = '';
+      }
+    });
+
+    if (isUnlocked) {
       floatingBar.classList.add('is-unlocked');
       if (barIcon) barIcon.textContent = '🎉';
       const savings = Math.round((subtotal * discountPct) / 100);
@@ -2614,11 +2629,16 @@ function initStorefrontApp() {
       }
     } else {
       floatingBar.classList.remove('is-unlocked');
-      if (barIcon) barIcon.textContent = '🏷️';
+      if (barIcon) barIcon.textContent = '🔒';
       const needed = Math.round(minOrder - subtotal);
       const pct = Math.min(100, Math.max(8, Math.round((subtotal / minOrder) * 100)));
+      const customSubtext = (settings.unlockedDealsSubtext || '').trim();
       if (barText) {
-        barText.innerHTML = `Add <strong>₹${needed}</strong> more to unlock <span class="unlocked-bar-highlight">${discountPct}% OFF</span> special prices!`;
+        if (customSubtext && !/^Shop for ₹\d+ to unlock special menu prices!$/i.test(customSubtext)) {
+          barText.innerHTML = `${customSubtext} (Add <strong>₹${needed}</strong> more for <span class="unlocked-bar-highlight">${discountPct}% OFF</span>!)`;
+        } else {
+          barText.innerHTML = `Add <strong>₹${needed}</strong> more to unlock <span class="unlocked-bar-highlight">${discountPct}% OFF</span> special prices!`;
+        }
       }
       if (barFill) {
         barFill.style.width = `${pct}%`;
