@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
  */
 
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, DEFAULT_RIDERS, extractPhoneFromOrder, cleanDeliveryAddress } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, DEFAULT_RIDERS, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId } from './dataService.js';
 import {
   playNotificationSound,
   sendSystemNotification,
@@ -1077,6 +1077,7 @@ const initDeliveryApp = () => {
         : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cleanDeliveryAddress(rawDropAddress) + ', Ramanagara, Karnataka')}&travelmode=driving&dir_action=navigate`;
 
       const bagCode = escapeHtml(order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000'));
+      const displayId = escapeHtml(formatDisplayOrderId(order.id, bagCode));
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
 
       const whatsappText = `Hello ${order.customerName || 'Customer'}, I am your Savera Paradise delivery partner ${currentRider.name} on my way with your order ${order.id}.`;
@@ -1116,7 +1117,7 @@ const initDeliveryApp = () => {
             <!-- Top Bar: Order ID, Live Distance & Cash to Collect -->
             <div class="row-top-bar">
               <div class="row-id-meta-group">
-                <span class="row-order-id active">${safeId}</span>
+                <span class="row-order-id active">${displayId}</span>
                 ${parcelBadge}
                 <span class="row-bag-badge"><i class="fa-solid fa-box"></i> Bag <strong>#${bagCode}</strong></span>
                 <span class="row-live-dist" id="dist-badge-${cleanId}" title="Rider live GPS distance to customer">
@@ -1221,7 +1222,7 @@ const initDeliveryApp = () => {
         <article class="rider-order-row row-delivered ${isUndelivered ? 'row-undelivered' : ''}" data-order-id="${safeId}">
           <div class="row-top-bar">
             <div class="row-id-meta-group">
-              <span class="row-order-id ${isUndelivered ? 'undelivered' : 'delivered'}">${safeId}</span>
+              <span class="row-order-id ${isUndelivered ? 'undelivered' : 'delivered'}">${displayId}</span>
               ${isUndelivered ? `
                 <span class="row-returned-badge"><i class="fa-solid fa-box-archive"></i> Returned to Kitchen</span>
               ` : (order.safeDrop ? `

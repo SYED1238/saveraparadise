@@ -3,7 +3,7 @@
 // Read-Only Live Analytics, Financial Audits, Fleet KMs & Payouts
 // ==============================================================
 
-import { dataService, extractPhoneFromOrder, cleanDeliveryAddress } from './dataService.js';
+import { dataService, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId } from './dataService.js';
 import {
   escapeHtml,
   sanitizePhone,
@@ -1290,8 +1290,7 @@ function renderOrdersTable(orders) {
   }
 
   tbody.innerHTML = pageOrders.map(o => {
-    const rawId = String(o.id || '');
-    const cleanId = o.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
+    const cleanId = formatDisplayOrderId(o.id, o.pickupCode);
     const dateStr = o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
 
     const custName = o.customerName || o.customer_name || 'Customer';
@@ -1520,8 +1519,7 @@ function openInvoiceModal(order) {
   const modalBody = document.getElementById('modal-invoice-body');
   if (!modal || !modalBody) return;
 
-  const rawId = String(order.id || '');
-  const cleanId = order.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
+  const cleanId = formatDisplayOrderId(order.id, order.pickupCode);
   const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Live Order';
 
   if (modalId) modalId.textContent = cleanId;
@@ -3077,8 +3075,7 @@ function exportOrdersToCSV() {
   ];
 
   const rows = orders.map(o => {
-    const rawId = String(o.id || '');
-    const cleanId = o.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
+    const cleanId = formatDisplayOrderId(o.id, o.pickupCode);
     const dateObj = o.createdAt ? new Date(o.createdAt) : new Date();
     const dateStr = dateObj.toLocaleDateString('en-IN');
     const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });

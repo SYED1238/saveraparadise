@@ -4,7 +4,7 @@
  * and data synchronization with dataService.
  */
 
-import { dataService, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus } from './dataService.js';
+import { dataService, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId } from './dataService.js';
 import { cloudflareR2Service } from './cloudflareR2Service.js';
 import {
   playNotificationSound,
@@ -1773,11 +1773,13 @@ const initAdminApp = () => {
       filtered = filtered.filter(o => {
         if (!o) return false;
         const oid = String(o.id || '').toLowerCase();
+        const dispId = formatDisplayOrderId(o.id, o.pickupCode).toLowerCase();
         const items = String(o.itemsSummary || '').toLowerCase();
         const cname = String(o.customerName || '').toLowerCase();
         const cphone = String(o.customerPhone || o.phone || '').toLowerCase();
         const pcode = String(o.pickupCode || '').toLowerCase();
         return oid.includes(q) ||
+               dispId.includes(q) ||
                items.includes(q) ||
                cname.includes(q) ||
                cphone.includes(q) ||
@@ -1872,6 +1874,7 @@ const initAdminApp = () => {
 
       const safeOrderId = escapeHtml(order.id);
       const bagCode = order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000');
+      const displayOrderId = formatDisplayOrderId(order.id, bagCode);
       const safeCustomerName = escapeHtml(order.customerName || 'Online Order');
       const rawAddrs = dataService.getAllAddressesRaw();
       const extractedPhone = extractPhoneFromOrder(order, rawAddrs) || order.customerPhone || '';
@@ -1955,7 +1958,7 @@ const initAdminApp = () => {
         <div class="order-card-admin ${cardOverdueClass}" data-id="${safeOrderId}">
           <div class="order-card-header">
             <div>
-              <div class="order-id-label">${safeOrderId}</div>
+              <div class="order-id-label">${escapeHtml(displayOrderId)}</div>
               <div class="order-pickup-code-badge"><i class="fa-solid fa-tag"></i> Write on Bag: <strong>#${bagCode}</strong></div>
               <div class="order-time-tag"><i class="fa-regular fa-clock"></i> ${timeAgo}</div>
               ${overdueBadgeHtml}
@@ -2123,7 +2126,8 @@ const initAdminApp = () => {
 
     if (orderEditId) orderEditId.value = order.id;
     const bagCode = order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000');
-    if (orderModalTitle) orderModalTitle.textContent = `Order Receipt ${order.id} • Bag #${bagCode}`;
+    const displayOrderId = formatDisplayOrderId(order.id, bagCode);
+    if (orderModalTitle) orderModalTitle.textContent = `Order Receipt ${displayOrderId} • Bag #${bagCode}`;
 
     if (orderModalTimeSub) {
       const riderStr = order.assignedRiderName ? ` • 🏍️ Rider: ${order.assignedRiderName}` : ' • 📦 Waiting for Rider Pickup';
@@ -2458,6 +2462,7 @@ const initAdminApp = () => {
     const rawPhone = extractPhoneFromOrder(order, dataService.getAllAddressesRaw()) || order.customerPhone || order.phone || 'N/A';
     const cleanAddr = cleanDeliveryAddress(order.address || order.deliveryAddress || 'Doorstep Delivery');
     const bagCode = String(order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000')).padStart(4, '0');
+    const displayOrderId = formatDisplayOrderId(order.id, bagCode);
     const noteText = (order.notes || order.kitchenNotes || order.customerNotes || (order.addressDetails && order.addressDetails.instructions) || '').trim();
 
     let paymentLabel = 'CASH ON DELIVERY (COD)';
@@ -2498,7 +2503,7 @@ const initAdminApp = () => {
           <div style="font-size: 11px; margin-top: 2px;">*** KITCHEN ORDER TICKET (KOT) ***</div>
         </div>
         <div class="kot-divider">================================</div>
-        <div class="kot-row"><span>ORDER NO:</span> <strong>${escapeHtml(order.id)}</strong></div>
+        <div class="kot-row"><span>ORDER NO:</span> <strong>${escapeHtml(displayOrderId)}</strong></div>
         <div class="kot-row"><span>BAG PICKUP CODE:</span> <strong style="font-size:15px; letter-spacing: 1px;">#${escapeHtml(bagCode)}</strong></div>
         <div class="kot-row"><span>DATE/TIME:</span> <span>${dateStr}</span></div>
         <div class="kot-row"><span>PAYMENT:</span> <strong>${paymentLabel}</strong></div>

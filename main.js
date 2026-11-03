@@ -5492,12 +5492,11 @@ function initStorefrontApp() {
         // 7. PLACE ORDER WITH CASH ON DELIVERY (COD)
         const existingOrders = (typeof dataService !== 'undefined' && dataService.getOrders) ? dataService.getOrders() : [];
         const existingIds = new Set(existingOrders.map(o => o && o.id));
-        const timeSegment = Date.now().toString(36).toUpperCase().slice(-4);
         let randomOrderNum = Math.floor(1000 + Math.random() * 9000);
-        let newOrderId = `#QB-${timeSegment}-${randomOrderNum}`;
+        let newOrderId = `#QB-${randomOrderNum}`;
         while (existingIds.has(newOrderId)) {
           randomOrderNum = Math.floor(1000 + Math.random() * 9000);
-          newOrderId = `#QB-${timeSegment}-${randomOrderNum}`;
+          newOrderId = `#QB-${randomOrderNum}`;
         }
         const pickupCode = randomOrderNum.toString();
         const itemsSummary = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');

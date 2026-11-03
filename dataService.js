@@ -7520,3 +7520,30 @@ class QuickBiteDataService {
 
 export const dataService = new QuickBiteDataService();
 
+/**
+ * Standardized order ID display formatter
+ * Normalizes verbose internal/test order IDs (e.g. QB-TEST-FEE-1793732896403)
+ * into clean, compact 4-digit codes matching the bag pickup tag (e.g. #QB-6403).
+ */
+export function formatDisplayOrderId(orderId, pickupCode) {
+  if (!orderId) return '#QB-0000';
+  const str = String(orderId).trim();
+  const simpleMatch = str.match(/^#?QB-(\d{4})$/i);
+  if (simpleMatch) {
+    return `#QB-${simpleMatch[1]}`;
+  }
+  if (pickupCode) {
+    const cleanPickup = String(pickupCode).replace(/\D/g, '');
+    if (cleanPickup.length >= 4) {
+      return `#QB-${cleanPickup.slice(-4)}`;
+    }
+  }
+  const digits = str.replace(/\D/g, '');
+  if (digits.length >= 4) {
+    return `#QB-${digits.slice(-4)}`;
+  }
+  return str.startsWith('#') ? str : `#${str}`;
+}
+
+dataService.formatDisplayOrderId = formatDisplayOrderId;
+
