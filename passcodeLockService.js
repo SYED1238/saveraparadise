@@ -21,6 +21,8 @@ export function initIosPasscodeLock(options) {
 
   let enteredPin = '';
   let isVerifying = false;
+      overlayEl.classList.remove('unlocked');
+      overlayEl.style.display = 'flex';
   let failedAttempts = 0;
   let lockoutUntil = 0;
   const defaultSubtitle = subtitleEl ? subtitleEl.textContent : 'Enter 4-digit passcode';
@@ -68,6 +70,7 @@ export function initIosPasscodeLock(options) {
         }
         setTimeout(() => {
           overlayEl.classList.add('unlocked');
+          overlayEl.style.display = 'none';
           if (onSuccess) onSuccess(enteredPin);
           // Reset internal state for next session/lock
           setTimeout(() => {

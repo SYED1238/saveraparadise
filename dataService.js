@@ -6736,9 +6736,9 @@ class QuickBiteDataService {
     try {
       const activeId = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_active_rider_id') : null;
       const riders = this.getRiders();
-      if (activeId) {
-        const found = riders.find(r => r.id === activeId || r.pin === activeId) ||
-                      DEFAULT_RIDERS.find(r => r.id === activeId || r.pin === activeId);
+      if (activeId && activeId !== 'undefined' && activeId !== 'null') {
+        const found = riders.find(r => r.id === activeId || r.pin === activeId || ('rider-' + r.pin) === activeId) ||
+                      DEFAULT_RIDERS.find(r => r.id === activeId || r.pin === activeId || ('rider-' + r.pin) === activeId);
         if (found) return found;
       }
       // Migrate legacy plaintext PIN storage if present and remove it
@@ -6747,7 +6747,8 @@ class QuickBiteDataService {
         const rider = this.getRiderByPin(legacyPin);
         if (rider) {
           if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('quickbite_active_rider_id', rider.id);
+            const rId = rider.id || ('rider-' + rider.pin);
+            localStorage.setItem('quickbite_active_rider_id', rId);
             localStorage.removeItem('quickbite_active_rider_pin');
           }
           return rider;
@@ -6765,7 +6766,9 @@ class QuickBiteDataService {
       const rider = this.getRiderByPin(cleanPin);
       if (!rider) return null;
       // Store rider ID instead of raw plaintext PIN to prevent credential theft
-      localStorage.setItem('quickbite_active_rider_id', rider.id);
+      const riderId = rider.id || ('rider-' + cleanPin);
+      if (!rider.id) rider.id = riderId;
+      localStorage.setItem('quickbite_active_rider_id', riderId);
       localStorage.removeItem('quickbite_active_rider_pin');
       this.notifyChange('rider_session', { pin: cleanPin, rider, timestamp: Date.now() });
       return rider;

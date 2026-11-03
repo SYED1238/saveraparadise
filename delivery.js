@@ -51,7 +51,7 @@ const KITCHEN_INFO = {
   lng: RESTAURANT_COORDINATES.lng
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+const initDeliveryApp = () => {
   // Navigation Back Stack Controller (Single-step back navigation)
   const backNav = createBackNavigationManager('delivery');
 
@@ -307,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
       }
-      if (riderLockOverlay) riderLockOverlay.classList.add('unlocked');
+      if (riderLockOverlay) { riderLockOverlay.classList.add('unlocked'); riderLockOverlay.style.display = 'none'; }
       updateRiderProfileHeader();
       requestWakeLock();
       renderPortal();
@@ -2986,4 +2986,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial render & Live Geolocation tracking start
   checkRiderSession();
   attachBagInputListeners();
-});
+};
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDeliveryApp);
+  } else {
+    initDeliveryApp();
+  }
+}

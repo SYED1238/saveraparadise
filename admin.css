@@ -5815,9 +5815,10 @@ body.kitchen-alarm-ringing::before {
 }
 
 .portal-lock-overlay.unlocked {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .portal-lock-card {

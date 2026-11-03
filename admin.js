@@ -32,7 +32,7 @@ import { initIosPasscodeLock } from './passcodeLockService.js';
 import { requestWakeLock, releaseWakeLock, isWakeLockActive, onWakeLockChange } from './wakeLockService.js';
 import './pwa.css';
 
-document.addEventListener('DOMContentLoaded', () => {
+const initAdminApp = () => {
   // Navigation Back Stack Controller (Single-step back navigation)
   const backNav = createBackNavigationManager('admin');
 
@@ -5227,4 +5227,12 @@ document.addEventListener('DOMContentLoaded', () => {
     isOpen: () => activeView && activeView !== 'view-menu',
     close: () => switchView('view-menu', false)
   });
-});
+};
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAdminApp);
+  } else {
+    initAdminApp();
+  }
+}
