@@ -12307,20 +12307,22 @@ body.order-modal-open .unlocked-deals-floating-bar {
    ======================================================== */
 .recipe-card-schedule-pill {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 5;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 5.5px;
   font-size: 0.72rem;
   font-weight: 800;
-  padding: 4px 9px;
-  border-radius: 20px;
+  padding: 4.5px 10.5px;
+  border-radius: 9999px;
   letter-spacing: 0.02em;
+  white-space: nowrap;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
 }
 
 .recipe-card-schedule-pill.countdown-pill {
@@ -12352,9 +12354,15 @@ body.order-modal-open .unlocked-deals-floating-bar {
 }
 
 .recipe-card-schedule-pill.active-window-pill {
+  right: auto;
+  left: 12px;
   background: rgba(6, 78, 59, 0.88);
   color: #34D399;
   border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.recipe-card:has(.recipe-card-badge-pill:not(:empty)) .recipe-card-schedule-pill.active-window-pill {
+  top: 44px;
 }
 
 .recipe-card.is-scheduled-countdown .recipe-img,
@@ -12362,11 +12370,34 @@ body.order-modal-open .unlocked-deals-floating-bar {
   filter: brightness(0.85);
 }
 
+/* Hide Add Button & Card Steppers completely for dishes not yet started or inactive */
 .recipe-card.is-scheduled-countdown .btn-glass-add,
-.recipe-card.is-scheduled-inactive .btn-glass-add {
-  background: rgba(17, 24, 39, 0.75);
-  border-color: rgba(255, 255, 255, 0.25);
-  opacity: 0.9;
+.recipe-card.is-scheduled-inactive .btn-glass-add,
+.recipe-card.is-scheduled-countdown .dish-card-stepper,
+.recipe-card.is-scheduled-inactive .dish-card-stepper {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+/* Also hide promotional badge on unstarted/inactive cards to avoid obscuring countdown */
+.recipe-card.is-scheduled-countdown .recipe-card-badge-pill,
+.recipe-card.is-scheduled-inactive .recipe-card-badge-pill {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .recipe-card-schedule-pill {
+    top: 8px;
+    right: 8px;
+    font-size: 0.68rem;
+    padding: 3.5px 8.5px;
+    gap: 4px;
+  }
+  .recipe-card-schedule-pill.active-window-pill {
+    top: 8px;
+    left: 8px;
+    right: auto;
+  }
 }
 
 /* Modal Schedule Banner */

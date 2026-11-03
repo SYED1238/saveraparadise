@@ -189,4 +189,23 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
     assert.ok(styleCss.includes('.recipe-card-schedule-pill.day-pill'), 'style.css has day-pill');
     assert.ok(styleCss.includes('.food-schedule-banner'), 'style.css has food-schedule-banner');
   });
+
+  await t.test('10. Storefront UX: Add button and stepper hidden on unstarted/inactive scheduled dishes', () => {
+    const styleCss = fs.readFileSync(path.join(rootDir, 'style.css'), 'utf8');
+    assert.match(
+      styleCss,
+      /\.recipe-card\.is-scheduled-countdown\s+\.btn-glass-add[\s\S]*display:\s*none\s*!important/i,
+      'Add button must be strictly hidden when dish serving has not started'
+    );
+    assert.match(
+      styleCss,
+      /\.recipe-card\.is-scheduled-countdown\s+\.dish-card-stepper[\s\S]*display:\s*none\s*!important/i,
+      'Stepper must be strictly hidden when dish serving has not started'
+    );
+    assert.match(
+      styleCss,
+      /\.recipe-card\.is-scheduled-inactive\s+\.btn-glass-add[\s\S]*display:\s*none\s*!important/i,
+      'Add button must be strictly hidden when dish is inactive'
+    );
+  });
 });
