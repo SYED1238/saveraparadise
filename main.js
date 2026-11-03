@@ -6708,7 +6708,37 @@ function initStorefrontApp() {
         }
       };
 
-      // Pass 1: Fast Cached Fix (Instant 50ms lock on phones with warm GPS / cached location)
+      // Check if location permission is already blocked in browser settings and listen for unblocking
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'geolocation' }).then(perm => {
+          if (!window._geoPermissionListenerAttached) {
+            window._geoPermissionListenerAttached = true;
+            perm.onchange = () => {
+              if (perm.state === 'granted') {
+                showToast('✅ Location access allowed! Detecting your doorstep...', 'success');
+                btnDetectGps?.click();
+              }
+            };
+          }
+          if (perm.state === 'denied') {
+            btnDetectGps.classList.remove('detecting');
+            if (btnDetectGpsText) {
+              btnDetectGpsText.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Detect My Location';
+            }
+            showToast('📍 Location blocked in browser: Tap the 🔒 lock icon in your address bar above to Allow, or search your street below!', 'warning', { duration: 6500 });
+            const helperTag = document.querySelector('.map-drag-helper-tag');
+            if (helperTag) {
+              helperTag.innerHTML = '<i class="fa-solid fa-lock"></i> Tap 🔒 lock icon at top to Allow Location, or drag pin / search street below';
+            }
+            const searchInput = document.getElementById('map-address-search-input');
+            if (searchInput) {
+              searchInput.focus();
+            }
+          }
+        }).catch(() => {});
+      }
+
+            // Pass 1: Fast Cached Fix (Instant 50ms lock on phones with warm GPS / cached location)
       try {
         navigator.geolocation.getCurrentPosition(
           (cachedPos) => {
@@ -6768,10 +6798,32 @@ function initStorefrontApp() {
           if (btnDetectGpsText) btnDetectGpsText.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Detect My Location';
           console.warn('Geolocation error:', err);
 
-          if (err && err.code === 1) { // PERMISSION_DENIED
-            showToast('📍 Location permission denied. Please allow location in browser settings or type address below.', 'warning');
+          const isPhoneGpsOff = (err && err.code === 2) || (err?.message && /unavailable|disabled|settings|provider/i.test(err.message));
+          const isPermissionDenied = (err && err.code === 1);
+
+          if (isPhoneGpsOff) {
+            showToast('📱 Phone Location is OFF: Please swipe down from the top of your phone and turn ON Location (GPS)!', 'warning', { duration: 6500 });
+            const helperTag = document.querySelector('.map-drag-helper-tag');
+            if (helperTag) {
+              helperTag.innerHTML = '<i class="fa-solid fa-mobile-screen-button"></i> Turn ON Location (GPS) in phone settings, or drag pin / search street below';
+            }
+          } else if (isPermissionDenied) {
+            showToast('📍 Location blocked in browser: Tap the 🔒 lock icon in your address bar above to Allow, or search your street below!', 'warning', { duration: 6500 });
+            const helperTag = document.querySelector('.map-drag-helper-tag');
+            if (helperTag) {
+              helperTag.innerHTML = '<i class="fa-solid fa-lock"></i> Tap 🔒 lock icon at top to Allow Location, or drag pin / search street below';
+            }
+          } else if (err && err.code === 3) {
+            showToast('⏱️ Satellite GPS took too long. Please drag the pin on map or search your address above!', 'info', { duration: 5000 });
           } else {
-            showToast('Could not access GPS. Please drag the pin or type your delivery address below!', 'info');
+            showToast('Could not access GPS. Please drag the pin on map or search your address above!', 'info');
+          }
+
+          const searchInput = document.getElementById('map-address-search-input');
+          if (searchInput && (isPhoneGpsOff || isPermissionDenied)) {
+            setTimeout(() => {
+              searchInput.focus();
+            }, 300);
           }
 
           if (addrAutofillBadge) {

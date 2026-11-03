@@ -184,7 +184,24 @@ test('PHASE 2: RESTAURANT OPERATIONS & GEOFENCING DEFENSE SUITE', async (t) => {
       'closeAddressModalInternal must stop GPS watch and timer on modal close'
     );
 
-    // 4. Visual state styles in style.css
+    // 4. Phone GPS OFF and browser blocked user-friendly guidance
+    assert.match(
+      mainJs,
+      /showToast\([^)]*Phone Location is OFF/i,
+      'main.js must explicitly instruct user to turn on GPS in phone settings when device location is off'
+    );
+    assert.match(
+      mainJs,
+      /showToast\([^)]*Location blocked in browser/i,
+      'main.js must guide user to address bar lock icon when browser permission is denied'
+    );
+    assert.match(
+      mainJs,
+      /navigator\.permissions\.query\(\{\s*name:\s*['"]geolocation['"]\s*\}\)/,
+      'main.js must check permissions API to auto-detect if user allows location via address bar'
+    );
+
+    // 5. Visual state styles in style.css
     assert.match(
       styleCss,
       /\.swiggy-floating-gps-btn\.detecting\s*\{/,
