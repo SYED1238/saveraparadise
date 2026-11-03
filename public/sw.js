@@ -57,9 +57,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // Map Tiles Caching (Google Maps Street & OpenStreetMap) with Cache-First Strategy
-  const isMapTile = (url.hostname.includes('google.com') && url.pathname.includes('/vt/')) ||
-                    url.hostname.includes('tile.openstreetmap.org') ||
-                    (url.origin === self.location.origin && url.pathname.includes('/api/ola-maps'));
+  const isMapTile = (url.hostname.includes('google.com') && url.pathname.includes('/vt/')) ||
+                    url.hostname.includes('tile.openstreetmap.org');
 
   if (isMapTile) {
     const MAP_CACHE_NAME = 'savera-map-tiles-v1';

@@ -332,10 +332,11 @@ export function registerServiceWorker() {
         console.warn('[SW] Registration failed:', err);
       });
 
-    // When new service worker activates and purges stale caches, refresh page seamlessly once
+    // When new service worker activates and purges stale caches, refresh page seamlessly once (only for existing updates, not 1st visit)
+    const hadController = Boolean(navigator.serviceWorker.controller);
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!refreshing) {
+      if (hadController && !refreshing) {
         refreshing = true;
         window.location.reload();
       }

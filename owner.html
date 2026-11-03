@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Savera Paradise — Owner Portal | Sales, Cash Drawer & Delivery Settlements</title>
   <meta name="description" content="Savera Paradise Owner Portal. Live sales analytics, counter cash drawer management, delivery fleet tracking and rider nighttime payouts.">
   <meta name="robots" content="noindex, nofollow">
@@ -24,6 +24,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/icon-owner-apple-touch.png">
   <link rel="apple-touch-icon" href="/icon-owner-192.png">
   <meta name="theme-color" content="#0B0F17">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Savera Owner">
@@ -32,6 +33,25 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/passcodeLock.css">
   <link rel="stylesheet" href="/owner.css">
+  <link rel="stylesheet" href="/pwa.css">
+  <script>
+    (function() {
+      try {
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+          document.documentElement.classList.add('pwa-owner-installed');
+        }
+      } catch (e) {}
+      window.__deferredPwaPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__deferredPwaPrompt = e;
+      });
+      window.addEventListener('appinstalled', function() {
+        window.__deferredPwaPrompt = null;
+        document.documentElement.classList.add('pwa-owner-installed');
+      });
+    })();
+  </script>
 </head>
 <body class="owner-body">
 

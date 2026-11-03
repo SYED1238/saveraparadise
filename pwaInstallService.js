@@ -160,6 +160,8 @@ export function detectPlatformEnvironment(customUa) {
   if (isIOS) {
     if (isInApp) return 'ios-inapp';
     if (/CriOS/i.test(ua)) return 'ios-chrome';
+    if (/FxiOS/i.test(ua)) return 'ios-firefox';
+    if (/EdgiOS/i.test(ua)) return 'ios-edge';
     return 'ios-safari';
   }
 
@@ -522,22 +524,10 @@ export function showAutoInstallBanner() {
   const confirmBtn = banner.querySelector('#btn-pwa-autoinstall-confirm');
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
-      const promptEvent = (typeof window !== 'undefined' && window.__deferredPwaPrompt) || deferredInstallPrompt;
-      if (promptEvent) {
-        try {
-          promptEvent.prompt();
-          const choice = await promptEvent.userChoice;
-          if (choice && choice.outcome === 'accepted') {
-            hideAutoInstallBanner();
-            hideAllInstallButtons();
-            setTimeout(() => {
-              enableAppNotificationsWithWelcome();
-            }, 1200);
-          }
-        } catch (err) {
-          console.warn('[PWA] Auto-install prompt failed:', err);
-        }
-      } else {
+      confirmBtn.disabled = true;
+      try {
+        await triggerAppDownload();
+      } finally {
         hideAutoInstallBanner();
       }
     });
@@ -687,9 +677,9 @@ export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
     try {
       promptEvent.prompt();
       const choice = await promptEvent.userChoice;
+      deferredInstallPrompt = null;
+      if (typeof window !== 'undefined') window.__deferredPwaPrompt = null;
       if (choice && choice.outcome === 'accepted') {
-        deferredInstallPrompt = null;
-        if (typeof window !== 'undefined') window.__deferredPwaPrompt = null;
         hideAllInstallButtons();
         closePwaInstallModal();
         hideAutoInstallBanner();

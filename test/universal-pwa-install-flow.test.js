@@ -374,4 +374,49 @@ test('UNIVERSAL PWA INSTALL FLOW INTEGRATION SUITE', async (t) => {
     assert.match(pwaCss, /\.pwa-autoinstall-card/, 'Must style pwa-autoinstall-card');
     assert.match(pwaCss, /@keyframes pwa-sheet-slideup/, 'Must define slide-up animation for mobile bottom sheet');
   });
+
+  // =========================================================================
+  // 13. Feature #6 Extended PWA Hardening & Standards Compliance
+  // =========================================================================
+  await t.test('13. sw.js does not intercept /api/ola-maps and allows dynamic map queries to hit network', () => {
+    assert.doesNotMatch(swJs, /url\.pathname\.includes\(['"]\/api\/ola-maps['"]\)/, 'sw.js must NOT intercept /api/ola-maps into permanent tile cache');
+  });
+
+  await t.test('14. notificationService.js guards against first-visit reload on controllerchange', () => {
+    const notifJs = fs.readFileSync(new URL('../notificationService.js', import.meta.url), 'utf8');
+    assert.match(notifJs, /hadController/, 'Must check if a controller existed prior to reload');
+    assert.match(notifJs, /if \(hadController && !refreshing\)/, 'Must only reload when hadController is true');
+  });
+
+  await t.test('15. owner.html, admin.html, and delivery.html include viewport-fit=cover and mobile-web-app-capable', () => {
+    const ownerHtml = fs.readFileSync(new URL('../owner.html', import.meta.url), 'utf8');
+    const adminHtml = fs.readFileSync(new URL('../admin.html', import.meta.url), 'utf8');
+    const deliveryHtml = fs.readFileSync(new URL('../delivery.html', import.meta.url), 'utf8');
+
+    [ownerHtml, adminHtml, deliveryHtml].forEach((html, idx) => {
+      const name = ['owner.html', 'admin.html', 'delivery.html'][idx];
+      assert.match(html, /viewport-fit=cover/, `${name} must have viewport-fit=cover`);
+      assert.match(html, /name="mobile-web-app-capable" content="yes"/, `${name} must have mobile-web-app-capable`);
+    });
+    assert.match(ownerHtml, /window\.__deferredPwaPrompt = null;/, 'owner.html must capture beforeinstallprompt in head');
+  });
+
+  await t.test('16. Secondary manifests split any and maskable icon purposes', () => {
+    ['manifest-admin.json', 'manifest-owner.json', 'manifest-delivery.json'].forEach(mfName => {
+      const mf = JSON.parse(fs.readFileSync(new URL(`../public/${mfName}`, import.meta.url), 'utf8'));
+      const hasAny = mf.icons.some(i => i.purpose === 'any');
+      const hasMaskable = mf.icons.some(i => i.purpose === 'maskable');
+      const hasCombined = mf.icons.some(i => i.purpose && i.purpose.includes('any') && i.purpose.includes('maskable'));
+      assert.ok(hasAny, `${mfName} must have purpose any`);
+      assert.ok(hasMaskable, `${mfName} must have purpose maskable`);
+      assert.strictEqual(hasCombined, false, `${mfName} must not combine any maskable`);
+    });
+  });
+
+  await t.test('17. detectPlatformEnvironment isolates FxiOS and EdgiOS', () => {
+    const iosFirefox = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/114.0 Mobile/15E148 Safari/605.1.15';
+    const iosEdge = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/114.0.1823.51 Mobile/15E148 Safari/605.1.15';
+    assert.strictEqual(detectPlatformEnvironment(iosFirefox), 'ios-firefox');
+    assert.strictEqual(detectPlatformEnvironment(iosEdge), 'ios-edge');
+  });
 });
