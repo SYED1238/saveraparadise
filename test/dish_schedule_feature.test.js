@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 import { formatTime12h, getDishScheduleStatus, dataService } from '../dataService.js';
+import { supabase } from '../supabaseClient.js';
 
 test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
   await t.test('1. formatTime12h helper converts 24h formats accurately to 12h AM/PM', () => {
@@ -132,6 +133,14 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
   });
 
   await t.test('7. dataService.addDish and updateDish persist schedule fields', () => {
+    const origFrom = supabase.from;
+    supabase.from = () => ({
+      insert: () => Promise.resolve({ error: null }),
+      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      delete: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      select: () => Promise.resolve({ data: [], error: null })
+    });
+
     const testDish = {
       name: 'Late Night Tandoori Feast',
       category: 'bbq-tandoori',
@@ -143,24 +152,28 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
       availableTo: '23:30'
     };
 
-    const created = dataService.addDish(testDish);
-    assert.ok(created.id);
-    assert.deepEqual(created.availableDays, ['fri', 'sat', 'sun']);
-    assert.equal(created.timeRestricted, true);
-    assert.equal(created.availableFrom, '19:00');
-    assert.equal(created.availableTo, '23:30');
+    try {
+      const created = dataService.addDish(testDish);
+      assert.ok(created.id);
+      assert.deepEqual(created.availableDays, ['fri', 'sat', 'sun']);
+      assert.equal(created.timeRestricted, true);
+      assert.equal(created.availableFrom, '19:00');
+      assert.equal(created.availableTo, '23:30');
 
-    // Update schedule
-    const updated = dataService.updateDish(created.id, {
-      availableDays: ['sat', 'sun'],
-      availableFrom: '20:00'
-    });
-    assert.deepEqual(updated.availableDays, ['sat', 'sun']);
-    assert.equal(updated.availableFrom, '20:00');
-    assert.equal(updated.availableTo, '23:30');
+      // Update schedule
+      const updated = dataService.updateDish(created.id, {
+        availableDays: ['sat', 'sun'],
+        availableFrom: '20:00'
+      });
+      assert.deepEqual(updated.availableDays, ['sat', 'sun']);
+      assert.equal(updated.availableFrom, '20:00');
+      assert.equal(updated.availableTo, '23:30');
 
-    // Clean up
-    dataService.deleteDish(created.id);
+      // Clean up local cache
+      dataService.deleteDish(created.id);
+    } finally {
+      supabase.from = origFrom;
+    }
   });
 
   await t.test('8. DOM parity: admin.html and index.html contain all schedule elements', () => {
