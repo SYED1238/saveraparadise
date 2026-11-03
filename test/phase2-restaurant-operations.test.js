@@ -192,8 +192,8 @@ test('PHASE 2: RESTAURANT OPERATIONS & GEOFENCING DEFENSE SUITE', async (t) => {
     );
     assert.match(
       mainJs,
-      /showToast\([^)]*Location blocked in browser/i,
-      'main.js must guide user to address bar lock icon when browser permission is denied'
+      /showToast\([^)]*swipe down and turn ON Location/i,
+      'main.js must guide mobile users to swipe down and turn on phone GPS when code 1 is reported'
     );
     assert.match(
       mainJs,

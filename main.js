@@ -6708,7 +6708,7 @@ function initStorefrontApp() {
         }
       };
 
-      // Check if location permission is already blocked in browser settings and listen for unblocking
+      // Listen for permission state changes (auto-detect if user allows location)
       if (navigator.permissions && navigator.permissions.query) {
         navigator.permissions.query({ name: 'geolocation' }).then(perm => {
           if (!window._geoPermissionListenerAttached) {
@@ -6719,21 +6719,6 @@ function initStorefrontApp() {
                 btnDetectGps?.click();
               }
             };
-          }
-          if (perm.state === 'denied') {
-            btnDetectGps.classList.remove('detecting');
-            if (btnDetectGpsText) {
-              btnDetectGpsText.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Detect My Location';
-            }
-            showToast('📍 Location blocked in browser: Tap the 🔒 lock icon in your address bar above to Allow, or search your street below!', 'warning', { duration: 6500 });
-            const helperTag = document.querySelector('.map-drag-helper-tag');
-            if (helperTag) {
-              helperTag.innerHTML = '<i class="fa-solid fa-lock"></i> Tap 🔒 lock icon at top to Allow Location, or drag pin / search street below';
-            }
-            const searchInput = document.getElementById('map-address-search-input');
-            if (searchInput) {
-              searchInput.focus();
-            }
           }
         }).catch(() => {});
       }
@@ -6798,6 +6783,7 @@ function initStorefrontApp() {
           if (btnDetectGpsText) btnDetectGpsText.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Detect My Location';
           console.warn('Geolocation error:', err);
 
+const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0 && window.innerWidth < 850);
           const isPhoneGpsOff = (err && err.code === 2) || (err?.message && /unavailable|disabled|settings|provider/i.test(err.message));
           const isPermissionDenied = (err && err.code === 1);
 
@@ -6808,10 +6794,19 @@ function initStorefrontApp() {
               helperTag.innerHTML = '<i class="fa-solid fa-mobile-screen-button"></i> Turn ON Location (GPS) in phone settings, or drag pin / search street below';
             }
           } else if (isPermissionDenied) {
-            showToast('📍 Location blocked in browser: Tap the 🔒 lock icon in your address bar above to Allow, or search your street below!', 'warning', { duration: 6500 });
-            const helperTag = document.querySelector('.map-drag-helper-tag');
-            if (helperTag) {
-              helperTag.innerHTML = '<i class="fa-solid fa-lock"></i> Tap 🔒 lock icon at top to Allow Location, or drag pin / search street below';
+            if (isMobileDevice) {
+              // On Android/iOS, code 1 is frequently triggered when the system location toggle is off
+              showToast('📱 Location is OFF: Please swipe down and turn ON Location (GPS) on your phone, or tap 🔒 in browser to allow!', 'warning', { duration: 6500 });
+              const helperTag = document.querySelector('.map-drag-helper-tag');
+              if (helperTag) {
+                helperTag.innerHTML = '<i class="fa-solid fa-mobile-screen-button"></i> Turn ON phone Location (GPS), tap 🔒 lock icon, or search street below';
+              }
+            } else {
+              showToast('📍 Location permission denied: Tap the 🔒 lock icon in your browser address bar to Allow, or search your street below!', 'warning', { duration: 6500 });
+              const helperTag = document.querySelector('.map-drag-helper-tag');
+              if (helperTag) {
+                helperTag.innerHTML = '<i class="fa-solid fa-lock"></i> Tap 🔒 lock icon at top to Allow Location, or drag pin / search street below';
+              }
             }
           } else if (err && err.code === 3) {
             showToast('⏱️ Satellite GPS took too long. Please drag the pin on map or search your address above!', 'info', { duration: 5000 });
@@ -6819,7 +6814,7 @@ function initStorefrontApp() {
             showToast('Could not access GPS. Please drag the pin on map or search your address above!', 'info');
           }
 
-          const searchInput = document.getElementById('map-address-search-input');
+                    const searchInput = document.getElementById('map-address-search-input');
           if (searchInput && (isPhoneGpsOff || isPermissionDenied)) {
             setTimeout(() => {
               searchInput.focus();
