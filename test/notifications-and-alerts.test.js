@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -982,5 +983,42 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
     assert.equal(soundPlayed, 'payout_received');
     assert.equal(tabTitleFlashed, '💰 PAYOUT RECEIVED!');
     assert.equal(systemNotifSent.tag, 'rider-payout-paid');
+  });
+
+  // =========================================================================
+  // 18. Feature #7 Extended Web Audio, Multi-Order Queue & Synthesizer Suite
+  // =========================================================================
+  await t.test('18. unlockAudioContext is exported and resumes suspended Web Audio context', async () => {
+    const ns = await import('../notificationService.js');
+    assert.equal(typeof ns.unlockAudioContext, 'function', 'unlockAudioContext must be an exported function');
+    await assert.doesNotReject(async () => { await ns.unlockAudioContext(); });
+  });
+
+  await t.test('19. playNotificationSound handles cod_collected and ready/ready_for_pickup tones', async () => {
+    const ns = await import('../notificationService.js');
+    // Calling with newly supported tone types without errors
+    assert.doesNotThrow(() => ns.playNotificationSound('cod_collected'));
+    assert.doesNotThrow(() => ns.playNotificationSound('ready'));
+    assert.doesNotThrow(() => ns.playNotificationSound('ready_for_pickup'));
+  });
+
+  await t.test('20. requestSystemNotificationPermission short-circuits on granted or denied status', async () => {
+    const ns = await import('../notificationService.js');
+    const origNotif = globalThis.Notification;
+    try {
+      globalThis.Notification = { permission: 'granted', requestPermission: async () => 'granted' };
+      const status = await ns.requestSystemNotificationPermission();
+      assert.equal(status, 'granted');
+    } finally {
+      globalThis.Notification = origNotif;
+    }
+  });
+
+  await t.test('21. admin.js delegates kitchen alarm to playNotificationSound without competing intervals', () => {
+    const adminJs = fs.readFileSync(new URL('../admin.html', import.meta.url), 'utf8');
+    const adminSrc = fs.readFileSync(new URL('../admin.js', import.meta.url), 'utf8');
+    assert.doesNotMatch(adminSrc, /let titleFlashInterval/, 'admin.js must not declare competing local titleFlashInterval');
+    assert.match(adminSrc, /playNotificationSound\(['"]kitchen_alarm['"]\)/, 'playKitchenChime must delegate to playNotificationSound');
+    assert.match(adminSrc, /stopFlashingTabTitle\(\)/, 'stopKitchenAlarm must call centralized stopFlashingTabTitle');
   });
 });

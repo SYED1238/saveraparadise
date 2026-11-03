@@ -10,6 +10,8 @@ import {
   playNotificationSound,
   sendSystemNotification,
   flashTabTitle,
+  stopFlashingTabTitle,
+  unlockAudioContext,
   requestSystemNotificationPermission,
   getSystemNotificationPermission,
   updateAppBadge,
@@ -2664,11 +2666,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ========================================================
   // 4C. KITCHEN ORDER PERSISTENT BEEPING ALARM & STOP ENGINE
   // ========================================================
-  let kitchenAudioCtx = null;
   let kitchenAlarmInterval = null;
   let isKitchenAlarmRinging = false;
   let ringingOrdersQueue = [];
-  let titleFlashInterval = null;
   const originalDocTitle = document.title || 'Savera Paradise Admin Portal';
 
   // Alarm Banner DOM Elements
@@ -2684,67 +2684,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const soundPillText = document.getElementById('sound-pill-text');
   const soundPillIcon = document.getElementById('sound-pill-icon');
 
-  function getKitchenAudioContext() {
-    if (!kitchenAudioCtx) {
-      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtxClass) {
-        kitchenAudioCtx = new AudioCtxClass();
-      }
-    }
-    if (kitchenAudioCtx && kitchenAudioCtx.state === 'suspended') {
-      kitchenAudioCtx.resume().catch(() => {});
-    }
-    return kitchenAudioCtx;
-  }
-
-  // Realistic, loud & penetrating kitchen POS order chime
+  // Delegated to notificationService with DynamicsCompressor and volume safeguards
   function playKitchenChime() {
-    let played = false;
     try {
-      const ctx = getKitchenAudioContext();
-      if (ctx) {
-        if (ctx.state === 'suspended') {
-          ctx.resume().catch(() => {});
-        }
-
-        const now = ctx.currentTime;
-        // Dual-burst POS chime melody: (880Hz, 1174Hz, 1760Hz) twice
-        const notes = [
-          { freq: 880, start: 0.00, dur: 0.12, gain: 0.50 },
-          { freq: 1174.66, start: 0.13, dur: 0.12, gain: 0.55 },
-          { freq: 1760, start: 0.26, dur: 0.32, gain: 0.65 },
-          { freq: 880, start: 0.60, dur: 0.12, gain: 0.50 },
-          { freq: 1174.66, start: 0.73, dur: 0.12, gain: 0.55 },
-          { freq: 1760, start: 0.86, dur: 0.42, gain: 0.70 }
-        ];
-
-        notes.forEach(note => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(note.freq, now + note.start);
-
-          gain.gain.setValueAtTime(0.0001, now + note.start);
-          gain.gain.exponentialRampToValueAtTime(note.gain, now + note.start + 0.015);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + note.start + note.dur);
-
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-
-          osc.start(now + note.start);
-          osc.stop(now + note.start + note.dur + 0.05);
-        });
-        played = true;
-      }
+      playNotificationSound('kitchen_alarm');
     } catch (err) {
-      console.warn('[KitchenAlarm] AudioContext play error:', err);
-    }
-
-    if (!played) {
-      try {
-        playNotificationSound('new_order');
-      } catch {}
+      console.warn('[KitchenAlarm] Chime error:', err);
     }
   }
 
@@ -2844,14 +2789,8 @@ document.addEventListener('DOMContentLoaded', () => {
       soundPillIcon.className = 'fa-solid fa-bell fa-shake';
     }
 
-    // Flash browser tab title so staff sees it even when in other apps/tabs
-    if (!titleFlashInterval) {
-      let isFlashing = false;
-      titleFlashInterval = setInterval(() => {
-        isFlashing = !isFlashing;
-        document.title = isFlashing ? `🚨 NEW ORDER ${latestOrder.id || ''}!` : originalDocTitle;
-      }, 700);
-    }
+    // Flash browser tab title via centralized notificationService
+    flashTabTitle(`🚨 NEW ORDER ${latestOrder.id || ''}!`);
 
     // Play first chime burst immediately
     playKitchenChime();
@@ -2869,6 +2808,24 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function stopKitchenAlarm(shouldBroadcast = true, extra = {}) {
+    // Individual order progression: Acknowledge only this order and keep ringing if others remain in queue
+    if (extra && extra.orderId && !extra.all) {
+      const targetId = extra.orderId;
+      markAlarmAcknowledged([targetId]);
+      ringingOrdersQueue = ringingOrdersQueue.filter(o => o && o.id !== targetId);
+
+      if (ringingOrdersQueue.length > 0) {
+        const nextOrder = ringingOrdersQueue[0];
+        if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id || 'NEW';
+        if (alarmOrdersCountBadge) {
+          alarmOrdersCountBadge.textContent = `${ringingOrdersQueue.length} Order${ringingOrdersQueue.length > 1 ? 's' : ''}`;
+        }
+        if (alarmBannerCustomer) alarmBannerCustomer.textContent = nextOrder.customerName || 'Customer';
+        if (alarmBannerItems) alarmBannerItems.textContent = nextOrder.itemsSummary || 'Order Items';
+        return; // Retain alarm loop active for remaining orders
+      }
+    }
+
     const wasRinging = isKitchenAlarmRinging || ringingOrdersQueue.length > 0;
     const orderIds = ringingOrdersQueue.map(o => o?.id).filter(Boolean);
     if (extra && extra.orderId && !orderIds.includes(extra.orderId)) {
@@ -2895,12 +2852,7 @@ document.addEventListener('DOMContentLoaded', () => {
       kitchenAlarmInterval = null;
     }
 
-    if (titleFlashInterval) {
-      clearInterval(titleFlashInterval);
-      titleFlashInterval = null;
-      document.title = originalDocTitle;
-    }
-
+    stopFlashingTabTitle();
     ringingOrdersQueue = [];
 
     if (kitchenAlarmBanner) {

@@ -47,6 +47,14 @@ export function getAudioContext() {
 /**
  * Auto-unlock Web Audio on first user interaction anywhere on the window.
  */
+export function unlockAudioContext() {
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    return ctx.resume().catch(() => {});
+  }
+  return Promise.resolve();
+}
+
 function autoUnlockAudio() {
   const unlock = () => {
     const ctx = getAudioContext();
@@ -197,6 +205,16 @@ export function playNotificationSound(type = 'general_alert') {
         ];
         break;
 
+      case 'ready':
+      case 'ready_for_pickup':
+        // Vibrant dispatch-ready chime (F5 -> A5 -> C6 ascending burst)
+        notes = [
+          { freq: 698.46, start: 0.00, dur: 0.12, gain: 0.50, type: 'sine' },
+          { freq: 880.00, start: 0.12, dur: 0.14, gain: 0.55, type: 'sine' },
+          { freq: 1046.50, start: 0.25, dur: 0.40, gain: 0.65, type: 'triangle' }
+        ];
+        break;
+
       case 'delivered':
         // Joyous celebratory arpeggio (C5 -> E5 -> G5 -> B5 -> C6)
         notes = [
@@ -221,6 +239,7 @@ export function playNotificationSound(type = 'general_alert') {
       case 'payout_received':
       case 'cash_received':
       case 'cash_register':
+      case 'cod_collected':
         // Crisp, sparkling celebratory cash register chime (C6 -> E6 -> G6 -> C7 sparkle)
         notes = [
           { freq: 1046.50, start: 0.00, dur: 0.09, gain: 0.50, type: 'sine' },
@@ -310,6 +329,9 @@ export async function requestSystemNotificationPermission() {
   }
   const Notif = getNotificationClass();
   if (!Notif) return 'unsupported';
+  if (Notif.permission === 'granted' || Notif.permission === 'denied') {
+    return Notif.permission;
+  }
   try {
     const perm = await Notif.requestPermission();
     try {
