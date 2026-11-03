@@ -5877,6 +5877,16 @@ function initStorefrontApp() {
         data: { orderId: order.id, url: '/' }
       });
       flashTabTitle(`👨‍🍳 COOKING: ${order.id}`);
+    } else if (order.status === 'ready' || order.status === 'ready_for_pickup') {
+      playNotificationSound('cooking');
+      showToast(`🍱 Kitchen Update: Order ${order.id} is packed & ready for pickup / delivery!`, 'info');
+      sendSystemNotification({
+        title: `🍱 Order ${order.id} is Ready!`,
+        body: `Your crispy feast is packed and ready for delivery partner pickup!`,
+        tag: `customer-ready-${order.id}`,
+        data: { orderId: order.id, url: '/' }
+      });
+      flashTabTitle(`🍱 READY: ${order.id}`);
     } else if (order.status === 'on_the_way') {
       playNotificationSound('on_the_way');
       showToast(`🛵 Rider Update: Order ${order.id} is out for delivery! ETA: ${order.eta}`, 'info');
@@ -6048,44 +6058,7 @@ function initStorefrontApp() {
   };
   window.addEventListener('quickbite_data_changed', window.__quickbite_data_changed_handler);
 
-  // Cross-tab broadcast channel for instantaneous zero-latency sync
-  try {
-    if (typeof BroadcastChannel !== 'undefined') {
-      window.__quickbite_sync_channel = new BroadcastChannel('quickbite_sync_channel');
-      window.__quickbite_sync_channel.onmessage = (e) => {
-        if (e.data?.type === 'settings') {
-          updateStoreStatusUI();
-          updateStoreOfferUI();
-          renderCartOrderLimitUI();
-          syncStorefrontCardsWithDataService();
-          renderCart();
-          if (orderModalBackdrop && orderModalBackdrop.classList.contains('open') && activeOrderId) {
-            renderOrderTracker(activeOrderId);
-          }
-          if (modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open')) {
-            renderMyOrdersList();
-          }
-        } else if (e.data?.type === 'dishes') {
-          syncStorefrontCardsWithDataService();
-        } else if (e.data?.type === 'categories') {
-          syncStorefrontCategories();
-        } else if (e.data?.type === 'addresses') {
-          renderCartAddresses();
-          renderProfileAddresses();
-          renderCheckoutAddresses();
-        } else if (e.data?.type === 'orders') {
-          if (e.data.action === 'status_updated') {
-            handleStorefrontOrderStatusSync(e.data);
-          } else {
-            orders = dataService.getOrders();
-            if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) {
-              renderOrderTracker(activeOrderId);
-            }
-          }
-        }
-      };
-    }
-  } catch {}
+// Cross-tab synchronization handled via DataService quickbite_data_changed and storage listeners
 
   // Auto-refresh categories and dishes when user switches back to this tab from admin
   window.addEventListener('focus', () => {

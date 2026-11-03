@@ -3400,41 +3400,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateOrderBadges();
   });
 
-  // Cross-tab broadcast channel
-  try {
-    if (typeof BroadcastChannel !== 'undefined') {
-      const syncBc = new BroadcastChannel('quickbite_sync_channel');
-      syncBc.onmessage = (event) => {
-        const data = event.data;
-        if (data?.type === 'kitchen_alarm') {
-          if (data.action === 'stop_alarm') {
-            stopKitchenAlarm(false, data);
-          }
-        } else if (data?.type === 'settings') {
-          renderHoursAndRush();
-          renderOffers();
-          renderDeliveryOptions();
-          updateRushUI();
-        } else if (data?.type === 'orders') {
-          if (data.action === 'new_order' && data.order) {
-            handleIncomingOrderAlert(data.order);
-          } else if (data.action === 'status_updated') {
-            handleAdminOrderStatusSync(data);
-          } else {
-            scanAndDetectNewOrders();
-          }
-          renderOrders();
-          updateOrderBadges();
-        } else if (data?.type === 'settings') {
-          updateRushUI();
-        } else if (data?.type === 'categories') {
-          renderCategories();
-        } else if (data?.type === 'dishes') {
-          renderDishes();
-        }
-      };
-    }
-  } catch {}
+// Cross-tab sync handled via DataService quickbite_data_changed event listener and storage triggers
 
   // ========================================================
   // 5. TOAST NOTIFICATION ENGINE (Samsung One UI Top Floating Pill)

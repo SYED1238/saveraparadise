@@ -100,6 +100,6 @@ test('FEATURE #13: KITCHEN ADMIN POS, ORDER LIFECYCLE, SOUNDBOX ALARMS & THERMAL
 
   await t.test('13. syncOrdersFromSupabase preserves local status when pendingStatusSync or optimistic is active', () => {
     assert.match(dataServiceJs, /const hasPendingStatus = Boolean\(local\?\.pendingStatusSync\);/, 'syncOrdersFromSupabase must check hasPendingStatus');
-    assert.match(dataServiceJs, /const preserveLocalStatus = \(hasPendingStatus \|\| \(isOptimistic && \(localRank > remoteRank \|\| local\?\.status === 'cancelled'\)\)\) && remote\.status !== 'cancelled';/, 'syncOrdersFromSupabase must preserve local status when offline updates are pending');
+    assert.match(dataServiceJs, /const preserveLocalStatus = \(\(hasPendingStatus \|\| isOptimistic\) && canOverride\) && remote\.status !== 'cancelled';/, 'syncOrdersFromSupabase must preserve local status when offline updates are pending and monotonic');
   });
 });

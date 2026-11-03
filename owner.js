@@ -172,22 +172,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     showPasscodeLock();
   }
 
-  // Realtime listeners
+  // Realtime listeners (DataService heartbeat provides graceful 60s fallback without slamming Supabase)
   if (typeof dataService.on === 'function') {
     dataService.on('orders', () => renderDashboard());
-    dataService.on('change:orders', () => renderDashboard());
     dataService.on('riders', () => renderDashboard());
     dataService.on('cash_settled', () => renderDashboard());
   }
-
-  // Periodic poll fallback (every 15s)
-  setInterval(() => {
-    if (isOwnerAuthenticated && typeof document !== 'undefined' && !document.hidden) {
-      dataService.syncOrdersFromSupabase(true).catch(() => {});
-      dataService.syncRidersFromSupabase().catch(() => {});
-      renderDashboard();
-    }
-  }, 15000);
 });
 }
 
@@ -1701,6 +1691,30 @@ function initActions() {
   }
 
   // Track known orders on startup so existing orders don't re-trigger alerts
+  function isOwnerOrderAlerted(orderId) {
+    try {
+      const stored = JSON.parse(localStorage.getItem('quickbite_owner_alerted_orders') || '{}');
+      return Boolean(stored[orderId]);
+    } catch {
+      return false;
+    }
+  }
+
+  function markOwnerOrderAlerted(orderId) {
+    try {
+      const stored = JSON.parse(localStorage.getItem('quickbite_owner_alerted_orders') || '{}');
+      stored[orderId] = Date.now();
+      const now = Date.now();
+      const pruned = {};
+      Object.keys(stored).forEach(k => {
+        if (now - stored[k] < 7 * 24 * 60 * 60 * 1000) {
+          pruned[k] = stored[k];
+        }
+      });
+      localStorage.setItem('quickbite_owner_alerted_orders', JSON.stringify(pruned));
+    } catch {}
+  }
+
   const knownOwnerOrderIds = new Set((dataService.getOrders() || []).map(o => o.id));
 
   // Executive Notifications & Sound Controls
@@ -1763,8 +1777,8 @@ function initActions() {
       if (o && o.id && !knownOwnerOrderIds.has(o.id)) {
         knownOwnerOrderIds.add(o.id);
         const orderAge = o.createdAt ? (now - Number(o.createdAt)) : 0;
-        // Suppress alarms for stale/historical orders (>15 mins old)
-        if ((o.status === 'accepted' || o.status === 'pending') && orderAge < 15 * 60 * 1000) {
+        // Suppress alarms for stale/historical orders (>15 mins old) or already alerted orders
+        if ((o.status === 'accepted' || o.status === 'pending') && orderAge < 15 * 60 * 1000 && !isOwnerOrderAlerted(o.id)) {
           hasNewOrder = true;
           latestNewOrder = o;
         }
@@ -1772,6 +1786,7 @@ function initActions() {
     });
 
     if (hasNewOrder && latestNewOrder) {
+      markOwnerOrderAlerted(latestNewOrder.id);
       playNotificationSound('order_placed');
       flashTabTitle(`🔔 NEW ORDER: ${latestNewOrder.id}`);
       showToast(`🔔 New order received: ${latestNewOrder.id} (${latestNewOrder.total || '₹0'})`, 'info');

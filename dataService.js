@@ -2519,8 +2519,13 @@ class QuickBiteDataService {
     this._lastSettingsSyncTime = 0;
     this._isSyncingOrders = null;
     this._lastOrdersSyncTime = 0;
+    this._pendingOrdersResync = false;
     this._isSyncingCustomerOrders = null;
     this._lastCustomerOrdersSyncTime = 0;
+    this._pendingCustomerOrdersResync = false;
+    this._pendingCustomerSyncArgs = null;
+    this._processedNonces = new Set();
+    this._realtimeRetryTimer = null;
 
     // Persistent cross-tab broadcast channel & cross-device shared realtime channel
     this.syncBroadcastChannel = null;
@@ -2531,6 +2536,16 @@ class QuickBiteDataService {
         this.syncBroadcastChannel.onmessage = (event) => {
           const data = event.data;
           if (data && data.type) {
+            if (data.nonce) {
+              if (this._processedNonces.has(data.nonce)) return;
+              this._processedNonces.add(data.nonce);
+              if (this._processedNonces.size > 500) {
+                const it = this._processedNonces.values();
+                for (let i = 0; i < 250; i++) {
+                  this._processedNonces.delete(it.next().value);
+                }
+              }
+            }
             window.dispatchEvent(new CustomEvent('quickbite_data_changed', { detail: data }));
           }
         };
@@ -2554,6 +2569,12 @@ class QuickBiteDataService {
         window.addEventListener('online', () => {
           console.log('[DataService] Network online detected. Triggering offline queue sync...');
           this.syncOfflinePendingOrders();
+          const isRealtimeHealthy = this.realtimeChannel && this.realtimeChannel.state === 'joined';
+          const isBroadcastHealthy = this.sharedBroadcastChannel && this.sharedBroadcastChannel.state === 'joined';
+          if (!isRealtimeHealthy || !isBroadcastHealthy) {
+            console.log('[DataService] Re-establishing Supabase Realtime channel on network online...');
+            this.setupRealtime();
+          }
           if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
             if (this.isStaffAuthorized()) {
               this.syncOrdersFromSupabase(true);
@@ -2972,7 +2993,10 @@ class QuickBiteDataService {
     if (!force && Date.now() - this._lastOrdersSyncTime < 4000) {
       return this.getOrders();
     }
-    if (this._isSyncingOrders) return this._isSyncingOrders;
+    if (this._isSyncingOrders) {
+      this._pendingOrdersResync = true;
+      return this._isSyncingOrders;
+    }
 
     this._isSyncingOrders = (async () => {
       try {
@@ -3015,7 +3039,13 @@ class QuickBiteDataService {
             const hasPendingStatus = Boolean(local?.pendingStatusSync);
             const remoteRank = remote.status && ORDER_STATUS_RANKS[remote.status] !== undefined ? ORDER_STATUS_RANKS[remote.status] : -1;
             const localRank = local?.status && ORDER_STATUS_RANKS[local.status] !== undefined ? ORDER_STATUS_RANKS[local.status] : -1;
-            const preserveLocalStatus = (hasPendingStatus || (isOptimistic && (localRank > remoteRank || local?.status === 'cancelled'))) && remote.status !== 'cancelled';
+
+            if (hasPendingStatus && remoteRank >= localRank) {
+              delete local.pendingStatusSync;
+            }
+
+            const canOverride = (localRank > remoteRank || (local?.status === 'cancelled' && remote.status !== 'cancelled'));
+            const preserveLocalStatus = ((hasPendingStatus || isOptimistic) && canOverride) && remote.status !== 'cancelled';
             let effectiveStatus = preserveLocalStatus
               ? local.status
               : (remote.status || local?.status || 'accepted');
@@ -3141,6 +3171,10 @@ class QuickBiteDataService {
       }
     })().finally(() => {
       this._isSyncingOrders = null;
+      if (this._pendingOrdersResync) {
+        this._pendingOrdersResync = false;
+        this.syncOrdersFromSupabase(true);
+      }
     });
 
     return this._isSyncingOrders;
@@ -3174,7 +3208,10 @@ class QuickBiteDataService {
           if (_dishesDebounceTimer) clearTimeout(_dishesDebounceTimer);
           _dishesDebounceTimer = setTimeout(() => this.syncDishesFromSupabase(true), 500);
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+          if (payload && (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
+            this.handleRealtimeOrderDelta(payload);
+          }
           if (_ordersDebounceTimer) clearTimeout(_ordersDebounceTimer);
           _ordersDebounceTimer = setTimeout(() => {
             if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
@@ -3213,11 +3250,20 @@ class QuickBiteDataService {
           this.syncOfflinePendingOrders();
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[DataService] Supabase Realtime channel error:', status, err);
-          setTimeout(() => {
-            if (typeof document !== 'undefined' && !document.hidden) {
+          const scheduleRetry = () => {
+            if (this._realtimeRetryTimer) clearTimeout(this._realtimeRetryTimer);
+            this._realtimeRetryTimer = setTimeout(() => {
+              if (typeof document !== 'undefined' && document.hidden) {
+                scheduleRetry();
+                return;
+              }
               this.setupRealtime();
+            }, 5000);
+            if (this._realtimeRetryTimer && typeof this._realtimeRetryTimer.unref === 'function') {
+              this._realtimeRetryTimer.unref();
             }
-          }, 5000);
+          };
+          scheduleRetry();
         }
       });
 
@@ -3370,6 +3416,122 @@ class QuickBiteDataService {
     }
   }
 
+  handleRealtimeOrderDelta(payload) {
+    if (!payload || !payload.new || !payload.new.id) return;
+    try {
+      const remote = payload.new;
+      const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
+      const remoteCleanId = normalizeId(remote.id);
+      const orders = this.getOrders();
+      const localIdx = orders.findIndex(o => o && normalizeId(o.id) === remoteCleanId);
+      const local = localIdx !== -1 ? orders[localIdx] : null;
+
+      if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
+        if (!this.isStaffAuthorized()) return;
+      } else {
+        if (localIdx === -1) {
+          let userId = null, email = null, phone = null;
+          try {
+            const ctx = JSON.parse(localStorage.getItem('quickbite_active_user_context') || '{}');
+            userId = ctx.id; email = ctx.email; phone = ctx.phone;
+          } catch {}
+          if (!this.isOrderForCustomer(remote, userId, email, phone)) return;
+        }
+      }
+
+      const remoteRank = remote.status && ORDER_STATUS_RANKS[remote.status] !== undefined ? ORDER_STATUS_RANKS[remote.status] : -1;
+      const localRank = local?.status && ORDER_STATUS_RANKS[local.status] !== undefined ? ORDER_STATUS_RANKS[local.status] : -1;
+      const isOptimistic = Boolean(local?._optimisticTimestamp && (Date.now() - local._optimisticTimestamp < 15000));
+      const hasPendingStatus = Boolean(local?.pendingStatusSync);
+
+      if (hasPendingStatus && remoteRank >= localRank) {
+        if (local) delete local.pendingStatusSync;
+      }
+
+      const canOverride = (localRank > remoteRank || (local?.status === 'cancelled' && remote.status !== 'cancelled'));
+      const preserveLocalStatus = ((hasPendingStatus || isOptimistic) && canOverride) && remote.status !== 'cancelled';
+
+      const effectiveStatus = preserveLocalStatus ? local.status : (remote.status || local?.status || 'accepted');
+      const effectiveStepIndex = (preserveLocalStatus && local && typeof local.stepIndex === 'number')
+        ? local.stepIndex
+        : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : 0));
+      const effectiveStatusLabel = (preserveLocalStatus && local?.statusLabel)
+        ? local.statusLabel
+        : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted');
+      const effectiveEta = (preserveLocalStatus && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
+
+      const rawAddrs = this.getAllAddressesRaw();
+      const recoveredPhone = extractPhoneFromOrder(remote, rawAddrs) || local?.customerPhone || '';
+      const digits = String(remote.id || '').replace(/\D/g, '');
+      const fallbackPickupCode = digits.length >= 4 ? digits.slice(-4) : (digits || '1001');
+
+      const mergedOrder = {
+        ...(local || {}),
+        id: remote.id || local?.id,
+        createdAt: Number(remote.created_at) || local?.createdAt || Date.now(),
+        userId: remote.user_id || local?.userId || null,
+        customerName: remote.customer_name || local?.customerName || 'Online Guest',
+        customerEmail: remote.customer_email || local?.customerEmail || '',
+        customerPhone: remote.customer_phone || recoveredPhone || local?.customerPhone || '',
+        phone: remote.customer_phone || recoveredPhone || local?.customerPhone || '',
+        customer_phone: remote.customer_phone || recoveredPhone || local?.customerPhone || '',
+        deliveryAddress: remote.delivery_address || local?.deliveryAddress || 'Express Delivery',
+        stepIndex: effectiveStepIndex,
+        status: effectiveStatus,
+        statusLabel: effectiveStatusLabel,
+        eta: effectiveEta,
+        itemsSummary: remote.items_summary || local?.itemsSummary || '',
+        items: remote.items || local?.items || [],
+        total: remote.total || local?.total || '₹0',
+        claimedAt: remote.claimed_at ? Number(remote.claimed_at) : (local?.claimedAt || null),
+        deliveredAt: remote.delivered_at ? Number(remote.delivered_at) : (local?.deliveredAt || null),
+        cashCollected: remote.cash_collected !== undefined && remote.cash_collected !== null ? Number(remote.cash_collected) : local?.cashCollected,
+        isPaidOnline: Boolean(remote.is_paid_online || local?.isPaidOnline),
+        doorstepUpi: Boolean(remote.doorstep_upi || local?.doorstepUpi),
+        paymentMethod: (local?.doorstepUpi || remote.doorstep_upi) ? 'doorstep_upi' : (remote.payment_method || local?.paymentMethod || 'Cash on Delivery (COD)'),
+        paymentStatus: remote.payment_status || local?.paymentStatus || 'Cash on Delivery',
+        lat: remote.lat ? Number(remote.lat) : (local?.lat || local?.addressDetails?.lat || null),
+        lng: remote.lng ? Number(remote.lng) : (local?.lng || local?.addressDetails?.lng || null),
+        addressDetails: remote.address_details || local?.addressDetails || null,
+        pickupCode: remote.pickup_code || local?.pickupCode || fallbackPickupCode,
+        assignedRiderPin: remote.assigned_rider_pin || local?.assignedRiderPin || null,
+        assignedRiderName: remote.assigned_rider_name || local?.assignedRiderName || null,
+        assignedRiderPhone: remote.assigned_rider_phone || local?.assignedRiderPhone || null,
+        assignedRiderVehicle: remote.assigned_rider_vehicle || local?.assignedRiderVehicle || null,
+        cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
+        trackingToken: remote.tracking_token || local?.trackingToken || null,
+        alarmAcknowledged: local?.alarmAcknowledged || false,
+        alarmStoppedAt: local?.alarmStoppedAt || null
+      };
+
+      if (localIdx !== -1) {
+        const prevStatus = local.status;
+        const hasDiff = local.status !== effectiveStatus ||
+                        local.eta !== effectiveEta ||
+                        local.stepIndex !== effectiveStepIndex ||
+                        local.assignedRiderPin !== mergedOrder.assignedRiderPin;
+        orders[localIdx] = mergedOrder;
+        this.ordersCache = orders;
+        try { localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders)); } catch {}
+        if (hasDiff) {
+          this.notifyChange('orders', { action: 'status_updated', orderId: mergedOrder.id, order: mergedOrder, prevStatus, source: 'supabase_delta' });
+        }
+      } else {
+        orders.unshift(mergedOrder);
+        this.ordersCache = orders;
+        try { localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders)); } catch {}
+        const orderAge = mergedOrder.createdAt ? (Date.now() - Number(mergedOrder.createdAt)) : 0;
+        if (orderAge < 15 * 60 * 1000 && (mergedOrder.status === 'accepted' || mergedOrder.status === 'pending')) {
+          this.notifyChange('orders', { action: 'new_order', order: mergedOrder, source: 'supabase_delta' });
+        } else {
+          this.notifyChange('orders', { action: 'status_updated', orderId: mergedOrder.id, order: mergedOrder, source: 'supabase_delta' });
+        }
+      }
+    } catch (deltaErr) {
+      console.warn('[DataService] handleRealtimeOrderDelta error:', deltaErr);
+    }
+  }
+
   /**
    * Sync active orders relevant to this customer in real time.
    */
@@ -3385,12 +3547,14 @@ class QuickBiteDataService {
       try {
         const list = this.getOrders();
         const pendingOrders = list.filter(o => o && o.pendingRemoteSync === true);
-        if (pendingOrders.length === 0) return;
+        const pendingStatusOrders = list.filter(o => o && o.pendingStatusSync === true);
+        if (pendingOrders.length === 0 && pendingStatusOrders.length === 0) return;
 
-        console.log(`[DataService] Draining ${pendingOrders.length} pending offline orders to Supabase...`);
         let anySynced = false;
 
-        for (const orderData of pendingOrders) {
+        if (pendingOrders.length > 0) {
+          console.log(`[DataService] Draining ${pendingOrders.length} pending offline orders to Supabase...`);
+          for (const orderData of pendingOrders) {
           const cleanPayload = {
             id: orderData.id,
             created_at: Number(orderData.createdAt) || Date.now(),
@@ -3446,8 +3610,8 @@ class QuickBiteDataService {
             break;
           }
         }
+        }
 
-        const pendingStatusOrders = list.filter(o => o && o.pendingStatusSync === true);
         if (pendingStatusOrders.length > 0) {
           console.log(`[DataService] Draining ${pendingStatusOrders.length} pending offline status updates to Supabase...`);
           for (const orderData of pendingStatusOrders) {
@@ -3482,6 +3646,16 @@ class QuickBiteDataService {
               if (!error) {
                 delete orderData.pendingStatusSync;
                 anySynced = true;
+              } else {
+                const errMsg = String(error?.message || '').toLowerCase();
+                const isTerminalOrReversal = errMsg.includes('reversal') || errMsg.includes('cannot reverse') || errMsg.includes('terminal') || errMsg.includes('cancelled');
+                if (isTerminalOrReversal || error?.code === 'P0001' || error?.code === '23514') {
+                  console.warn('[DataService] Status update rejected by server rule for ' + orderData.id + '. Dropping stale pending status sync:', error?.message);
+                  delete orderData.pendingStatusSync;
+                  anySynced = true;
+                } else if (errMsg.includes('fetch failed') || errMsg.includes('networkerror')) {
+                  break;
+                }
               }
             } catch (statusErr) {
               console.warn(`[DataService] Failed to sync pending status for ${orderData.id}:`, statusErr);
@@ -3587,6 +3761,12 @@ class QuickBiteDataService {
     if (typeof document !== 'undefined') {
       const handleTabResume = () => {
         if (document.hidden) return;
+        const isRealtimeHealthy = this.realtimeChannel && this.realtimeChannel.state === 'joined';
+        const isBroadcastHealthy = this.sharedBroadcastChannel && this.sharedBroadcastChannel.state === 'joined';
+        if (!isRealtimeHealthy || !isBroadcastHealthy) {
+          console.log('[DataService] Re-establishing Supabase Realtime channel on tab resume...');
+          this.setupRealtime();
+        }
         const now = Date.now();
         if (now - (this._lastSettingsSyncTime || 0) > 15000) {
           this.syncSettingsFromSupabase();
@@ -3629,7 +3809,11 @@ class QuickBiteDataService {
     if (!userId && !email && !phone && sessionIds.length === 0) return;
 
     if (!force && Date.now() - this._lastCustomerOrdersSyncTime < 6000) return;
-    if (this._isSyncingCustomerOrders) return this._isSyncingCustomerOrders;
+    if (this._isSyncingCustomerOrders) {
+      this._pendingCustomerOrdersResync = true;
+      this._pendingCustomerSyncArgs = { userId, email, phone };
+      return this._isSyncingCustomerOrders;
+    }
 
     this._isSyncingCustomerOrders = (async () => {
       try {
@@ -3700,7 +3884,15 @@ class QuickBiteDataService {
             const isOptimisticLo = Boolean(lo?._optimisticTimestamp && (Date.now() - lo._optimisticTimestamp < 15000));
             const loRemoteRank = remote.status && ORDER_STATUS_RANKS[remote.status] !== undefined ? ORDER_STATUS_RANKS[remote.status] : -1;
             const loLocalRank = lo?.status && ORDER_STATUS_RANKS[lo.status] !== undefined ? ORDER_STATUS_RANKS[lo.status] : -1;
-            const effectiveStatus = (isOptimisticLo && remote.status !== 'cancelled' && loLocalRank > loRemoteRank) ? lo.status : (remote.status || lo.status);
+            const hasPendingStatusLo = Boolean(lo?.pendingStatusSync);
+
+            if (hasPendingStatusLo && loRemoteRank >= loLocalRank) {
+              delete lo.pendingStatusSync;
+            }
+
+            const canOverrideLo = (loLocalRank > loRemoteRank || (lo?.status === 'cancelled' && remote.status !== 'cancelled'));
+            const preserveLo = ((hasPendingStatusLo || isOptimisticLo) && canOverrideLo) && remote.status !== 'cancelled';
+            const effectiveStatus = preserveLo ? lo.status : (remote.status || lo.status);
             const effectiveStepIndex = (isOptimisticLo && loLocalRank > loRemoteRank && typeof lo.stepIndex === 'number')
               ? lo.stepIndex
               : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : lo.stepIndex));
@@ -3753,7 +3945,7 @@ class QuickBiteDataService {
         // 2. Add remote orders belonging to this customer that are not yet in localList
         data.forEach(remote => {
           if (!remote || !remote.id) return;
-          const exists = localList.some(l => l && String(l.id) === String(remote.id));
+          const exists = localList.some(l => l && normalizeId(l.id) === normalizeId(remote.id));
           if (!exists) {
             const recoveredPhone = extractPhoneFromOrder(remote, rawAddrs) || remote.customer_phone || '';
             const mapped = {
@@ -3801,6 +3993,24 @@ class QuickBiteDataService {
           }
         });
 
+        // 3. Prune deleted customer orders (unless pending remote sync or recent optimistic)
+        const remoteCleanIds = new Set(data.map(r => normalizeId(r.id)));
+        const prunedCustomerList = localList.filter(lo => {
+          if (!lo || !lo.id) return false;
+          if (!this.isOrderForCustomer(lo, userId, email, phone)) return true;
+          const cId = normalizeId(lo.id);
+          if (remoteCleanIds.has(cId)) return true;
+          if (lo.pendingRemoteSync) {
+            return (Date.now() - (Number(lo.createdAt) || 0)) < 24 * 60 * 60 * 1000;
+          }
+          return (Date.now() - (Number(lo.createdAt) || 0)) < 2 * 60 * 1000;
+        });
+        if (prunedCustomerList.length !== localList.length) {
+          changed = true;
+          localList.length = 0;
+          localList.push(...prunedCustomerList);
+        }
+
         if (changed) {
           this.ordersCache = localList;
           localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(localList));
@@ -3812,20 +4022,38 @@ class QuickBiteDataService {
     }
   })().finally(() => {
     this._isSyncingCustomerOrders = null;
+    if (this._pendingCustomerOrdersResync) {
+      this._pendingCustomerOrdersResync = false;
+      const args = this._pendingCustomerSyncArgs || {};
+      this._pendingCustomerSyncArgs = null;
+      this.syncCustomerOrdersFromSupabase(args.userId, args.email, args.phone, true);
+    }
   });
 
   return this._isSyncingCustomerOrders;
 }
 
   notifyChange(type, extra = {}) {
+    const nonce = extra.nonce || (type + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+    const payloadWithNonce = { type, nonce, timestamp: Date.now(), ...extra };
+
+    if (!this._processedNonces) this._processedNonces = new Set();
+    this._processedNonces.add(nonce);
+    if (this._processedNonces.size > 500) {
+      const it = this._processedNonces.values();
+      for (let i = 0; i < 250; i++) {
+        this._processedNonces.delete(it.next().value);
+      }
+    }
+
     if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('quickbite_data_changed', { detail: { type, ...extra } }));
+      window.dispatchEvent(new CustomEvent('quickbite_data_changed', { detail: payloadWithNonce }));
     }
     
     // Broadcast via persistent BroadcastChannel instance without closing it
     try {
       if (this.syncBroadcastChannel) {
-        this.syncBroadcastChannel.postMessage({ type, timestamp: Date.now(), ...extra });
+        this.syncBroadcastChannel.postMessage(payloadWithNonce);
       }
     } catch {}
 
@@ -3833,32 +4061,22 @@ class QuickBiteDataService {
     try {
       if (type === 'orders') {
         if (extra.action === 'status_updated') {
-          localStorage.setItem('quickbite_order_status_sync', JSON.stringify({
-            ...extra,
-            timestamp: Date.now()
-          }));
+          localStorage.setItem('quickbite_order_status_sync', JSON.stringify(payloadWithNonce));
         } else if (extra.action === 'new_order') {
           localStorage.setItem('quickbite_latest_incoming_order', JSON.stringify({
             ...(extra.order || {}),
+            order: extra.order,
+            nonce,
             timestamp: Date.now()
           }));
         }
         localStorage.setItem('quickbite_orders_sync_ping', String(Date.now()));
       } else if (type === 'kitchen_alarm') {
-        localStorage.setItem('quickbite_alarm_stopped_sync', JSON.stringify({
-          ...extra,
-          timestamp: Date.now()
-        }));
+        localStorage.setItem('quickbite_alarm_stopped_sync', JSON.stringify(payloadWithNonce));
       } else if (type === 'settings') {
-        localStorage.setItem('quickbite_settings_sync', JSON.stringify({
-          ...extra,
-          timestamp: Date.now()
-        }));
+        localStorage.setItem('quickbite_settings_sync', JSON.stringify(payloadWithNonce));
       } else if (type === 'addresses') {
-        localStorage.setItem('quickbite_addresses_sync', JSON.stringify({
-          ...extra,
-          timestamp: Date.now()
-        }));
+        localStorage.setItem('quickbite_addresses_sync', JSON.stringify(payloadWithNonce));
       } else if (type === 'categories') {
         localStorage.setItem('quickbite_categories_sync', String(Date.now()));
       }
@@ -5147,17 +5365,6 @@ class QuickBiteDataService {
       } catch {}
       return { success: false, error: err };
     }
-
-    // Broadcast across devices using Supabase Realtime channel if available
-    try {
-      if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'new_order',
-          payload: { order: orderData, timestamp: Date.now() }
-        });
-      }
-    } catch {}
 
     return {
       success: true,

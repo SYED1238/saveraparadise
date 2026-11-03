@@ -615,6 +615,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    if (activeGpsWatchId !== null && 'geolocation' in navigator) {
+      try { navigator.geolocation.clearWatch(activeGpsWatchId); } catch {}
+      activeGpsWatchId = null;
+    }
+
     if (riderLiveLocation.hasGps && riderLiveLocation.accuracy <= 20) {
       updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
     } else {
@@ -2338,6 +2343,30 @@ document.addEventListener('DOMContentLoaded', () => {
   // ========================================================
   // REAL-TIME SYNC & NOTIFICATION LISTENERS
   // ========================================================
+  function isRiderStatusAlerted(orderId, status) {
+    try {
+      const stored = JSON.parse(localStorage.getItem('quickbite_rider_alerted_statuses') || '{}');
+      return Boolean(stored[`${orderId}:${status}`]);
+    } catch {
+      return false;
+    }
+  }
+
+  function markRiderStatusAlerted(orderId, status) {
+    try {
+      const key = `${orderId}:${status}`;
+      const stored = JSON.parse(localStorage.getItem('quickbite_rider_alerted_statuses') || '{}');
+      stored[key] = Date.now();
+      const now = Date.now();
+      const pruned = {};
+      Object.keys(stored).forEach(k => {
+        if (now - stored[k] < 7 * 24 * 60 * 60 * 1000) {
+          pruned[k] = stored[k];
+        }
+      });
+      localStorage.setItem('quickbite_rider_alerted_statuses', JSON.stringify(pruned));
+    } catch {}
+  }
   const knownDeliveryIds = new Set();
   const initOrders = dataService.getOrders();
   if (Array.isArray(initOrders)) {
@@ -2379,6 +2408,12 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPortal();
       return;
     }
+
+    if (isRiderStatusAlerted(order.id, order.status)) {
+      renderPortal();
+      return;
+    }
+    markRiderStatusAlerted(order.id, order.status);
 
     playNotificationSound('rider_new_task');
     showToast(`📦 New parcel packed & ready on restaurant kitchen counter!`, 'success');
@@ -2431,6 +2466,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Delivery partner only gets notified when order is READY FOR DISPATCH ('ready_for_pickup')!
     if (status === 'ready_for_pickup') {
+      if (isRiderStatusAlerted(orderId, status)) {
+        renderPortal();
+        return;
+      }
+      markRiderStatusAlerted(orderId, status);
       playNotificationSound('rider_new_task');
       showToast(`📦 Order ${orderId} is packed & ready on kitchen counter!`, 'success');
       sendSystemNotification({
@@ -2491,23 +2531,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 2. BroadcastChannel
-  try {
-    const syncChannel = new BroadcastChannel('quickbite_sync_channel');
-    syncChannel.onmessage = (event) => {
-      const data = event.data;
-      if (data?.type === 'orders') {
-        if (data.action === 'new_order' && data.order) {
-          handleRiderIncomingOrder(data.order);
-        } else if (data.action === 'status_updated') {
-          handleRiderOrderStatusSync(data);
-        } else {
-          scanRiderNewOrders();
-          renderPortal();
-        }
-      }
-    };
-  } catch {}
+// Cross-tab broadcasts handled via DataService subscribeToChanges and storage events
 
   // 3. DataService In-Memory Subscription
   dataService.subscribeToChanges((entity, detail) => {
