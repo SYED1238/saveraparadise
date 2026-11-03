@@ -253,6 +253,23 @@ function initStorefrontApp() {
   // ==========================================
   let cart = [];
   let appliedPromo = null; // 'SAVERA20' gives 20% off
+  try {
+    const savedPromo = localStorage.getItem('quickbite_applied_promo');
+    if (savedPromo && typeof savedPromo === 'string') {
+      appliedPromo = savedPromo.trim().toUpperCase();
+    }
+  } catch (_) {}
+
+  function setAppliedPromo(code) {
+    appliedPromo = code ? String(code).trim().toUpperCase() : null;
+    try {
+      if (appliedPromo) {
+        localStorage.setItem('quickbite_applied_promo', appliedPromo);
+      } else {
+        localStorage.removeItem('quickbite_applied_promo');
+      }
+    } catch (_) {}
+  }
   const FREE_SHIPPING_THRESHOLD = 25.00;
   let currentUser = null;
 
@@ -1464,7 +1481,7 @@ function initStorefrontApp() {
 
     // 1. Store configured offer code
     if (settings.offerActive !== false && cleanCode === settingsCode) {
-      const minOrder = Number(settings.offerMinOrder || 0);
+      const minOrder = (settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
       const discountType = settings.offerDiscountType || 'percent';
       const discountPct = Number(settings.offerDiscountPercent || 20);
       const discountAmt = Number(settings.offerDiscountAmount || 50);
@@ -1489,9 +1506,9 @@ function initStorefrontApp() {
       };
     }
 
-    // 2. SAVERA20 fallback (20% off, min order ₹199)
+    // 2. SAVERA20 fallback (20% off, min order aligned with settings or ₹199)
     if (cleanCode === 'SAVERA20') {
-      const minOrder = 199;
+      const minOrder = (settings && settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
       const meetsMinOrder = subtotal >= minOrder;
       const discount = meetsMinOrder ? Math.min(subtotal, Math.round((subtotal * 20) / 100)) : 0;
       return {
@@ -1639,6 +1656,22 @@ function initStorefrontApp() {
       if (btnCheckout) btnCheckout.classList.remove('disabled-min-order');
       if (btnCheckoutLabel) btnCheckoutLabel.textContent = 'Proceed to Checkout';
       updateFloatingUnlockedDealsBar(0, settings);
+
+      // Clean up promo state on empty cart so badges/messages do not linger
+      setAppliedPromo(null);
+      if (btnApplyPromo) {
+        btnApplyPromo.textContent = 'Apply';
+        btnApplyPromo.classList.remove('applied');
+      }
+      if (promoStatusMsg) {
+        promoStatusMsg.textContent = '';
+      }
+      if (cartPromoInput) {
+        const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
+        cartPromoInput.value = (settings.offerActive !== false && activeCode) ? activeCode : '';
+      }
+      const platformFeeRow = document.getElementById('summary-platform-fee-row');
+      if (platformFeeRow) platformFeeRow.style.display = 'none';
       return;
     }
 
@@ -1845,7 +1878,20 @@ function initStorefrontApp() {
       }
     }
 
-    const total = Math.max(0, subtotal - discount + deliveryFee);
+    // Packaging / Platform Fee
+    const platformFee = Number(settings.platformFee || 0);
+    const platformFeeRow = document.getElementById('summary-platform-fee-row');
+    const summaryPlatformFee = document.getElementById('summary-platform-fee');
+    if (platformFeeRow) {
+      if (platformFee > 0) {
+        platformFeeRow.style.display = 'flex';
+        if (summaryPlatformFee) summaryPlatformFee.textContent = `₹${Math.round(platformFee)}`;
+      } else {
+        platformFeeRow.style.display = 'none';
+      }
+    }
+
+    const total = Math.max(0, subtotal - discount + deliveryFee + platformFee);
 
     summarySubtotal.textContent = `₹${Math.round(subtotal)}`;
     summaryDelivery.textContent = deliveryFee === 0 ? 'FREE' : `₹${Math.round(deliveryFee)}`;
@@ -3011,7 +3057,7 @@ function initStorefrontApp() {
     const promoResult = evaluatePromoCode(cleanCode, subtotal, settings);
 
     if (promoResult) {
-      appliedPromo = promoResult.code;
+      setAppliedPromo(promoResult.code);
 
       if (!promoResult.meetsMinOrder) {
         const needed = Math.round(promoResult.minOrder - subtotal);
@@ -3070,7 +3116,7 @@ function initStorefrontApp() {
 
     cartPromoInput.addEventListener('input', () => {
       if (!cartPromoInput.value.trim() && appliedPromo) {
-        appliedPromo = null;
+        setAppliedPromo(null);
         if (promoStatusMsg) promoStatusMsg.textContent = '';
         renderCart();
       }
@@ -5828,6 +5874,22 @@ function initStorefrontApp() {
       renderCartAddresses();
       renderProfileAddresses();
       renderCheckoutAddresses();
+    }
+    if (e.key === 'quickbite_cart') {
+      try {
+        const raw = e.newValue || '[]';
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          cart = parsed;
+          renderCart();
+        }
+      } catch (_) {}
+    }
+    if (e.key === 'quickbite_applied_promo') {
+      try {
+        appliedPromo = e.newValue ? String(e.newValue).trim().toUpperCase() : null;
+        renderCart();
+      } catch (_) {}
     }
   };
   window.addEventListener('storage', window.__quickbite_storage_handler);
@@ -8597,7 +8659,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
 
     // If active featured promo was disabled, clear it if it was the one applied
     if (appliedPromo && appliedPromo === code && !isActive) {
-      appliedPromo = null;
+      setAppliedPromo(null);
     }
     renderCart();
   }
