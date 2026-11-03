@@ -2941,7 +2941,7 @@ body.pwa-customer-installed .header-pwa-dock {
   filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.16));
   transform-origin: 50% 50%;
   will-change: transform;
-  transition: filter 0.22s ease, transform 0.08s linear;
+  transition: filter 0.22s ease;
 }
 
 .category-pill.cuisine-circle-item:hover .cuisine-circle-img {

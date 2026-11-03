@@ -583,6 +583,10 @@ function initStorefrontApp() {
         categoryCards.forEach(c => c.classList.remove('active'));
         card.classList.add('active');
         const cat = card.getAttribute('data-category');
+        if (recipeSearchInput && recipeSearchInput.value) {
+          recipeSearchInput.value = '';
+          if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+        }
         filterDishes(cat);
       });
     });
@@ -628,25 +632,28 @@ function initStorefrontApp() {
     const cards = document.querySelectorAll('.recipe-card');
     let visibleIndex = 0;
     let totalMatches = 0;
+    const normFilter = (filter || 'all').toLowerCase().trim();
 
     cards.forEach(card => {
-      const cardCat = card.getAttribute('data-category') || '';
-      const cardTags = card.getAttribute('data-tags') || '';
+      const cardCat = (card.getAttribute('data-category') || '').toLowerCase().trim();
+      const cardTags = (card.getAttribute('data-tags') || '').toLowerCase().trim();
+      const badgeText = (card.querySelector('.recipe-card-badge-pill')?.textContent || '').toLowerCase().trim();
       let match = false;
 
-      if (filter === 'all') {
+      if (normFilter === 'all') {
         match = true;
-      } else if (filter === 'popular') {
-        match = cardTags.includes('popular');
-      } else if (filter === 'favorites') {
-        match = cardTags.includes('favorites');
+      } else if (normFilter === 'popular') {
+        match = cardTags.split(/[\s,]+/).includes('popular') || badgeText.includes('popular') || badgeText.includes('bestseller');
+      } else if (normFilter === 'favorites') {
+        match = cardTags.split(/[\s,]+/).includes('favorites') || card.classList.contains('is-favorite');
       } else {
-        match = cardCat.includes(filter);
+        const catTokens = cardCat.split(/[\s,]+/);
+        match = catTokens.includes(normFilter) || cardCat === normFilter;
       }
 
       if (match) {
         totalMatches++;
-        if (filter === 'all' && !isAllExpanded && visibleIndex >= ALL_PREVIEW_LIMIT) {
+        if (normFilter === 'all' && !isAllExpanded && visibleIndex >= ALL_PREVIEW_LIMIT) {
           card.style.display = 'none';
           card.classList.add('menu-item-collapsed');
         } else {
@@ -660,7 +667,7 @@ function initStorefrontApp() {
       }
     });
 
-    updateViewMoreUI(filter, totalMatches);
+    updateViewMoreUI(normFilter, totalMatches);
   }
 
   if (btnViewMoreMenu) {
@@ -803,6 +810,13 @@ function initStorefrontApp() {
       pillsWrap.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
       pill.classList.add('active');
       const filter = pill.getAttribute('data-filter');
+
+      // Clear active search when selecting category pill
+      if (recipeSearchInput && recipeSearchInput.value) {
+        recipeSearchInput.value = '';
+        if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+      }
+
       filterDishes(filter);
 
       // Auto-collapse expanded view on category selection
@@ -888,6 +902,9 @@ function initStorefrontApp() {
   // ==========================================
   // CATEGORY VIEW ALL MODAL & ROTATING PLATES
   // ==========================================
+  let openCategoryModal = () => {};
+  let closeCategoryModal = () => {};
+
   function initCategoryViewAll() {
     const btnViewAll = document.getElementById('btn-category-view-all');
     const modal = document.getElementById('cat-viewall-modal');
@@ -1009,13 +1026,17 @@ function initStorefrontApp() {
     }, { passive: true });
 
     // Open Modal
-    function openCategoryModal() {
+    openCategoryModal = function(triggerBackNav = true) {
       renderCategoryViewAllList();
       modal.hidden = false;
       requestAnimationFrame(() => {
         modal.classList.add('open');
         document.body.style.overflow = 'hidden';
         isModalOpen = true;
+
+        if (triggerBackNav && backNav && typeof backNav.pushStep === 'function') {
+          backNav.pushStep('cat-viewall-modal', () => closeCategoryModalInternal());
+        }
 
         // Auto-scroll to selected category if any
         const activeItem = listEl.querySelector('.cat-viewall-item.active');
@@ -1024,10 +1045,9 @@ function initStorefrontApp() {
         }
         updatePlatesRotation();
       });
-    }
+    };
 
-    // Close Modal
-    function closeCategoryModal() {
+    function closeCategoryModalInternal() {
       if (!isModalOpen) return;
       modal.classList.remove('open');
       document.body.style.overflow = '';
@@ -1040,9 +1060,22 @@ function initStorefrontApp() {
       try { btnViewAll.focus(); } catch (_) {}
     }
 
-    btnViewAll.addEventListener('click', openCategoryModal);
-    if (closeBtn) closeBtn.addEventListener('click', closeCategoryModal);
-    if (backdrop) backdrop.addEventListener('click', closeCategoryModal);
+    // Close Modal
+    closeCategoryModal = function() {
+      if (!isModalOpen) return;
+      if (backNav) {
+        if (backNav.isTopStep('cat-viewall-modal')) {
+          backNav.stepBack();
+          return;
+        }
+        backNav.removeStepDirect('cat-viewall-modal');
+      }
+      closeCategoryModalInternal();
+    };
+
+    btnViewAll.addEventListener('click', () => openCategoryModal(true));
+    if (closeBtn) closeBtn.addEventListener('click', () => closeCategoryModal());
+    if (backdrop) backdrop.addEventListener('click', () => closeCategoryModal());
 
     // Escape key listener
     document.addEventListener('keydown', (e) => {
@@ -1061,6 +1094,12 @@ function initStorefrontApp() {
       // Mark active in modal
       listEl.querySelectorAll('.cat-viewall-item').forEach(el => el.classList.remove('active'));
       item.classList.add('active');
+
+      // Clear active search query when picking category from modal
+      if (recipeSearchInput && recipeSearchInput.value) {
+        recipeSearchInput.value = '';
+        if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+      }
 
       // Update main page filter
       filterDishes(filter);
@@ -1105,41 +1144,82 @@ function initStorefrontApp() {
       }
     });
 
-    // Expose refresh function to storefront sync
+    // Expose functions to storefront
     window.refreshCategoryViewAll = renderCategoryViewAllList;
+    window.openCategoryModal = openCategoryModal;
+    window.closeCategoryModal = closeCategoryModal;
   }
 
   initCategoryViewAll();
 
-  // Recipe Live Search Input
+  // Recipe Live Search Input with Debounce & Full Card Metadata Matching
   if (recipeSearchInput) {
+    let searchDebounceTimer = null;
+
     recipeSearchInput.addEventListener('input', (e) => {
       const q = e.target.value.toLowerCase().trim();
       if (clearSearchBtn) {
         clearSearchBtn.style.display = q ? 'block' : 'none';
       }
-      if (menuViewMoreShade) menuViewMoreShade.style.display = q ? 'none' : (isAllExpanded ? 'none' : 'flex');
+
+      if (!q) {
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = null;
+        }
+        const activePill = pillsWrap ? pillsWrap.querySelector('.category-pill.active') : null;
+        const activeCat = activePill ? (activePill.getAttribute('data-filter') || 'all') : 'all';
+        filterDishes(activeCat);
+        return;
+      }
+
+      if (menuViewMoreShade) menuViewMoreShade.style.display = 'none';
       if (menuShowLessWrap) menuShowLessWrap.style.display = 'none';
 
-      const cards = document.querySelectorAll('.recipe-card');
-      cards.forEach(card => {
-        const title = (card.querySelector('.recipe-title')?.textContent || '').toLowerCase();
-        const cat = (card.getAttribute('data-category') || '').toLowerCase();
-        const tags = (card.getAttribute('data-tags') || '').toLowerCase();
-        if (!q || title.includes(q) || cat.includes(q) || tags.includes(q)) {
-          card.style.display = 'block';
-        } else {
-          card.style.display = 'none';
-        }
-      });
+      if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+      }
+      searchDebounceTimer = setTimeout(() => {
+        const queryTokens = q.split(/\s+/).filter(Boolean);
+        const cards = document.querySelectorAll('.recipe-card');
+        cards.forEach(card => {
+          const dishId = card.getAttribute('data-id');
+          const dish = dishId && typeof dataService !== 'undefined' && typeof dataService.getDishById === 'function' ? dataService.getDishById(dishId) : null;
+          const title = (card.querySelector('.recipe-title')?.textContent || dish?.name || '').toLowerCase();
+          const cat = (card.getAttribute('data-category') || dish?.category || '').toLowerCase();
+          const tags = (card.getAttribute('data-tags') || (Array.isArray(dish?.tags) ? dish.tags.join(' ') : (dish?.tags || ''))).toLowerCase();
+          const badge = (card.querySelector('.recipe-card-badge-pill')?.textContent || dish?.badge || '').toLowerCase();
+          const desc = (card.getAttribute('data-description') || card.querySelector('.recipe-desc')?.textContent || dish?.description || '').toLowerCase();
+
+          const match = queryTokens.every(token =>
+            title.includes(token) ||
+            cat.includes(token) ||
+            tags.includes(token) ||
+            badge.includes(token) ||
+            desc.includes(token)
+          );
+
+          if (match) {
+            card.style.display = 'block';
+            card.classList.remove('menu-item-collapsed');
+          } else {
+            card.style.display = 'none';
+          }
+        });
+      }, 150);
     });
 
     if (clearSearchBtn) {
       clearSearchBtn.addEventListener('click', () => {
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = null;
+        }
         recipeSearchInput.value = '';
         clearSearchBtn.style.display = 'none';
-        filterDishes('all');
-        document.querySelectorAll('.category-pill').forEach(p => p.classList.toggle('active', p.getAttribute('data-filter') === 'all'));
+        const activePill = pillsWrap ? pillsWrap.querySelector('.category-pill.active') : null;
+        const activeCat = activePill ? (activePill.getAttribute('data-filter') || 'all') : 'all';
+        filterDishes(activeCat);
       });
     }
   }
@@ -8572,6 +8652,13 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   backNav.registerFallbackChecker({
     isOpen: () => mobileNavDrawer && mobileNavDrawer.classList.contains('open'),
     close: () => closeMobileMenu()
+  });
+  backNav.registerFallbackChecker({
+    isOpen: () => {
+      const modal = document.getElementById('cat-viewall-modal');
+      return modal && modal.classList.contains('open');
+    },
+    close: () => closeCategoryModal()
   });
   // Prevent accidental exit when on main food menu
   backNav.setBaseBackHandler(() => {

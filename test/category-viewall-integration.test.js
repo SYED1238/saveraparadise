@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { DEFAULT_CATEGORIES, DEFAULT_DISHES, sanitizeCategoryImageUrl } from '../dataService.js';
 import { escapeHtml } from '../securityUtils.js';
 
@@ -221,4 +222,150 @@ test('CATEGORY VIEW ALL & KINETIC ROTATION INTEGRATION SUITE', async (t) => {
       'Category View All modal must render above sticky navbar'
     );
   });
+  // =========================================================================
+  // 6. Kinetic Plate Rotation CSS & Zero-Lag Verification
+  // =========================================================================
+  await t.test('9. .cuisine-circle-img omits transform transition to ensure instantaneous kinetic plate spin', () => {
+    const styleCss = fs.readFileSync('style.css', 'utf8');
+    const cuisineImgMatch = styleCss.match(/\.cuisine-circle-img\s*\{[^}]*\}/s);
+    assert.ok(cuisineImgMatch, '.cuisine-circle-img class definition must exist in style.css');
+    const block = cuisineImgMatch[0];
+    assert.ok(block.includes('transition: filter 0.22s ease;'), 'Must have filter transition');
+    assert.ok(!block.includes('transform 0.08s linear'), 'Must NOT have 80ms CSS transition on transform to avoid rAF lag');
+  });
+
+  // =========================================================================
+  // 7. Category Token Matching & Slug Disambiguation
+  // =========================================================================
+  await t.test('10. Category filter uses exact slug/token matching preventing false-positive substring collisions', () => {
+    function matchesCategory(cardCat, filter) {
+      const normFilter = (filter || 'all').toLowerCase().trim();
+      const normCardCat = (cardCat || '').toLowerCase().trim();
+      if (normFilter === 'all') return true;
+      const catTokens = normCardCat.split(/[\s,]+/);
+      return catTokens.includes(normFilter) || normCardCat === normFilter;
+    }
+
+    // Exact matches
+    assert.ok(matchesCategory('biryani', 'biryani'));
+    assert.ok(matchesCategory('bbq-tandoori', 'bbq-tandoori'));
+    assert.ok(matchesCategory('chicken biryani', 'biryani'));
+    assert.ok(matchesCategory('biryani, kebab', 'kebab'));
+
+    // Substring collision prevention
+    assert.strictEqual(matchesCategory('veg-biryani', 'biryani'), false, 'veg-biryani should not match biryani');
+    assert.strictEqual(matchesCategory('curry-specials', 'curry'), false, 'curry-specials should not match curry');
+    assert.strictEqual(matchesCategory('fish-fry', 'fish'), false, 'fish-fry should not match fish');
+  });
+
+  // =========================================================================
+  // 8. Search Engine: Multi-Field Token Matching & Debounce
+  // =========================================================================
+  await t.test('11. Search predicate inspects titles, categories, tags, badges, and descriptions across multi-tokens', () => {
+    function searchMatch(query, dish) {
+      const q = query.toLowerCase().trim();
+      if (!q) return true;
+      const queryTokens = q.split(/\s+/).filter(Boolean);
+      const title = (dish.name || '').toLowerCase();
+      const cat = (dish.category || '').toLowerCase();
+      const tags = (Array.isArray(dish.tags) ? dish.tags.join(' ') : (dish.tags || '')).toLowerCase();
+      const badge = (dish.badge || '').toLowerCase();
+      const desc = (dish.description || '').toLowerCase();
+
+      return queryTokens.every(token =>
+        title.includes(token) ||
+        cat.includes(token) ||
+        tags.includes(token) ||
+        badge.includes(token) ||
+        desc.includes(token)
+      );
+    }
+
+    const testDish = {
+      id: 'dish-biryani-rice-2pc-kebab',
+      name: 'Biryani Rice & 2 Piece Kebab',
+      category: 'biryani',
+      tags: ['popular', 'combo'],
+      badge: 'Value Combo',
+      description: 'Slow-cooked aromatic dum rice served with 2 crispy chicken kebabs'
+    };
+
+    // Match by title
+    assert.ok(searchMatch('biryani', testDish));
+    // Match by badge
+    assert.ok(searchMatch('value combo', testDish));
+    assert.ok(searchMatch('value', testDish));
+    // Match by description
+    assert.ok(searchMatch('slow-cooked aromatic', testDish));
+    // Match by category
+    assert.ok(searchMatch('biryani', testDish));
+    // Match by multiple tokens across fields (title + badge)
+    assert.ok(searchMatch('kebab value', testDish));
+    // Non-match
+    assert.strictEqual(searchMatch('paneer tikka', testDish), false);
+  });
+
+  // =========================================================================
+  // 9. Search Empty/Backspace & Clear Active Category Preservation
+  // =========================================================================
+  await t.test('12. Clearing or backspacing search restores current active category without dumping catalog', () => {
+    const mainJs = fs.readFileSync('main.js', 'utf8');
+
+    // 1. Backspacing to empty (!q) checks active category pill
+    assert.ok(
+      mainJs.includes("const activeCat = activePill ? (activePill.getAttribute('data-filter') || 'all') : 'all';"),
+      'Search handler must determine active category on empty query'
+    );
+    assert.ok(
+      mainJs.includes('filterDishes(activeCat);'),
+      'Search handler must invoke filterDishes(activeCat) on empty query'
+    );
+
+    // 2. clearSearchBtn preserves active category instead of forcing filterDishes('all')
+    const clearBtnPattern = /clearSearchBtn\.addEventListener\('click'[\s\S]*?filterDishes\(activeCat\);/;
+    assert.ok(clearBtnPattern.test(mainJs), 'Clear search button must restore active category');
+  });
+
+  // =========================================================================
+  // 10. Hardware Back Navigation & Modal Registration
+  // =========================================================================
+  await t.test('13. View All category modal hooks into backNav and registers fallback checker', () => {
+    const mainJs = fs.readFileSync('main.js', 'utf8');
+
+    // openCategoryModal registers backNav step
+    assert.ok(
+      mainJs.includes("backNav.pushStep('cat-viewall-modal',"),
+      'openCategoryModal must push cat-viewall-modal step to backNav'
+    );
+
+    // closeCategoryModal handles backNav stepBack / removeStepDirect
+    assert.ok(
+      mainJs.includes("backNav.isTopStep('cat-viewall-modal')"),
+      'closeCategoryModal must check isTopStep for cat-viewall-modal'
+    );
+    assert.ok(
+      mainJs.includes("backNav.removeStepDirect('cat-viewall-modal')"),
+      'closeCategoryModal must remove step direct from backNav'
+    );
+
+    // Fallback checker registration
+    assert.ok(
+      mainJs.includes("document.getElementById('cat-viewall-modal')"),
+      'backNav fallback checkers must inspect cat-viewall-modal'
+    );
+  });
+
+  // =========================================================================
+  // 11. Category Selection Auto-Clears Stale Search Input
+  // =========================================================================
+  await t.test('14. Selecting a category pill or modal card clears active search text and hides clear button', () => {
+    const mainJs = fs.readFileSync('main.js', 'utf8');
+
+    // Pills wrap click handler clears search
+    assert.ok(
+      mainJs.includes("recipeSearchInput.value = '';") && mainJs.includes("clearSearchBtn.style.display = 'none';"),
+      'Category selection listeners must clear search input and hide clear button'
+    );
+  });
+
 });
