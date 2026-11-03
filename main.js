@@ -6336,6 +6336,9 @@ function initStorefrontApp() {
     }
 
     activeEditingAddressId = editId;
+    bestGpsAccuracy = Infinity;
+    bestGpsCoords = null;
+    gpsSampleCount = 0;
     if (gpsWatchId !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(gpsWatchId);
       gpsWatchId = null;
@@ -6453,6 +6456,14 @@ function initStorefrontApp() {
   }
 
   function closeAddressModalInternal() {
+    if (gpsWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(gpsWatchId);
+      gpsWatchId = null;
+    }
+    if (gpsRefineTimeout) {
+      clearTimeout(gpsRefineTimeout);
+      gpsRefineTimeout = null;
+    }
     if (modalAddressBackdrop) {
       modalAddressBackdrop.classList.remove('open');
       const anyModalOpen = (authModalBackdrop && authModalBackdrop.classList.contains('open')) ||
@@ -6607,7 +6618,12 @@ function initStorefrontApp() {
         return;
       }
 
-      // Clean up any in-flight watch or timer
+      // If already actively acquiring satellites, do not interrupt in-flight lock
+      if (btnDetectGps.classList.contains('detecting') && gpsWatchId !== null) {
+        return;
+      }
+
+      // Clean up any previous in-flight watch or timer
       if (gpsWatchId !== null) {
         navigator.geolocation.clearWatch(gpsWatchId);
         gpsWatchId = null;
@@ -6624,17 +6640,52 @@ function initStorefrontApp() {
       btnDetectGps.classList.remove('detected', 'refine', 'btn-pulse-prompt');
       btnDetectGps.classList.add('detecting');
       if (btnDetectGpsText) {
-        btnDetectGpsText.innerHTML = '<i class="fa-solid fa-satellite-dish fa-spin"></i> Locking GPS Satellites...';
+        btnDetectGpsText.innerHTML = '<i class="fa-solid fa-satellite-dish fa-spin"></i> Locating you...';
       }
       const helperTag = document.querySelector('.map-drag-helper-tag');
       if (helperTag) {
-        helperTag.innerHTML = '<i class="fa-solid fa-crosshairs fa-spin"></i> Refining doorstep accuracy from satellites...';
+        helperTag.innerHTML = '<i class="fa-solid fa-crosshairs fa-spin"></i> Locking GPS satellites & Wi-Fi...';
       }
 
       const applyGpsFix = (pos, isFinal = false) => {
         const userLat = pos.coords.latitude;
         const userLng = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy || 100);
+
+        // Guard against rough ISP/network IP geolocation (e.g. Opera on laptop showing Bangalore ~50km away)
+        const check = dataService.checkDeliveryAvailability(userLat, userLng);
+        const isRoughNetworkIp = (accuracy > 3000) || (check.distanceKm !== null && check.distanceKm > 25 && accuracy > 500);
+
+        if (isRoughNetworkIp) {
+          console.warn('[Location] Rough IP geolocation detected:', { userLat, userLng, accuracy, distanceKm: check.distanceKm });
+          if (gpsWatchId !== null) {
+            navigator.geolocation.clearWatch(gpsWatchId);
+            gpsWatchId = null;
+          }
+          if (gpsRefineTimeout) {
+            clearTimeout(gpsRefineTimeout);
+            gpsRefineTimeout = null;
+          }
+          btnDetectGps.classList.remove('detecting');
+          if (btnDetectGpsText) {
+            btnDetectGpsText.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Drag Pin / Search';
+          }
+          const dragHelper = document.querySelector('.map-drag-helper-tag');
+          if (dragHelper) {
+            dragHelper.innerHTML = '<i class="fa-solid fa-arrows-up-down-left-right"></i> Drag map pin or use search bar above to set your delivery doorstep';
+          }
+          showToast(`⚠️ Approximate network location detected (~${Math.round(check.distanceKm || 50)}km away). Please drag the pin or search your address in Ramanagara!`, 'warning', 6000);
+
+          // Keep map centered safely in Ramanagara so customer is not stranded in Bangalore
+          if (addressMap) {
+            addressMap.setView([RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng], 16);
+            if (addressMarker) addressMarker.setLatLng([RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng]);
+          }
+          updateMapLocation(RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng, false, false);
+          const searchInput = document.getElementById('map-address-search-input');
+          if (searchInput) searchInput.focus();
+          return;
+        }
 
         hasDetectedLocation = true;
         hasPinnedLocation = true;
@@ -6657,6 +6708,32 @@ function initStorefrontApp() {
         }
       };
 
+      // Pass 1: Fast Cached Fix (Instant 50ms lock on phones with warm GPS / cached location)
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (cachedPos) => {
+            const acc = Math.round(cachedPos.coords.accuracy || 100);
+            const userLat = cachedPos.coords.latitude;
+            const userLng = cachedPos.coords.longitude;
+            const check = dataService.checkDeliveryAvailability(userLat, userLng);
+            const isRough = (acc > 3000) || (check.distanceKm !== null && check.distanceKm > 25 && acc > 500);
+
+            if (!isRough && (!bestGpsCoords || acc < bestGpsAccuracy)) {
+              bestGpsAccuracy = acc;
+              bestGpsCoords = cachedPos;
+              applyGpsFix(cachedPos, false);
+            }
+          },
+          () => {
+            // No warm cache; proceed directly with live GNSS satellite watch
+          },
+          { enableHighAccuracy: false, timeout: 2500, maximumAge: 120000 }
+        );
+      } catch (cachedErr) {
+        console.warn('Fast cached geolocation unavailable:', cachedErr);
+      }
+
+      // Pass 2: Deep High-Accuracy GNSS Satellite & Triangulation Watch (up to 12s for cold phone GPS like Poco F6)
       gpsWatchId = navigator.geolocation.watchPosition(
         (pos) => {
           gpsSampleCount++;
@@ -6668,8 +6745,8 @@ function initStorefrontApp() {
             applyGpsFix(pos, false);
           }
 
-          // If we reach fine doorstep precision (<= 12m) after at least 2 samples, finalize immediately
-          if (acc <= 12 && gpsSampleCount >= 2) {
+          // If we reach fine doorstep precision (<= 15m), finalize immediately
+          if (acc <= 15) {
             if (gpsWatchId !== null) {
               navigator.geolocation.clearWatch(gpsWatchId);
               gpsWatchId = null;
@@ -6690,7 +6767,13 @@ function initStorefrontApp() {
           btnDetectGps.classList.remove('detecting');
           if (btnDetectGpsText) btnDetectGpsText.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Detect My Location';
           console.warn('Geolocation error:', err);
-          showToast('Could not access GPS. Please type your delivery address in the box below!', 'info');
+
+          if (err && err.code === 1) { // PERMISSION_DENIED
+            showToast('📍 Location permission denied. Please allow location in browser settings or type address below.', 'warning');
+          } else {
+            showToast('Could not access GPS. Please drag the pin or type your delivery address below!', 'info');
+          }
+
           if (addrAutofillBadge) {
             addrAutofillBadge.className = 'addr-autofill-badge manual';
             addrAutofillBadge.innerHTML = '<i class="fa-solid fa-keyboard"></i> Type Address Below';
@@ -6702,10 +6785,10 @@ function initStorefrontApp() {
             addrInputDetails.focus();
           }
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
 
-      // Progressive sample window: after 3.8s, settle on best GPS reading obtained
+      // Progressive sample window: allow up to 9.5s for cold satellite acquisition
       gpsRefineTimeout = setTimeout(() => {
         if (gpsWatchId !== null) {
           navigator.geolocation.clearWatch(gpsWatchId);
@@ -6717,8 +6800,9 @@ function initStorefrontApp() {
         } else {
           btnDetectGps.classList.remove('detecting');
           if (btnDetectGpsText) btnDetectGpsText.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Detect My Location';
+          showToast('GPS taking longer than usual. Please drag the pin on map or search your address above!', 'info');
         }
-      }, 3800);
+      }, 9500);
     });
   }
 

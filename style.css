@@ -10913,6 +10913,26 @@ body.order-modal-open .unlocked-deals-floating-bar {
   transform: scale(0.97);
 }
 
+.swiggy-floating-gps-btn.detecting {
+  background: #EFF6FF !important;
+  color: #2563EB !important;
+  border-color: #93C5FD !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.22) !important;
+}
+
+.swiggy-floating-gps-btn.refine {
+  background: #ECFDF5 !important;
+  color: #059669 !important;
+  border-color: #6EE7B7 !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.22) !important;
+}
+
+.swiggy-floating-gps-btn.detected {
+  background: #ECFDF5 !important;
+  color: #059669 !important;
+  border-color: #6EE7B7 !important;
+}
+
 /* Bottom Sheet Preview Card */
 .swiggy-bottom-sheet {
   background: #FFFFFF;

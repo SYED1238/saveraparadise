@@ -1,5 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
 
 // Test the Phase 2 Restaurant Operations & Geofencing logic
 test('PHASE 2: RESTAURANT OPERATIONS & GEOFENCING DEFENSE SUITE', async (t) => {
@@ -135,5 +142,58 @@ test('PHASE 2: RESTAURANT OPERATIONS & GEOFENCING DEFENSE SUITE', async (t) => {
     assert.equal(updatePayload.time_restricted, true);
     assert.equal(updatePayload.available_from, '12:00');
     assert.equal(updatePayload.available_to, '16:00');
+  });
+
+  await t.test('5. Dual-Pass GPS & Desktop IP fallback defense in main.js and style.css', () => {
+    const mainJs = fs.readFileSync(path.join(rootDir, 'main.js'), 'utf8');
+    const styleCss = fs.readFileSync(path.join(rootDir, 'style.css'), 'utf8');
+
+    // 1. Guard against rough ISP/network IP geolocation (like Opera desktop routing through Bangalore 50km away)
+    assert.match(
+      mainJs,
+      /const\s+isRoughNetworkIp\s*=\s*\(accuracy\s*>\s*3000\)\s*\|\|\s*\(check\.distanceKm\s*!==\s*null\s*&&\s*check\.distanceKm\s*>\s*25\s*&&\s*accuracy\s*>\s*500\)/,
+      'main.js must detect rough network IP geolocation over 25km away or with accuracy > 3000m'
+    );
+    assert.match(
+      mainJs,
+      /showToast\([^)]*Approximate network location detected/i,
+      'main.js must alert user when rough network IP is detected'
+    );
+
+    // 2. Dual-pass geolocation: Fast cached fix (50ms) + Deep satellite watch (12s)
+    assert.match(
+      mainJs,
+      /maximumAge:\s*120000/,
+      'main.js must query warm cached position with maximumAge: 120000'
+    );
+    assert.match(
+      mainJs,
+      /timeout:\s*12000/,
+      'main.js deep satellite watch must give cold mobile GPS chips up to 12s to lock'
+    );
+
+    // 3. State cleanup on modal open and close
+    assert.match(
+      mainJs,
+      /openAddressModal[\s\S]*bestGpsAccuracy\s*=\s*Infinity[\s\S]*bestGpsCoords\s*=\s*null/,
+      'openAddressModal must reset GPS coordinates so adding another address is clean'
+    );
+    assert.match(
+      mainJs,
+      /closeAddressModalInternal[\s\S]*clearWatch\(gpsWatchId\)[\s\S]*clearTimeout\(gpsRefineTimeout\)/,
+      'closeAddressModalInternal must stop GPS watch and timer on modal close'
+    );
+
+    // 4. Visual state styles in style.css
+    assert.match(
+      styleCss,
+      /\.swiggy-floating-gps-btn\.detecting\s*\{/,
+      'style.css must define visual state for .swiggy-floating-gps-btn.detecting'
+    );
+    assert.match(
+      styleCss,
+      /\.swiggy-floating-gps-btn\.refine\s*\{/,
+      'style.css must define visual state for .swiggy-floating-gps-btn.refine'
+    );
   });
 });
