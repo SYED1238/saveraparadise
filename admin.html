@@ -1349,7 +1349,7 @@
         </div>
       </div>
 
-      <form id="form-category" class="admin-form">
+      <form id="form-category" class="admin-form" novalidate>
         <input type="hidden" id="cat-edit-id" value="">
 
         <div class="form-group">
@@ -1426,7 +1426,7 @@
         </div>
       </div>
 
-      <form id="form-dish" class="admin-form">
+      <form id="form-dish" class="admin-form" novalidate>
         <input type="hidden" id="dish-edit-id" value="">
 
         <!-- In-Stock / Availability Switch Inside Modal -->
@@ -1456,7 +1456,7 @@
         <div class="form-row-3">
           <div class="form-group">
             <label for="dish-price-input">Price (₹) *</label>
-            <input type="number" id="dish-price-input" step="1" min="0" placeholder="240" required>
+            <input type="number" id="dish-price-input" step="any" min="10" placeholder="240" required>
           </div>
 
           <div class="form-group">

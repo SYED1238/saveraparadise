@@ -2677,43 +2677,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Realistic, loud & penetrating kitchen POS order chime
   function playKitchenChime() {
+    let played = false;
     try {
       const ctx = getKitchenAudioContext();
-      if (!ctx) return;
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
+      if (ctx) {
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+
+        const now = ctx.currentTime;
+        // Dual-burst POS chime melody: (880Hz, 1174Hz, 1760Hz) twice
+        const notes = [
+          { freq: 880, start: 0.00, dur: 0.12, gain: 0.50 },
+          { freq: 1174.66, start: 0.13, dur: 0.12, gain: 0.55 },
+          { freq: 1760, start: 0.26, dur: 0.32, gain: 0.65 },
+          { freq: 880, start: 0.60, dur: 0.12, gain: 0.50 },
+          { freq: 1174.66, start: 0.73, dur: 0.12, gain: 0.55 },
+          { freq: 1760, start: 0.86, dur: 0.42, gain: 0.70 }
+        ];
+
+        notes.forEach(note => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(note.freq, now + note.start);
+
+          gain.gain.setValueAtTime(0.0001, now + note.start);
+          gain.gain.exponentialRampToValueAtTime(note.gain, now + note.start + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + note.start + note.dur);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.start(now + note.start);
+          osc.stop(now + note.start + note.dur + 0.05);
+        });
+        played = true;
       }
-
-      const now = ctx.currentTime;
-      // Dual-burst POS chime melody: (880Hz, 1174Hz, 1760Hz) twice
-      const notes = [
-        { freq: 880, start: 0.00, dur: 0.12, gain: 0.50 },
-        { freq: 1174.66, start: 0.13, dur: 0.12, gain: 0.55 },
-        { freq: 1760, start: 0.26, dur: 0.32, gain: 0.65 },
-        { freq: 880, start: 0.60, dur: 0.12, gain: 0.50 },
-        { freq: 1174.66, start: 0.73, dur: 0.12, gain: 0.55 },
-        { freq: 1760, start: 0.86, dur: 0.42, gain: 0.70 }
-      ];
-
-      notes.forEach(note => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(note.freq, now + note.start);
-
-        gain.gain.setValueAtTime(0.0001, now + note.start);
-        gain.gain.exponentialRampToValueAtTime(note.gain, now + note.start + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + note.start + note.dur);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc.start(now + note.start);
-        osc.stop(now + note.start + note.dur + 0.05);
-      });
     } catch (err) {
       console.warn('[KitchenAlarm] AudioContext play error:', err);
+    }
+
+    if (!played) {
+      try {
+        playNotificationSound('new_order');
+      } catch {}
     }
   }
 
@@ -2969,17 +2978,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Unlock audio on any user gesture across the admin portal
+  // Unlock audio on any user gesture across the admin portal (persists across gestures for iPad/tablet longevity)
   const unlockAudioOnGesture = () => {
     const ctx = getKitchenAudioContext();
     if (ctx && ctx.state === 'suspended') {
       ctx.resume().catch(() => {});
     }
-    window.removeEventListener('pointerdown', unlockAudioOnGesture);
-    window.removeEventListener('keydown', unlockAudioOnGesture);
-    window.removeEventListener('touchstart', unlockAudioOnGesture);
-    window.removeEventListener('touchend', unlockAudioOnGesture);
-    window.removeEventListener('click', unlockAudioOnGesture);
   };
   window.addEventListener('pointerdown', unlockAudioOnGesture, { passive: true });
   window.addEventListener('keydown', unlockAudioOnGesture, { passive: true });
