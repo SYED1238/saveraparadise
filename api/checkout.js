@@ -172,7 +172,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const { items, promoCode, appliedPromo, storeSettings, catalogDishes, turnstileToken } = body || {};
+  const { items, promoCode, appliedPromo, storeSettings, catalogDishes, turnstileToken, lat, lng } = body || {};
 
   // Cloudflare Turnstile Invisible Bot Defense
   const clientToken = turnstileToken || req.headers?.['cf-turnstile-response'] || body?.['cf-turnstile-response'];
@@ -229,10 +229,9 @@ export default async function handler(req, res) {
 
     if (dish && (dish.is_available === false || dish.inStock === false)) {
       return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' will be back soon` });
-
+    }
     if (dish && !isDishAvailableNow(dish)) {
       return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' is not currently being served (outside serving hours)` });
-    }
     }
     const unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : Math.max(0, Number(item.price) || 0);
 
@@ -267,6 +266,30 @@ export default async function handler(req, res) {
     ? { ...(storeSettings || {}), ...serverSettings }
     : ((storeSettings && typeof storeSettings === 'object') ? storeSettings : {});
   const activePromo = appliedPromo || promoCode || null;
+
+  // Geofence Delivery Availability Validation
+  const rawLat = Number(lat ?? body?.lat);
+  const rawLng = Number(lng ?? body?.lng);
+  const maxRadiusKm = Number(settings.deliveryRadiusKm || settings.deliveryRadius || 7);
+  if (Number.isFinite(rawLat) && Number.isFinite(rawLng) && (rawLat !== 0 || rawLng !== 0)) {
+    const REST_LAT = 12.7208891;
+    const REST_LNG = 77.2805103;
+    const R = 6371;
+    const dLat = (rawLat - REST_LAT) * (Math.PI / 180);
+    const dLng = (rawLng - REST_LNG) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(REST_LAT * (Math.PI / 180)) *
+      Math.cos(rawLat * (Math.PI / 180)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const roadDist = Math.round(R * c * 1.55 * 10) / 10;
+    if (roadDist > maxRadiusKm) {
+      return res.status(400).json({
+        error: `Address is outside our delivery area (${roadDist} km exceeds our ${maxRadiusKm} km limit)`
+      });
+    }
+  }
 
   // Minimum Order Value (MOV) validation
   const minOrderValue = Number(settings.minOrderValue) || 0;

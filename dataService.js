@@ -4825,6 +4825,26 @@ class QuickBiteDataService {
         };
       }
     }
+
+    // 3. Geofence Delivery Availability Check: reject if order has coordinates and is outside delivery zone
+    if (orderData && orderData.lat !== undefined && orderData.lng !== undefined && !orderData.isDemo && !orderData.bypassGeofenceCheck) {
+      const latNum = Number(orderData.lat);
+      const lngNum = Number(orderData.lng);
+      if (Number.isFinite(latNum) && Number.isFinite(lngNum) && (latNum !== 0 || lngNum !== 0)) {
+        const availability = this.checkDeliveryAvailability(latNum, lngNum);
+        if (availability && !availability.deliverable) {
+          const msg = `Address is outside our delivery area (${availability.distanceKm} km exceeds our ${availability.maxRadiusKm} km limit).`;
+          return {
+            success: false,
+            reason: 'out_of_zone',
+            distance: availability.distanceKm,
+            maxRadiusKm: availability.maxRadiusKm,
+            error: new Error(msg),
+            message: msg
+          };
+        }
+      }
+    }
     const rawAddrs = this.getAllAddressesRaw();
     // Guarantee customerPhone is populated
     if (!orderData.customerPhone || String(orderData.customerPhone).replace(/\D/g, '').length < 10) {

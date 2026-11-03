@@ -5370,7 +5370,9 @@ function initStorefrontApp() {
               promoCode: appliedPromo || null,
               appliedPromo: appliedPromo || null,
               storeSettings: settings,
-              turnstileToken: turnstileToken
+              turnstileToken: turnstileToken,
+              lat: selectedAddr ? Number(selectedAddr.lat) : null,
+              lng: selectedAddr ? Number(selectedAddr.lng) : null
             })
           });
           if (checkoutRes.status === 403) {

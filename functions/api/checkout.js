@@ -153,7 +153,7 @@ export async function onRequest(context) {
       return jsonResponse({ error: 'Invalid JSON request body' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
 
-    const { items, promoCode, userPhone, turnstileToken, clientOrderThresholdDeal } = body || {};
+    const { items, promoCode, userPhone, turnstileToken, clientOrderThresholdDeal, lat, lng } = body || {};
 
     const clientToken = turnstileToken || request.headers.get('cf-turnstile-response') || body?.['cf-turnstile-response'];
     const clientIp = getClientIp(request);
@@ -177,6 +177,30 @@ export async function onRequest(context) {
     const storeSettings = (authoritativeSettings && typeof authoritativeSettings === 'object' && Object.keys(authoritativeSettings).length > 0)
       ? { ...(body?.storeSettings || {}), ...authoritativeSettings }
       : ((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {}));
+
+    // Geofence Delivery Availability Validation
+    const rawLat = Number(lat ?? body?.lat);
+    const rawLng = Number(lng ?? body?.lng);
+    const maxRadiusKm = Number(storeSettings?.deliveryRadiusKm || storeSettings?.deliveryRadius || 7);
+    if (Number.isFinite(rawLat) && Number.isFinite(rawLng) && (rawLat !== 0 || rawLng !== 0)) {
+      const REST_LAT = 12.7208891;
+      const REST_LNG = 77.2805103;
+      const R = 6371;
+      const dLat = (rawLat - REST_LAT) * (Math.PI / 180);
+      const dLng = (rawLng - REST_LNG) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(REST_LAT * (Math.PI / 180)) *
+        Math.cos(rawLat * (Math.PI / 180)) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const roadDist = Math.round(R * c * 1.55 * 10) / 10;
+      if (roadDist > maxRadiusKm) {
+        return jsonResponse({
+          error: `Address is outside our delivery area (${roadDist} km exceeds our ${maxRadiusKm} km limit)`
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+    }
 
     const catalogMap = new Map();
     if (Array.isArray(catalogDishes)) {
@@ -213,12 +237,11 @@ export async function onRequest(context) {
       }
 
       if (matchedDish) {
-        if (matchedDish.is_available === false) {
+        if (matchedDish.is_available === false || matchedDish.inStock === false) {
           return jsonResponse({ error: `Item "${matchedDish.name}" is currently out of stock` }, 400, Object.fromEntries(corsHeaders.entries()));
-
+        }
         if (!isDishAvailableNow(matchedDish)) {
           return jsonResponse({ error: `Item "${matchedDish.name}" is not currently being served (outside serving hours)` }, 400, Object.fromEntries(corsHeaders.entries()));
-        }
         }
         authoritativePrice = Number(matchedDish.price);
       }
@@ -337,12 +360,14 @@ export async function onRequest(context) {
       : (dealDiscount > 0 ? 'unlocked_deal' : (discount > 0 ? 'promo' : null));
 
     const isFreeDeliveryEnabled = storeSettings?.freeDeliveryEnabled !== false;
-    const freeThreshold = (typeof storeSettings?.freeDeliveryThreshold === 'number')
-      ? storeSettings.freeDeliveryThreshold
+    const freeThreshold = (typeof storeSettings?.freeDeliveryThreshold === 'number' || (storeSettings?.freeDeliveryThreshold !== undefined && !Number.isNaN(Number(storeSettings?.freeDeliveryThreshold))))
+      ? Number(storeSettings.freeDeliveryThreshold)
       : 250;
-    const standardFee = (typeof storeSettings?.deliveryFeeStandard === 'number')
-      ? storeSettings.deliveryFeeStandard
-      : 40;
+    const standardFee = (typeof storeSettings?.deliveryFeeStandard === 'number' || (storeSettings?.deliveryFeeStandard !== undefined && !Number.isNaN(Number(storeSettings?.deliveryFeeStandard))))
+      ? Number(storeSettings.deliveryFeeStandard)
+      : (typeof storeSettings?.deliveryFee === 'number' || (storeSettings?.deliveryFee !== undefined && !Number.isNaN(Number(storeSettings?.deliveryFee))))
+        ? Number(storeSettings.deliveryFee)
+        : 40;
     const deliveryFee = (promoFreeDelivery || (isFreeDeliveryEnabled && freeThreshold > 0 && subtotal >= freeThreshold))
       ? 0
       : standardFee;
