@@ -61,28 +61,25 @@ export default async function handler(req, res) {
     const { orderId, amount, customerPhone, customerName, customerEmail, returnUrl, checkoutToken, turnstileToken } = body || {};
 
     if (!checkoutToken) {
-      const clientToken = turnstileToken || req.headers?.['cf-turnstile-response'] || body?.['cf-turnstile-response'];
-      const clientIp = getClientIp(req);
-      const botCheck = await verifyTurnstileToken(clientToken, clientIp);
-      if (!botCheck.success) {
-        return res.status(403).json({ error: 'Forbidden', message: botCheck.error || 'Bot verification failed.' });
-      }
+      return res.status(400).json({ error: 'Bad Request', message: 'checkoutToken is strictly required for PG order creation' });
     }
 
-    if (!orderId || !amount || Number(amount) <= 0) {
-      return res.status(400).json({ error: 'Bad Request', message: 'orderId and valid amount are required' });
+    // Anti-price tampering: cryptographically verify signed payload and 15m TTL
+    const decodedPayload = verifySignedPayload(checkoutToken);
+    if (!decodedPayload || typeof decodedPayload.numericTotal !== 'number' || decodedPayload.numericTotal <= 0) {
+      return res.status(400).json({ error: 'Invalid Token', message: 'Checkout token verification failed' });
     }
 
-    let finalAmount = Number(amount);
-    // Anti-price tampering: if checkoutToken is provided, verify against cryptographic signature
-    if (checkoutToken) {
-      const decodedPayload = verifySignedPayload(checkoutToken);
-      if (decodedPayload && typeof decodedPayload.numericTotal === 'number' && decodedPayload.numericTotal > 0) {
-        finalAmount = Number(decodedPayload.numericTotal);
-      } else {
-        return res.status(400).json({ error: 'Invalid Token', message: 'Checkout token verification failed' });
-      }
+    const tokenTime = decodedPayload.verifiedAt || decodedPayload.timestamp || 0;
+    if (tokenTime && Math.abs(Date.now() - tokenTime) > 15 * 60 * 1000) {
+      return res.status(400).json({ error: 'Expired Token', message: 'Checkout token has expired (15m limit)' });
     }
+
+    if (!orderId) {
+      return res.status(400).json({ error: 'Bad Request', message: 'orderId is required' });
+    }
+
+    const finalAmount = Number(decodedPayload.numericTotal);
 
     const result = await createPgOrder({
       orderId,

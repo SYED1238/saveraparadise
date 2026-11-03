@@ -39,27 +39,25 @@ export async function onRequest(context) {
     const { orderId, amount, customerPhone, customerName, customerEmail, returnUrl, checkoutToken, turnstileToken } = body || {};
 
     if (!checkoutToken) {
-      const clientToken = turnstileToken || request.headers.get('cf-turnstile-response') || body?.['cf-turnstile-response'];
-      const clientIp = getClientIp(request);
-      const botCheck = await verifyTurnstileToken(clientToken, clientIp, null, env);
-      if (!botCheck.success) {
-        return jsonResponse({ error: 'Forbidden', message: botCheck.error || 'Bot verification failed.' }, 403, Object.fromEntries(corsHeaders.entries()));
-      }
+      return jsonResponse({ error: 'Bad Request', message: 'checkoutToken is strictly required for PG order creation' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
 
-    if (!orderId || !amount || Number(amount) <= 0) {
-      return jsonResponse({ error: 'Bad Request', message: 'orderId and valid amount are required' }, 400, Object.fromEntries(corsHeaders.entries()));
+    // Anti-price tampering: cryptographically verify signed payload and 15m TTL
+    const decodedPayload = verifySignedPayload(checkoutToken, env);
+    if (!decodedPayload || typeof decodedPayload.numericTotal !== 'number' || decodedPayload.numericTotal <= 0) {
+      return jsonResponse({ error: 'Invalid Token', message: 'Checkout token verification failed' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
 
-    let finalAmount = Number(amount);
-    if (checkoutToken) {
-      const decodedPayload = verifySignedPayload(checkoutToken, env);
-      if (decodedPayload && typeof decodedPayload.numericTotal === 'number' && decodedPayload.numericTotal > 0) {
-        finalAmount = Number(decodedPayload.numericTotal);
-      } else {
-        return jsonResponse({ error: 'Invalid Token', message: 'Checkout token verification failed' }, 400, Object.fromEntries(corsHeaders.entries()));
-      }
+    const tokenTime = decodedPayload.verifiedAt || decodedPayload.timestamp || 0;
+    if (tokenTime && Math.abs(Date.now() - tokenTime) > 15 * 60 * 1000) {
+      return jsonResponse({ error: 'Expired Token', message: 'Checkout token has expired (15m limit)' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
+
+    if (!orderId) {
+      return jsonResponse({ error: 'Bad Request', message: 'orderId is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+    }
+
+    const finalAmount = Number(decodedPayload.numericTotal);
 
     const result = await createPgOrder({
       orderId,

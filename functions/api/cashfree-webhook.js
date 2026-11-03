@@ -59,9 +59,7 @@ export async function onRequest(context) {
       }
 
       const cleanOrderId = cfOrderId
-        .replace(/^order_/, '')
-        .replace(/^doorstep_/, '')
-        .replace(/^qb_/, '')
+        .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
         .split('_')[0];
 
       if (!cleanOrderId) {

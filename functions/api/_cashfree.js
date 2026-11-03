@@ -278,7 +278,8 @@ export async function initiateRiderPayout({
       headers: {
         'x-client-id': cfg.appId,
         'x-client-secret': cfg.secretKey,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'x-api-version': '2024-01-01'
       },
       body: JSON.stringify(payload)
     });

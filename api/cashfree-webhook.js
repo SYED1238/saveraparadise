@@ -41,9 +41,7 @@ export default async function handler(req, res) {
       const paymentMethod = eventData.payment?.payment_group || 'upi';
 
       const cleanOrderId = cfOrderId
-        .replace(/^order_/, '')
-        .replace(/^doorstep_/, '')
-        .replace(/^qb_/, '')
+        .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
         .split('_')[0];
 
       // Safe update in Supabase if server-side client is available

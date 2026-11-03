@@ -140,8 +140,9 @@ test('FEATURE #4: GEOFENCE DELIVERY DEFENSE & DYNAMIC FEE SUITE', async (t) => {
     dataService.saveSettings({ ...current, storeOpen: true, deliveryRadiusKm: 7 });
     dataService.saveDishes([{ id: 'dish-1', name: 'Chicken Biryani', price: 180, inStock: true }]);
 
+    const testId = 'QB-GEO-IN-' + Date.now();
     const result = await dataService.addOrder({
-      id: 'QB-TEST-GEO-IN',
+      id: testId,
       items: [{ id: 'dish-1', name: 'Chicken Biryani', quantity: 1, price: 180 }],
       customerPhone: '9876543210',
       lat: 12.721, // Near Ramanagara kitchen
@@ -149,7 +150,8 @@ test('FEATURE #4: GEOFENCE DELIVERY DEFENSE & DYNAMIC FEE SUITE', async (t) => {
     });
 
     assert.ok(result);
-    assert.strictEqual(result.id, 'QB-TEST-GEO-IN');
+    assert.strictEqual(result.status, 'accepted');
+    assert.ok(result.id);
   });
 
   await t.test('7. Cloudflare functions/api/checkout.js includes dynamic delivery fee and geofence check', () => {

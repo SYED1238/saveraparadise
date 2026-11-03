@@ -186,6 +186,16 @@ function safeCompare(a, b) {
  */
 export function verifyCashfreeWebhookSignature(signature, rawBody, timestamp) {
   const cfg = getCashfreeConfig();
+
+  // Replay Protection: Reject webhooks older than 5 minutes
+  const tsNum = Number(timestamp);
+  if (Number.isFinite(tsNum) && tsNum > 1000000000) {
+    const tsMs = tsNum < 10000000000 ? tsNum * 1000 : tsNum;
+    if (Math.abs(Date.now() - tsMs) > 5 * 60 * 1000) {
+      return false;
+    }
+  }
+
   if (!cfg.webhookSecret || !signature || !timestamp || !rawBody) {
     // In production, strictly reject unauthenticated webhooks
     if (process.env.NODE_ENV === 'production' || cfg.isProd) {
@@ -256,7 +266,8 @@ export async function initiateRiderPayout({
       headers: {
         'x-client-id': cfg.appId,
         'x-client-secret': cfg.secretKey,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'x-api-version': '2024-01-01'
       },
       body: JSON.stringify(payload)
     });

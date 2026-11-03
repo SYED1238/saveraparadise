@@ -1,3 +1,4 @@
+import QRCode from 'qrcode';
 /**
  * QuickBite Delivery Boy Portal Logic
  * Real-time pickup & drop locations, turn-by-turn navigation guide,
@@ -1465,15 +1466,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       throw new Error(data.message || 'QR generation fallback');
     } catch {
-      // Fallback: Generate native Indian UPI intent URL
+      // Local In-Browser Fallback: Generate native Indian UPI intent QR locally (zero 3rd-party data leakage)
       const merchantVpa = 'saveraparadise@okhdfcbank';
       const cleanId = String(order.id).replace(/\D/g, '').slice(-4) || '101';
       const formattedAm = Number(cash).toFixed(2);
       const safeTr = 'QB' + cleanId.replace(/[^a-zA-Z0-9]/g, '');
-      const fallbackUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`upi://pay?pa=${merchantVpa}&pn=Savera%20Paradise&am=${formattedAm}&tr=${safeTr}&cu=INR`)}`;
-      if (doorstepQrImg) {
-        doorstepQrImg.src = fallbackUrl;
-        doorstepQrImg.style.display = 'block';
+      const upiUri = `upi://pay?pa=${merchantVpa}&pn=Savera%20Paradise&am=${formattedAm}&tr=${safeTr}&cu=INR`;
+      try {
+        const localDataUrl = await QRCode.toDataURL(upiUri, {
+          width: 280,
+          margin: 2,
+          color: { dark: '#0F172A', light: '#FFFFFF' }
+        });
+        if (doorstepQrImg) {
+          doorstepQrImg.src = localDataUrl;
+          doorstepQrImg.style.display = 'block';
+        }
+      } catch {
+        if (doorstepQrImg) doorstepQrImg.style.display = 'none';
       }
       if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
       if (doorstepVpaDisplay) doorstepVpaDisplay.textContent = merchantVpa;

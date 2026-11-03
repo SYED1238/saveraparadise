@@ -739,10 +739,10 @@ function renderRiderFleetTable(orders) {
     grandNetDeposit += netDeposit;
 
     let netBadgeHtml = '';
-    if (netDeposit > 0) {
-      netBadgeHtml = `<span class="settle-badge deposit"><i class="fa-solid fa-arrow-down-long"></i> Rider Deposits ₹${netDeposit.toLocaleString('en-IN')}</span>`;
-    } else if (netDeposit < 0) {
-      netBadgeHtml = `<span class="settle-badge pay"><i class="fa-solid fa-arrow-up-long"></i> Pay Rider ₹${Math.abs(netDeposit).toLocaleString('en-IN')}</span>`;
+    if (cash > 0) {
+      netBadgeHtml = `<span class="settle-badge deposit"><i class="fa-solid fa-arrow-down-long"></i> COD: ₹${cash.toLocaleString('en-IN')} | Fee: ₹${riderPayout.toLocaleString('en-IN')}</span>`;
+    } else if (riderPayout > 0) {
+      netBadgeHtml = `<span class="settle-badge pay"><i class="fa-solid fa-arrow-up-long"></i> Pay Fee ₹${riderPayout.toLocaleString('en-IN')}</span>`;
     } else {
       netBadgeHtml = `<span class="settle-badge balanced"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`;
     }
@@ -842,9 +842,9 @@ function renderRiderFleetTable(orders) {
         const netDeposit = cash - riderPayout;
 
         let statusClass = 'deposit';
-        let statusTitle = 'RIDER DEPOSITS TO DRAWER';
-        let statusText = `Deposit ₹${netDeposit.toLocaleString('en-IN')}`;
-        let statusFormula = `Collected ₹${cash.toLocaleString('en-IN')} cash − ₹${riderPayout.toLocaleString('en-IN')} payout`;
+        let statusTitle = 'COD CASH TO DEPOSIT';
+        let statusText = `₹${cash.toLocaleString('en-IN')}`;
+        let statusFormula = `100% COD to Drawer • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}`;
 
         if (netDeposit < 0) {
           statusClass = 'pay';
@@ -2466,11 +2466,15 @@ function renderKmPayoutsView(orders) {
     const summary = dataService.getRiderCashSummary(r.pin);
     const cashInHand = summary.cashInHand;
 
-    // Check if paid today
+    // Multi-delivery dynamic payout balance
+    const payoutSummary = (typeof dataService.getRiderPayoutSummary === 'function')
+      ? dataService.getRiderPayoutSummary(r.pin)
+      : null;
+    const payoutBalance = payoutSummary ? payoutSummary.payoutBalance : calculatedPayout;
     const paidDate = r.payoutPaidAt ? new Date(r.payoutPaidAt) : null;
     const isPaidToday = Boolean(paidDate && !isNaN(paidDate.getTime()) && paidDate.toDateString() === new Date().toDateString());
     const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
-    const paidAmount = r.payoutAmountPaid || calculatedPayout;
+    const paidAmount = Number(r.payoutAmountPaid) || (payoutSummary ? payoutSummary.paidAmount : calculatedPayout);
 
     return {
       pin: r.pin,
@@ -2495,18 +2499,20 @@ function renderKmPayoutsView(orders) {
         ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${st.paidAmount.toLocaleString('en-IN')} (${st.paidTime})</span>`
         : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`;
 
-      const actionBtn = st.isPaidToday
-        ? `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-check"></i> Paid</button>`
-        : `
+      const hasUnpaidBalance = (st.payoutBalance !== undefined) ? st.payoutBalance > 0 : (!st.isPaidToday && st.calculatedPayout > 0);
+      const currentPayable = (st.payoutBalance !== undefined && st.payoutBalance > 0) ? st.payoutBalance : st.calculatedPayout;
+      const actionBtn = hasUnpaidBalance
+        ? `
           <div style="display:flex; gap:6px; justify-content:center;">
-            <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${st.calculatedPayout}" title="Mark Paid in Cash from Drawer">
-              <i class="fa-solid fa-money-bill-wave"></i> Cash
+            <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${currentPayable}" title="Mark Paid in Cash from Drawer">
+              <i class="fa-solid fa-money-bill-wave"></i> Cash (₹${currentPayable})
             </button>
-            <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${st.calculatedPayout}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}" title="Instant Transfer via Cashfree Payouts">
-              <i class="fa-solid fa-bolt"></i> Cashfree UPI
+            <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${currentPayable}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}" title="Instant Transfer via Cashfree Payouts">
+              <i class="fa-solid fa-bolt"></i> UPI (₹${currentPayable})
             </button>
           </div>
-        `;
+        `
+        : `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-check"></i> Paid</button>`;
 
       return `
         <tr>
@@ -2642,7 +2648,7 @@ function renderKmPayoutsView(orders) {
             amount,
             phone,
             name,
-            upiVpa: `${phone || pin}@upi`
+            upiVpa: (function() { const rd = (typeof dataService !== 'undefined' && dataService.getRiderByPin) ? dataService.getRiderByPin(pin) : null; return (rd && rd.upiVpa) ? rd.upiVpa : `${phone || pin}@upi`; })()
           })
         });
         const res = await resp.json();

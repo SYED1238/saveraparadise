@@ -332,5 +332,67 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       // In mock mode, order_amount in result should match the verified token (400), not the attacker body (1)
       assert.strictEqual(res.data.orderAmount, 400);
     });
+
+    test('POST /api/cashfree-create-order strictly rejects requests without checkoutToken with 400', async () => {
+      const { req, res } = createMockReqRes({
+        body: {
+          orderId: 'ORD-TEST-NO-TOKEN',
+          amount: 250,
+          customerPhone: '9876543210'
+        }
+      });
+      await cashfreeCreateOrderHandler(req, res);
+      assert.strictEqual(res.statusCode, 400);
+      assert.ok(res.data.message.includes('checkoutToken is strictly required'));
+    });
+
+    test('POST /api/cashfree-create-order rejects expired checkoutToken (>15m) with 400', async () => {
+      const expiredToken = signPayload({
+        subtotal: 300,
+        numericTotal: 300,
+        timestamp: Date.now() - (16 * 60 * 1000)
+      });
+      const { req, res } = createMockReqRes({
+        body: {
+          orderId: 'ORD-TEST-EXPIRED',
+          amount: 300,
+          checkoutToken: expiredToken
+        }
+      });
+      await cashfreeCreateOrderHandler(req, res);
+      assert.strictEqual(res.statusCode, 400);
+      assert.strictEqual(res.data.error, 'Expired Token');
+    });
+
+    test('Cashfree Webhook rejects timestamp older than 5 minutes (replay protection)', () => {
+      const secret = 'webhook_secret_key_replay_test';
+      process.env.CASHFREE_APP_ID = 'test_app';
+      process.env.CASHFREE_SECRET_KEY = 'test_secret';
+      process.env.CASHFREE_WEBHOOK_SECRET = secret;
+
+      const oldTimestamp = String(Date.now() - (6 * 60 * 1000));
+      const rawBody = JSON.stringify({ type: 'PAYMENT_SUCCESS_WEBHOOK' });
+            const signature = crypto
+        .createHmac('sha256', secret)
+        .update(`${oldTimestamp}${rawBody}`)
+        .digest('base64');
+
+      const isValid = verifyCashfreeWebhookSignature(signature, rawBody, oldTimestamp);
+      assert.strictEqual(isValid, false, 'Expired webhook timestamp must be rejected to defend against replays');
+    });
+
+    test('Order ID normalization correctly resolves qb_doorstep_ prefix to pure order ID', () => {
+      const cfOrderId = 'qb_doorstep_1234_9821';
+      const cleanOrderId = cfOrderId
+        .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
+        .split('_')[0];
+      assert.strictEqual(cleanOrderId, '1234', 'Must extract 1234 and not doorstep');
+    });
+
+    test('delivery.js does not leak order data to third-party api.qrserver.com', () => {
+      const deliveryJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf8');
+      assert.strictEqual(deliveryJs.includes('api.qrserver.com'), false, 'delivery.js must never reference api.qrserver.com');
+      assert.ok(deliveryJs.includes('QRCode.toDataURL'), 'delivery.js must generate fallback QR locally');
+    });
   });
 });
