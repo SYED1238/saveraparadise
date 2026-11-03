@@ -155,7 +155,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // Authoritative server-side dish price verification via Supabase if configured
   try {
     const serverDishes = await fetchAuthoritativeDishes();
     if (serverDishes && serverDishes.length > 0) {
@@ -168,13 +167,20 @@ export default async function handler(req, res) {
 
   let computedSubtotal = 0;
   const verifiedItems = [];
+  const dishQtyMap = new Map();
 
   for (const item of items) {
     if (!item || typeof item !== 'object') {
       return res.status(400).json({ error: 'Malformed order item structure' });
     }
 
-    const dish = catalogMap.get(String(item.id || '')) || catalogMap.get(String(item.name || '').toLowerCase());
+    const itemId = String(item.id || '');
+    const dish = catalogMap.get(itemId) || catalogMap.get(String(item.name || '').toLowerCase());
+
+    if (catalogMap.size > 0 && !dish) {
+      return res.status(400).json({ error: `Item '${item.name || 'dish'}' is not recognized in the active menu catalog` });
+    }
+
     if (dish && (dish.is_available === false || dish.inStock === false)) {
       return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' will be back soon` });
     }
@@ -188,6 +194,14 @@ export default async function handler(req, res) {
     if (!Number.isInteger(rawQty) || rawQty < 1 || rawQty > 50) {
       return res.status(400).json({ error: `Invalid quantity for '${item.name || 'Item'}'. Must be an integer between 1 and 50.` });
     }
+
+    // Aggregate quantity cap per dish
+    const aggregateKey = itemId || String(item.name || 'dish').toLowerCase();
+    const curQty = (dishQtyMap.get(aggregateKey) || 0) + rawQty;
+    if (curQty > 50) {
+      return res.status(400).json({ error: `Maximum quantity per item is 50 (exceeded for '${item.name || 'Item'}')` });
+    }
+    dishQtyMap.set(aggregateKey, curQty);
 
     computedSubtotal += unitPrice * rawQty;
     verifiedItems.push({

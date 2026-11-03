@@ -137,6 +137,7 @@ export async function onRequest(context) {
 
     let subtotal = 0;
     const verifiedItems = [];
+    const dishQtyMap = new Map();
 
     for (const item of items) {
       if (!item || typeof item !== 'object') {
@@ -148,18 +149,24 @@ export async function onRequest(context) {
       if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(Number(rawQty))) {
         return jsonResponse({ error: `Invalid quantity for item "${item.name || 'dish'}"` }, 400, Object.fromEntries(corsHeaders.entries()));
       }
-      if (quantity > 50) {
-        return jsonResponse({ error: `Maximum quantity per item is 50 (received ${quantity} for "${item.name || 'dish'}")` }, 400, Object.fromEntries(corsHeaders.entries()));
-      }
 
       let authoritativePrice = null;
       const itemId = item.id ? String(item.id) : null;
-      if (itemId && catalogMap.has(itemId)) {
-        const dish = catalogMap.get(itemId);
-        if (dish.is_available === false) {
-          return jsonResponse({ error: `Item "${dish.name}" is currently out of stock` }, 400, Object.fromEntries(corsHeaders.entries()));
+      let matchedDish = null;
+
+      if (catalogMap.size > 0) {
+        if (itemId && catalogMap.has(itemId)) {
+          matchedDish = catalogMap.get(itemId);
+        } else {
+          return jsonResponse({ error: `Item "${item.name || 'dish'}" is not recognized in the active menu` }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        authoritativePrice = Number(dish.price);
+      }
+
+      if (matchedDish) {
+        if (matchedDish.is_available === false) {
+          return jsonResponse({ error: `Item "${matchedDish.name}" is currently out of stock` }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        authoritativePrice = Number(matchedDish.price);
       }
 
       if (authoritativePrice === null || isNaN(authoritativePrice)) {
@@ -170,20 +177,30 @@ export async function onRequest(context) {
         authoritativePrice = clientPrice;
       }
 
+      // Aggregate quantity check per dish
+      const aggregateKey = itemId || String(item.name || 'dish');
+      const curQty = (dishQtyMap.get(aggregateKey) || 0) + quantity;
+      if (curQty > 50) {
+        return jsonResponse({ error: `Maximum quantity per item is 50 (exceeded for "${item.name || 'dish'}")` }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+      dishQtyMap.set(aggregateKey, curQty);
+
       const itemTotal = authoritativePrice * quantity;
       subtotal += itemTotal;
 
       verifiedItems.push({
         id: item.id || null,
-        name: String(item.name || 'Dish').slice(0, 100),
+        name: String(item.name || matchedDish?.name || 'Dish').slice(0, 100),
         price: authoritativePrice,
         quantity,
         total: itemTotal
       });
     }
 
-    const minOrderValue = typeof storeSettings?.minOrderValue === 'number' ? storeSettings.minOrderValue : 100;
-    if (subtotal < minOrderValue) {
+    const minOrderValue = typeof storeSettings?.minOrderValue === 'number'
+      ? storeSettings.minOrderValue
+      : ((typeof storeSettings?.minOrder === 'number') ? storeSettings.minOrder : 0);
+    if (minOrderValue > 0 && subtotal < minOrderValue) {
       return jsonResponse({
         error: `Order subtotal (₹${subtotal}) does not meet the minimum order value of ₹${minOrderValue}`
       }, 400, Object.fromEntries(corsHeaders.entries()));
@@ -191,19 +208,29 @@ export async function onRequest(context) {
 
     let discount = 0;
     let appliedPromo = null;
+    let promoFreeDelivery = false;
 
-    if (promoCode && typeof promoCode === 'string') {
+    const isOfferActive = storeSettings?.offerActive !== false;
+    const configuredCode = String(storeSettings?.offerCode || storeSettings?.offerPromoCode || 'SAVERA20').trim().toUpperCase();
+
+    if (promoCode && typeof promoCode === 'string' && isOfferActive) {
       const code = promoCode.trim().toUpperCase();
-      if (storeSettings && storeSettings.offerPromoCode && code === String(storeSettings.offerPromoCode).trim().toUpperCase()) {
-        const discountType = storeSettings.offerDiscountType || 'percent';
-        const discountPct = Number(storeSettings.offerDiscountPercent || 20);
-        const discountAmt = Number(storeSettings.offerDiscountAmount || 50);
-        const minOrder = Number(storeSettings.offerMinOrder || 150);
+      if (code === configuredCode) {
+        const discountType = storeSettings?.offerDiscountType || 'percent';
+        const rawPct = Number(storeSettings?.offerDiscountPercent);
+        const discountPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 20;
+        const discountAmt = Math.max(0, Number(storeSettings?.offerDiscountAmount || 50));
+        const minOrder = (storeSettings?.offerMinOrder !== undefined && storeSettings?.offerMinOrder !== null)
+          ? Number(storeSettings.offerMinOrder)
+          : 0;
         if (subtotal >= minOrder) {
           discount = (discountType === 'flat' || discountType === 'fixed' || discountType === 'amount')
             ? Math.min(subtotal, discountAmt)
             : Math.round((subtotal * discountPct) / 100);
           appliedPromo = code;
+          if (storeSettings?.offerFreeDelivery !== false) {
+            promoFreeDelivery = Boolean(storeSettings?.offerFreeDelivery);
+          }
         }
       } else if (code === 'SAVERA20' && subtotal >= 199) {
         discount = Math.min(subtotal, Math.round((subtotal * 20) / 100));
@@ -247,28 +274,25 @@ export async function onRequest(context) {
           discountPercent: safePct,
           minSpend: matched.minSpend
         };
-      } else if (clientOrderThresholdDeal && typeof clientOrderThresholdDeal === 'object') {
-        const minSpend = Number(clientOrderThresholdDeal.minSpend) || 0;
-        const rawPct = Number(clientOrderThresholdDeal.discountPercent) || 0;
-        const safePct = Math.min(Math.max(rawPct, 0), 50);
-        if (minSpend > 0 && subtotal >= minSpend && safePct > 0) {
-          dealDiscount = Math.round(subtotal * (safePct / 100));
-          appliedDeal = {
-            label: String(clientOrderThresholdDeal.label || `${safePct}% Deal`).slice(0, 50),
-            discountPercent: safePct,
-            minSpend
-          };
-        }
       }
     }
 
-    // Stack discounts (unlocked threshold deal + coupon promo), capped at subtotal
-    const effectiveDiscount = Math.min(subtotal, discount + dealDiscount);
+    const combinedDiscount = discount + dealDiscount;
+    const effectiveDiscount = Math.min(combinedDiscount, subtotal);
     const finalAppliedType = (discount > 0 && dealDiscount > 0)
       ? 'combined_deals_promo'
       : (dealDiscount > 0 ? 'unlocked_deal' : (discount > 0 ? 'promo' : null));
 
-    const deliveryFee = subtotal >= 250 ? 0 : 40;
+    const isFreeDeliveryEnabled = storeSettings?.freeDeliveryEnabled !== false;
+    const freeThreshold = (typeof storeSettings?.freeDeliveryThreshold === 'number')
+      ? storeSettings.freeDeliveryThreshold
+      : 250;
+    const standardFee = (typeof storeSettings?.deliveryFeeStandard === 'number')
+      ? storeSettings.deliveryFeeStandard
+      : 40;
+    const deliveryFee = (promoFreeDelivery || (isFreeDeliveryEnabled && freeThreshold > 0 && subtotal >= freeThreshold))
+      ? 0
+      : standardFee;
     // Platform fee: configurable via storeSettings or environment; defaults to 0 to prevent hidden charges
     const platformFee = typeof storeSettings?.platformFee === 'number'
       ? storeSettings.platformFee

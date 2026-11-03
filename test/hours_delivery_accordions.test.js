@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 describe('STORE HOURS & DELIVERY ACCORDION DROPDOWNS SUITE', () => {
-  const adminHtmlPath = path.resolve('savera-cloudflare-migration/admin.html');
-  const adminJsPath = path.resolve('savera-cloudflare-migration/admin.js');
-  const adminCssPath = path.resolve('savera-cloudflare-migration/admin.css');
+  const adminHtmlPath = fs.existsSync(path.resolve('admin.html')) ? path.resolve('admin.html') : path.resolve('savera-cloudflare-migration/admin.html');
+  const adminJsPath = fs.existsSync(path.resolve('admin.js')) ? path.resolve('admin.js') : path.resolve('savera-cloudflare-migration/admin.js');
+  const adminCssPath = fs.existsSync(path.resolve('admin.css')) ? path.resolve('admin.css') : path.resolve('savera-cloudflare-migration/admin.css');
 
   const adminHtml = fs.readFileSync(adminHtmlPath, 'utf8');
   const adminJs = fs.readFileSync(adminJsPath, 'utf8');

@@ -1505,7 +1505,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // Fallback: Generate native Indian UPI intent URL
       const merchantVpa = 'saveraparadise@okhdfcbank';
       const cleanId = String(order.id).replace(/\D/g, '').slice(-4) || '101';
-      const fallbackUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`upi://pay?pa=${merchantVpa}&pn=Savera%20Paradise&am=${cash}&tr=QB${cleanId}&cu=INR`)}`;
+      const formattedAm = Number(cash).toFixed(2);
+      const safeTr = 'QB' + cleanId.replace(/[^a-zA-Z0-9]/g, '');
+      const fallbackUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`upi://pay?pa=${merchantVpa}&pn=Savera%20Paradise&am=${formattedAm}&tr=${safeTr}&cu=INR`)}`;
       if (doorstepQrImg) {
         doorstepQrImg.src = fallbackUrl;
         doorstepQrImg.style.display = 'block';

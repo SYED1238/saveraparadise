@@ -90,7 +90,8 @@ export default async function handler(req, res) {
             payment_status: 'Paid',
             payment_method: 'Online',
             is_paid_online: true,
-            doorstep_upi: cfOrderId.startsWith('doorstep_'),
+            doorstep_upi: cfOrderId.includes('doorstep_'),
+            cash_collected: 0,
             payment_gateway: 'cashfree'
           }).or(`id.eq.${cleanOrderId},id.eq.#${cleanOrderId}`);
         }
