@@ -3448,6 +3448,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputCloseTime = document.getElementById('input-close-time');
   const inputRestaurantPhone = document.getElementById('input-restaurant-phone');
   const inputStatusNotice = document.getElementById('input-status-notice');
+  const inputStoreOpen = document.getElementById('input-store-open');
+  const inputStoreClosedReason = document.getElementById('input-store-closed-reason');
+  const groupStoreClosedReason = document.getElementById('group-store-closed-reason');
+  const storeOpenStatusIcon = document.getElementById('store-open-status-icon');
+  const storeOpenStatusLabel = document.getElementById('store-open-status-label');
 
   // Auto-sync customer status notice text with Opening & Closing times
   function syncStatusNoticeWithTimes() {
@@ -3473,11 +3478,6 @@ document.addEventListener('DOMContentLoaded', () => {
   inputStoreOpen?.addEventListener('change', () => {
     if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
   });
-  const inputStoreOpen = document.getElementById('input-store-open');
-  const inputStoreClosedReason = document.getElementById('input-store-closed-reason');
-  const groupStoreClosedReason = document.getElementById('group-store-closed-reason');
-  const storeOpenStatusIcon = document.getElementById('store-open-status-icon');
-  const storeOpenStatusLabel = document.getElementById('store-open-status-label');
 
   function updateStoreOpenToggleUI(isOpen) {
     if (storeOpenStatusIcon) storeOpenStatusIcon.textContent = isOpen ? '🟢' : '🌙';
