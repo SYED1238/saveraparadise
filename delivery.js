@@ -338,6 +338,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // RIDER ACTIVE PROFILE CONTROLLER
   // ========================================================
   function updateRiderProfileHeader() {
+    if (!isStaffSessionActive('rider')) {
+      if (riderNameDisplay) riderNameDisplay.textContent = 'Delivery Partner';
+      if (riderPinBadge) riderPinBadge.textContent = 'PIN: ----';
+      if (riderPhoneDisplay) riderPhoneDisplay.textContent = '--';
+      if (riderVehicleTag) riderVehicleTag.textContent = '🏍️ Bike';
+      if (riderIdDisplay) riderIdDisplay.textContent = 'ID: ----';
+      if (topPayoutAmount) topPayoutAmount.textContent = '₹0.00';
+      if (heroPayoutAmount) heroPayoutAmount.textContent = '₹0.00';
+      return;
+    }
     const currentRider = dataService.getActiveRider();
     if (!currentRider) {
       if (riderNameDisplay) riderNameDisplay.textContent = 'Delivery Partner';
@@ -527,6 +537,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // ========================================================
   // RIDER REAL-TIME GEOLOCATION WATCH
   // ========================================================
+  let activeGpsWatchId = null;
+  let lastGpsBroadcastTime = 0;
+  let lastGpsBroadcastLat = 0;
+  let lastGpsBroadcastLng = 0;
+
   function updateGpsStatusBadge(status, label) {
     if (!riderGpsPill || !gpsStatusText) return;
     riderGpsPill.className = `gps-status-pill ${status}`;
@@ -546,6 +561,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
     updateLivePositionsOnMiniMaps();
+
+    // Throttle micro-jitter broadcasts if stationary (< 5m displacement and < 3s elapsed)
+    const now = Date.now();
+    const timeDelta = now - lastGpsBroadcastTime;
+    let distanceMoved = 999;
+    if (lastGpsBroadcastLat && lastGpsBroadcastLng) {
+      distanceMoved = calculateStraightDistanceMeters(
+        lastGpsBroadcastLat,
+        lastGpsBroadcastLng,
+        pos.coords.latitude,
+        pos.coords.longitude
+      );
+    }
+    if (timeDelta < 3000 && distanceMoved < 5 && lastGpsBroadcastTime > 0) {
+      return;
+    }
+    lastGpsBroadcastTime = now;
+    lastGpsBroadcastLat = pos.coords.latitude;
+    lastGpsBroadcastLng = pos.coords.longitude;
 
     // Broadcast live rider location for customer map tracking sync
     try {
@@ -621,8 +655,12 @@ document.addEventListener('DOMContentLoaded', () => {
     );
 
     // Watch position continuously as rider moves
+    if (activeGpsWatchId !== null && 'geolocation' in navigator) {
+      navigator.geolocation.clearWatch(activeGpsWatchId);
+      activeGpsWatchId = null;
+    }
     try {
-      navigator.geolocation.watchPosition(
+      activeGpsWatchId = navigator.geolocation.watchPosition(
         (pos) => handleGpsPosition(pos),
         (err) => {
           console.warn('[Rider GPS] Watch update error:', err.message);
@@ -631,6 +669,18 @@ document.addEventListener('DOMContentLoaded', () => {
       );
     } catch {}
   }
+
+  // Auto refresh GPS fix on tab visibility resume (e.g. returning from Google Maps)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && isStaffSessionActive('rider')) {
+      initRiderLiveGeolocation(true);
+    }
+  });
+  window.addEventListener('focus', () => {
+    if (isStaffSessionActive('rider')) {
+      initRiderLiveGeolocation(true);
+    }
+  });
 
   // Make GPS status pill interactive
   if (riderGpsPill) {
@@ -660,8 +710,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasCustomerCoords = row.getAttribute('data-hascustomercoords') !== 'false';
             const dropAddress = row.getAttribute('data-dropaddr') || 'Ramanagara, Karnataka';
             navBtn.href = hasCustomerCoords
-              ? `https://www.google.com/maps/dir/?api=1&destination=${dropLat},${dropLng}&travelmode=driving&dir_action=navigate`
-              : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dropAddress + ', Ramanagara, Karnataka')}&travelmode=driving&dir_action=navigate`;
+              ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dropLat)},${encodeURIComponent(dropLng)}&travelmode=driving&dir_action=navigate`
+              : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cleanDeliveryAddress(dropAddress) + ', Ramanagara, Karnataka')}&travelmode=driving&dir_action=navigate`;
           }
         }
       } catch (err) {
@@ -792,6 +842,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // RENDER ORDERS & KPIS
   // ========================================================
   function renderPortal() {
+    if (!isStaffSessionActive('rider')) {
+      if (ordersContainer) ordersContainer.innerHTML = '';
+      if (ordersEmptyState) ordersEmptyState.style.display = 'none';
+      return;
+    }
     // Clean up previous Leaflet map instances to avoid leaks
     miniMapInstances.forEach(map => {
       try {
@@ -1611,6 +1666,7 @@ document.addEventListener('DOMContentLoaded', () => {
         paymentMethod: finalPaymentMethod,
         isPaidOnline: isDoorstepUpi || !isCod,
         doorstepUpi: isDoorstepUpi,
+        upiManualVerified: isDoorstepUpi,
         riderPayoutAmount: orderPayout.amount,
         riderPayoutFormula: orderPayout.formula
       });
@@ -1721,10 +1777,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const rawAddrs = dataService.getAllAddressesRaw();
     const rawCustomerPhone = extractPhoneFromOrder(order, rawAddrs) || order.customerPhone || '';
     const cleanPhoneDigits = String(rawCustomerPhone || '').replace(/\D/g, '');
-    const hasRealPhone = Boolean(cleanPhoneDigits.length >= 8);
-    const dialerPhone = cleanPhoneDigits.length === 10 ? `+91${cleanPhoneDigits}` : (cleanPhoneDigits ? `+${cleanPhoneDigits}` : '');
-    const displayPhone = cleanPhoneDigits.length >= 10
-      ? (cleanPhoneDigits.length === 10 ? `+91 ${cleanPhoneDigits.slice(0, 5)} ${cleanPhoneDigits.slice(5)}` : rawCustomerPhone)
+    const validTenDigits = cleanPhoneDigits.length >= 10 ? cleanPhoneDigits.slice(-10) : '';
+    const hasRealPhone = Boolean(validTenDigits);
+    const dialerPhone = hasRealPhone ? `+91${validTenDigits}` : '';
+    const displayPhone = hasRealPhone
+      ? `+91 ${validTenDigits.slice(0, 5)} ${validTenDigits.slice(5)}`
       : 'Phone not provided';
 
     if (cnrCustomerPhoneDisplay) cnrCustomerPhoneDisplay.textContent = displayPhone;
@@ -1736,7 +1793,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Urgent Doorstep WhatsApp
     if (cnrBtnWhatsapp) {
       const urgentWaMsg = `Hello ${order.customerName || 'Customer'}, this is your Savera Paradise delivery partner. I have reached your doorstep with Order ${safeId}. I tried calling you on ${displayPhone} but could not reach you. Please open the door or call me back immediately. Thank you!`;
-      const waDigits = cleanPhoneDigits.length === 10 ? `91${cleanPhoneDigits}` : cleanPhoneDigits;
+      const waDigits = hasRealPhone ? `91${validTenDigits}` : '';
       cnrBtnWhatsapp.href = hasRealPhone ? `https://wa.me/${waDigits}?text=${encodeURIComponent(urgentWaMsg)}` : '#';
       cnrBtnWhatsapp.classList.toggle('disabled', !hasRealPhone);
     }
@@ -1838,6 +1895,11 @@ document.addEventListener('DOMContentLoaded', () => {
       btnCnrReturnCod.style.opacity = isWaitComplete ? '1' : '0.5';
       btnCnrReturnCod.style.cursor = isWaitComplete ? 'pointer' : 'not-allowed';
     }
+    if (btnCnrReturnPrepaid) {
+      btnCnrReturnPrepaid.disabled = !isWaitComplete;
+      btnCnrReturnPrepaid.style.opacity = isWaitComplete ? '1' : '0.5';
+      btnCnrReturnPrepaid.style.cursor = isWaitComplete ? 'pointer' : 'not-allowed';
+    }
   }
 
   function closeUnreachableModal() {
@@ -1902,6 +1964,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!activeCnrOrder) return;
       const orderId = activeCnrOrder.id;
 
+      // Live GPS signal verification
+      if (!riderLiveLocation.hasGps || (Date.now() - (riderLiveLocation.lastUpdated || 0) > 180000)) {
+        showToast('📍 Live GPS signal required for Safe Drop verification. Please wait for GPS fix.', 'warning');
+        initRiderLiveGeolocation(true);
+        return;
+      }
+
       // 500-Meter Doorstep Geofence Check for Safe Drop
       const dropCoords = getOrderDropCoordinates(activeCnrOrder);
       if (dropCoords.hasCustomerCoords && dropCoords.lat && dropCoords.lng) {
@@ -1948,6 +2017,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!activeCnrOrder) return;
       const orderId = activeCnrOrder.id;
       const cleanId = String(orderId).replace(/^#/, '');
+
+      // Enforce 10-minute wait time before prepaid order can be returned to kitchen
+      const startTime = parseInt(localStorage.getItem(`quickbite_cnr_start_${cleanId}`) || '0', 10);
+      const elapsedSeconds = startTime > 0 ? Math.floor((Date.now() - startTime) / 1000) : 0;
+      if (startTime > 0 && elapsedSeconds < 600) {
+        const remaining = 600 - elapsedSeconds;
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        showToast(`⏳ Return to Kitchen locked: Please wait ${mins}m ${secs}s more before returning parcel to counter.`, 'warning');
+        return;
+      }
+
       const reason = cnrPrepaidReason ? cnrPrepaidReason.value : 'Inaccessible location / customer unreachable';
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 
@@ -2469,8 +2550,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentRider = dataService.getActiveRider() || { pin: '2233', name: 'Zaid Khan', vehicle: '🏍️ Bike' };
 
     // Prevent confusing rider login PIN with parcel order number
-    const knownRiderPins = ['2233', '4422', '4455', '8811'];
-    if (code === currentRider.pin || knownRiderPins.includes(code)) {
+    const allRosterPins = (dataService.getRiders() || []).map(r => r && r.pin).filter(Boolean);
+    const knownRiderPins = Array.from(new Set([...allRosterPins, currentRider.pin, '2233', '4422', '4455', '8811']));
+    if (knownRiderPins.includes(code)) {
       showToast(`⚠️ PIN ${code} is a Rider Login PIN! Enter the 4-digit food bag number (e.g. #1001 or #4941) to claim a parcel.`, 'warning');
       if (inputBagCode) {
         inputBagCode.classList.add('shake');
@@ -2879,8 +2961,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initial render & Live Geolocation tracking start
   checkRiderSession();
-  updateRiderProfileHeader();
-  renderPortal();
   attachBagInputListeners();
-  initRiderLiveGeolocation();
 });

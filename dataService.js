@@ -3343,6 +3343,17 @@ class QuickBiteDataService {
           if (payload.lat && payload.lng) {
             try {
               localStorage.setItem('quickbite_live_rider_location', JSON.stringify(payload));
+              if (payload.orderId) {
+                localStorage.setItem(`quickbite_rider_location_${payload.orderId}`, JSON.stringify(payload));
+              }
+              if (Array.isArray(payload.orderIds)) {
+                payload.orderIds.forEach(id => {
+                  if (id) localStorage.setItem(`quickbite_rider_location_${id}`, JSON.stringify(payload));
+                });
+              }
+              if (payload.riderPin) {
+                localStorage.setItem(`quickbite_rider_location_pin_${payload.riderPin}`, JSON.stringify(payload));
+              }
               window.dispatchEvent(new CustomEvent('quickbite:rider_location', { detail: payload }));
             } catch {}
             this.notifyChange('rider_location', payload);
@@ -3452,6 +3463,13 @@ class QuickBiteDataService {
               if (orderData.assignedRiderPin) fullPayload.assigned_rider_pin = orderData.assignedRiderPin;
               if (orderData.assignedRiderName) fullPayload.assigned_rider_name = orderData.assignedRiderName;
               if (orderData.assignedRiderPhone) fullPayload.assigned_rider_phone = orderData.assignedRiderPhone;
+              if (orderData.paymentMethod) fullPayload.payment_method = orderData.paymentMethod;
+              if (typeof orderData.isPaidOnline === 'boolean') fullPayload.is_paid_online = orderData.isPaidOnline;
+              if (typeof orderData.doorstepUpi === 'boolean') fullPayload.doorstep_upi = orderData.doorstepUpi;
+              if (typeof orderData.cashCollected === 'number' || typeof orderData.cash_collected === 'number') {
+                fullPayload.cash_collected = typeof orderData.cashCollected === 'number' ? orderData.cashCollected : orderData.cash_collected;
+              }
+              if (orderData.pickupCode) fullPayload.pickup_code = orderData.pickupCode;
 
               const cleanId = String(orderData.id || '').replace(/^#/, '');
               const hashId = `#${cleanId}`;
@@ -5312,6 +5330,9 @@ class QuickBiteDataService {
       order.statusLabel = 'Delivered';
       order.eta = 'Delivered 🎉';
       order.deliveredAt = order.deliveredAt || Date.now();
+      if (order.cancellationReason && order.cancellationReason.startsWith('[DOORSTEP_WAIT]')) {
+        order.cancellationReason = null;
+      }
     } else if (newStatus === 'undelivered') {
       order.stepIndex = 4;
       order.statusLabel = 'Undelivered (Returned to Kitchen)';
@@ -5379,7 +5400,11 @@ class QuickBiteDataService {
       };
       if (order.deliveredAt) fullPayload.delivered_at = Number(order.deliveredAt);
       if (order.undeliveredAt && !fullPayload.delivered_at) fullPayload.delivered_at = Number(order.undeliveredAt);
-      if (order.cancellationReason || order.undeliveredReason) fullPayload.cancellation_reason = order.cancellationReason || order.undeliveredReason;
+      if (order.status === 'delivered') {
+        fullPayload.cancellation_reason = null;
+      } else if (order.cancellationReason || order.undeliveredReason) {
+        fullPayload.cancellation_reason = order.cancellationReason || order.undeliveredReason;
+      }
       if (order.assignedRiderPin) fullPayload.assigned_rider_pin = order.assignedRiderPin;
       if (order.assignedRiderName) fullPayload.assigned_rider_name = order.assignedRiderName;
       if (order.assignedRiderPhone) fullPayload.assigned_rider_phone = order.assignedRiderPhone;
@@ -5407,10 +5432,12 @@ class QuickBiteDataService {
             const { error: baseErr } = await supabase.from('orders').update(basePayload).eq('id', targetId).neq('status', 'cancelled');
             if (baseErr) {
               order.pendingStatusSync = true;
+              this.saveOrders(list);
             }
           }
         } catch (updateErr) {
           order.pendingStatusSync = true;
+          this.saveOrders(list);
         }
       };
 
@@ -5419,6 +5446,7 @@ class QuickBiteDataService {
         doUpdate(altId);
       }).catch(() => {
         order.pendingStatusSync = true;
+        this.saveOrders(list);
       });
     } catch (err) {}
 
@@ -6490,7 +6518,7 @@ class QuickBiteDataService {
     return true;
   }
 
-  getActiveRider() {
+  getActiveRider(requireActive = false) {
     try {
       const activeId = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_active_rider_id') : null;
       const riders = this.getRiders();
@@ -6511,9 +6539,9 @@ class QuickBiteDataService {
           return rider;
         }
       }
-      return (riders && riders[0]) || DEFAULT_RIDERS[0] || null;
+      return null;
     } catch {
-      return DEFAULT_RIDERS[0] || null;
+      return null;
     }
   }
 
@@ -6582,7 +6610,7 @@ class QuickBiteDataService {
     };
 
     // Prioritize active/dispatchable orders first so older delivered orders don't mask new bags
-    const activeMatch = orders.find(o => isMatch(o) && o.status !== 'delivered' && o.status !== 'cancelled');
+    const activeMatch = orders.find(o => isMatch(o) && o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered');
     if (activeMatch) return activeMatch;
 
     return orders.find(isMatch) || null;
@@ -6654,6 +6682,7 @@ class QuickBiteDataService {
     order.assignedRiderPhone = rider.phone;
     order.assignedRiderVehicle = rider.vehicle;
     order.claimedAt = Date.now();
+    order._optimisticTimestamp = Date.now();
 
     const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
     const cleanTargetId = normalizeId(order.id);
@@ -6725,15 +6754,33 @@ class QuickBiteDataService {
       };
 
       const doUpdate = async (targetId) => {
-        const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId);
-        if (error) {
-          await supabase.from('orders').update(basePayload).eq('id', targetId);
+        try {
+          const { error } = await supabase.from('orders')
+            .update(fullPayload)
+            .eq('id', targetId)
+            .eq('status', 'ready_for_pickup');
+          if (error) {
+            const { error: baseErr } = await supabase.from('orders')
+              .update(basePayload)
+              .eq('id', targetId)
+              .eq('status', 'ready_for_pickup');
+            if (baseErr) {
+              order.pendingStatusSync = true;
+              this.saveOrders(this.getOrders());
+            }
+          }
+        } catch (updateErr) {
+          order.pendingStatusSync = true;
+          this.saveOrders(this.getOrders());
         }
       };
 
       doUpdate(order.id).then(() => {
         const altId = order.id.startsWith('#') ? cleanId : hashId;
         doUpdate(altId);
+      }).catch(() => {
+        order.pendingStatusSync = true;
+        this.saveOrders(this.getOrders());
       });
     } catch {}
 

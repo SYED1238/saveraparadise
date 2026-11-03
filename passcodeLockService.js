@@ -1,4 +1,4 @@
-﻿/**
+/**
  * iOS-Style Passcode Keypad Controller
  * Provides seamless on-screen circular keypad with glassmorphic blur,
  * 4-dot passcode indicator, haptic tap feedback, and auto-validation.
@@ -21,6 +21,8 @@ export function initIosPasscodeLock(options) {
 
   let enteredPin = '';
   let isVerifying = false;
+  let failedAttempts = 0;
+  let lockoutUntil = 0;
   const defaultSubtitle = subtitleEl ? subtitleEl.textContent : 'Enter 4-digit passcode';
 
   function updateDots() {
@@ -56,6 +58,8 @@ export function initIosPasscodeLock(options) {
     try {
       const isValid = onVerify ? await onVerify(enteredPin) : (enteredPin === defaultCode);
       if (isValid) {
+        failedAttempts = 0;
+        lockoutUntil = 0;
         dotsEl.classList.add('success');
         triggerHaptic('success');
         if (subtitleEl) {
@@ -75,10 +79,14 @@ export function initIosPasscodeLock(options) {
           }, 350);
         }, 220);
       } else {
+        failedAttempts += 1;
+        if (failedAttempts >= 5) {
+          lockoutUntil = Date.now() + 30000;
+        }
         dotsEl.classList.add('error');
         triggerHaptic('error');
         if (subtitleEl) {
-          subtitleEl.textContent = 'Incorrect Passcode';
+          subtitleEl.textContent = failedAttempts >= 5 ? 'Too many attempts. Locked for 30s' : 'Incorrect Passcode';
           subtitleEl.classList.add('error');
         }
         setTimeout(() => {
@@ -86,8 +94,8 @@ export function initIosPasscodeLock(options) {
           enteredPin = '';
           updateDots();
           if (subtitleEl) {
-            subtitleEl.textContent = defaultSubtitle;
-            subtitleEl.classList.remove('error');
+            subtitleEl.textContent = failedAttempts >= 5 ? 'Locked for 30 seconds' : defaultSubtitle;
+            if (failedAttempts < 5) subtitleEl.classList.remove('error');
           }
           isVerifying = false;
         }, 500);
@@ -106,6 +114,15 @@ export function initIosPasscodeLock(options) {
 
   function enterDigit(digit) {
     if (isVerifying || enteredPin.length >= 4) return;
+    if (lockoutUntil > Date.now()) {
+      const remainingSecs = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      triggerHaptic('error');
+      if (subtitleEl) {
+        subtitleEl.textContent = `Too many attempts. Wait ${remainingSecs}s`;
+        subtitleEl.classList.add('error');
+      }
+      return;
+    }
     enteredPin += digit;
     updateDots();
     triggerHaptic('tap');
