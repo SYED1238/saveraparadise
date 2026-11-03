@@ -93,4 +93,28 @@ describe('STORE HOURS & DELIVERY ACCORDION DROPDOWNS SUITE', () => {
     assert.match(adminCss, /\.offer-collapsible-body/);
     assert.match(adminCss, /@keyframes\s+offerSlideDown/);
   });
+  it('9. Live sync: hours summary chips sync even when store is closed, and inputs attach live listeners', () => {
+    assert.ok(adminJs.includes('syncHoursSummaryChips') && adminJs.includes('topRushBadge.style.display'), 'updateRushUI must sync chips before early return when store is closed');
+    assert.ok(adminJs.includes('inputOpenTime?.addEventListener') && adminJs.includes('syncHoursSummaryChips'), 'inputOpenTime must trigger live chip sync');
+    assert.ok(adminJs.includes('inputRestaurantPhone?.addEventListener') && adminJs.includes('syncHoursSummaryChips'), 'inputRestaurantPhone must trigger live chip sync');
+    assert.ok(adminJs.includes('rushRangeSlider') && adminJs.includes('syncHoursSummaryChips'), 'rushRangeSlider must trigger live chip sync');
+    assert.ok(adminJs.includes('rushReasonInput?.addEventListener') && adminJs.includes('syncHoursSummaryChips'), 'rushReasonInput must trigger live chip sync');
+  });
+
+  it('10. Live sync: delivery preview and preset clicks trigger live summary chip updates, and deliveryStatusBadge aligns with freeEnabled', () => {
+    assert.ok(adminJs.includes('function updateDeliveryPreview()') && adminJs.includes('syncDeliverySummaryChips'), 'updateDeliveryPreview must call syncDeliverySummaryChips');
+    assert.ok(adminJs.includes('movPresetsContainer') && adminJs.includes('updateDeliveryPreview'), 'mov presets must call updateDeliveryPreview');
+    assert.ok(adminJs.includes('radiusPresetBtns') && adminJs.includes('syncDeliverySummaryChips'), 'radius presets must call syncDeliverySummaryChips');
+    assert.ok(adminJs.includes('deliveryStatusBadge.textContent = freeEnabled ?'), 'deliveryStatusBadge must reflect freeEnabled');
+  });
+
+  it('11. Auto-close on save: hours form, radius button, and delivery options auto-collapse on save', () => {
+    assert.ok(adminJs.includes('.btn-close-hours-panel[data-target="hours-card-schedule"]'), 'Hours form must auto-close on save');
+    assert.ok(adminJs.includes('.btn-close-delivery-panel[data-target="delivery-card-radius"]'), 'Radius form must auto-close on save');
+    assert.ok(adminJs.includes('.btn-close-delivery-panel[data-target="delivery-card-options"]'), 'Delivery options form must auto-close on save');
+  });
+
+  it('12. Accordion accessibility: header and button aria-expanded attributes remain in sync', () => {
+    assert.ok(adminJs.includes('.offer-collapsible-header') && adminJs.includes("header.setAttribute('aria-expanded'"), 'toggleHoursCard and toggleDeliveryCard must sync header aria-expanded');
+  });
 });

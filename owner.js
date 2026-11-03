@@ -1964,8 +1964,9 @@ function initNavigation() {
   const btnClosePayout = document.getElementById('btn-close-payout-config');
   if (btnClosePayout) {
     btnClosePayout.addEventListener('click', () => {
+      syncPayoutConfigUI(); // Revert modified stepper inputs back to persisted config
       closePayoutSettingsPanel();
-      showToast('Payout settings closed', 'info');
+      showToast('Payout settings closed (unsaved changes discarded)', 'info');
     });
   }
 
@@ -2241,7 +2242,7 @@ function syncPayoutConfigUI() {
     const hint = card.querySelector('.pm-open-hint');
     if (hint) {
       hint.innerHTML = isAct 
-        ? '<i class="fa-solid fa-sliders"></i> Settings Open' 
+        ? (isPayoutSettingsOpen ? '<i class="fa-solid fa-sliders"></i> Settings Open' : '<i class="fa-solid fa-pen-to-square"></i> Tap to Edit Settings')
         : '<i class="fa-solid fa-arrow-down"></i> Open Settings';
     }
   });
@@ -2351,6 +2352,7 @@ function syncPayoutConfigUI() {
   });
 
   updateLiveSimulatorPreview();
+  updatePayoutButtonHints();
 }
 
 function readCurrentPayoutConfigFromUI() {

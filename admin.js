@@ -3477,8 +3477,20 @@ document.addEventListener('DOMContentLoaded', () => {
       inputStatusNotice.value = `Open Now: ${oT} – ${cT} • Delivery & Pickup`;
     }
   }
-  inputOpenTime?.addEventListener('input', syncStatusNoticeWithTimes);
-  inputCloseTime?.addEventListener('input', syncStatusNoticeWithTimes);
+  inputOpenTime?.addEventListener('input', () => {
+    syncStatusNoticeWithTimes();
+    if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
+  });
+  inputCloseTime?.addEventListener('input', () => {
+    syncStatusNoticeWithTimes();
+    if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
+  });
+  inputRestaurantPhone?.addEventListener('input', () => {
+    if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
+  });
+  inputStoreOpen?.addEventListener('change', () => {
+    if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
+  });
   const inputStoreOpen = document.getElementById('input-store-open');
   const inputStoreClosedReason = document.getElementById('input-store-closed-reason');
   const groupStoreClosedReason = document.getElementById('group-store-closed-reason');
@@ -3770,6 +3782,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       previewDeliveryDesc.innerHTML = desc;
     }
+
+    if (typeof syncDeliverySummaryChips === 'function') {
+      syncDeliverySummaryChips();
+    }
   }
 
   function updateUnlockedDealsPreview() {
@@ -3852,6 +3868,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // Badges
       if (topRushBadge) topRushBadge.style.display = 'none';
       if (capsuleRushBadge) capsuleRushBadge.style.display = 'none';
+      if (typeof syncHoursSummaryChips === 'function') {
+        syncHoursSummaryChips();
+      }
       return;
     }
 
@@ -4085,6 +4104,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const mins = Number(btn.getAttribute('data-mins'));
         btn.classList.toggle('active', mins === val);
       });
+      if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
     });
   }
 
@@ -4097,7 +4117,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (btnPauseTargetMins) btnPauseTargetMins.textContent = mins;
 
       rushPresetBtns.forEach(b => b.classList.toggle('active', b === btn));
+      if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
     });
+  });
+
+  rushReasonInput?.addEventListener('input', () => {
+    if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
   });
 
   // Trigger rush pause
@@ -4189,6 +4214,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof syncHoursSummaryChips === 'function') {
           syncHoursSummaryChips();
         }
+        // Auto-close operating timings panel on save
+        document.querySelector('.btn-close-hours-panel[data-target="hours-card-schedule"]')?.click();
         showToast('💾 Store operating timings, notice & helpline updated!', 'success');
         if (saveBtn) {
           saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
@@ -4234,6 +4261,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (radiusInfoKm) radiusInfoKm.textContent = `${km} km`;
 
       radiusPresetBtns.forEach(b => b.classList.toggle('active', b === btn));
+      if (typeof syncDeliverySummaryChips === 'function') {
+        syncDeliverySummaryChips();
+      }
     });
   });
 
@@ -4245,6 +4275,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof syncDeliverySummaryChips === 'function') {
         syncDeliverySummaryChips();
       }
+      // Auto-close delivery radius panel on save
+      document.querySelector('.btn-close-delivery-panel[data-target="delivery-card-radius"]')?.click();
       showToast(`🛵 Maximum delivery radius saved: Delivering within ${km} km!`, 'success');
     });
   }
@@ -4283,6 +4315,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const mov = Number(btn.getAttribute('data-mov'));
       if (inputMinOrderValue) inputMinOrderValue.value = mov;
       movPresetsContainer.querySelectorAll('.mov-preset-btn').forEach(b => b.classList.toggle('active', b === btn));
+      updateDeliveryPreview();
     });
   });
 
@@ -4521,6 +4554,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       card.classList.toggle('is-open', shouldOpen);
       btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      const header = card.querySelector('.offer-collapsible-header');
+      if (header) {
+        header.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      }
       const textSpan = btn.querySelector('.toggle-btn-text');
       if (textSpan) {
         textSpan.textContent = shouldOpen ? 'Close Settings' : 'Edit Settings';
@@ -4704,9 +4741,16 @@ document.addEventListener('DOMContentLoaded', () => {
       summaryMaxOrders.textContent = `${maxActive} Active`;
     }
     if (deliveryStatusBadge) {
-      deliveryStatusBadge.textContent = 'Active';
-      deliveryStatusBadge.style.background = '#D1FAE5';
-      deliveryStatusBadge.style.color = '#065F46';
+      deliveryStatusBadge.textContent = freeEnabled ? 'Active' : 'Disabled';
+      if (freeEnabled) {
+        deliveryStatusBadge.style.background = '#D1FAE5';
+        deliveryStatusBadge.style.color = '#065F46';
+        deliveryStatusBadge.classList.remove('paused');
+      } else {
+        deliveryStatusBadge.style.background = '#F3F4F6';
+        deliveryStatusBadge.style.color = '#6B7280';
+        deliveryStatusBadge.classList.add('paused');
+      }
     }
 
     // 2. Delivery Radius chip
@@ -4867,6 +4911,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       card.classList.toggle('is-open', shouldOpen);
       btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      const header = card.querySelector('.offer-collapsible-header');
+      if (header) {
+        header.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      }
       const textSpan = btn.querySelector('.toggle-btn-text');
       if (textSpan) {
         if (card === fleetCard) {
@@ -5002,6 +5050,8 @@ document.addEventListener('DOMContentLoaded', () => {
           ? `Free delivery on orders above ₹${freeDelivThreshold} is active!`
           : `Flat delivery fee of ₹${Math.round(stdFee)} is active!`;
         const movMsg = minOrderVal > 0 ? ` Minimum order: ₹${minOrderVal}.` : ' No minimum order limit.';
+        // Auto-close delivery options panel on save
+        document.querySelector('.btn-close-delivery-panel[data-target="delivery-card-options"]')?.click();
         showToast(`🚚 Delivery settings saved!${movMsg} Max active orders: ${maxActive} at a time. ${freeMsg}`, 'success');
         if (saveBtn) {
           saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';

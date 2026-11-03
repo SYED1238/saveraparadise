@@ -187,4 +187,15 @@ test.describe('OWNER 3 PAYOUT COMPENSATION MODELS SUITE', () => {
     assert.ok(html.includes('id="btn-close-payout-config"'), 'owner.html must have close settings button');
     assert.ok(js.includes('closePayoutSettingsPanel'), 'owner.js must close settings panel after saving');
   });
+  test('8. Edge case defense: hints reflect closed state and close button discards unsaved stepper edits', () => {
+    const html = fs.readFileSync(path.join(rootDir, 'owner.html'), 'utf-8');
+    const js = fs.readFileSync(path.join(rootDir, 'owner.js'), 'utf-8');
+
+    // 1. Initial HTML hint indicates closed state
+    assert.ok(html.includes('Tap to Edit Settings'), 'Default HTML hint must show Tap to Edit Settings');
+
+    // 2. owner.js updates hints on sync and reverts on close
+    assert.ok(js.includes('syncPayoutConfigUI(); // Revert modified stepper inputs back to persisted config') && js.includes('closePayoutSettingsPanel();'), 'Close button must revert unsaved inputs via syncPayoutConfigUI');
+    assert.ok(js.includes('updateLiveSimulatorPreview();') && js.includes('updatePayoutButtonHints();'), 'syncPayoutConfigUI must call updatePayoutButtonHints');
+  });
 });
