@@ -4438,7 +4438,7 @@ function initStorefrontApp() {
     }
   }
 
-  function openOrderModal(orderIdToOpen, isNewCheckout = false) {
+  function openOrderModal(orderIdToOpen, isNewCheckout = false, skipPushStep = false) {
     const myOrdersEl = document.getElementById('modal-my-orders-backdrop');
     if (myOrdersEl && myOrdersEl.classList.contains('open')) {
       closeMyOrdersModalInternal();
@@ -4494,7 +4494,9 @@ function initStorefrontApp() {
     orderModalBackdrop.classList.add('open');
     document.body.style.overflow = 'hidden';
     setActiveCapsuleBtn(navBtnTrack);
-    backNav.pushStep('order-modal', () => closeOrderModalInternal());
+    if (!skipPushStep) {
+      backNav.pushStep('order-modal', () => closeOrderModalInternal());
+    }
 
     if (isNewCheckout) {
       confetti({
@@ -4997,6 +4999,7 @@ function initStorefrontApp() {
     if (turnstileWidgetId !== null) {
       try {
         window.turnstile.reset(turnstileWidgetId);
+        activeTurnstileToken = '';
         return;
       } catch (_) {}
     }
@@ -5030,7 +5033,15 @@ function initStorefrontApp() {
         if (resp) return resp;
       } catch (_) {}
     }
-    return 'dev-turnstile-token-' + Date.now();
+    const isLocalhost = Boolean(
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.endsWith('.local')
+    );
+    if (isLocalhost) {
+      return 'dev-turnstile-token-' + Date.now();
+    }
+    return '';
   }
 
   function openCheckoutModalInternal() {
@@ -5095,6 +5106,7 @@ function initStorefrontApp() {
   }
 
   function closeCheckoutModal() {
+    if (isSubmittingOrder) return;
     if (backNav.isTopStep('checkout-modal')) {
       backNav.stepBack();
     } else {
@@ -5104,12 +5116,18 @@ function initStorefrontApp() {
   }
 
   if (modalCheckoutClose) {
-    modalCheckoutClose.addEventListener('click', closeCheckoutModal);
+    modalCheckoutClose.addEventListener('click', () => {
+      if (isSubmittingOrder) return;
+      closeCheckoutModal();
+    });
   }
 
   if (modalCheckoutBackdrop) {
     modalCheckoutBackdrop.addEventListener('click', (e) => {
-      if (e.target === modalCheckoutBackdrop) closeCheckoutModal();
+      if (e.target === modalCheckoutBackdrop) {
+        if (isSubmittingOrder) return;
+        closeCheckoutModal();
+      }
     });
   }
 
@@ -5274,6 +5292,12 @@ function initStorefrontApp() {
           btnPlaceOrderFinal.disabled = false;
           btnPlaceOrderFinal.innerHTML = originalBtnHtml;
         }
+        activeTurnstileToken = '';
+        if (typeof window.turnstile !== 'undefined' && turnstileWidgetId !== null) {
+          try {
+            window.turnstile.reset(turnstileWidgetId);
+          } catch (_) {}
+        }
       };
 
       try {
@@ -5353,14 +5377,14 @@ function initStorefrontApp() {
           return;
         }
 
-        // 4b. Mandatory Customer Contact Phone Check
+        // 4b. Mandatory Customer Contact Phone Check (10-Digit Indian Mobile: starts with 6, 7, 8, or 9)
         const customerContactPhone = (selectedAddr.phone || currentUser?.user_metadata?.phone || '').trim();
-        const phoneDigits = customerContactPhone.replace(/\D/g, '');
-        if (!customerContactPhone || phoneDigits.length < 10) {
+        const phoneDigits = customerContactPhone.replace(/\D/g, '').slice(-10);
+        if (!customerContactPhone || !/^[6-9]\d{9}$/.test(phoneDigits)) {
           pendingCheckoutAfterAddress = true;
           closeCheckoutModalInternal();
           openAddressModal(selectedAddr.id);
-          showToast('📞 Please provide a valid 10-digit mobile number so our delivery partner can reach you!', 'warning');
+          showToast('📞 Please provide a valid 10-digit Indian mobile number (starting with 6-9) so our delivery partner can reach you!', 'warning');
           resetSubmitState();
           return;
         }
@@ -5493,6 +5517,11 @@ function initStorefrontApp() {
 
         // Retrieve invisible Cloudflare Turnstile bot verification token
         const turnstileToken = await getTurnstileToken();
+        if (!turnstileToken) {
+          showToast('🔒 Please complete the security verification challenge before placing your order.', 'warning');
+          resetSubmitState();
+          return;
+        }
 
         // Server-side verification & anti-price tampering check via /api/checkout
         try {
@@ -5505,6 +5534,7 @@ function initStorefrontApp() {
               appliedPromo: appliedPromo || null,
               storeSettings: settings,
               turnstileToken: turnstileToken,
+              userPhone: customerContactPhone,
               lat: selectedAddr ? Number(selectedAddr.lat) : null,
               lng: selectedAddr ? Number(selectedAddr.lng) : null
             })
@@ -5541,7 +5571,17 @@ function initStorefrontApp() {
             return;
           }
         } catch (checkoutApiErr) {
-          console.warn('[Checkout] /api/checkout verification fallback:', checkoutApiErr);
+          console.warn('[Checkout] /api/checkout verification error:', checkoutApiErr);
+          const isLocalhost = Boolean(
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname.endsWith('.local')
+          );
+          if (!isLocalhost) {
+            showToast('⚠️ Unable to verify order with security service. Please check your connection and try again.', 'error');
+            resetSubmitState();
+            return;
+          }
         }
 
         // Add new order to dataService & Supabase Cloud
@@ -5574,9 +5614,14 @@ function initStorefrontApp() {
         activeOrderId = newOrderId;
 
         closeCheckoutModalInternal();
-        backNav.removeStepDirect('checkout-modal');
         backNav.removeStepDirect('cart-drawer');
-        openOrderModal(newOrderId, true);
+        if (backNav.isTopStep('checkout-modal')) {
+          backNav.replaceTopStep('order-modal', () => closeOrderModalInternal());
+          openOrderModal(newOrderId, true, true);
+        } else {
+          backNav.removeStepDirect('checkout-modal');
+          openOrderModal(newOrderId, true);
+        }
 
         // Clear cart after confirmed checkout
         cart = [];

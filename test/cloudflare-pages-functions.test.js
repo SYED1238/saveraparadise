@@ -226,6 +226,7 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
         body: JSON.stringify({
           orderId: '1001',
           amount: 250,
+          checkoutToken: signPayload({ numericTotal: 250 }, mockEnv),
           customerPhone: '9876543210'
         })
       });
@@ -425,7 +426,7 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
           'Content-Type': 'application/json',
           'cf-turnstile-response': '1x00000000000000000000AA'
         },
-        body: JSON.stringify({ orderId: '1004', amount: 350 })
+        body: JSON.stringify({ orderId: '1004', amount: 350, checkoutToken: signPayload({ numericTotal: 350 }, prodEnv) })
       });
       const res = await cashfreeCreateOrderHandler({ request: req, env: prodEnv });
       assert.equal(res.status, 500);

@@ -162,6 +162,15 @@ export async function onRequest(context) {
       return jsonResponse({ error: botCheck.error || 'Bot verification failed. Please refresh and retry.' }, 403, Object.fromEntries(corsHeaders.entries()));
     }
 
+    // 10-digit Indian Mobile Validation
+    const rawPhone = userPhone || body?.userPhone || body?.phone || body?.customerPhone;
+    if (rawPhone !== undefined && rawPhone !== null && String(rawPhone).trim() !== '') {
+      const phoneDigits = String(rawPhone).replace(/\D/g, '').slice(-10);
+      if (!/^[6-9]\d{9}$/.test(phoneDigits)) {
+        return jsonResponse({ error: 'A valid 10-digit Indian mobile number (starting with 6-9) is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+    }
+
     if (!Array.isArray(items) || items.length === 0) {
       return jsonResponse({ error: 'Cart cannot be empty' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
@@ -174,15 +183,35 @@ export async function onRequest(context) {
       fetchAuthoritativeSettings(env)
     ]);
 
+    const DEFAULT_SETTINGS_FALLBACK = {
+      freeDeliveryEnabled: true,
+      freeDeliveryThreshold: 250,
+      deliveryFeeStandard: 40,
+      deliveryRadiusKm: 7,
+      unlockedDealsEnabled: false,
+      unlockedDealsMinOrder: 299,
+      unlockedDealsDiscountPct: 15,
+      minOrderValue: 0
+    };
+
     const storeSettings = (authoritativeSettings && typeof authoritativeSettings === 'object' && Object.keys(authoritativeSettings).length > 0)
-      ? { ...(body?.storeSettings || {}), ...authoritativeSettings }
-      : ((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {}));
+      ? { ...DEFAULT_SETTINGS_FALLBACK, ...(body?.storeSettings || {}), ...authoritativeSettings }
+      : { ...DEFAULT_SETTINGS_FALLBACK, ...((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {})) };
+
+
+
 
     // Geofence Delivery Availability Validation
-    const rawLat = Number(lat ?? body?.lat);
-    const rawLng = Number(lng ?? body?.lng);
+    if (lat !== undefined || lng !== undefined || body?.lat !== undefined || body?.lng !== undefined) {
+      const rawLat = Number(lat ?? body?.lat);
+      const rawLng = Number(lng ?? body?.lng);
+  
+      if (!Number.isFinite(rawLat) || !Number.isFinite(rawLng) || (rawLat === 0 && rawLng === 0)) {
+        return jsonResponse({ error: 'Delivery pin coordinates are required to verify delivery distance' }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+
     const maxRadiusKm = Number(storeSettings?.deliveryRadiusKm || storeSettings?.deliveryRadius || 7);
-    if (Number.isFinite(rawLat) && Number.isFinite(rawLng) && (rawLat !== 0 || rawLng !== 0)) {
+
       const REST_LAT = 12.7208891;
       const REST_LNG = 77.2805103;
       const R = 6371;
@@ -327,7 +356,7 @@ export async function onRequest(context) {
     const serverDealsEnabled = storeSettings?.unlockedDealsEnabled ?? false;
     if (serverDealsEnabled) {
       const rawMin = Number(storeSettings?.unlockedDealsMinOrder);
-      const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 199;
+      const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
       const rawPct = Number(storeSettings?.unlockedDealsDiscountPct);
       const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
 

@@ -4827,28 +4827,39 @@ class QuickBiteDataService {
     }
 
     // 3. Geofence Delivery Availability Check: reject if order has coordinates and is outside delivery zone
-    if (orderData && orderData.lat !== undefined && orderData.lng !== undefined && !orderData.isDemo && !orderData.bypassGeofenceCheck) {
+    if (orderData && (orderData.lat !== undefined || orderData.lng !== undefined) && !orderData.isDemo && !orderData.bypassGeofenceCheck) {
       const latNum = Number(orderData.lat);
       const lngNum = Number(orderData.lng);
-      if (Number.isFinite(latNum) && Number.isFinite(lngNum) && (latNum !== 0 || lngNum !== 0)) {
-        const availability = this.checkDeliveryAvailability(latNum, lngNum);
-        if (availability && !availability.deliverable) {
-          const msg = `Address is outside our delivery area (${availability.distanceKm} km exceeds our ${availability.maxRadiusKm} km limit).`;
-          return {
-            success: false,
-            reason: 'out_of_zone',
-            distance: availability.distanceKm,
-            maxRadiusKm: availability.maxRadiusKm,
-            error: new Error(msg),
-            message: msg
-          };
-        }
+      if (!Number.isFinite(latNum) || !Number.isFinite(lngNum) || (latNum === 0 && lngNum === 0)) {
+        const msg = 'Delivery pin coordinates are required to verify delivery distance.';
+        return {
+          success: false,
+          reason: 'unpinned',
+          error: new Error(msg),
+          message: msg
+        };
+      }
+      const availability = this.checkDeliveryAvailability(latNum, lngNum);
+      if (availability && !availability.deliverable) {
+        const msg = `Address is outside our delivery area (${availability.distanceKm} km exceeds our ${availability.maxRadiusKm} km limit).`;
+        return {
+          success: false,
+          reason: 'out_of_zone',
+          distance: availability.distanceKm,
+          maxRadiusKm: availability.maxRadiusKm,
+          error: new Error(msg),
+          message: msg
+        };
       }
     }
     const rawAddrs = this.getAllAddressesRaw();
     // Guarantee customerPhone is populated
     if (!orderData.customerPhone || String(orderData.customerPhone).replace(/\D/g, '').length < 10) {
       orderData.customerPhone = extractPhoneFromOrder(orderData, rawAddrs) || orderData.customer_phone || orderData.phone || '';
+    }
+    const phoneDigits = String(orderData.customerPhone || '').replace(/\D/g, '').slice(-10);
+    if (/^[6-9]\d{9}$/.test(phoneDigits)) {
+      orderData.customerPhone = phoneDigits;
     }
     orderData.phone = orderData.customerPhone;
     orderData.customer_phone = orderData.customerPhone;
@@ -4924,13 +4935,15 @@ class QuickBiteDataService {
 
     discount += unlockedDealDiscount;
     discount = Math.min(discount, computedSubtotal);
-    const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee);
+    const platformFee = Number(orderData.platformFee || settings.platformFee || 0);
+    const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee + platformFee);
     const authoritativeTotalString = `₹${Math.round(calculatedTotal)}`;
 
     orderData.items = sanitizedItems;
     orderData.subtotal = computedSubtotal;
     orderData.discount = discount;
     orderData.deliveryFee = deliveryFee;
+    orderData.platformFee = platformFee;
     orderData.total = authoritativeTotalString;
     orderData.status = 'accepted';
     orderData.statusLabel = 'Accepted';

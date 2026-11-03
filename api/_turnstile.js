@@ -105,6 +105,9 @@ export async function verifyTurnstileToken(token, clientIp = '', customSecret = 
   } catch (err) {
     console.warn('[Turnstile] Error calling Cloudflare siteverify:', err.message);
     // If Cloudflare's verification service is down or times out, fail gracefully to prevent blocking paying customers
+    if (process.env.NODE_ENV === 'production') {
+      return { success: false, error: 'Security check service communication error. Please try again.' };
+    }
     return { success: true, degraded: true };
   }
 }

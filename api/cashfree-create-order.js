@@ -60,6 +60,14 @@ export default async function handler(req, res) {
 
     const { orderId, amount, customerPhone, customerName, customerEmail, returnUrl, checkoutToken, turnstileToken } = body || {};
 
+    if (turnstileToken) {
+      const clientIp = getClientIp(req);
+      const turnstileRes = await verifyTurnstileToken(turnstileToken, clientIp);
+      if (!turnstileRes.success) {
+        return res.status(403).json({ error: 'Forbidden', message: 'Security check failed. Bot activity suspected.', botBlocked: true });
+      }
+    }
+
     if (!checkoutToken) {
       return res.status(400).json({ error: 'Bad Request', message: 'checkoutToken is strictly required for PG order creation' });
     }

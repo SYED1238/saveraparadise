@@ -172,7 +172,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const { items, promoCode, appliedPromo, storeSettings, catalogDishes, turnstileToken, lat, lng } = body || {};
+  const { items, promoCode, appliedPromo, storeSettings, catalogDishes, turnstileToken, userPhone, lat, lng } = body || {};
 
   // Cloudflare Turnstile Invisible Bot Defense
   const clientToken = turnstileToken || req.headers?.['cf-turnstile-response'] || body?.['cf-turnstile-response'];
@@ -183,6 +183,15 @@ export default async function handler(req, res) {
       error: botCheck.error || 'Bot verification failed. Automated traffic blocked.',
       botBlocked: true
     });
+  }
+
+  // 10-digit Indian Mobile Validation
+  const rawPhone = userPhone || body?.userPhone || body?.phone || body?.customerPhone;
+  if (rawPhone !== undefined && rawPhone !== null && String(rawPhone).trim() !== '') {
+    const phoneDigits = String(rawPhone).replace(/\D/g, '').slice(-10);
+    if (!/^[6-9]\d{9}$/.test(phoneDigits)) {
+      return res.status(400).json({ error: 'A valid 10-digit Indian mobile number (starting with 6-9) is required' });
+    }
   }
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -261,17 +270,34 @@ export default async function handler(req, res) {
     });
   }
 
+  const DEFAULT_SETTINGS_FALLBACK = {
+    freeDeliveryEnabled: true,
+    freeDeliveryThreshold: 250,
+    deliveryFeeStandard: 40,
+    deliveryRadiusKm: 7,
+    unlockedDealsEnabled: false,
+    unlockedDealsMinOrder: 299,
+    unlockedDealsDiscountPct: 15,
+    minOrderValue: 0
+  };
   const serverSettings = await fetchAuthoritativeSettings();
-  const settings = (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0)
-    ? { ...(storeSettings || {}), ...serverSettings }
-    : ((storeSettings && typeof storeSettings === 'object') ? storeSettings : {});
+  const settings = { ...DEFAULT_SETTINGS_FALLBACK, ...(storeSettings && typeof storeSettings === 'object' ? storeSettings : {}), ...(serverSettings && typeof serverSettings === 'object' ? serverSettings : {}) };
+
+
+
   const activePromo = appliedPromo || promoCode || null;
 
   // Geofence Delivery Availability Validation
-  const rawLat = Number(lat ?? body?.lat);
-  const rawLng = Number(lng ?? body?.lng);
+  if (lat !== undefined || lng !== undefined || body?.lat !== undefined || body?.lng !== undefined) {
+    const rawLat = Number(lat ?? body?.lat);
+    const rawLng = Number(lng ?? body?.lng);
+  
+    if (!Number.isFinite(rawLat) || !Number.isFinite(rawLng) || (rawLat === 0 && rawLng === 0)) {
+      return res.status(400).json({ error: 'Delivery pin coordinates are required to verify delivery distance' });
+    }
+
   const maxRadiusKm = Number(settings.deliveryRadiusKm || settings.deliveryRadius || 7);
-  if (Number.isFinite(rawLat) && Number.isFinite(rawLng) && (rawLat !== 0 || rawLng !== 0)) {
+
     const REST_LAT = 12.7208891;
     const REST_LNG = 77.2805103;
     const R = 6371;
@@ -318,6 +344,14 @@ export default async function handler(req, res) {
     const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
     if (computedSubtotal >= dealsMin) {
       unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
+    } else if (Array.isArray(settings.unlockedDealsThresholds) && settings.unlockedDealsThresholds.length > 0) {
+      const sorted = [...settings.unlockedDealsThresholds].sort((a, b) => b.minSpend - a.minSpend);
+      const matched = sorted.find(t => computedSubtotal >= t.minSpend);
+      if (matched) {
+        const rawTiersPct = Number(matched.discountPercent) || 0;
+        const safeTiersPct = Math.min(Math.max(rawTiersPct, 0), 50);
+        unlockedDealDiscount = Math.round((computedSubtotal * safeTiersPct) / 100);
+      }
     }
   }
 

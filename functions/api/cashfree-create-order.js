@@ -38,6 +38,14 @@ export async function onRequest(context) {
 
     const { orderId, amount, customerPhone, customerName, customerEmail, returnUrl, checkoutToken, turnstileToken } = body || {};
 
+    if (turnstileToken) {
+      const clientIp = getClientIp(request);
+      const turnstileRes = await verifyTurnstileToken(turnstileToken, clientIp, null, env);
+      if (!turnstileRes.success) {
+        return jsonResponse({ error: 'Forbidden', message: 'Security check failed. Bot activity suspected.', botBlocked: true }, 403, Object.fromEntries(corsHeaders.entries()));
+      }
+    }
+
     if (!checkoutToken) {
       return jsonResponse({ error: 'Bad Request', message: 'checkoutToken is strictly required for PG order creation' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
