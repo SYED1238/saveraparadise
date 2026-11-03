@@ -2805,34 +2805,39 @@ body.owner-body .lock-footer-info {
 
 .payout-methods-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .payout-method-card {
   background: #FFFFFF;
   border: 2px solid #E2E8F0;
-  border-radius: 14px;
-  padding: 18px 20px;
+  border-radius: 12px;
+  padding: 12px 14px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
+  gap: 6px;
   position: relative;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  text-align: left;
+  outline: none;
+  font-family: inherit;
+  width: 100%;
 }
 
 .payout-method-card:hover {
-  border-color: #94A3B8;
+  border-color: #A5B4FC;
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
 }
 
 .payout-method-card.active {
   border-color: #6366F1;
-  background: #FAF8FF;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), 0 6px 20px rgba(99, 102, 241, 0.08);
+  background: linear-gradient(180deg, #FAF8FF 0%, #F5F3FF 100%);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18), 0 4px 14px rgba(99, 102, 241, 0.12);
 }
 
 .pm-card-top {
@@ -3363,4 +3368,153 @@ body.owner-body .lock-footer-info {
   background: rgba(255, 255, 255, 0.18);
   border-color: #F59E0B;
   color: #FFFFFF;
+}
+
+.pm-open-hint {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.payout-method-card.active .pm-open-hint {
+  color: #6366F1;
+  font-weight: 800;
+}
+
+/* Active Model Summary inside Settings Panel */
+.active-model-summary-card {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
+}
+
+.ams-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.ams-badge {
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-transform: uppercase;
+}
+
+.ams-formula-text {
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: #EEF2FF;
+  color: #4338CA;
+  padding: 2.5px 8.5px;
+  border-radius: 6px;
+  border: 1px solid #C7D2FE;
+}
+
+.ams-example-text {
+  font-size: 0.78rem;
+  color: #64748B;
+  margin-left: auto;
+}
+
+.ams-example-text strong {
+  color: #059669;
+}
+
+.ams-desc {
+  font-size: 0.78rem;
+  color: #64748B;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Smooth Focus Pulse on Settings Panel when opened */
+@keyframes panelOpenedPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+    border-color: #6366F1;
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.15);
+    border-color: #818CF8;
+  }
+  100% {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    border-color: var(--owner-border);
+  }
+}
+
+.payout-settings-panel.panel-opened-pulse {
+  animation: panelOpenedPulse 0.8s ease-out;
+}
+
+@media (max-width: 640px) {
+  .payout-methods-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .payout-method-card {
+    padding: 8px 10px;
+    border-radius: 10px;
+    gap: 4px;
+  }
+
+  .pm-title {
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pm-badge {
+    font-size: 0.58rem;
+    padding: 2px 5px;
+  }
+
+  .pm-radio {
+    font-size: 0.9rem;
+  }
+
+  .pm-formula-tag {
+    font-size: 0.65rem;
+    padding: 2px 5px;
+  }
+
+  .pm-open-hint {
+    font-size: 0.6rem;
+  }
+
+  .ams-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .ams-example-text {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .payout-methods-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .payout-method-card {
+    padding: 10px 12px;
+  }
 }

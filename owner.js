@@ -1804,7 +1804,7 @@ function initNavigation() {
     });
   }
 
-  // 3 Payout Compensation Method Cards Selection
+  // 3 Payout Compensation Method Buttons Selection (Opens Settings Directly)
   document.querySelectorAll('.payout-method-card').forEach(card => {
     card.addEventListener('click', () => {
       const method = card.getAttribute('data-method');
@@ -1819,9 +1819,21 @@ function initNavigation() {
         'tiered_milestone': 'Tiered + Milestone Volume Incentive',
         'flat_linear': 'Flat Linear Rate'
       };
-      showToast(`✅ Active Model: ${methodNames[method] || method}`, 'success');
+      showToast(`⚙️ Settings Opened: ${methodNames[method] || method}`, 'success');
+
+      // Direct smooth scroll to settings panel so owner never has to scroll through long lists
+      const settingsPanel = document.getElementById('payout-settings-panel');
+      if (settingsPanel) {
+        settingsPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        settingsPanel.classList.remove('panel-opened-pulse');
+        void settingsPanel.offsetWidth;
+        settingsPanel.classList.add('panel-opened-pulse');
+      }
+      return;
     });
   });
+
+  // Old handler placeholder removed
 
   // Parameter Adjustment Steppers [ - ] and [ + ]
   document.querySelectorAll('.btn-step').forEach(btn => {
@@ -2158,14 +2170,21 @@ function syncPayoutConfigUI() {
   const cfg = dataService.getPayoutConfig();
   const method = cfg.activeMethod || 'tiered_standard';
 
-  // 1. Update active card styling
+  // 1. Update active button styling & aria attributes
   document.querySelectorAll('.payout-method-card').forEach(card => {
     const m = card.getAttribute('data-method');
     const isAct = m === method;
     card.classList.toggle('active', isAct);
+    card.setAttribute('aria-selected', isAct ? 'true' : 'false');
     const radio = card.querySelector('.pm-radio');
     if (radio) {
       radio.innerHTML = isAct ? '<i class="fa-solid fa-circle-check"></i>' : '<i class="fa-regular fa-circle"></i>';
+    }
+    const hint = card.querySelector('.pm-open-hint');
+    if (hint) {
+      hint.innerHTML = isAct 
+        ? '<i class="fa-solid fa-sliders"></i> Settings Open' 
+        : '<i class="fa-solid fa-arrow-down"></i> Open Settings';
     }
   });
 
@@ -2234,6 +2253,38 @@ function syncPayoutConfigUI() {
   const calc3 = dataService.calculateOrderPayout({ addressDetails: { distanceKm: 1.31 } }, 1, { ...cfg, activeMethod: 'flat_linear' });
   const exFL = document.getElementById('example-fl-calc');
   if (exFL) exFL.textContent = `₹${calc3.amount.toFixed(2)}`;
+
+  // Update Active Model Overview Banner inside settings panel
+  const pamsBadge = document.getElementById('ams-badge');
+  const pamsRate = document.getElementById('ams-rate-pill');
+  const pamsCalc = document.getElementById('ams-calc-text');
+  const pamsDesc = document.getElementById('ams-desc');
+
+  if (method === 'tiered_standard') {
+    if (pamsBadge) {
+      pamsBadge.className = 'ams-badge badge-green';
+      pamsBadge.innerHTML = '<i class="fa-solid fa-shield-halved"></i> Recommended Model';
+    }
+    if (pamsRate) pamsRate.textContent = `₹${cfg.tieredStandard.basePay} first ${cfg.tieredStandard.baseKm}km + ₹${cfg.tieredStandard.extraKmRate}/km extra`;
+    if (pamsCalc) pamsCalc.textContent = `₹${calc1.amount.toFixed(2)}`;
+    if (pamsDesc) pamsDesc.textContent = 'Guaranteed base pay protects profit margins on short trips while ensuring fair pay for deliveries beyond base distance.';
+  } else if (method === 'tiered_milestone') {
+    if (pamsBadge) {
+      pamsBadge.className = 'ams-badge badge-purple';
+      pamsBadge.innerHTML = '<i class="fa-solid fa-fire"></i> High Volume Fleet';
+    }
+    if (pamsRate) pamsRate.textContent = `₹${cfg.tieredMilestone.basePay} base + ₹${cfg.tieredMilestone.extraKmRate}/km (1-${cfg.tieredMilestone.milestoneOrders}) → ₹${cfg.tieredMilestone.surgeExtraKmRate}/km (${cfg.tieredMilestone.milestoneOrders + 1}+)`;
+    if (pamsCalc) pamsCalc.textContent = `₹${calc2Early.amount.toFixed(2)} (surge: ₹${calc2Surge.amount.toFixed(2)})`;
+    if (pamsDesc) pamsDesc.textContent = `Regular rate for orders 1-${cfg.tieredMilestone.milestoneOrders}. Rate automatically surges to reward hardworking riders from order ${cfg.tieredMilestone.milestoneOrders + 1} onward.`;
+  } else {
+    if (pamsBadge) {
+      pamsBadge.className = 'ams-badge badge-amber';
+      pamsBadge.innerHTML = '<i class="fa-solid fa-road"></i> Direct Distance';
+    }
+    if (pamsRate) pamsRate.textContent = `₹${cfg.flatLinear.ratePerKm} per exact road km`;
+    if (pamsCalc) pamsCalc.textContent = `₹${calc3.amount.toFixed(2)}`;
+    if (pamsDesc) pamsDesc.textContent = 'Straight payout per kilometer driven without fixed base fare. Benchmark model for transparent distance compensation.';
+  }
 
   // Update active preset chip in flat linear
   document.querySelectorAll('.btn-fl-preset').forEach(btn => {

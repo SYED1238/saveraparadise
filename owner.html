@@ -587,55 +587,58 @@
             </div>
           </div>
 
-          <!-- 3 PAYOUT METHOD SELECTOR CARDS -->
-          <div class="payout-methods-grid" id="payout-methods-selector">
-            <!-- Method 1: Tiered Standard Base Pay -->
-            <div class="payout-method-card active" data-method="tiered_standard" id="pm-card-tiered-standard">
+          <!-- 3 COMPACT QUICK-SELECT BUTTONS FOR PAYOUT MODELS -->
+          <div class="payout-methods-grid" id="payout-methods-selector" role="tablist" aria-label="Payout compensation models">
+            <!-- Button 1: Tiered Standard Base Pay -->
+            <button type="button" class="payout-method-card active" data-method="tiered_standard" id="pm-card-tiered-standard" role="tab" aria-selected="true">
               <div class="pm-card-top">
                 <span class="pm-badge badge-green"><i class="fa-solid fa-shield-halved"></i> Recommended</span>
                 <span class="pm-radio"><i class="fa-solid fa-circle-check"></i></span>
               </div>
-              <h3 class="pm-title">1. Tiered Standard Base Pay</h3>
-              <p class="pm-desc">Guaranteed ₹25 base pay for first 1.0 km + ₹10/km after. Protects profit margins while ensuring fair pay for short deliveries.</p>
+              <h3 class="pm-title">1. Tiered Standard</h3>
               <div class="pm-formula-tag">
                 <i class="fa-solid fa-calculator"></i> <span id="formula-tag-ts">₹25 first 1.0 km + ₹10/km extra</span>
               </div>
-              <div class="pm-example-row">
+              <div class="pm-open-hint"><i class="fa-solid fa-sliders"></i> Settings Open</div>
+              <p class="pm-desc" style="display:none;">Guaranteed ₹25 base pay for first 1.0 km + ₹10/km after. Protects profit margins while ensuring fair pay for short deliveries.</p>
+              <div class="pm-example-row" style="display:none;">
                 <span>Trip 1.31 km:</span> <strong class="pm-highlight" id="example-ts-calc">₹28.10</strong>
               </div>
-            </div>
+            </button>
 
-            <!-- Method 2: Tiered + Milestone Volume Incentive -->
-            <div class="payout-method-card" data-method="tiered_milestone" id="pm-card-tiered-milestone">
+            <!-- Button 2: Tiered + Milestone Volume Incentive -->
+            <button type="button" class="payout-method-card" data-method="tiered_milestone" id="pm-card-tiered-milestone" role="tab" aria-selected="false">
               <div class="pm-card-top">
-                <span class="pm-badge badge-purple"><i class="fa-solid fa-fire"></i> High Volume Fleet</span>
+                <span class="pm-badge badge-purple"><i class="fa-solid fa-fire"></i> High Volume</span>
                 <span class="pm-radio"><i class="fa-regular fa-circle"></i></span>
               </div>
-              <h3 class="pm-title">2. Tiered + Milestone Incentive</h3>
-              <p class="pm-desc">Regular ₹25 + ₹10/km for first 10 orders. After 10 orders, rate surges to ₹15/km to reward fast, hardworking riders.</p>
+              <h3 class="pm-title">2. Milestone Incentive</h3>
               <div class="pm-formula-tag">
                 <i class="fa-solid fa-trophy"></i> <span id="formula-tag-tm">₹25 base + ₹10/km (1-10) → ₹15/km (11+)</span>
               </div>
-              <div class="pm-example-row">
+              <div class="pm-open-hint"><i class="fa-solid fa-sliders"></i> Open Settings</div>
+              <p class="pm-desc" style="display:none;">Regular ₹25 + ₹10/km for first 10 orders. After 10 orders, rate surges to ₹15/km to reward fast, hardworking riders.</p>
+              <div class="pm-example-row" style="display:none;">
                 <span>Trip 1.31 km:</span> <span id="example-tm-calc">1-10: <strong>₹28.10</strong> • 11+: <strong class="pm-highlight-purple">₹29.65</strong></span>
               </div>
-            </div>
+            </button>
 
-            <!-- Method 3: Flat Linear Rate -->
-            <div class="payout-method-card" data-method="flat_linear" id="pm-card-flat-linear">
+            <!-- Button 3: Flat Linear Rate -->
+            <button type="button" class="payout-method-card" data-method="flat_linear" id="pm-card-flat-linear" role="tab" aria-selected="false">
               <div class="pm-card-top">
-                <span class="pm-badge badge-amber"><i class="fa-solid fa-ruler-horizontal"></i> Direct Distance</span>
+                <span class="pm-badge badge-amber"><i class="fa-solid fa-ruler-horizontal"></i> Direct KM</span>
                 <span class="pm-radio"><i class="fa-regular fa-circle"></i></span>
               </div>
               <h3 class="pm-title">3. Flat Linear Rate</h3>
-              <p class="pm-desc">Straight ₹30 per kilometer driven without fixed base fare. Traditional benchmark model.</p>
               <div class="pm-formula-tag">
                 <i class="fa-solid fa-road"></i> <span id="formula-tag-fl">₹30 per exact road km</span>
               </div>
-              <div class="pm-example-row">
+              <div class="pm-open-hint"><i class="fa-solid fa-sliders"></i> Open Settings</div>
+              <p class="pm-desc" style="display:none;">Straight ₹30 per kilometer driven without fixed base fare. Traditional benchmark model.</p>
+              <div class="pm-example-row" style="display:none;">
                 <span>Trip 1.31 km:</span> <strong class="pm-highlight" id="example-fl-calc">₹39.30</strong>
               </div>
-            </div>
+            </button>
           </div>
 
           <!-- INTERACTIVE PARAMETER CONFIGURATION & STEPPERS PANEL -->
@@ -650,6 +653,16 @@
                   <i class="fa-solid fa-floppy-disk"></i> Save Payout Settings
                 </button>
               </div>
+            </div>
+
+            <!-- Active Model Summary Card (Shows description & example right inside settings panel) -->
+            <div class="active-model-summary-card" id="active-model-summary-card">
+              <div class="ams-top">
+                <span class="ams-badge badge-green" id="ams-badge"><i class="fa-solid fa-shield-halved"></i> Recommended Model</span>
+                <span class="ams-formula-text" id="ams-rate-pill">₹25 first 1.0 km + ₹10/km extra</span>
+                <span class="ams-example-text">Trip 1.31 km: <strong id="ams-calc-text">₹28.10</strong></span>
+              </div>
+              <p class="ams-desc" id="ams-desc">Guaranteed ₹25 base pay for first 1.0 km + ₹10/km after. Protects profit margins while ensuring fair pay for short deliveries.</p>
             </div>
 
             <!-- Form Controls for Method 1: Tiered Standard -->

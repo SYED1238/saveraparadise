@@ -160,4 +160,25 @@ test.describe('OWNER 3 PAYOUT COMPENSATION MODELS SUITE', () => {
     assert.ok(html.includes('id="sim-payout-val"'), 'Must have simulator result payout value');
     assert.ok(html.includes('id="btn-save-payout-config"'), 'Must have save payout config button');
   });
+
+  test('7. Compact 3-Button selector opens settings directly with zero scroll friction', () => {
+    const html = fs.readFileSync(path.join(rootDir, 'owner.html'), 'utf-8');
+    const js = fs.readFileSync(path.join(rootDir, 'owner.js'), 'utf-8');
+    const css = fs.readFileSync(path.join(rootDir, 'owner.css'), 'utf-8');
+
+    // 1. owner.html has button elements with tab role
+    assert.match(html, /<button[^>]*id="pm-card-tiered-standard"/i, 'Tiered Standard must be a compact button');
+    assert.match(html, /<button[^>]*id="pm-card-tiered-standard"[^>]*role="tab"|<button[^>]*role="tab"[^>]*id="pm-card-tiered-standard"/i, 'Tiered Standard must have tab role');
+    assert.match(html, /<button[^>]*id="pm-card-tiered-milestone"/i, 'Tiered Milestone must be a compact button');
+    assert.match(html, /<button[^>]*id="pm-card-flat-linear"/i, 'Flat Linear must be a compact button');
+    assert.ok(html.includes('id="active-model-summary-card"'), 'Must have active model summary card inside settings panel');
+
+    // 2. owner.js brings settings directly into view on click
+    assert.ok(js.includes('settingsPanel.scrollIntoView'), 'owner.js must smoothly scroll settings into view on click');
+    assert.match(js, /panel-opened-pulse/, 'owner.js must add pulse feedback when settings open');
+
+    // 3. owner.css defines compact 3-column grid and pulse animation
+    assert.ok(css.includes('grid-template-columns: repeat(3, 1fr)'), 'owner.css must layout buttons in a 3-column row');
+    assert.ok(css.includes('@keyframes panelOpenedPulse'), 'owner.css must define panelOpenedPulse keyframes');
+  });
 });
