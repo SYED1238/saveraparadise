@@ -3419,6 +3419,10 @@ body.pwa-customer-installed .header-pwa-dock {
   display: none !important;
 }
 
+.recipe-card.is-out-of-stock .recipe-card-badge-pill {
+  display: none !important;
+}
+
 /* ==========================================================================
    How It Works Section
    ========================================================================== */
@@ -12448,6 +12452,18 @@ body.order-modal-open .unlocked-deals-floating-bar {
     top: 8px;
     left: 8px;
     right: auto;
+  }
+  .recipe-card.in-cart .recipe-card-schedule-pill.active-window-pill {
+    top: 44px;
+    left: 8px;
+    font-size: 0.62rem;
+    padding: 2.5px 7px;
+    max-width: 95px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+  .recipe-card.in-cart:has(.recipe-card-badge-pill:not(:empty)) .recipe-card-schedule-pill.active-window-pill {
+    top: 72px;
   }
 }
 

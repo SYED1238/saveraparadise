@@ -1204,6 +1204,33 @@ function initStorefrontApp() {
   // CART OPERATIONS & UI SYNC
   // ==========================================
   function addToCart(item, triggerElement, qty = 1) {
+    if (!item) return;
+
+    // Verify live stock & serving schedule availability
+    const allDishes = (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function') ? dataService.getDishes() : [];
+    const liveDish = (typeof dataService !== 'undefined' && typeof dataService.getDishById === 'function' ? dataService.getDishById(item.id) : null) ||
+                     allDishes.find(d => d.id === item.id || (item.name && d.name && d.name.toLowerCase() === item.name.toLowerCase()));
+
+    if (liveDish) {
+      if (liveDish.inStock === false) {
+        showToast(`Sorry, "${liveDish.name || item.name}" will be back soon! ⏳`, 'info');
+        return;
+      }
+      const sched = getDishScheduleStatus(liveDish, new Date());
+      if (!sched.isAvailable) {
+        if (sched.status === 'countdown') {
+          showToast(`🕒 "${liveDish.name}" serving starts in ${sched.countdownText.replace('Starts in ', '')} (at ${formatTime12h(liveDish.availableFrom)}).`, 'info');
+        } else if (sched.status === 'ended_today') {
+          showToast(`⛔ "${liveDish.name}" serving ended for today.`, 'info');
+        } else if (sched.status === 'day_inactive') {
+          showToast(`📅 "${liveDish.name}" is ${sched.message}.`, 'info');
+        } else {
+          showToast(`Sorry, "${liveDish.name}" is not currently available.`, 'info');
+        }
+        return;
+      }
+    }
+
     const existing = cart.find(i => i.id === item.id);
     if (existing) {
       existing.quantity += qty;
@@ -1233,13 +1260,20 @@ function initStorefrontApp() {
 
     if (delta > 0) {
       const liveDishes = (typeof dataService !== 'undefined' && dataService.getDishes) ? dataService.getDishes() : [];
-      const liveDish = liveDishes.find(d => d.id === id || d.name === item.name);
-      if (liveDish && liveDish.inStock === false) {
-        showToast(`Sorry, "${liveDish.name || item.name}" will be back soon! 🍗`, 'info');
-        return;
+      const liveDish = (typeof dataService !== 'undefined' && typeof dataService.getDishById === 'function' ? dataService.getDishById(id) : null) ||
+                       liveDishes.find(d => d.id === id || d.name === item.name);
+      if (liveDish) {
+        if (liveDish.inStock === false) {
+          showToast(`Sorry, "${liveDish.name || item.name}" will be back soon! 🍗`, 'info');
+          return;
+        }
+        const sched = getDishScheduleStatus(liveDish, new Date());
+        if (!sched.isAvailable) {
+          showToast(`🕒 "${liveDish.name || item.name}" is currently outside serving hours.`, 'info');
+          return;
+        }
       }
     }
-
     item.quantity += delta;
     if (item.quantity <= 0) {
       removeFromCart(id);
@@ -1424,51 +1458,67 @@ function initStorefrontApp() {
     return null;
   }
 
+  // 1-Second Master Interval Ticker for Live Countdown Timers & Schedule Transitions
+  let dishScheduleTicker = null;
+  function startDishScheduleTicker() {
+    if (dishScheduleTicker) return; // Prevent duplicate tickers
+    dishScheduleTicker = setInterval(() => {
+      const now = new Date();
+      const dishes = (typeof dataService !== 'undefined' && dataService.getDishes) ? dataService.getDishes() : [];
+      const dishesMap = new Map(dishes.map(d => [d.id, d]));
+      let needsReEvaluation = false;
+
+      // 1. Ticker for countdown items
+      document.querySelectorAll('.countdown-ticker[data-dish-id]').forEach(ticker => {
+        const dishId = ticker.getAttribute('data-dish-id');
+        const dish = dishesMap.get(dishId);
+        if (dish) {
+          const sched = getDishScheduleStatus(dish, now);
+          if (sched.status === 'countdown') {
+            ticker.textContent = sched.countdownText;
+          } else {
+            needsReEvaluation = true;
+          }
+        }
+      });
+
+      // 2. Active Window Expiry Check: Check cards currently displaying active window pill
+      document.querySelectorAll('.recipe-card-schedule-pill.active-window-pill[data-dish-id]').forEach(pill => {
+        const dishId = pill.getAttribute('data-dish-id');
+        const dish = dishesMap.get(dishId);
+        if (dish) {
+          const sched = getDishScheduleStatus(dish, now);
+          if (sched.status !== 'active_window') {
+            needsReEvaluation = true;
+          }
+        }
+      });
+
+      // 3. Detail Modal live countdown & transition ticker
+      if (activeDetailItem && foodDetailBackdrop && foodDetailBackdrop.classList.contains('open')) {
+        const liveDish = dishesMap.get(activeDetailItem.id) || activeDetailItem;
+        const sched = getDishScheduleStatus(liveDish, now);
+        const countdownBox = document.getElementById('food-detail-countdown-box');
+        const countdownText = document.getElementById('food-detail-countdown-text');
+        if (sched.status === 'countdown') {
+          if (countdownBox) countdownBox.style.display = 'inline-flex';
+          if (countdownText) countdownText.textContent = sched.countdownText;
+        } else if (countdownBox) {
+          countdownBox.style.display = 'none';
+        }
+        // Always refresh modal submit price/status so CTA unlocks/locks live on schedule boundary!
+        updateModalSubmitPrice();
+      }
+
+      if (needsReEvaluation) {
+        syncStorefrontCardsWithDataService();
+        renderCart();
+      }
+    }, 1000);
+  }
+
   function renderCart() {
     updateMenuCardSteppers();
-    
-    // 1-Second Interval Ticker for Live Countdown Timers Across Storefront Cards
-    let dishScheduleTicker = null;
-    function startDishScheduleTicker() {
-      if (dishScheduleTicker) clearInterval(dishScheduleTicker);
-      dishScheduleTicker = setInterval(() => {
-        const now = new Date();
-        const dishes = dataService.getDishes();
-        const dishesMap = new Map(dishes.map(d => [d.id, d]));
-        let needsReEvaluation = false;
-
-        document.querySelectorAll('.countdown-ticker[data-dish-id]').forEach(ticker => {
-          const dishId = ticker.getAttribute('data-dish-id');
-          const dish = dishesMap.get(dishId);
-          if (dish) {
-            const sched = getDishScheduleStatus(dish, now);
-            if (sched.status === 'countdown') {
-              ticker.textContent = sched.countdownText;
-            } else {
-              needsReEvaluation = true;
-            }
-          }
-        });
-
-        // Detail Modal live countdown ticker
-        if (activeDetailItem && foodDetailBackdrop && foodDetailBackdrop.classList.contains('open')) {
-          const liveDish = dishesMap.get(activeDetailItem.id) || activeDetailItem;
-          const sched = getDishScheduleStatus(liveDish, now);
-          const countdownBox = document.getElementById('food-detail-countdown-box');
-          const countdownText = document.getElementById('food-detail-countdown-text');
-          if (sched.status === 'countdown') {
-            if (countdownBox) countdownBox.style.display = 'inline-flex';
-            if (countdownText) countdownText.textContent = sched.countdownText;
-          } else if (countdownBox) {
-            countdownBox.style.display = 'none';
-          }
-        }
-
-        if (needsReEvaluation) {
-          syncStorefrontCardsWithDataService();
-        }
-      }, 1000);
-    }
     startDishScheduleTicker();
 
     const totalCount = cart.reduce((acc, i) => acc + i.quantity, 0);
@@ -1534,17 +1584,33 @@ function initStorefrontApp() {
         item.image = safeImage;
       }
       const isSoldOut = liveDish && liveDish.inStock === false;
-      if (isSoldOut) {
+      const sched = liveDish ? getDishScheduleStatus(liveDish, new Date()) : null;
+      const isScheduleUnavailable = Boolean(sched && !sched.isAvailable && !isSoldOut);
+
+      if (isSoldOut || isScheduleUnavailable) {
         el.classList.add('cart-item-sold-out');
       }
       const safePrice = Math.round((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1));
-      const soldOutBadge = isSoldOut ? ' <span class="cart-sold-out-badge" style="color: #D97706; font-size: 0.72rem; font-weight: 700; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); padding: 1px 6px; border-radius: 4px; margin-left: 4px;">Back Soon</span>' : '';
+
+      let statusBadge = '';
+      if (isSoldOut) {
+        statusBadge = ' <span class="cart-sold-out-badge" style="color: #D97706; font-size: 0.72rem; font-weight: 700; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); padding: 1px 6px; border-radius: 4px; margin-left: 4px;">Back Soon</span>';
+      } else if (isScheduleUnavailable) {
+        if (sched.status === 'countdown') {
+          statusBadge = ` <span class="cart-schedule-badge" style="color: #D97706; font-size: 0.72rem; font-weight: 700; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); padding: 1px 6px; border-radius: 4px; margin-left: 4px;">Starts ${formatTime12h(liveDish.availableFrom)}</span>`;
+        } else if (sched.status === 'ended_today') {
+          statusBadge = ' <span class="cart-schedule-badge" style="color: #DC2626; font-size: 0.72rem; font-weight: 700; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); padding: 1px 6px; border-radius: 4px; margin-left: 4px;">Closed Today</span>';
+        } else {
+          statusBadge = ` <span class="cart-schedule-badge" style="color: #64748B; font-size: 0.72rem; font-weight: 700; background: rgba(100, 116, 139, 0.12); border: 1px solid rgba(100, 116, 139, 0.35); padding: 1px 6px; border-radius: 4px; margin-left: 4px;">${sched.badgeText || 'Not Serving'}</span>`;
+        }
+      }
+
       el.innerHTML = `
         <div class="cart-item-img-wrap is-img-loading">
           <img src="${safeImage}" alt="${safeName}" class="cart-item-img" loading="eager" decoding="async"/>
         </div>
         <div class="cart-item-info">
-          <div class="cart-item-title">${safeName}${soldOutBadge}</div>
+          <div class="cart-item-title">${safeName}${statusBadge}</div>
           <div class="cart-item-price">₹${safePrice}</div>
         </div>
         <div class="cart-qty-ctrl">
@@ -1705,12 +1771,19 @@ function initStorefrontApp() {
     summaryDelivery.textContent = deliveryFee === 0 ? 'FREE' : `₹${Math.round(deliveryFee)}`;
     summaryTotal.textContent = `₹${Math.round(total)}`;
 
-    // Check if any cart item is currently marked Sold Out
+    // Check if any cart item is currently marked Sold Out or Schedule-Unavailable
     const allDishes = (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function') ? dataService.getDishes() : [];
     const soldOutItem = cart.find(item => {
       const dish = allDishes.find(d => d.id === item.id || d.name === item.name);
       return dish && dish.inStock === false;
     });
+
+    const unavailableScheduledItem = !soldOutItem ? cart.find(item => {
+      const dish = allDishes.find(d => d.id === item.id || d.name === item.name);
+      if (!dish || dish.inStock === false) return false;
+      const sched = getDishScheduleStatus(dish, new Date());
+      return !sched.isAvailable;
+    }) : null;
 
     if (soldOutItem) {
       if (btnCheckout) {
@@ -1719,6 +1792,22 @@ function initStorefrontApp() {
       }
       if (btnCheckoutLabel) {
         btnCheckoutLabel.textContent = `⏳ "${soldOutItem.name}" Back Soon`;
+      }
+    } else if (unavailableScheduledItem) {
+      if (btnCheckout) {
+        btnCheckout.classList.add('disabled-sold-out');
+        btnCheckout.disabled = true;
+      }
+      if (btnCheckoutLabel) {
+        const dish = allDishes.find(d => d.id === unavailableScheduledItem.id || d.name === unavailableScheduledItem.name);
+        const sched = dish ? getDishScheduleStatus(dish, new Date()) : null;
+        if (sched && sched.status === 'countdown') {
+          btnCheckoutLabel.textContent = `⏳ "${unavailableScheduledItem.name}" Starts at ${formatTime12h(dish.availableFrom)}`;
+        } else if (sched && sched.status === 'ended_today') {
+          btnCheckoutLabel.textContent = `⏳ "${unavailableScheduledItem.name}" Closed Today`;
+        } else {
+          btnCheckoutLabel.textContent = `⏳ "${unavailableScheduledItem.name}" Not Serving Now`;
+        }
       }
     } else if (minOrderValue <= 0 || subtotal >= minOrderValue) {
       if (btnCheckout) {
@@ -2063,7 +2152,10 @@ function initStorefrontApp() {
 
   if (modalQtyMinus) {
     modalQtyMinus.addEventListener('click', () => {
-      if (activeDetailItem && activeDetailItem.inStock === false) return;
+      if (!activeDetailItem) return;
+      if (activeDetailItem.inStock === false) return;
+      const sched = getDishScheduleStatus(activeDetailItem, new Date());
+      if (!sched.isAvailable) return;
       if (activeDetailQty > 1) {
         activeDetailQty -= 1;
         updateModalSubmitPrice();
@@ -2073,8 +2165,14 @@ function initStorefrontApp() {
 
   if (modalQtyPlus) {
     modalQtyPlus.addEventListener('click', () => {
-      if (activeDetailItem && activeDetailItem.inStock === false) {
+      if (!activeDetailItem) return;
+      if (activeDetailItem.inStock === false) {
         showToast(`Sorry, "${activeDetailItem.name}" will be back soon! 🍗`, 'info');
+        return;
+      }
+      const sched = getDishScheduleStatus(activeDetailItem, new Date());
+      if (!sched.isAvailable) {
+        showToast(`🕒 "${activeDetailItem.name}" is currently outside serving hours.`, 'info');
         return;
       }
       activeDetailQty += 1;
@@ -2328,6 +2426,7 @@ function initStorefrontApp() {
       // 6. Live Sync Stock Status
       if (dish.inStock === false) {
         card.classList.add('is-out-of-stock');
+        card.classList.remove('is-scheduled-countdown', 'is-scheduled-inactive');
         let stockPill = card.querySelector('.recipe-card-stock-pill');
         if (!stockPill) {
           stockPill = document.createElement('span');
@@ -2335,49 +2434,54 @@ function initStorefrontApp() {
           stockPill.textContent = 'Back Soon';
           card.querySelector('.recipe-card-inner')?.prepend(stockPill);
         }
+        const oldSchedPill = card.querySelector('.recipe-card-schedule-pill');
+        if (oldSchedPill) oldSchedPill.remove();
       } else {
-                card.classList.remove('is-out-of-stock');
+        card.classList.remove('is-out-of-stock');
         const stockPill = card.querySelector('.recipe-card-stock-pill');
         if (stockPill) stockPill.remove();
-      }
 
-      // 6b. Live Sync Schedule & Serving Hours (Countdown & Days)
-      const dishSchedule = getDishScheduleStatus(dish, new Date());
-      const innerEl = card.querySelector('.recipe-card-inner');
-      const oldSchedPill = card.querySelector('.recipe-card-schedule-pill');
-      if (oldSchedPill) oldSchedPill.remove();
+        // 6b. Live Sync Schedule & Serving Hours (Countdown & Days)
+        const dishSchedule = getDishScheduleStatus(dish, new Date());
+        const innerEl = card.querySelector('.recipe-card-inner');
+        const oldSchedPill = card.querySelector('.recipe-card-schedule-pill');
+        if (oldSchedPill) oldSchedPill.remove();
 
-      if (!dishSchedule.isAvailable) {
-        if (dishSchedule.status === 'countdown') {
-          card.classList.add('is-scheduled-countdown');
-          card.classList.remove('is-scheduled-inactive');
-          const pill = document.createElement('span');
-          pill.className = 'recipe-card-schedule-pill countdown-pill';
-          pill.setAttribute('data-dish-id', dish.id);
-          pill.innerHTML = `<i class="fa-solid fa-clock"></i> <span class="countdown-ticker" data-dish-id="${dish.id}">${dishSchedule.countdownText}</span>`;
-          if (innerEl) innerEl.prepend(pill);
-        } else if (dishSchedule.status === 'day_inactive') {
-          card.classList.add('is-scheduled-inactive');
-          card.classList.remove('is-scheduled-countdown');
-          const pill = document.createElement('span');
-          pill.className = 'recipe-card-schedule-pill day-pill';
-          pill.innerHTML = `<i class="fa-regular fa-calendar-day"></i> <span>${dishSchedule.badgeText || 'Special Days'}</span>`;
-          if (innerEl) innerEl.prepend(pill);
-        } else if (dishSchedule.status === 'ended_today') {
-          card.classList.add('is-scheduled-inactive');
-          card.classList.remove('is-scheduled-countdown');
-          const pill = document.createElement('span');
-          pill.className = 'recipe-card-schedule-pill ended-pill';
-          pill.innerHTML = `<i class="fa-solid fa-moon"></i> <span>Closed for Today</span>`;
-          if (innerEl) innerEl.prepend(pill);
-        }
-      } else {
-        card.classList.remove('is-scheduled-countdown', 'is-scheduled-inactive');
-        if (dishSchedule.status === 'active_window' && dish.timeRestricted) {
-          const pill = document.createElement('span');
-          pill.className = 'recipe-card-schedule-pill active-window-pill';
-          pill.innerHTML = `<i class="fa-solid fa-fire"></i> <span>Till ${formatTime12h(dish.availableTo)}</span>`;
-          if (innerEl) innerEl.prepend(pill);
+        if (!dishSchedule.isAvailable) {
+          if (dishSchedule.status === 'countdown') {
+            card.classList.add('is-scheduled-countdown');
+            card.classList.remove('is-scheduled-inactive');
+            const pill = document.createElement('span');
+            pill.className = 'recipe-card-schedule-pill countdown-pill';
+            pill.setAttribute('data-dish-id', dish.id);
+            pill.innerHTML = `<i class="fa-solid fa-clock"></i> <span class="countdown-ticker" data-dish-id="${dish.id}">${dishSchedule.countdownText}</span>`;
+            if (innerEl) innerEl.prepend(pill);
+          } else if (dishSchedule.status === 'day_inactive') {
+            card.classList.add('is-scheduled-inactive');
+            card.classList.remove('is-scheduled-countdown');
+            const pill = document.createElement('span');
+            pill.className = 'recipe-card-schedule-pill day-pill';
+            pill.setAttribute('data-dish-id', dish.id);
+            pill.innerHTML = `<i class="fa-regular fa-calendar-day"></i> <span>${dishSchedule.badgeText || 'Special Days'}</span>`;
+            if (innerEl) innerEl.prepend(pill);
+          } else if (dishSchedule.status === 'ended_today') {
+            card.classList.add('is-scheduled-inactive');
+            card.classList.remove('is-scheduled-countdown');
+            const pill = document.createElement('span');
+            pill.className = 'recipe-card-schedule-pill ended-pill';
+            pill.setAttribute('data-dish-id', dish.id);
+            pill.innerHTML = `<i class="fa-solid fa-moon"></i> <span>Closed for Today</span>`;
+            if (innerEl) innerEl.prepend(pill);
+          }
+        } else {
+          card.classList.remove('is-scheduled-countdown', 'is-scheduled-inactive');
+          if (dishSchedule.status === 'active_window' && dish.timeRestricted) {
+            const pill = document.createElement('span');
+            pill.className = 'recipe-card-schedule-pill active-window-pill';
+            pill.setAttribute('data-dish-id', dish.id);
+            pill.innerHTML = `<i class="fa-solid fa-fire"></i> <span>Till ${formatTime12h(dish.availableTo)}</span>`;
+            if (innerEl) innerEl.prepend(pill);
+          }
         }
       }
     });
@@ -2436,11 +2540,36 @@ function initStorefrontApp() {
       const img = blob.querySelector('img')?.src || '';
 
       const dishId = blob.getAttribute('data-id') || ('hero-' + dish.toLowerCase().replace(/\s+/g, '-'));
+
+      const allDishes = (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function') ? dataService.getDishes() : [];
+      const liveDish = (typeof dataService !== 'undefined' && typeof dataService.getDishById === 'function' ? dataService.getDishById(dishId) : null) ||
+                       allDishes.find(d => d.id === dishId || (dish && d.name && d.name.toLowerCase() === dish.toLowerCase()));
+
+      if (liveDish) {
+        if (liveDish.inStock === false) {
+          showToast(`Sorry, "${liveDish.name || dish}" will be back soon! ⏳`, 'info');
+          return;
+        }
+        const sched = getDishScheduleStatus(liveDish, new Date());
+        if (!sched.isAvailable) {
+          if (sched.status === 'countdown') {
+            showToast(`🕒 "${liveDish.name}" serving starts in ${sched.countdownText.replace('Starts in ', '')} (at ${formatTime12h(liveDish.availableFrom)}).`, 'info');
+          } else if (sched.status === 'ended_today') {
+            showToast(`⛔ "${liveDish.name}" serving ended for today.`, 'info');
+          } else if (sched.status === 'day_inactive') {
+            showToast(`📅 "${liveDish.name}" is ${sched.message}.`, 'info');
+          } else {
+            showToast(`Sorry, "${liveDish.name}" is not currently available.`, 'info');
+          }
+          return;
+        }
+      }
+
       const item = {
-        id: dishId,
-        name: dish,
-        price: price,
-        image: img
+        id: liveDish ? liveDish.id : dishId,
+        name: liveDish ? liveDish.name : dish,
+        price: liveDish ? liveDish.price : price,
+        image: liveDish ? liveDish.image : img
       };
 
       const triggerEl = e.target.closest('.quick-add-blob-btn, .bubble-direct-add-btn') || blob;
@@ -4890,7 +5019,7 @@ function initStorefrontApp() {
         return;
       }
 
-      // 2a. Check if any items in cart are Sold Out
+      // 2a. Check if any items in cart are Sold Out or Schedule-Unavailable
       const allDishes = dataService.getDishes();
       const soldOutInCart = cart.find(item => {
         const dish = allDishes.find(d => d.id === item.id || d.name === item.name);
@@ -4898,6 +5027,22 @@ function initStorefrontApp() {
       });
       if (soldOutInCart) {
         showToast(`⏳ "${soldOutInCart.name}" will be back soon! Please remove it from your basket before proceeding to checkout.`, 'warning');
+        return;
+      }
+
+      const unavailableInCart = cart.find(item => {
+        const dish = allDishes.find(d => d.id === item.id || d.name === item.name);
+        if (!dish || dish.inStock === false) return false;
+        const sched = getDishScheduleStatus(dish, new Date());
+        return !sched.isAvailable;
+      });
+      if (unavailableInCart) {
+        const dish = allDishes.find(d => d.id === unavailableInCart.id || d.name === unavailableInCart.name);
+        const sched = dish ? getDishScheduleStatus(dish, new Date()) : null;
+        const reason = (sched && sched.status === 'countdown')
+          ? `serving starts at ${formatTime12h(dish.availableFrom)}`
+          : (sched && sched.status === 'ended_today' ? 'serving ended for today' : 'currently outside serving hours');
+        showToast(`⏳ "${unavailableInCart.name}" is ${reason}. Please remove it from your basket before proceeding to checkout.`, 'warning');
         return;
       }
 
@@ -5004,7 +5149,7 @@ function initStorefrontApp() {
           return;
         }
 
-        // 2b. Cart Sold Out Items Check
+        // 2b. Cart Sold Out & Schedule Items Check
         const allDishes = dataService.getDishes();
         const soldOutInCart = cart.find(item => {
           const dish = allDishes.find(d => d.id === item.id || d.name === item.name);
@@ -5012,6 +5157,23 @@ function initStorefrontApp() {
         });
         if (soldOutInCart) {
           showToast(`⏳ "${soldOutInCart.name}" will be back soon! Please remove it from your basket to place your order.`, 'warning');
+          resetSubmitState();
+          return;
+        }
+
+        const unavailableInCart = cart.find(item => {
+          const dish = allDishes.find(d => d.id === item.id || d.name === item.name);
+          if (!dish || dish.inStock === false) return false;
+          const sched = getDishScheduleStatus(dish, new Date());
+          return !sched.isAvailable;
+        });
+        if (unavailableInCart) {
+          const dish = allDishes.find(d => d.id === unavailableInCart.id || d.name === unavailableInCart.name);
+          const sched = dish ? getDishScheduleStatus(dish, new Date()) : null;
+          const reason = (sched && sched.status === 'countdown')
+            ? `serving starts at ${formatTime12h(dish.availableFrom)}`
+            : (sched && sched.status === 'ended_today' ? 'serving ended for today' : 'currently outside serving hours');
+          showToast(`⏳ "${unavailableInCart.name}" is ${reason}. Please remove it from your basket to place your order.`, 'warning');
           resetSubmitState();
           return;
         }

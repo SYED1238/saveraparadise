@@ -67,6 +67,52 @@ async function fetchAuthoritativeSettings() {
   }
 }
 
+function isDishAvailableNow(dish, now = new Date()) {
+  if (!dish) return true;
+  if (dish.is_available === false || dish.inStock === false) return false;
+
+  const timeRestricted = Boolean(dish.timeRestricted ?? dish.time_restricted);
+  const availableDays = dish.availableDays ?? dish.available_days;
+  const availableFrom = dish.availableFrom ?? dish.available_from;
+  const availableTo = dish.availableTo ?? dish.available_to;
+
+  const istString = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+  const istNow = new Date(istString);
+  const currentDay = istNow.getDay();
+
+  if (Array.isArray(availableDays) && availableDays.length > 0 && availableDays.length < 7) {
+    if (!availableDays.includes(currentDay)) {
+      return false;
+    }
+  }
+
+  if (timeRestricted && availableFrom && availableTo) {
+    const [fromH, fromM] = String(availableFrom).split(':').map(Number);
+    const [toH, toM] = String(availableTo).split(':').map(Number);
+
+    const startTime = new Date(istNow);
+    startTime.setHours(fromH || 0, fromM || 0, 0, 0);
+
+    const endTime = new Date(istNow);
+    endTime.setHours(toH || 0, toM || 0, 0, 0);
+
+    if (endTime <= startTime) {
+      if (istNow.getHours() < toH || (istNow.getHours() === toH && istNow.getMinutes() < toM)) {
+        startTime.setDate(startTime.getDate() - 1);
+      } else {
+        endTime.setDate(endTime.getDate() + 1);
+      }
+    }
+
+    const currentMillis = istNow.getTime();
+    if (currentMillis < startTime.getTime() || currentMillis > endTime.getTime()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 async function fetchAuthoritativeDishes() {
   const now = Date.now();
   if (authoritativeDishesCache && (now - authoritativeDishesCachedAt < 60000)) {
@@ -183,6 +229,10 @@ export default async function handler(req, res) {
 
     if (dish && (dish.is_available === false || dish.inStock === false)) {
       return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' will be back soon` });
+
+    if (dish && !isDishAvailableNow(dish)) {
+      return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' is not currently being served (outside serving hours)` });
+    }
     }
     const unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : Math.max(0, Number(item.price) || 0);
 

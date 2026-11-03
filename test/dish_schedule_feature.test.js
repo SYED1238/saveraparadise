@@ -208,4 +208,56 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
       'Add button must be strictly hidden when dish is inactive'
     );
   });
+  await t.test('11. Timer leak defense: master ticker is module-scoped and prevents duplicate intervals', () => {
+    const mainJs = fs.readFileSync(path.join(rootDir, 'main.js'), 'utf8');
+    assert.ok(
+      mainJs.includes('let dishScheduleTicker = null;') &&
+      mainJs.includes('if (dishScheduleTicker) return;'),
+      'dishScheduleTicker must be module-scoped and prevent duplicate intervals'
+    );
+  });
+
+  await t.test('12. Expired/Unstarted scheduled dishes in cart block checkout in UI and API', () => {
+    const mainJs = fs.readFileSync(path.join(rootDir, 'main.js'), 'utf8');
+    assert.ok(mainJs.includes('unavailableScheduledItem'), 'main.js checks unavailableScheduledItem in renderCart');
+    assert.ok(mainJs.includes('cart-schedule-badge'), 'main.js displays schedule badge in cart item');
+    assert.ok(mainJs.includes('unavailableInCart'), 'main.js guards checkout drawer and order submit');
+
+    const apiCheckoutJs = fs.readFileSync(path.join(rootDir, 'api', 'checkout.js'), 'utf8');
+    assert.ok(apiCheckoutJs.includes('isDishAvailableNow'), 'api/checkout.js validates server-side dish schedule');
+
+    const fnCheckoutJs = fs.readFileSync(path.join(rootDir, 'functions', 'api', 'checkout.js'), 'utf8');
+    assert.ok(fnCheckoutJs.includes('isDishAvailableNow'), 'functions/api/checkout.js validates server-side dish schedule');
+  });
+
+  await t.test('13. Hero Floating Bubbles and addToCart enforce stock and schedule checks', () => {
+    const mainJs = fs.readFileSync(path.join(rootDir, 'main.js'), 'utf8');
+    assert.ok(
+      mainJs.includes('function addToCart(item, triggerElement, qty = 1)') &&
+      mainJs.includes('liveDish.inStock === false') &&
+      mainJs.includes('getDishScheduleStatus(liveDish, new Date())'),
+      'addToCart must verify live stock and schedule availability'
+    );
+  });
+
+  await t.test('14. Food detail modal CTA and qty buttons prevent increments when dish is not serving', () => {
+    const mainJs = fs.readFileSync(path.join(rootDir, 'main.js'), 'utf8');
+    assert.ok(
+      mainJs.includes('modalQtyPlus') &&
+      mainJs.includes('is currently outside serving hours'),
+      'Modal qty controls must guard against incrementing unstarted or closed dishes'
+    );
+  });
+
+  await t.test('15. Mobile active-window pill collision defense and out-of-stock badge bleed fix', () => {
+    const styleCss = fs.readFileSync(path.join(rootDir, 'style.css'), 'utf8');
+    assert.ok(
+      styleCss.includes('.recipe-card.is-out-of-stock .recipe-card-badge-pill'),
+      'style.css hides promo badge when dish is out-of-stock'
+    );
+    assert.ok(
+      styleCss.includes('.recipe-card.in-cart .recipe-card-schedule-pill.active-window-pill'),
+      'style.css offsets active-window pill when stepper is active in cart on mobile'
+    );
+  });
 });
