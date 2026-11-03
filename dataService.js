@@ -4562,7 +4562,27 @@ class QuickBiteDataService {
       }
 
       supabase.from('dishes').update(updatePayload).eq('id', id).then(({ error }) => {
-        if (error) console.warn('[Supabase] updateDish error:', error.message);
+        if (error) {
+          console.warn('[Supabase] updateDish error:', error.message);
+          if (error.message?.includes('available_days') || error.message?.includes('time_restricted')) {
+            const fallbackPayload = {
+              name: d.name,
+              category: d.category,
+              category_name: d.categoryName,
+              price: d.price,
+              badge: d.badge,
+              time: d.time,
+              calories: d.calories,
+              diet: d.diet,
+              description: d.desc,
+              in_stock: d.inStock
+            };
+            if (d.image && !d.image.startsWith('data:')) {
+              fallbackPayload.image = sanitizeDishImageUrl(d.image);
+            }
+            supabase.from('dishes').update(fallbackPayload).eq('id', id);
+          }
+        }
       });
 
       return list[idx];

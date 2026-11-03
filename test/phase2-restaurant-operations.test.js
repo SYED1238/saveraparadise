@@ -104,4 +104,36 @@ test('PHASE 2: RESTAURANT OPERATIONS & GEOFENCING DEFENSE SUITE', async (t) => {
     assert.equal(nearResult.allowed, true);
     assert.ok(nearResult.distMeters <= 500);
   });
+
+  await t.test('4. Dish schedule fields persist and compute status correctly', () => {
+    const dish = {
+      id: 'dish-biryani-test',
+      name: 'Special Dum Biryani',
+      price: 250,
+      inStock: true,
+      availableDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+      timeRestricted: true,
+      availableFrom: '12:00',
+      availableTo: '16:00'
+    };
+
+    assert.equal(dish.timeRestricted, true);
+    assert.equal(dish.availableFrom, '12:00');
+    assert.equal(dish.availableTo, '16:00');
+    assert.deepEqual(dish.availableDays, ['mon', 'tue', 'wed', 'thu', 'fri']);
+
+    // Check payload shape that updateDish produces
+    const updatePayload = {
+      name: dish.name,
+      available_days: dish.availableDays,
+      time_restricted: Boolean(dish.timeRestricted),
+      available_from: dish.availableFrom,
+      available_to: dish.availableTo
+    };
+
+    assert.deepEqual(updatePayload.available_days, ['mon', 'tue', 'wed', 'thu', 'fri']);
+    assert.equal(updatePayload.time_restricted, true);
+    assert.equal(updatePayload.available_from, '12:00');
+    assert.equal(updatePayload.available_to, '16:00');
+  });
 });

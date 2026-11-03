@@ -1160,6 +1160,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       updateDishScheduleSummary();
     });
+
+    const scheduleTimeToggleRow = document.querySelector('.schedule-time-toggle-row');
+    if (scheduleTimeToggleRow) {
+      scheduleTimeToggleRow.addEventListener('click', (e) => {
+        if (e.target === dishTimeRestricted || e.target.closest('.admin-switch')) return;
+        dishTimeRestricted.checked = !dishTimeRestricted.checked;
+        dishTimeRestricted.dispatchEvent(new Event('change'));
+      });
+    }
   }
 
   if (dishAvailableFrom) dishAvailableFrom.addEventListener('input', updateDishScheduleSummary);
@@ -1503,6 +1512,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const gdriveFileId = currentDishGdriveFileId || '';
     const editId = dishEditId.value;
 
+    const availableDays = getSelectedDishDays();
+    const timeRestricted = dishTimeRestricted ? dishTimeRestricted.checked : false;
+    const availableFrom = (dishAvailableFrom ? dishAvailableFrom.value : '12:00').trim();
+    const availableTo = (dishAvailableTo ? dishAvailableTo.value : '23:30').trim();
+
     if (image.startsWith('data:')) {
       showToast('⚠️ Photo is still uploading. Please wait a moment...', 'warning');
       return;
@@ -1544,6 +1558,10 @@ document.addEventListener('DOMContentLoaded', () => {
           desc,
           image,
           inStock,
+          availableDays,
+          timeRestricted,
+          availableFrom,
+          availableTo,
           r2Key: currentDishGdriveFileId,
           gdriveFileId
         });
@@ -1561,6 +1579,10 @@ document.addEventListener('DOMContentLoaded', () => {
           desc,
           image,
           inStock,
+          availableDays,
+          timeRestricted,
+          availableFrom,
+          availableTo,
           r2Key: currentDishGdriveFileId,
           gdriveFileId
         });
