@@ -73,6 +73,22 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       assert.ok(content.includes('env.ASSETS.fetch(request)'));
     });
 
+    it('prevents circular 307 redirect loops: public/_redirects must not rewrite clean URLs to .html', () => {
+      const publicRedirectsPath = path.resolve(process.cwd(), 'public/_redirects');
+      if (fs.existsSync(publicRedirectsPath)) {
+        const redirects = fs.readFileSync(publicRedirectsPath, 'utf8');
+        const prohibitedPatterns = [
+          /\/admin\s+.*admin\.html/i,
+          /\/delivery\s+.*delivery\.html/i,
+          /\/owner\s+.*owner\.html/i,
+          /\/\*\s+.*index\.html\s+200/i
+        ];
+        for (const pattern of prohibitedPatterns) {
+          assert.ok(!pattern.test(redirects), 'clean-URL rewrite conflict');
+        }
+      }
+    });
+
     it('public/_headers defines strict CSP and security headers', () => {
       const headersPath = path.resolve(process.cwd(), 'public/_headers');
       assert.ok(fs.existsSync(headersPath), 'public/_headers must exist');
