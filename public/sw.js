@@ -7,7 +7,7 @@
  * 4. Background Supabase Order Polling & Sync Channel
  */
 
-const CACHE_NAME = 'crispy-pwa-v24';
+const CACHE_NAME = 'crispy-pwa-v25';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -41,7 +41,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME && key !== 'savera-map-tiles-v2') {
+          if (key !== CACHE_NAME && key !== 'savera-map-tiles-v3') {
             console.log('[SW] Deleting stale cache:', key);
             return caches.delete(key);
           }
@@ -56,19 +56,12 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
-  // Map Tiles Caching (Google Maps Street & OpenStreetMap) with Cache-First Strategy
+  // Map Tiles Caching (Strict Google Maps) with Cache-First Strategy
   const isMapTile = (url.hostname.includes('google.com') && url.pathname.includes('/vt/')) ||
-                    url.hostname.includes('arcgisonline.com') ||
-                    url.hostname.includes('openstreetmap.org') ||
-                    url.hostname.includes('openstreetmap.de') ||
-                    url.hostname.includes('openstreetmap.fr');
+                    url.hostname.includes('googleapis.com');
 
   if (isMapTile) {
-    const MAP_CACHE_NAME = 'savera-map-tiles-v2';
-    event.respondWith(
-      caches.open(MAP_CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(event.request);
-        if (cached) {
+    const MAP_CACHE_NAME = 'savera-map-tiles-v3';
           return cached;
         }
         try {

@@ -3453,7 +3453,7 @@ function initStorefrontApp() {
   async function precacheNearbyMapTiles(customerLat = null, customerLng = null) {
     if (typeof window === 'undefined' || !('caches' in window)) return;
     try {
-      const cache = await caches.open('savera-map-tiles-v2');
+      const cache = await caches.open('savera-map-tiles-v3');
       const restLat = RESTAURANT_COORDINATES.lat;
       const restLng = RESTAURANT_COORDINATES.lng;
 
@@ -3464,7 +3464,7 @@ function initStorefrontApp() {
 
       // Pre-warm street zoom levels (14, 15, and 16)
       const zoomLevels = [14, 15, 16];
-      const subdomains = ['a', 'b', 'c', 'd'];
+      const subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
       const urlsToPrecache = new Set();
 
       points.forEach(pt => {
@@ -3475,8 +3475,8 @@ function initStorefrontApp() {
             for (let dy = -1; dy <= 1; dy++) {
               const x = centerX + dx;
               const y = centerY + dy;
-              urlsToPrecache.add(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`);
-              urlsToPrecache.add(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`);
+              const s = subdomains[(x + y) % subdomains.length];
+              urlsToPrecache.add(`https://${s}.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}&hl=en&gl=IN`);
             }
           }
         });
@@ -3793,17 +3793,20 @@ function initStorefrontApp() {
         tap: true
       }).setView([riderLat, riderLng], 15);
 
-      // High-performance ESRI World Street Map with OpenStreetMap failover (100% Free, No API Key Required)
-      const streetLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19,
+      // High-resolution Google Maps Roadmap layer
+      const streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        maxZoom: 20,
+        maxNativeZoom: 19,
         keepBuffer: 6,
-        attribution: '&copy; Esri, OpenStreetMap'
+        attribution: '&copy; Google Maps'
       });
       streetLayer.on('tileerror', (err) => {
         if (err.tile && !err.tile.dataset.retried) {
           err.tile.dataset.retried = 'true';
           const { x, y, z } = err.coords;
-          err.tile.src = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+          const sub = ['mt0', 'mt1', 'mt2', 'mt3'][(x + y) % 4];
+          err.tile.src = `https://${sub}.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}&hl=en&gl=IN`;
         }
       });
       streetLayer.addTo(trackerLiveMap);
@@ -6583,33 +6586,37 @@ function initStorefrontApp() {
         attributionControl: false
       }).setView([lat, lng], 16);
 
-      // 1. Street Map: ESRI World Street Map with OpenStreetMap failover (100% Free, No API Key Required)
-      streetLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19,
+      // 1. Street Map: Google Maps Roadmap
+      streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        maxZoom: 20,
+        maxNativeZoom: 19,
         keepBuffer: 6,
-        attribution: '&copy; Esri, OpenStreetMap'
+        attribution: '&copy; Google Maps'
       });
       streetLayer.on('tileerror', (err) => {
         if (err.tile && !err.tile.dataset.retried) {
           err.tile.dataset.retried = 'true';
           const { x, y, z } = err.coords;
-          err.tile.src = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+          const sub = ['mt0', 'mt1', 'mt2', 'mt3'][(x + y) % 4];
+          err.tile.src = `https://${sub}.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}&hl=en&gl=IN`;
         }
       });
 
-      // 2. Google Satellite Hybrid with ESRI World Imagery failover
+      // 2. Google Satellite Hybrid: High-definition aerial photography with road & locality overlays
       satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=en&gl=IN', {
         subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
         maxZoom: 20,
         maxNativeZoom: 19,
         keepBuffer: 4,
-        attribution: '&copy; Google Maps, Esri'
+        attribution: '&copy; Google Maps'
       });
       satelliteLayer.on('tileerror', (err) => {
         if (err.tile && !err.tile.dataset.retried) {
           err.tile.dataset.retried = 'true';
           const { x, y, z } = err.coords;
-          err.tile.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+          const sub = ['mt0', 'mt1', 'mt2', 'mt3'][(x + y) % 4];
+          err.tile.src = `https://${sub}.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}&hl=en&gl=IN`;
         }
       });
 
