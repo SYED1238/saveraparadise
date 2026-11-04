@@ -5678,6 +5678,7 @@ function initStorefrontApp() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               items: cart.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price })),
+              catalogDishes: (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function') ? dataService.getDishes().map(d => ({ id: d.id, name: d.name, price: d.price })) : [],
               promoCode: appliedPromo || null,
               appliedPromo: appliedPromo || null,
               storeSettings: settings,

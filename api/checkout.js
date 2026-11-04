@@ -30,6 +30,10 @@ function isOriginAllowed(origin) {
   return false;
 }
 
+const isTestEnv = (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test');
+const FALLBACK_SUPABASE_URL = isTestEnv ? '' : 'https://zrgkglwqkdxmwrgepnqh.supabase.co';
+const FALLBACK_SUPABASE_ANON_KEY = isTestEnv ? '' : 'sb_publishable_obyAWrTPc2oIxF3V9Bp23Q_cd_WxEZk';
+
 let authoritativeDishesCache = null;
 let authoritativeDishesCachedAt = 0;
 
@@ -41,8 +45,8 @@ async function fetchAuthoritativeSettings() {
   if (authoritativeSettingsCache && (now - authoritativeSettingsCachedAt < 60000)) {
     return authoritativeSettingsCache;
   }
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || FALLBACK_SUPABASE_URL;
+  const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !apiKey) return authoritativeSettingsCache;
   try {
     const cleanUrl = String(supabaseUrl).replace(/\/+$/, '');
@@ -121,8 +125,8 @@ async function fetchAuthoritativeDishes() {
   if (authoritativeDishesCache && (now - authoritativeDishesCachedAt < 60000)) {
     return authoritativeDishesCache;
   }
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || FALLBACK_SUPABASE_URL;
+  const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !apiKey) return authoritativeDishesCache;
   try {
     const cleanUrl = String(supabaseUrl).replace(/\/+$/, '');
