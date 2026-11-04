@@ -3464,6 +3464,7 @@ function initStorefrontApp() {
 
       // Pre-warm street zoom levels (14, 15, and 16)
       const zoomLevels = [14, 15, 16];
+      const subdomains = ['a', 'b', 'c', 'd'];
       const urlsToPrecache = new Set();
 
       points.forEach(pt => {
@@ -3474,6 +3475,8 @@ function initStorefrontApp() {
             for (let dy = -1; dy <= 1; dy++) {
               const x = centerX + dx;
               const y = centerY + dy;
+              const s = subdomains[(x + y) % subdomains.length];
+              urlsToPrecache.add(`https://${s}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`);
               urlsToPrecache.add(`https://mt1.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}&hl=en&gl=IN`);
             }
           }
@@ -3484,9 +3487,9 @@ function initStorefrontApp() {
       for (const url of urls) {
         const existing = await cache.match(url);
         if (!existing) {
-          fetch(url, { mode: 'cors' })
+          fetch(url)
             .then(res => {
-              if (res.ok) cache.put(url, res);
+              if (res.ok || res.type === 'opaque') cache.put(url, res);
             })
             .catch(() => {});
         }
@@ -3791,13 +3794,20 @@ function initStorefrontApp() {
         tap: true
       }).setView([riderLat, riderLng], 15);
 
-      // Official Google Maps Basemap
-      const streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
-        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      // High-reliability CartoDB Voyager basemap with OpenStreetMap failover
+      const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        subdomains: ['a', 'b', 'c', 'd'],
         maxZoom: 20,
         maxNativeZoom: 19,
-        keepBuffer: 4,
-        attribution: '&copy; Google Maps'
+        keepBuffer: 6,
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+      });
+      streetLayer.on('tileerror', (err) => {
+        if (err.tile && !err.tile.dataset.retried) {
+          err.tile.dataset.retried = 'true';
+          const { x, y, z } = err.coords;
+          err.tile.src = `https://a.tile.openstreetmap.org/${z}/${x}/${y}.png`;
+        }
       });
       streetLayer.addTo(trackerLiveMap);
 
@@ -6576,13 +6586,20 @@ function initStorefrontApp() {
         attributionControl: false
       }).setView([lat, lng], 16);
 
-      // 1. Street Map: Google Maps Street
-      streetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en&gl=IN', {
-        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      // 1. Street Map: CartoDB Voyager with OpenStreetMap failover
+      streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        subdomains: ['a', 'b', 'c', 'd'],
         maxZoom: 20,
         maxNativeZoom: 19,
-        keepBuffer: 4,
-        attribution: '&copy; Google Maps'
+        keepBuffer: 6,
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+      });
+      streetLayer.on('tileerror', (err) => {
+        if (err.tile && !err.tile.dataset.retried) {
+          err.tile.dataset.retried = 'true';
+          const { x, y, z } = err.coords;
+          err.tile.src = `https://a.tile.openstreetmap.org/${z}/${x}/${y}.png`;
+        }
       });
 
       // 2. Google Satellite Hybrid: High-definition aerial photography with road & locality overlays

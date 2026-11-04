@@ -57,8 +57,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // Map Tiles Caching (Google Maps Street & OpenStreetMap) with Cache-First Strategy
-  const isMapTile = (url.hostname.includes('google.com') && url.pathname.includes('/vt/')) ||
-                    url.hostname.includes('tile.openstreetmap.org');
+  const isMapTile = (url.hostname.includes('google.com') && url.pathname.includes('/vt/')) ||
+                    url.hostname.includes('cartocdn.com') ||
+                    url.hostname.includes('openstreetmap.org') ||
+                    url.hostname.includes('openstreetmap.de') ||
+                    url.hostname.includes('openstreetmap.fr');
 
   if (isMapTile) {
     const MAP_CACHE_NAME = 'savera-map-tiles-v1';
@@ -69,8 +72,8 @@ self.addEventListener('fetch', (event) => {
           return cached;
         }
         try {
-          const networkRes = await fetch(event.request, { mode: 'cors' });
-          if (networkRes && networkRes.status === 200) {
+          const networkRes = await fetch(event.request.clone());
+          if (networkRes && (networkRes.status === 200 || networkRes.type === 'opaque')) {
             cache.put(event.request, networkRes.clone()).catch(() => {});
           }
           return networkRes;
