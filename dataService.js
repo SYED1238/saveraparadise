@@ -70,6 +70,13 @@ export const DEFAULT_PAYOUT_CONFIG = {
   }
 };
 
+export function parseTimestampMs(val) {
+  if (!val) return Date.now();
+  if (typeof val === 'number') return isNaN(val) ? Date.now() : val;
+  const parsed = new Date(val).getTime();
+  return isNaN(parsed) ? Date.now() : parsed;
+}
+
 // ========================================================
 // INDEXEDDB RESILIENT PERSISTENCE LAYER (No 5MB Quota Limits)
 // ========================================================
@@ -3034,7 +3041,7 @@ class QuickBiteDataService {
             const mergedOrder = {
               ...(local || {}),
               id: remote.id || local?.id,
-              createdAt: Number(remote.created_at) || local?.createdAt || Date.now(),
+              createdAt: parseTimestampMs(remote.created_at) || local?.createdAt || Date.now(),
               userId: remote.user_id || local?.userId || null,
               customerName: remote.customer_name || local?.customerName || 'Online Guest',
               customerEmail: remote.customer_email || local?.customerEmail || '',
@@ -3049,8 +3056,8 @@ class QuickBiteDataService {
               itemsSummary: remote.items_summary || local?.itemsSummary || '',
               items: remote.items || local?.items || [],
               total: remote.total || local?.total || '₹0',
-              claimedAt: remote.claimed_at ? Number(remote.claimed_at) : (local?.claimedAt || null),
-              deliveredAt: remote.delivered_at ? Number(remote.delivered_at) : (local?.deliveredAt || null),
+              claimedAt: remote.claimed_at ? parseTimestampMs(remote.claimed_at) : (local?.claimedAt || null),
+              deliveredAt: remote.delivered_at ? parseTimestampMs(remote.delivered_at) : (local?.deliveredAt || null),
               cashCollected: remote.cash_collected !== undefined && remote.cash_collected !== null ? Number(remote.cash_collected) : local?.cashCollected,
               isPaidOnline: Boolean(remote.is_paid_online || local?.isPaidOnline),
               doorstepUpi: Boolean(remote.doorstep_upi || local?.doorstepUpi),
@@ -3464,7 +3471,7 @@ class QuickBiteDataService {
       const mergedOrder = {
         ...(local || {}),
         id: remote.id || local?.id,
-        createdAt: Number(remote.created_at) || local?.createdAt || Date.now(),
+        createdAt: parseTimestampMs(remote.created_at) || local?.createdAt || Date.now(),
         userId: remote.user_id || local?.userId || null,
         customerName: remote.customer_name || local?.customerName || 'Online Guest',
         customerEmail: remote.customer_email || local?.customerEmail || '',
@@ -3479,8 +3486,8 @@ class QuickBiteDataService {
         itemsSummary: remote.items_summary || local?.itemsSummary || '',
         items: remote.items || local?.items || [],
         total: remote.total || local?.total || '₹0',
-        claimedAt: remote.claimed_at ? Number(remote.claimed_at) : (local?.claimedAt || null),
-        deliveredAt: remote.delivered_at ? Number(remote.delivered_at) : (local?.deliveredAt || null),
+        claimedAt: remote.claimed_at ? parseTimestampMs(remote.claimed_at) : (local?.claimedAt || null),
+        deliveredAt: remote.delivered_at ? parseTimestampMs(remote.delivered_at) : (local?.deliveredAt || null),
         cashCollected: remote.cash_collected !== undefined && remote.cash_collected !== null ? Number(remote.cash_collected) : local?.cashCollected,
         isPaidOnline: Boolean(remote.is_paid_online || local?.isPaidOnline),
         doorstepUpi: Boolean(remote.doorstep_upi || local?.doorstepUpi),
@@ -3947,7 +3954,7 @@ class QuickBiteDataService {
             const recoveredPhone = extractPhoneFromOrder(remote, rawAddrs) || remote.customer_phone || '';
             const mapped = {
               id: remote.id,
-              createdAt: Number(remote.created_at) || Date.now(),
+              createdAt: parseTimestampMs(remote.created_at) || Date.now(),
               userId: remote.user_id || null,
               customerName: remote.customer_name || 'Customer',
               customerEmail: remote.customer_email || '',
@@ -3969,8 +3976,8 @@ class QuickBiteDataService {
               assignedRiderName: remote.assigned_rider_name || null,
               assignedRiderPhone: remote.assigned_rider_phone || null,
               assignedRiderVehicle: remote.assigned_rider_vehicle || null,
-              claimedAt: remote.claimed_at || null,
-              deliveredAt: remote.delivered_at || null,
+              claimedAt: remote.claimed_at ? parseTimestampMs(remote.claimed_at) : null,
+              deliveredAt: remote.delivered_at ? parseTimestampMs(remote.delivered_at) : null,
               lat: remote.lat ? Number(remote.lat) : null,
               lng: remote.lng ? Number(remote.lng) : null,
               addressDetails: remote.address_details || null,
@@ -4594,6 +4601,17 @@ class QuickBiteDataService {
     if (cat) {
       this.removeCategoryImage(cat.id);
       if (cat.slug) this.removeCategoryImage(cat.slug);
+
+      // Cascade remove orphaned dishes belonging to this deleted category
+      const dishes = this.getDishes();
+      const catKey = cat.slug || cat.id;
+      const remainingDishes = dishes.filter(d => d && d.category !== catKey && d.category !== cat.id && d.category !== cat.slug);
+      if (remainingDishes.length !== dishes.length) {
+        this.saveDishes(remainingDishes);
+        supabase.from('dishes').delete().or(`category.eq.${catKey},category.eq.${cat.id || ''}`).then(({ error }) => {
+          if (error) console.warn('[Supabase] deleteCategory cascade dishes error:', error.message);
+        });
+      }
     }
 
     // Asynchronously delete from Supabase
@@ -7308,8 +7326,8 @@ class QuickBiteDataService {
   calculateRiderPayout(riderOrders, config = null) {
     const cfg = config || this.getPayoutConfig();
     const sorted = [...(riderOrders || [])].sort((a, b) => {
-      const tA = Number(a.deliveredAt || a.delivered_at || a.createdAt || 0);
-      const tB = Number(b.deliveredAt || b.delivered_at || b.createdAt || 0);
+      const tA = parseTimestampMs(a.deliveredAt || a.delivered_at || a.createdAt || 0);
+      const tB = parseTimestampMs(b.deliveredAt || b.delivered_at || b.createdAt || 0);
       return tA - tB;
     });
 

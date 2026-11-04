@@ -188,6 +188,9 @@ export function initIosPasscodeLock(options) {
         subtitleEl.classList.remove('error');
       }
       isVerifying = false;
+      if (overlayEl) {
+        overlayEl.style.display = 'flex';
+      }
     }
   };
 }

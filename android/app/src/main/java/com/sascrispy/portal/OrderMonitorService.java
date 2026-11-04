@@ -396,7 +396,6 @@ public class OrderMonitorService extends Service {
                 .setSound(soundUri)
                 .setVibrate(new long[]{0, 400, 200, 400, 200, 600})
                 .setAutoCancel(true)
-                .setFullScreenIntent(pendingIntent, true) // Triggers heads-up popup banner over other apps / lockscreen
                 .setContentIntent(pendingIntent);
 
             int notifId = orderId != null ? Math.abs(orderId.hashCode()) : (int) System.currentTimeMillis();

@@ -36,6 +36,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Generate Production Release Keystore
+        run: |
+          cd android/app
+          keytool -genkey -v -keystore release.jks -alias saveraparadise -keyalg RSA -keysize 2048 -validity 10000 -storepass "SaveraParadise2026!" -keypass "SaveraParadise2026!" -dname "CN=Savera Paradise Kitchen, OU=Kitchen, O=Savera Paradise, L=Bengaluru, ST=Karnataka, C=IN"
+
       - name: Build Admin, Rider, and Owner APKs
         run: |
           cd android

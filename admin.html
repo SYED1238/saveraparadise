@@ -203,6 +203,16 @@
           <span id="header-status-text">Live Kitchen Online</span>
         </div>
 
+        <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-wakelock" title="Keep Kitchen Screen Awake" aria-label="Toggle Screen WakeLock">
+          <i class="fa-solid fa-sun"></i>
+          <span id="wakelock-status-text" class="sr-only" style="display: none;">Screen Normal</span>
+        </button>
+
+        <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-sound-test" title="Test Kitchen Alarm Sound" aria-label="Test Kitchen Alarm Sound">
+          <i class="fa-solid fa-bell" id="sound-pill-icon"></i>
+          <span id="sound-pill-text" class="sr-only" style="display: none;">Alarm: Active</span>
+        </button>
+
         <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-logout" title="Lock Restaurant Portal" aria-label="Lock Admin Portal">
           <i class="fa-solid fa-lock"></i>
           <span class="hide-mobile" style="display: none;">Lock</span>

@@ -100,7 +100,10 @@ const initAdminApp = () => {
 
   function checkAdminSession() {
     if (isStaffSessionActive('admin')) {
-      if (adminLockOverlay) adminLockOverlay.classList.add('unlocked');
+      if (adminLockOverlay) {
+        adminLockOverlay.classList.add('unlocked');
+        adminLockOverlay.style.display = 'none';
+      }
       requestWakeLock();
       ensureAdminToken().catch(() => {});
       dataService.syncOrdersFromSupabase().then(() => {
@@ -111,6 +114,7 @@ const initAdminApp = () => {
     } else {
       if (adminLockOverlay) {
         adminLockOverlay.classList.remove('unlocked');
+        adminLockOverlay.style.display = 'flex';
         if (adminPasscodeLock) adminPasscodeLock.reset();
       }
     }
@@ -120,11 +124,38 @@ const initAdminApp = () => {
     btnAdminLogout.addEventListener('click', () => {
       clearStaffSession('admin');
       releaseWakeLock();
-      if (adminLockOverlay) adminLockOverlay.classList.remove('unlocked');
+      if (adminLockOverlay) {
+        adminLockOverlay.classList.remove('unlocked');
+        adminLockOverlay.style.display = 'flex';
+      }
       if (adminPasscodeLock) adminPasscodeLock.reset();
       showToast('🔒 Admin Portal Locked', 'info');
     });
   }
+
+  // Idle auto-lock: Locks the screen after 30 minutes of inactivity for counter security
+  let idleLockTimer = null;
+  function resetIdleLockTimer() {
+    if (idleLockTimer) clearTimeout(idleLockTimer);
+    if (isStaffSessionActive('admin')) {
+      idleLockTimer = setTimeout(() => {
+        if (isStaffSessionActive('admin')) {
+          clearStaffSession('admin');
+          releaseWakeLock();
+          if (adminLockOverlay) {
+            adminLockOverlay.classList.remove('unlocked');
+            adminLockOverlay.style.display = 'flex';
+          }
+          if (adminPasscodeLock) adminPasscodeLock.reset();
+          showToast('🔒 Session timed out due to inactivity. Admin Portal Locked.', 'info');
+        }
+      }, 30 * 60 * 1000);
+    }
+  }
+  ['pointerdown', 'keydown', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, resetIdleLockTimer, { passive: true });
+  });
+  resetIdleLockTimer();
 
   const btnClearDemo = document.getElementById('btn-clear-demo');
   if (btnClearDemo) {
@@ -147,15 +178,12 @@ const initAdminApp = () => {
   const btnClearAllOrders = document.getElementById('btn-clear-all-orders');
   if (btnClearAllOrders) {
     btnClearAllOrders.addEventListener('click', async () => {
-      const confirmed = confirm('⚠️ Are you sure you want to clear all test orders and renew store data?');
+      const confirmed = confirm('⚠️ Are you sure you want to clear all test orders?');
       if (!confirmed) return;
       await dataService.clearAllOrders();
-      dataService.restoreDefaultDishes();
       renderOrders();
-      renderDishes();
-      renderCategories();
       calculateOrderKPIs([]);
-      showToast('✓ All test orders cleared and store data renewed!', 'success');
+      showToast('✓ All test orders cleared successfully!', 'success');
     });
   }
 
@@ -380,11 +408,6 @@ const initAdminApp = () => {
   if (topBtnMenu) topBtnMenu.addEventListener('click', () => switchView('view-menu'));
   if (topBtnOrders) topBtnOrders.addEventListener('click', () => switchView('view-orders'));
   if (topBtnHours) topBtnHours.addEventListener('click', () => switchView('view-hours'));
-  if (capsuleBtnMenu) capsuleBtnMenu.addEventListener('click', () => switchView('view-menu'));
-  if (capsuleBtnOrders) capsuleBtnOrders.addEventListener('click', () => switchView('view-orders'));
-  if (capsuleBtnHours) capsuleBtnHours.addEventListener('click', () => switchView('view-hours'));
-  if (capsuleBtnOffers) capsuleBtnOffers.addEventListener('click', () => switchView('view-offers'));
-  if (capsuleBtnDelivery) capsuleBtnDelivery.addEventListener('click', () => switchView('view-delivery'));
 
   document.querySelectorAll('.capsule-nav-btn[data-target]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -603,9 +626,9 @@ const initAdminApp = () => {
     if (!cat) return;
 
     const dishes = dataService.getDishes();
-    const dishCount = dishes.filter(d => d.category === cat.slug || d.category === cat.id).length;
+    const dishCount = dishes.filter(d => d && (d.category === cat.slug || d.category === cat.id)).length;
     const confirmMsg = dishCount > 0
-      ? `Category "${cat.name}" contains ${dishCount} food dish(es). Deleting this category will leave these dishes unassigned. Are you sure you want to delete it?`
+      ? `Category "${cat.name}" contains ${dishCount} food dish(es). Deleting this category will also remove all ${dishCount} dish(es) inside it. Are you sure you want to delete it?`
       : `Are you sure you want to delete category "${cat.name}"?`;
 
     if (confirm(confirmMsg)) {
@@ -2709,14 +2732,24 @@ const initAdminApp = () => {
     });
   }
 
+  function parseTimestampMs(val) {
+    if (!val) return Date.now();
+    if (typeof val === 'number') return isNaN(val) ? Date.now() : val;
+    const parsed = new Date(val).getTime();
+    return isNaN(parsed) ? Date.now() : parsed;
+  }
+
   function formatTimeAgo(timestamp) {
     if (!timestamp) return 'Just now';
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    const timeMs = parseTimestampMs(timestamp);
+    const seconds = Math.floor((Date.now() - timeMs) / 1000);
     if (seconds < 60) return 'Just now';
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m ago`;
     const hours = Math.floor(minutes / 60);
-    return `${hours}h ago`;
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
   }
 
   function setActiveOrderFilter(targetFilter) {
@@ -2879,7 +2912,7 @@ const initAdminApp = () => {
       return;
     }
     // CRITICAL: Reject stale orders (>15 mins old) from triggering loud sirens on reconnect/refresh
-    const orderAge = order.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
+    const orderAge = order.createdAt ? (Date.now() - parseTimestampMs(order.createdAt)) : 0;
     if (orderAge > 15 * 60 * 1000) {
       return;
     }
@@ -3124,7 +3157,7 @@ const initAdminApp = () => {
     recentAlertedOrderIds.set(cleanId, now);
 
     // 2. Reject stale orders (>15 mins old) from ringing kitchen siren on reconnect/refresh
-    const orderAge = orderData.createdAt ? (now - Number(orderData.createdAt)) : 0;
+    const orderAge = orderData.createdAt ? (now - parseTimestampMs(orderData.createdAt)) : 0;
     if (orderAge > 15 * 60 * 1000) {
       renderOrders();
       updateOrderBadges();
@@ -3265,10 +3298,9 @@ const initAdminApp = () => {
 
     // 1. Stale Order Age Guard: If order is older than 20 minutes and status is delivered or cancelled,
     // NEVER alert it to the admin tab on reconnect, refresh, or tab restore!
-    const orderAgeMs = order?.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
+    const orderAgeMs = order?.createdAt ? (Date.now() - parseTimestampMs(order.createdAt)) : 0;
     if ((status === 'delivered' || status === 'cancelled') && orderAgeMs > 20 * 60 * 1000) {
       markAdminAlerted(orderId, status);
-    const dispId = formatDisplayOrderId(orderId);
       renderOrders();
       updateOrderBadges();
       return;
@@ -3346,7 +3378,7 @@ const initAdminApp = () => {
         !o.alarmAcknowledged && 
         !o.alarmStoppedAt &&
         !isAlarmAcknowledged(o.id) &&
-        (!o.createdAt || (now - Number(o.createdAt) < 15 * 60 * 1000))
+        (!o.createdAt || (now - parseTimestampMs(o.createdAt) < 15 * 60 * 1000))
       );
       if (freshAccepted) {
         const normId = String(freshAccepted.id).trim();
@@ -4448,7 +4480,7 @@ const initAdminApp = () => {
       const code = (inputOfferCode?.value || 'SAVERA20').trim().toUpperCase() || 'SAVERA20';
       const type = inputOfferType?.value === 'flat' ? 'flat' : 'percent';
       const rawDiscount = Number(inputOfferDiscount?.value || (type === 'flat' ? 100 : 20));
-      const discount = type === 'flat' ? Math.max(1, rawDiscount) : Math.max(1, Math.min(100, rawDiscount));
+      const discount = type === 'flat' ? Math.max(1, Math.min(10000, rawDiscount)) : Math.max(1, Math.min(100, rawDiscount));
       const minOrder = Math.max(0, Number(inputOfferMinOrder?.value || 0));
       const title = inputOfferTitle?.value?.trim() || 'Craving Savera Paradise? Get Special Discount Today!';
       const subtext = inputOfferSubtext?.value?.trim() || 'Use coupon code at checkout for special discount.';

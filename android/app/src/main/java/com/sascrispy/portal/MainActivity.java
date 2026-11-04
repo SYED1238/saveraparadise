@@ -8,8 +8,6 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.PowerManager;
-import android.provider.Settings;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.GeolocationPermissions;
@@ -50,7 +48,6 @@ public class MainActivity extends AppCompatActivity {
         setupWebView();
         requestAppPermissions();
         startOrderMonitorService();
-        requestBatteryOptimizationExemption();
 
         String targetUrl = getString(R.string.portal_url);
         if (savedInstanceState == null) {
@@ -177,19 +174,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void requestBatteryOptimizationExemption() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
-                    @SuppressLint("BatteryLife")
-                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                    intent.setData(Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
-                }
-            } catch (Exception ignored) {}
-        }
-    }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
