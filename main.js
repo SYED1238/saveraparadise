@@ -3453,7 +3453,7 @@ function initStorefrontApp() {
   async function precacheNearbyMapTiles(customerLat = null, customerLng = null) {
     if (typeof window === 'undefined' || !('caches' in window)) return;
     try {
-      const cache = await caches.open('savera-map-tiles-v3');
+      const cache = await caches.open('savera-map-tiles-v1');
       const restLat = RESTAURANT_COORDINATES.lat;
       const restLng = RESTAURANT_COORDINATES.lng;
 

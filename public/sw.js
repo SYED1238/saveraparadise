@@ -41,7 +41,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME && key !== 'savera-map-tiles-v3') {
+          if (key !== CACHE_NAME && key !== 'savera-map-tiles-v1') {
             console.log('[SW] Deleting stale cache:', key);
             return caches.delete(key);
           }
@@ -61,7 +61,11 @@ self.addEventListener('fetch', (event) => {
                     url.hostname.includes('googleapis.com');
 
   if (isMapTile) {
-    const MAP_CACHE_NAME = 'savera-map-tiles-v3';
+    const MAP_CACHE_NAME = 'savera-map-tiles-v1';
+    event.respondWith(
+      caches.open(MAP_CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(event.request);
+        if (cached) {
           return cached;
         }
         try {
