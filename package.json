@@ -14,7 +14,8 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "wrangler": "^4.157.0"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
