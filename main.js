@@ -8119,6 +8119,8 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   }
 
   function openAuthModalInternal() {
+    const credErr = document.getElementById('auth-credential-error');
+    if (credErr) credErr.style.display = 'none';
     if (authModalBackdrop) {
       authModalBackdrop.classList.add('open');
       document.body.style.overflow = 'hidden';
@@ -8483,6 +8485,121 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         btnDevCloudOAuth.disabled = false;
         btnDevCloudOAuth.innerHTML = '<i class="fa-solid fa-cloud"></i> Test Real Google OAuth (Cloud)';
       }
+    });
+  }
+
+  // ==========================================
+  // DIRECT ID & PASSWORD AUTHENTICATION (AUDITOR / PHONEPE PG ACCESS)
+  // ==========================================
+  const authCredForm = document.getElementById('auth-credential-form');
+  const authInputEmail = document.getElementById('auth-input-email');
+  const authInputPassword = document.getElementById('auth-input-password');
+  const authCredError = document.getElementById('auth-credential-error');
+  const authCredErrorText = document.getElementById('auth-credential-error-text');
+  const btnToggleAuthPassword = document.getElementById('btn-toggle-auth-password');
+  const authPasswordEyeIcon = document.getElementById('auth-password-eye-icon');
+  const btnQuickFillAuth = document.getElementById('btn-quick-fill-auth');
+
+  // Toggle password visibility
+  if (btnToggleAuthPassword && authInputPassword && authPasswordEyeIcon) {
+    btnToggleAuthPassword.addEventListener('click', () => {
+      const isPass = authInputPassword.getAttribute('type') === 'password';
+      authInputPassword.setAttribute('type', isPass ? 'text' : 'password');
+      authPasswordEyeIcon.className = isPass ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+    });
+  }
+
+  // Clear credentials error on input
+  [authInputEmail, authInputPassword].forEach(input => {
+    if (input) {
+      input.addEventListener('input', () => {
+        if (authCredError) authCredError.style.display = 'none';
+      });
+    }
+  });
+
+  // Complete Niyamat login session
+  function completeNiyamatSignIn(loginEmail = 'niyamat1222@gmail.com') {
+    if (authCredError) authCredError.style.display = 'none';
+
+    const cleanEmail = (loginEmail || 'niyamat1222@gmail.com').replace(/\s+/g, '').toLowerCase();
+
+    const verifiedUser = {
+      id: 'niyamat_verified_pg_user',
+      email: cleanEmail,
+      user_metadata: {
+        full_name: 'Niyamat',
+        name: 'Niyamat',
+        email: cleanEmail,
+        phone: '9845012345',
+        avatar_url: '',
+        provider: 'credentials'
+      }
+    };
+
+    try {
+      localStorage.setItem('quickbite_custom_user', JSON.stringify(verifiedUser));
+    } catch (e) {
+      console.warn('[Auth] Could not persist custom user to localStorage:', e);
+    }
+
+    updateUserStateUI(verifiedUser);
+    closeAuthModal();
+    showToast('👋 Welcome back, Niyamat! Signed in successfully.', 'success');
+
+    // Resume checkout if user initiated checkout prior to signing in
+    if (pendingCheckoutAfterAuth || sessionStorage.getItem('quickbite_pending_checkout') === 'true') {
+      pendingCheckoutAfterAuth = false;
+      sessionStorage.removeItem('quickbite_pending_checkout');
+      const addresses = getCurrentAddresses();
+      if (addresses.length === 0) {
+        pendingCheckoutAfterAddress = true;
+        openAddressModal();
+        showToast('📍 Adding a delivery address is mandatory. Please pin your location on the map.', 'info');
+      } else {
+        openCheckoutModal();
+        showToast('✅ Signed in! Please confirm your address & payment method to checkout.', 'success');
+      }
+    }
+  }
+
+  // Handle Form Submission
+  if (authCredForm) {
+    authCredForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      // Remove any accidental spaces and lowercase (handles "niyamat1222 @gmail.com")
+      const email = (authInputEmail?.value || '').replace(/\s+/g, '').toLowerCase();
+      const password = (authInputPassword?.value || '').trim();
+
+      const validEmails = [
+        'niyamat1222@gmail.com',
+        'nyamath1222@gmail.com',
+        'nyamth1222@gmail.com'
+      ];
+      const validPassword = 'Nyamath112233';
+
+      if (validEmails.includes(email) && password === validPassword) {
+        completeNiyamatSignIn(email);
+      } else {
+        if (authCredError && authCredErrorText) {
+          authCredError.style.display = 'block';
+          if (!validEmails.includes(email)) {
+            authCredErrorText.textContent = 'Invalid ID/Email. Please check your credentials.';
+          } else {
+            authCredErrorText.textContent = 'Incorrect password. Please verify your password.';
+          }
+        }
+        showToast('Invalid ID or password. Please verify credentials.', 'error');
+      }
+    });
+  }
+
+  // 1-Tap Quick Fill Button
+  if (btnQuickFillAuth) {
+    btnQuickFillAuth.addEventListener('click', () => {
+      if (authInputEmail) authInputEmail.value = 'niyamat1222@gmail.com';
+      if (authInputPassword) authInputPassword.value = 'Nyamath112233';
+      completeNiyamatSignIn('niyamat1222@gmail.com');
     });
   }
 
