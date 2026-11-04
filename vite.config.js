@@ -55,6 +55,25 @@ function r2DevMiddlewarePlugin() {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url ? req.url.split('?')[0] : '';
 
+        // Clean URL mapping for dev server (e.g. /owner -> /owner.html, /admin -> /admin.html)
+        const cleanUrlMap = {
+          '/admin': '/admin.html',
+          '/owner': '/owner.html',
+          '/delivery': '/delivery.html',
+          '/about': '/about.html',
+          '/contact': '/contact.html',
+          '/pricing': '/pricing.html',
+          '/terms': '/terms.html',
+          '/privacy': '/privacy.html',
+          '/refund': '/refund.html',
+          '/shipping': '/shipping.html'
+        };
+        const normalized = url.replace(/\/+$/, '') || '/';
+        if (cleanUrlMap[normalized]) {
+          const query = req.url.includes('?') ? '?' + req.url.split('?')[1] : '';
+          req.url = cleanUrlMap[normalized] + query;
+        }
+
         // POST /api/admin-auth
         if (req.method === 'POST' && url === '/api/admin-auth') {
           const chunks = [];
