@@ -848,8 +848,7 @@ const initDeliveryApp = () => {
   // ========================================================
   function renderPortal() {
     if (!isStaffSessionActive('rider')) {
-      if (ordersContainer) ordersContainer.innerHTML = '';
-      if (ordersEmptyState) ordersEmptyState.style.display = 'none';
+      if (riderOrdersList) riderOrdersList.innerHTML = '';
       return;
     }
     // Clean up previous Leaflet map instances to avoid leaks
