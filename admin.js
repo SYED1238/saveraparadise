@@ -245,6 +245,7 @@ const initAdminApp = () => {
   // Dish Modal Elements
   const modalDishBackdrop = document.getElementById('modal-dish-backdrop');
   const formDish = document.getElementById('form-dish');
+  let isSubmittingDish = false;
   const dishModalTitle = document.getElementById('dish-modal-title');
   const dishEditId = document.getElementById('dish-edit-id');
   const dishNameInput = document.getElementById('dish-name-input');
@@ -1596,6 +1597,10 @@ const initAdminApp = () => {
       renderDishes();
       renderCategories();
     } catch (err) {
+    } finally {
+      isSubmittingDish = false;
+      const submitBtn = formDish.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = false;
       console.error('[Dish Save Error]:', err);
       showToast(`Error saving dish: ${err?.message || err}`, 'error');
     }
@@ -1673,9 +1678,10 @@ const initAdminApp = () => {
         playKitchenChime();
 
         // Push / Desktop notification
+        const dispId = formatDisplayOrderId(o.id, o.pickupCode);
         sendSystemNotification({
-          title: `⚠️ Alert: Order ${o.id} Accepted > ${waitMins} Mins!`,
-          body: `Order ${o.id} (${o.customerName || 'Guest'}) has been accepted for ${waitMins}m without kitchen preparation!`,
+          title: `⚠️ Alert: Order ${dispId} Accepted > ${waitMins} Mins!`,
+          body: `Order ${dispId} (${o.customerName || 'Guest'}) has been accepted for ${waitMins}m without kitchen preparation!`,
           tag: `admin-overdue-${o.id}`,
           onClick: () => {
             switchView('view-orders');
@@ -1684,8 +1690,8 @@ const initAdminApp = () => {
         });
 
         // Flash title & toast
-        flashTabTitle(`⚠️ WAITING > 5M: ${o.id}!`);
-        showToast(`⚠️ URGENT: Order ${o.id} has been waiting for ${waitMins} minutes! Start preparation.`, 'warning');
+        flashTabTitle(`⚠️ WAITING > 5M: ${dispId}!`);
+        showToast(`⚠️ URGENT: Order ${dispId} has been waiting for ${waitMins} minutes! Start preparation.`, 'warning');
       }
     });
 
@@ -3075,8 +3081,9 @@ const initAdminApp = () => {
     startKitchenAlarm(orderData);
 
     // Desktop Push Notification
+    const dispId = formatDisplayOrderId(orderData.id, orderData.pickupCode);
     sendSystemNotification({
-      title: `🚨 Savera Paradise Kitchen: New Order ${orderData.id}!`,
+      title: `🚨 Savera Paradise Kitchen: New Order ${dispId}!`,
       body: `${orderData.customerName || 'Customer'} • ${orderData.itemsSummary || 'Food order'} (Total: ${orderData.total || ''})`,
       tag: `admin-order-${orderData.id}`,
       data: { orderId: orderData.id, url: '/admin.html' },
@@ -3084,8 +3091,8 @@ const initAdminApp = () => {
         switchView('view-orders');
       }
     });
-    flashTabTitle(`🚨 NEW ORDER ${orderData.id}!`);
-    showToast(`🔔 New incoming order ${orderData.id} received! (${orderData.customerName || 'Guest'} - ${orderData.total || ''})`, 'success');
+    flashTabTitle(`🚨 NEW ORDER ${dispId}!`);
+    showToast(`🔔 New incoming order ${dispId} received! (${orderData.customerName || 'Guest'} - ${orderData.total || ''})`, 'success');
 
     renderOrders();
     updateOrderBadges();
@@ -3189,6 +3196,7 @@ const initAdminApp = () => {
     const orderAgeMs = order?.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
     if ((status === 'delivered' || status === 'cancelled') && orderAgeMs > 20 * 60 * 1000) {
       markAdminAlerted(orderId, status);
+    const dispId = formatDisplayOrderId(orderId);
       renderOrders();
       updateOrderBadges();
       return;
@@ -3208,44 +3216,45 @@ const initAdminApp = () => {
 
     // Mark as alerted in persistent localStorage BEFORE triggering UI alert
     markAdminAlerted(orderId, status);
+    const dispId = formatDisplayOrderId(orderId);
 
     if (status === 'on_the_way') {
       playNotificationSound('on_the_way');
-      showToast(`🛵 Rider Dispatched: Order ${orderId} is out for delivery! (${customer})`, 'info');
+      showToast(`🛵 Rider Dispatched: Order ${dispId} is out for delivery! (${customer})`, 'info');
       sendSystemNotification({
-        title: `🛵 Order ${orderId} Out for Delivery!`,
+        title: `🛵 Order ${dispId} Out for Delivery!`,
         body: `Rider has picked up order for ${customer}. En route now.`,
         tag: `admin-dispatched-${orderId}`
       });
-      flashTabTitle(`🛵 DISPATCHED: ${orderId}`);
+      flashTabTitle(`🛵 DISPATCHED: ${dispId}`);
     } else if (status === 'delivered') {
       playNotificationSound('delivered');
-      showToast(`🎉 Order ${orderId} marked DELIVERED by Rider! (${customer})`, 'success');
+      showToast(`🎉 Order ${dispId} marked DELIVERED by Rider! (${customer})`, 'success');
       sendSystemNotification({
-        title: `🎉 Order ${orderId} Delivered!`,
+        title: `🎉 Order ${dispId} Delivered!`,
         body: `Order for ${customer} has been delivered successfully.`,
         tag: `admin-delivered-${orderId}`
       });
-      flashTabTitle(`🎉 DELIVERED: ${orderId}`);
+      flashTabTitle(`🎉 DELIVERED: ${dispId}`);
     } else if (status === 'undelivered') {
       playNotificationSound('cancelled');
-      showToast(`⚠️ Order ${orderId} marked UNDELIVERED by Rider: Customer unreachable. Returning to kitchen.`, 'error');
+      showToast(`⚠️ Order ${dispId} marked UNDELIVERED by Rider: Customer unreachable. Returning to kitchen.`, 'error');
       sendSystemNotification({
-        title: `⚠️ Order ${orderId} Returning to Kitchen!`,
+        title: `⚠️ Order ${dispId} Returning to Kitchen!`,
         body: `Customer unreachable at doorstep. Rider returning parcel to counter.`,
         tag: `admin-undelivered-${orderId}`
       });
-      flashTabTitle(`⚠️ UNDELIVERED: ${orderId}`);
+      flashTabTitle(`⚠️ UNDELIVERED: ${dispId}`);
     } else if (status === 'cancelled') {
       playNotificationSound('cancelled');
       const actorLabel = payload.source === 'customer' || payload.actor === 'customer' ? 'Customer' : 'Staff';
       showToast(`❌ Order ${orderId} was CANCELLED by ${actorLabel}! (${customer})`, 'error');
       sendSystemNotification({
-        title: `❌ Order ${orderId} Cancelled!`,
+        title: `❌ Order ${dispId} Cancelled!`,
         body: `Order for ${customer} has been cancelled. Do not prepare.`,
         tag: `admin-cancelled-${orderId}`
       });
-      flashTabTitle(`❌ CANCELLED: ${orderId}`);
+      flashTabTitle(`❌ CANCELLED: ${dispId}`);
     }
 
     renderOrders();
@@ -3274,12 +3283,13 @@ const initAdminApp = () => {
           recentAlertedOrderIds.set(normId, now);
           startKitchenAlarm(freshAccepted);
 
+          const freshDispId = formatDisplayOrderId(freshAccepted.id, freshAccepted.pickupCode);
           sendSystemNotification({
-            title: `🚨 Savera Paradise Kitchen: New Order ${freshAccepted.id}!`,
+            title: `🚨 Savera Paradise Kitchen: New Order ${freshDispId}! `,
             body: `${freshAccepted.customerName || 'Customer'} • ${freshAccepted.itemsSummary || 'Food order'} (Total: ${freshAccepted.total || ''})`,
             tag: `admin-order-${freshAccepted.id}`
           });
-          flashTabTitle(`🚨 NEW ORDER ${freshAccepted.id}!`);
+          flashTabTitle(`🚨 NEW ORDER ${freshDispId}!`);
         }
       }
 

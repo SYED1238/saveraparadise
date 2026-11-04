@@ -56,9 +56,10 @@ export function initIosPasscodeLock(options) {
   async function handleComplete() {
     if (isVerifying) return;
     isVerifying = true;
+    const pinCompleted = enteredPin;
 
     try {
-      const isValid = onVerify ? await onVerify(enteredPin) : (enteredPin === defaultCode);
+      const isValid = onVerify ? await onVerify(pinCompleted) : (pinCompleted === defaultCode);
       if (isValid) {
         failedAttempts = 0;
         lockoutUntil = 0;
@@ -71,7 +72,7 @@ export function initIosPasscodeLock(options) {
         setTimeout(() => {
           overlayEl.classList.add('unlocked');
           overlayEl.style.display = 'none';
-          if (onSuccess) onSuccess(enteredPin);
+          if (onSuccess) onSuccess(pinCompleted);
           // Reset internal state for next session/lock
           setTimeout(() => {
             enteredPin = '';

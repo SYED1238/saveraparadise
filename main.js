@@ -2,7 +2,7 @@
  * Savera Paradise - Interactive Logic & Animation Engine
  */
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h, formatDisplayOrderId } from './dataService.js';
 import { supabase } from './supabaseClient.js';
 import {
   playNotificationSound,
@@ -5858,9 +5858,9 @@ function initStorefrontApp() {
       showToast(`⏳ Order ${order.id}: Awaiting kitchen confirmation...`, 'info');
     } else if (order.status === 'accepted') {
       playNotificationSound('accepted');
-      showToast(`✅ Kitchen Update: Order ${order.id} has been accepted!`, 'info');
+      showToast(`✅ Kitchen Update: Order ${dispId} has been accepted!`, 'info');
       sendSystemNotification({
-        title: `✅ Order ${order.id} Accepted!`,
+        title: `✅ Order ${dispId} Accepted!`,
         body: `Kitchen is preparing your delicious meal!`,
         tag: `customer-accepted-${order.id}`,
         data: { orderId: order.id, url: '/' }
@@ -5868,9 +5868,9 @@ function initStorefrontApp() {
       flashTabTitle(`✅ ACCEPTED: ${order.id}`);
     } else if (order.status === 'cooking') {
       playNotificationSound('cooking');
-      showToast(`👨‍🍳 Kitchen Update: Order ${order.id} is being prepared!`, 'info');
+      showToast(`👨‍🍳 Kitchen Update: Order ${dispId} is being prepared!`, 'info');
       sendSystemNotification({
-        title: `👨‍🍳 Order ${order.id} is Cooking!`,
+        title: `👨‍🍳 Order ${dispId} is Cooking!`,
         body: `Our chefs are frying your crispy chicken fresh!`,
         tag: `customer-cooking-${order.id}`,
         data: { orderId: order.id, url: '/' }
@@ -5878,9 +5878,9 @@ function initStorefrontApp() {
       flashTabTitle(`👨‍🍳 COOKING: ${order.id}`);
     } else if (order.status === 'ready' || order.status === 'ready_for_pickup') {
       playNotificationSound('cooking');
-      showToast(`🍱 Kitchen Update: Order ${order.id} is packed & ready for pickup / delivery!`, 'info');
+      showToast(`🍱 Kitchen Update: Order ${dispId} is packed & ready for pickup / delivery!`, 'info');
       sendSystemNotification({
-        title: `🍱 Order ${order.id} is Ready!`,
+        title: `🍱 Order ${dispId} is Ready!`,
         body: `Your crispy feast is packed and ready for delivery partner pickup!`,
         tag: `customer-ready-${order.id}`,
         data: { orderId: order.id, url: '/' }
@@ -5888,9 +5888,9 @@ function initStorefrontApp() {
       flashTabTitle(`🍱 READY: ${order.id}`);
     } else if (order.status === 'on_the_way') {
       playNotificationSound('on_the_way');
-      showToast(`🛵 Rider Update: Order ${order.id} is out for delivery! ETA: ${order.eta}`, 'info');
+      showToast(`🛵 Rider Update: Order ${dispId} is out for delivery! ETA: ${order.eta}`, 'info');
       sendSystemNotification({
-        title: `🛵 Order ${order.id} is on the way!`,
+        title: `🛵 Order ${dispId} is on the way!`,
         body: `Your rider is on the way with your food. ETA: ${order.eta}`,
         tag: `customer-dispatched-${order.id}`,
         data: { orderId: order.id, url: '/' }
@@ -5906,9 +5906,9 @@ function initStorefrontApp() {
           origin: { y: 0.6 }
         });
       } catch {}
-      showToast(`🎉 Delivered: Order ${order.id} has arrived! Enjoy your meal! You can now place your next order.`, 'success');
+      showToast(`🎉 Delivered: Order ${dispId} has arrived! Enjoy your meal! You can now place your next order.`, 'success');
       sendSystemNotification({
-        title: `🎉 Order ${order.id} Delivered!`,
+        title: `🎉 Order ${dispId} Delivered!`,
         body: `Your crispy feast has arrived! Bon Appétit!`,
         tag: `customer-delivered-${order.id}`,
         data: { orderId: order.id, url: '/' }
@@ -5918,9 +5918,9 @@ function initStorefrontApp() {
       updateAppBadge(0);
       playNotificationSound('cancelled');
       const reasonSuffix = order.cancellationReason ? `: ${order.cancellationReason}` : '';
-      showToast(`❌ Order Cancelled: Order ${order.id} was cancelled by kitchen${reasonSuffix}`, 'error');
+      showToast(`❌ Order Cancelled: Order ${dispId} was cancelled by kitchen${reasonSuffix}`, 'error');
       sendSystemNotification({
-        title: `❌ Order ${order.id} Cancelled`,
+        title: `❌ Order ${dispId} Cancelled`,
         body: `Your order was cancelled by the kitchen.${reasonSuffix}`,
         tag: `customer-cancelled-${order.id}`,
         data: { orderId: order.id, url: '/' }
@@ -5932,7 +5932,7 @@ function initStorefrontApp() {
       const reasonSuffix = order.undeliveredReason || order.cancellationReason ? `: ${order.undeliveredReason || order.cancellationReason}` : '';
       showToast(`⚠️ Order Undelivered: Delivery partner waited at your doorstep but could not reach you. Parcel returned to kitchen counter${reasonSuffix}`, 'error');
       sendSystemNotification({
-        title: `⚠️ Order ${order.id} Undelivered`,
+        title: `⚠️ Order ${dispId} Undelivered`,
         body: `Rider waited 10 mins at your door but could not reach you. Parcel returned to Savera Paradise.`,
         tag: `customer-undelivered-${order.id}`,
         data: { orderId: order.id, url: '/' }
@@ -6914,6 +6914,8 @@ function initStorefrontApp() {
     const swiggyInputStreet = document.getElementById('swiggy-input-street');
     const swiggySaveAsInput = document.getElementById('swiggy-save-as-input');
     const swiggyAccountDetailsPreview = document.getElementById('swiggy-account-details-preview');
+    const addrInputName = document.getElementById('addr-input-name');
+    const addrInputPhone = document.getElementById('addr-input-phone');
 
     const userName = (currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || 'Customer').trim();
     const userPhone = (currentUser.user_metadata?.phone || '').trim();
@@ -6971,13 +6973,7 @@ function initStorefrontApp() {
       updateDetectedAddressUI(RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng, null, false);
     }
 
-    const addrInputName = document.getElementById('addr-input-name');
-    if (addrInputName) {
-      addrInputName.value = existing ? (existing.name || '') : (currentUser?.user_metadata?.full_name || currentUser?.user_metadata?.name || '');
-    }
-    if (addrInputPhone) {
-      addrInputPhone.value = existing ? (existing.phone || '') : (currentUser?.user_metadata?.phone || '');
-    }
+    // Contact details initialized at modal start
     if (addrInputDefault) {
       addrInputDefault.checked = existing ? Boolean(existing.isDefault) : (addresses.length === 0);
     }
