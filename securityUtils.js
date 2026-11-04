@@ -363,8 +363,7 @@ export async function verifyStaffPin(role, inputPin) {
       }
     } catch {}
 
-    const defaultPins = ['2233', '4422', '4455', '8811'];
-    return defaultPins.includes(cleanPin);
+    return false;
   }
 
   return false;

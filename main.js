@@ -3173,6 +3173,14 @@ function initStorefrontApp() {
       return Math.max(0, trackEl.offsetWidth - thumb.offsetWidth - 8);
     }
 
+    function removeGlobalListeners() {
+      window.removeEventListener('touchmove', onPointerMove);
+      window.removeEventListener('touchend', onPointerUp);
+      window.removeEventListener('touchcancel', onPointerUp);
+      window.removeEventListener('mousemove', onPointerMove);
+      window.removeEventListener('mouseup', onPointerUp);
+    }
+
     function onPointerDown(e) {
       if (isCompleted) return;
       isDragging = true;
@@ -3181,6 +3189,12 @@ function initStorefrontApp() {
       thumb.style.transition = 'none';
       fill.style.transition = 'none';
       if (textEl) textEl.style.transition = 'none';
+
+      window.addEventListener('touchmove', onPointerMove, { passive: false });
+      window.addEventListener('touchend', onPointerUp, { passive: true });
+      window.addEventListener('touchcancel', onPointerUp, { passive: true });
+      window.addEventListener('mousemove', onPointerMove);
+      window.addEventListener('mouseup', onPointerUp);
     }
 
     function onPointerMove(e) {
@@ -3207,6 +3221,7 @@ function initStorefrontApp() {
       if (isCompleted) return;
       isCompleted = true;
       isDragging = false;
+      removeGlobalListeners();
       const maxSlide = getMaxSlide();
 
       thumb.style.transition = 'transform 0.24s cubic-bezier(0.16, 1, 0.3, 1)';
@@ -3283,6 +3298,7 @@ function initStorefrontApp() {
     function onPointerUp() {
       if (!isDragging || isCompleted) return;
       isDragging = false;
+      removeGlobalListeners();
       trackEl.classList.remove('is-dragging');
 
       const maxSlide = getMaxSlide();
@@ -3303,16 +3319,9 @@ function initStorefrontApp() {
       }
     }
 
-    // Touch listeners
+    // Touch & Mouse initial pointerdown listeners on thumb
     thumb.addEventListener('touchstart', onPointerDown, { passive: true });
-    window.addEventListener('touchmove', onPointerMove, { passive: false });
-    window.addEventListener('touchend', onPointerUp, { passive: true });
-    window.addEventListener('touchcancel', onPointerUp, { passive: true });
-
-    // Mouse listeners
     thumb.addEventListener('mousedown', onPointerDown);
-    window.addEventListener('mousemove', onPointerMove);
-    window.addEventListener('mouseup', onPointerUp);
 
     // Click/tap on thumb fallback
     thumb.addEventListener('click', (e) => {
@@ -3646,6 +3655,8 @@ function initStorefrontApp() {
     trackerRemainingLine = null;
     activeTrackingOrderId = null;
     lastRiderCoords = null;
+    lastRouteFetchTime = 0;
+    lastRouteFetchPos = null;
   }
 
   function updateTrackerDistanceAndEta(distKm, estMins, isLiveGps = true) {
@@ -3665,7 +3676,26 @@ function initStorefrontApp() {
     }
   }
 
-  async function updateTrackerRouteLine(riderLat, riderLng, dropLat, dropLng, isLiveGps = true) {
+  let lastRouteFetchTime = 0;
+  let lastRouteFetchPos = null;
+
+  async function updateTrackerRouteLine(riderLat, riderLng, dropLat, dropLng, isLiveGps = true, force = false) {
+    const now = Date.now();
+    let movedMeters = 999;
+    if (lastRouteFetchPos) {
+      const dLat = (riderLat - lastRouteFetchPos.lat) * 111000;
+      const dLng = (riderLng - lastRouteFetchPos.lng) * 111000 * Math.cos(riderLat * Math.PI / 180);
+      movedMeters = Math.sqrt(dLat * dLat + dLng * dLng);
+    }
+    if (!force && lastRouteFetchTime > 0 && (now - lastRouteFetchTime < 10000) && movedMeters < 40) {
+      const distKm = calculateDistanceKm(riderLat, riderLng, dropLat, dropLng);
+      const estMins = Math.max(2, Math.ceil(distKm * 3.2));
+      updateTrackerDistanceAndEta(distKm, estMins, isLiveGps);
+      return;
+    }
+    lastRouteFetchTime = now;
+    lastRouteFetchPos = { lat: riderLat, lng: riderLng };
+
     const routeData = await fetchRoadRoute(riderLat, riderLng, dropLat, dropLng);
     if (!routeData || !routeData.coords || routeData.coords.length === 0) return;
 
@@ -3765,6 +3795,15 @@ function initStorefrontApp() {
     lastRiderCoords = { lat: riderLat, lng: riderLng };
 
     if (trackerLiveMap) {
+      if (trackerHomeMarker) {
+        trackerHomeMarker.setLatLng([dropCoords.lat, dropCoords.lng]);
+      }
+      if (trackerSimulationInterval) {
+        clearInterval(trackerSimulationInterval);
+        trackerSimulationInterval = null;
+      }
+      lastRouteFetchTime = 0;
+      lastRouteFetchPos = null;
       updateTrackerRiderPosition({
         lat: riderLat,
         lng: riderLng,
@@ -4272,6 +4311,47 @@ function initStorefrontApp() {
 
           <div class="tracker-contact-note">
             <i class="fa-solid fa-heart"></i> Hope you loved your meal! Call us directly if you need any assistance with your order.
+          </div>
+        `;
+        initSwipeToCall(contactCardEl.querySelector('.swipe-to-call-track'));
+      } else if (order.status === 'undelivered') {
+        // Undelivered: Delivery attempt failed, parcel at kitchen
+        contactCardEl.innerHTML = `
+          <div class="tracker-contact-header">
+            <div class="tracker-contact-entity">
+              <div class="tracker-contact-avatar" style="background:#FFFBEB; border-color:#FDE68A; color:#D97706;">
+                <i class="fa-solid fa-box-open"></i>
+              </div>
+              <div class="tracker-contact-details">
+                <h4>Parcel Returned to Kitchen</h4>
+                <p><i class="fa-solid fa-store"></i> Counter Pickup / Re-dispatch Available</p>
+              </div>
+            </div>
+            <span class="tracker-contact-badge" style="background:#FFFBEB; color:#D97706; border-color:#FDE68A;">
+              Returned
+            </span>
+          </div>
+
+          <div class="swipe-to-call-container">
+            <div class="swipe-to-call-track kitchen" id="swipe-track-undelivered" data-phone="${dialerRestPhone}" data-label="Kitchen Support" data-swipe-text="Slide to Call Helpline">
+              <div class="swipe-to-call-fill"></div>
+              <div class="swipe-to-call-text">
+                <span class="swipe-text-shimmer">Slide to Call Helpline</span>
+                <span class="swipe-chevrons">
+                  <i class="fa-solid fa-chevron-right"></i>
+                  <i class="fa-solid fa-chevron-right"></i>
+                  <i class="fa-solid fa-chevron-right"></i>
+                </span>
+              </div>
+              <div class="swipe-to-call-thumb" role="button" aria-label="Slide to Call Helpline" tabindex="0">
+                <div class="thumb-glow"></div>
+                <i class="fa-solid fa-phone"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="tracker-contact-note">
+            <i class="fa-solid fa-triangle-exclamation"></i> Our delivery partner waited at your doorstep for 10 minutes but could not reach you. Please slide to call our kitchen counter to arrange immediate re-dispatch or pickup.
           </div>
         `;
         initSwipeToCall(contactCardEl.querySelector('.swipe-to-call-track'));
@@ -5809,6 +5889,9 @@ function initStorefrontApp() {
     const orderId = updatedData?.orderId || updatedData?.order?.id;
     const targetNorm = norm(orderId);
     const order = orders.find(o => o && norm(o.id) === targetNorm);
+    const dispId = order && order.id
+      ? (String(order.id).startsWith('#') ? order.id : `#${order.id}`)
+      : (targetNorm ? `#${targetNorm}` : '#QB-Order');
 
     if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) {
       if (!activeOrderId || norm(activeOrderId) === targetNorm) {

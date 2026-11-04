@@ -288,6 +288,10 @@ export async function onRequest(context) {
       }
 
       if (authoritativePrice === null || isNaN(authoritativePrice)) {
+        const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+        if (isProd) {
+          return jsonResponse({ error: `Item "${item.name || 'dish'}" price cannot be verified. Please retry in a moment.` }, 503, Object.fromEntries(corsHeaders.entries()));
+        }
         const clientPrice = Number(item.price);
         if (isNaN(clientPrice) || clientPrice < 10) {
           return jsonResponse({ error: `Invalid price for item "${item.name || 'dish'}"` }, 400, Object.fromEntries(corsHeaders.entries()));

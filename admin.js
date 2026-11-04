@@ -212,6 +212,9 @@ const initAdminApp = () => {
   const btnOpenEditAllCat = document.getElementById('btn-open-edit-all-cat');
   const modalCatClose = document.getElementById('modal-cat-close');
   const btnCancelCat = document.getElementById('btn-cancel-cat');
+  const btnSaveCat = document.getElementById('btn-save-cat');
+  let isSubmittingCat = false;
+  let isUploadingCatPhoto = false;
 
   // DOM Elements - Category Overview & Detail View
   const categoriesOverviewPanel = document.getElementById('categories-overview-panel');
@@ -245,7 +248,9 @@ const initAdminApp = () => {
   // Dish Modal Elements
   const modalDishBackdrop = document.getElementById('modal-dish-backdrop');
   const formDish = document.getElementById('form-dish');
+  const btnSaveDish = document.getElementById('btn-save-dish');
   let isSubmittingDish = false;
+  let isUploadingDishPhoto = false;
   const dishModalTitle = document.getElementById('dish-modal-title');
   const dishEditId = document.getElementById('dish-edit-id');
   const dishNameInput = document.getElementById('dish-name-input');
@@ -597,7 +602,13 @@ const initAdminApp = () => {
     const cat = categories.find(c => c.id === id);
     if (!cat) return;
 
-    if (confirm(`Are you sure you want to delete category "${cat.name}"?`)) {
+    const dishes = dataService.getDishes();
+    const dishCount = dishes.filter(d => d.category === cat.slug || d.category === cat.id).length;
+    const confirmMsg = dishCount > 0
+      ? `Category "${cat.name}" contains ${dishCount} food dish(es). Deleting this category will leave these dishes unassigned. Are you sure you want to delete it?`
+      : `Are you sure you want to delete category "${cat.name}"?`;
+
+    if (confirm(confirmMsg)) {
       dataService.deleteCategory(id);
       renderCategories();
       renderDishes();
@@ -645,6 +656,9 @@ const initAdminApp = () => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
 
+      isUploadingCatPhoto = true;
+      if (btnSaveCat) btnSaveCat.disabled = true;
+
       if (catUploadStatus) {
         catUploadStatus.style.display = 'inline-flex';
         catUploadStatus.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Processing category photo...`;
@@ -656,6 +670,7 @@ const initAdminApp = () => {
           const dataUrl = readEvt.target.result;
           // Set visual preview immediately
           updateCatModalImagePreview(dataUrl);
+          if (catImageInput) catImageInput.value = dataUrl;
 
           // Upload directly to Cloudflare R2
           try {
@@ -695,24 +710,30 @@ const initAdminApp = () => {
                     dataService.updateCategory(activeEditId, { image: finalImg });
                   }
                   showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
+                } else {
+                  showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
                 }
               } else {
-                showToast('⚠️ Could not save photo. Please retry.', 'error');
+                showToast('⚠️ Could not save photo to cloud. Please retry.', 'error');
               }
-            } else {
-              if (catImageInput) catImageInput.value = dataUrl;
             }
           } catch (r2Err) {
             console.warn('[CategoryUpload] R2 storage note:', r2Err);
             showToast('⚠️ Photo upload error. Please retry.', 'error');
           } finally {
             if (catUploadStatus) catUploadStatus.style.display = 'none';
+            isUploadingCatPhoto = false;
+            if (btnSaveCat) btnSaveCat.disabled = false;
+            if (catFileUpload) catFileUpload.value = '';
           }
         };
         reader.readAsDataURL(file);
       } catch (err) {
         console.error('Category photo upload failed:', err);
         if (catUploadStatus) catUploadStatus.style.display = 'none';
+        isUploadingCatPhoto = false;
+        if (btnSaveCat) btnSaveCat.disabled = false;
+        if (catFileUpload) catFileUpload.value = '';
         showToast('Could not load image file', 'error');
       }
     });
@@ -720,63 +741,84 @@ const initAdminApp = () => {
 
   formCategory.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (isSubmittingCat) return;
+    if (isUploadingCatPhoto) {
+      showToast('⚠️ Category photo is still uploading. Please wait a moment...', 'warning');
+      return;
+    }
+
     const name = catNameInput.value.trim();
-    const emoji = catEmojiInput.value.trim() || '🍽️';
-    let image = catImageInput ? catImageInput.value.trim() : '';
-    const editId = catEditId.value;
-
-    if (!name) return;
-
-    // If image is a Base64 data URI, automatically upload to Cloudflare R2 first
-    if (image && image.startsWith('data:image/')) {
-      try {
-        if (catUploadStatus) {
-          catUploadStatus.style.display = 'inline-flex';
-          catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Saving photo...`;
-        }
-        const fileName = `category_${editId || 'custom'}_${Date.now()}.png`;
-        const r2Res = await cloudflareR2Service.uploadImage(image, fileName, 'categories');
-        if (r2Res && (r2Res.key || r2Res.url)) {
-          image = r2Res.key
-            ? `/api/r2-image?key=${encodeURIComponent(r2Res.key)}`
-            : r2Res.url;
-          if (catImageInput) catImageInput.value = image;
-        }
-      } catch (err) {
-        console.warn('[CategoryUpload] Base64 R2 upload fallback warning:', err);
-      } finally {
-        if (catUploadStatus) catUploadStatus.style.display = 'none';
-      }
+    if (!name) {
+      showToast('Please enter a category name.', 'warning');
+      catNameInput.focus();
+      return;
     }
 
-    if (editId === 'all' || editId === 'cat-all') {
-      if (typeof dataService.setAllCategoryImage === 'function') {
-        dataService.setAllCategoryImage(image);
+    isSubmittingCat = true;
+    if (btnSaveCat) btnSaveCat.disabled = true;
+
+    try {
+      const emoji = catEmojiInput.value.trim() || '🍽️';
+      let image = catImageInput ? catImageInput.value.trim() : '';
+      const editId = catEditId.value;
+
+      // If image is a Base64 data URI, automatically upload to Cloudflare R2 first
+      if (image && image.startsWith('data:image/')) {
+        try {
+          if (catUploadStatus) {
+            catUploadStatus.style.display = 'inline-flex';
+            catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Saving photo...`;
+          }
+          const fileName = `category_${editId || 'custom'}_${Date.now()}.png`;
+          const r2Res = await cloudflareR2Service.uploadImage(image, fileName, 'categories');
+          if (r2Res && (r2Res.key || r2Res.url)) {
+            image = r2Res.key
+              ? `/api/r2-image?key=${encodeURIComponent(r2Res.key)}`
+              : r2Res.url;
+            if (catImageInput) catImageInput.value = image;
+          }
+        } catch (err) {
+          console.warn('[CategoryUpload] Base64 R2 upload fallback warning:', err);
+        } finally {
+          if (catUploadStatus) catUploadStatus.style.display = 'none';
+        }
+      }
+
+      if (editId === 'all' || editId === 'cat-all') {
+        if (typeof dataService.setAllCategoryImage === 'function') {
+          dataService.setAllCategoryImage(image);
+        } else {
+          dataService.saveCategoryImage('all', image);
+          dataService.saveCategoryImage('cat-all', image);
+        }
+        showToast('"All" category photo updated successfully!', 'success');
+      } else if (editId) {
+        dataService.updateCategory(editId, { name, emoji, image });
+        if (image) {
+          dataService.saveCategoryImage(editId, image);
+          const cats = dataService.getCategories();
+          const matchedCat = cats.find(c => c.id === editId || c.slug === editId);
+          if (matchedCat) {
+            if (matchedCat.id) dataService.saveCategoryImage(matchedCat.id, image);
+            if (matchedCat.slug) dataService.saveCategoryImage(matchedCat.slug, image);
+          }
+        }
+        showToast(`Category updated to "${name}"!`, 'success');
       } else {
-        dataService.saveCategoryImage('all', image);
-        dataService.saveCategoryImage('cat-all', image);
+        dataService.addCategory({ name, emoji, image });
+        showToast(`Category "${name}" created!`, 'success');
       }
-      showToast('"All" category photo updated successfully!', 'success');
-    } else if (editId) {
-      dataService.updateCategory(editId, { name, emoji, image });
-      if (image) {
-        dataService.saveCategoryImage(editId, image);
-        const cats = dataService.getCategories();
-        const matchedCat = cats.find(c => c.id === editId || c.slug === editId);
-        if (matchedCat) {
-          if (matchedCat.id) dataService.saveCategoryImage(matchedCat.id, image);
-          if (matchedCat.slug) dataService.saveCategoryImage(matchedCat.slug, image);
-        }
-      }
-      showToast(`Category updated to "${name}"!`, 'success');
-    } else {
-      dataService.addCategory({ name, emoji, image });
-      showToast(`Category "${name}" created!`, 'success');
-    }
 
-    closeCategoryModal();
-    renderCategories();
-    renderDishes();
+      closeCategoryModal();
+      renderCategories();
+      renderDishes();
+    } catch (err) {
+      console.error('[Category Save Error]:', err);
+      showToast(`Error saving category: ${err?.message || err}`, 'error');
+    } finally {
+      isSubmittingCat = false;
+      if (btnSaveCat) btnSaveCat.disabled = false;
+    }
   });
 
   // ========================================================
@@ -1239,7 +1281,13 @@ const initAdminApp = () => {
     dishModalTitle.textContent = 'Edit Food Dish';
     dishEditId.value = dish.id;
     dishNameInput.value = dish.name;
-    dishCategorySelect.value = dish.category;
+
+    const categories = dataService.getCategories();
+    const matchedCategory = categories.find(c => c.slug === dish.category || c.id === dish.category);
+    if (dishCategorySelect) {
+      dishCategorySelect.value = matchedCategory ? (matchedCategory.slug || matchedCategory.id) : dish.category;
+    }
+
     dishPriceInput.value = dish.price;
 
     const rawBadge = (dish.badge || '').trim();
@@ -1269,7 +1317,7 @@ const initAdminApp = () => {
     dishCaloriesInput.value = dish.calories || '560 kcal';
     dishDietInput.value = dish.diet || 'Fresh Daily';
     dishDescInput.value = dish.desc || '';
-    currentDishGdriveFileId = dish.gdriveFileId || '';
+    currentDishGdriveFileId = dish.r2Key || dish.gdriveFileId || '';
     setSelectedDishDays(dish.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
     if (dishTimeRestricted) dishTimeRestricted.checked = Boolean(dish.timeRestricted);
     if (dishTimeContainer) dishTimeContainer.style.display = dish.timeRestricted ? 'block' : 'none';
@@ -1403,6 +1451,9 @@ const initAdminApp = () => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
+    isUploadingDishPhoto = true;
+    if (btnSaveDish) btnSaveDish.disabled = true;
+
     const uploadSpinner = document.getElementById('dish-upload-spinner');
     if (uploadSpinner) {
       uploadSpinner.style.display = 'inline-flex';
@@ -1477,6 +1528,8 @@ const initAdminApp = () => {
         showToast('⚠️ Image upload failed. Please verify connection and retry.', 'error');
       }
     } finally {
+      isUploadingDishPhoto = false;
+      if (btnSaveDish) btnSaveDish.disabled = false;
       if (uploadSpinner) uploadSpinner.style.display = 'none';
       dishFileUpload.value = '';
     }
@@ -1499,10 +1552,28 @@ const initAdminApp = () => {
 
   formDish.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (isSubmittingDish) return;
+    if (isUploadingDishPhoto) {
+      showToast('⚠️ Photo is still uploading. Please wait a moment...', 'warning');
+      return;
+    }
+
     const name = dishNameInput.value.trim();
+    if (!name) {
+      showToast('Please enter a dish title / name.', 'warning');
+      dishNameInput.focus();
+      return;
+    }
+
     const category = dishCategorySelect.value;
     const parsedPrice = parseFloat(dishPriceInput.value);
-    const price = Number.isFinite(parsedPrice) ? Math.max(0, parsedPrice) : 199;
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      showToast('Please enter a valid price for the dish.', 'warning');
+      dishPriceInput.focus();
+      return;
+    }
+    const price = Math.round(parsedPrice);
+
     let badge = dishBadgeInput.value.trim();
     if (badge === 'Custom') {
       badge = dishBadgeCustomInput ? dishBadgeCustomInput.value.trim() : '';
@@ -1541,12 +1612,14 @@ const initAdminApp = () => {
     const catObj = categories.find(c => c.slug === category || c.id === category);
     const categoryName = catObj ? catObj.name : category;
 
-    if (!name) return;
-
     // Ensure custom uploaded image is saved in the gallery
     if (image && !image.startsWith('data:')) {
       dataService.saveUploadedImage(image, name);
     }
+
+    isSubmittingDish = true;
+    const submitBtn = formDish.querySelector('button[type="submit"]') || btnSaveDish;
+    if (submitBtn) submitBtn.disabled = true;
 
     try {
       if (editId) {
@@ -1597,12 +1670,11 @@ const initAdminApp = () => {
       renderDishes();
       renderCategories();
     } catch (err) {
-    } finally {
-      isSubmittingDish = false;
-      const submitBtn = formDish.querySelector('button[type="submit"]');
-      if (submitBtn) submitBtn.disabled = false;
       console.error('[Dish Save Error]:', err);
       showToast(`Error saving dish: ${err?.message || err}`, 'error');
+    } finally {
+      isSubmittingDish = false;
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 

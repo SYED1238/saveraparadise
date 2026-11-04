@@ -245,7 +245,14 @@ export default async function handler(req, res) {
     if (dish && !isDishAvailableNow(dish)) {
       return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' is not currently being served (outside serving hours)` });
     }
-    const unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : Math.max(0, Number(item.price) || 0);
+    let unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : null;
+    if (unitPrice === null) {
+      const isProd = process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production';
+      if (isProd) {
+        return res.status(503).json({ error: `Item '${item.name || 'dish'}' price cannot be verified. Please retry in a moment.` });
+      }
+      unitPrice = Math.max(0, Number(item.price) || 0);
+    }
 
     if (unitPrice < 10) {
       return res.status(400).json({ error: `Item '${item.name || 'Unknown'}' has an invalid price (must be at least ₹10)` });
