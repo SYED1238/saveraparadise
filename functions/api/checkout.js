@@ -47,7 +47,7 @@ async function fetchAuthoritativeSettings(env = null) {
 
 function isDishAvailableNow(dish, now = new Date()) {
   if (!dish) return true;
-  if (dish.is_available === false || dish.inStock === false) return false;
+  if (dish.is_available === false || dish.in_stock === false || dish.inStock === false) return false;
 
   const timeRestricted = Boolean(dish.timeRestricted ?? dish.time_restricted);
   const availableDays = dish.availableDays ?? dish.available_days;
@@ -57,9 +57,12 @@ function isDishAvailableNow(dish, now = new Date()) {
   const istString = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
   const istNow = new Date(istString);
   const currentDay = istNow.getDay();
+  const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const currentDayCode = DAY_NAMES[currentDay];
 
   if (Array.isArray(availableDays) && availableDays.length > 0 && availableDays.length < 7) {
-    if (!availableDays.includes(currentDay)) {
+    const normalizedDays = availableDays.map(d => typeof d === 'number' ? DAY_NAMES[d] : String(d).toLowerCase().trim());
+    if (!normalizedDays.includes(currentDayCode) && !availableDays.includes(currentDay)) {
       return false;
     }
   }
@@ -104,7 +107,7 @@ async function fetchAuthoritativeDishes(env = null) {
   if (!supabaseUrl || !apiKey) return authoritativeDishesCache;
   try {
     const cleanUrl = String(supabaseUrl).replace(/\/+$/, '');
-    const res = await fetch(`${cleanUrl}/rest/v1/dishes?select=id,name,price,is_available`, {
+    const res = await fetch(`${cleanUrl}/rest/v1/dishes?select=*`, {
       headers: {
         apikey: apiKey,
         Authorization: `Bearer ${apiKey}`,
@@ -232,9 +235,16 @@ export async function onRequest(context) {
     }
 
     const catalogMap = new Map();
+    if (Array.isArray(body?.catalogDishes)) {
+      body.catalogDishes.forEach(d => {
+        if (d && d.id) catalogMap.set(String(d.id), d);
+        if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
+      });
+    }
     if (Array.isArray(catalogDishes)) {
       catalogDishes.forEach(d => {
         if (d && d.id) catalogMap.set(String(d.id), d);
+        if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
       });
     }
 
@@ -260,13 +270,15 @@ export async function onRequest(context) {
       if (catalogMap.size > 0) {
         if (itemId && catalogMap.has(itemId)) {
           matchedDish = catalogMap.get(itemId);
+        } else if (item.name && catalogMap.has(String(item.name).toLowerCase())) {
+          matchedDish = catalogMap.get(String(item.name).toLowerCase());
         } else {
           return jsonResponse({ error: `Item "${item.name || 'dish'}" is not recognized in the active menu` }, 400, Object.fromEntries(corsHeaders.entries()));
         }
       }
 
       if (matchedDish) {
-        if (matchedDish.is_available === false || matchedDish.inStock === false) {
+        if (matchedDish.is_available === false || matchedDish.in_stock === false || matchedDish.inStock === false) {
           return jsonResponse({ error: `Item "${matchedDish.name}" is currently out of stock` }, 400, Object.fromEntries(corsHeaders.entries()));
         }
         if (!isDishAvailableNow(matchedDish)) {
@@ -410,8 +422,8 @@ export async function onRequest(context) {
       subtotal,
       discount: effectiveDiscount,
       discountType: finalAppliedType,
-      appliedPromo: finalAppliedType === 'promo' ? appliedPromo : null,
-      appliedDeal: finalAppliedType === 'unlocked_deal' ? appliedDeal : null,
+      appliedPromo: (finalAppliedType === 'promo' || finalAppliedType === 'combined_deals_promo') ? appliedPromo : null,
+      appliedDeal: (finalAppliedType === 'unlocked_deal' || finalAppliedType === 'combined_deals_promo') ? appliedDeal : null,
       deliveryFee,
       platformFee,
       numericTotal: total,
@@ -424,16 +436,18 @@ export async function onRequest(context) {
 
     return jsonResponse({
       success: true,
+      verified: true,
       subtotal,
       discount: effectiveDiscount,
       discountType: finalAppliedType,
-      appliedPromo: finalAppliedType === 'promo' ? appliedPromo : null,
-      appliedDeal: finalAppliedType === 'unlocked_deal' ? appliedDeal : null,
+      appliedPromo: (finalAppliedType === 'promo' || finalAppliedType === 'combined_deals_promo') ? appliedPromo : null,
+      appliedDeal: (finalAppliedType === 'unlocked_deal' || finalAppliedType === 'combined_deals_promo') ? appliedDeal : null,
       deliveryFee,
       platformFee,
       total,
       numericTotal: total,
       items: verifiedItems,
+      signature: checkoutToken,
       checkoutToken
     }, 200, Object.fromEntries(corsHeaders.entries()));
   } catch (err) {

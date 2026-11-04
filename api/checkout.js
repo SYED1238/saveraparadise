@@ -69,7 +69,7 @@ async function fetchAuthoritativeSettings() {
 
 function isDishAvailableNow(dish, now = new Date()) {
   if (!dish) return true;
-  if (dish.is_available === false || dish.inStock === false) return false;
+  if (dish.is_available === false || dish.in_stock === false || dish.inStock === false) return false;
 
   const timeRestricted = Boolean(dish.timeRestricted ?? dish.time_restricted);
   const availableDays = dish.availableDays ?? dish.available_days;
@@ -79,9 +79,12 @@ function isDishAvailableNow(dish, now = new Date()) {
   const istString = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
   const istNow = new Date(istString);
   const currentDay = istNow.getDay();
+  const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const currentDayCode = DAY_NAMES[currentDay];
 
   if (Array.isArray(availableDays) && availableDays.length > 0 && availableDays.length < 7) {
-    if (!availableDays.includes(currentDay)) {
+    const normalizedDays = availableDays.map(d => typeof d === 'number' ? DAY_NAMES[d] : String(d).toLowerCase().trim());
+    if (!normalizedDays.includes(currentDayCode) && !availableDays.includes(currentDay)) {
       return false;
     }
   }
@@ -123,7 +126,7 @@ async function fetchAuthoritativeDishes() {
   if (!supabaseUrl || !apiKey) return authoritativeDishesCache;
   try {
     const cleanUrl = String(supabaseUrl).replace(/\/+$/, '');
-    const res = await fetch(`${cleanUrl}/rest/v1/dishes?select=id,name,price,is_available`, {
+    const res = await fetch(`${cleanUrl}/rest/v1/dishes?select=*`, {
       headers: {
         apikey: apiKey,
         Authorization: `Bearer ${apiKey}`,
@@ -236,7 +239,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: `Item '${item.name || 'dish'}' is not recognized in the active menu catalog` });
     }
 
-    if (dish && (dish.is_available === false || dish.inStock === false)) {
+    if (dish && (dish.is_available === false || dish.in_stock === false || dish.inStock === false)) {
       return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' will be back soon` });
     }
     if (dish && !isDishAvailableNow(dish)) {
