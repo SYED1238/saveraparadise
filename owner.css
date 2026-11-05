@@ -357,6 +357,146 @@ body.owner-body .lock-footer-info {
 }
 
 /* ============================================================== */
+/* EXECUTIVE REAL-TIME NOTIFICATION OPT-IN BANNER                 */
+/* ============================================================== */
+.owner-notif-optin-banner {
+  background: #FFFBEB;
+  border-bottom: 1px solid #FDE68A;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.08);
+  width: 100%;
+}
+
+.owner-notif-optin-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.notif-optin-text-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.notif-optin-icon {
+  color: #D97706;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.notif-optin-body {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #78350F;
+}
+
+.notif-optin-title {
+  color: #92400E;
+  font-weight: 800;
+  margin-right: 4px;
+}
+
+.notif-optin-desc {
+  color: #78350F;
+  font-weight: 500;
+}
+
+.notif-optin-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-notif-enable {
+  background: #D97706 !important;
+  color: #FFFFFF !important;
+  font-weight: 700;
+  font-size: 0.84rem;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.25);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-notif-enable:hover {
+  background: #B45309 !important;
+  transform: translateY(-1px);
+}
+
+.btn-notif-dismiss {
+  background: transparent;
+  color: #92400E;
+  border: none;
+  font-size: 1.15rem;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.btn-notif-dismiss:hover {
+  background: rgba(217, 119, 6, 0.12);
+}
+
+@media (max-width: 640px) {
+  .owner-notif-optin-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px 14px;
+    position: relative;
+  }
+
+  .notif-optin-text-group {
+    align-items: flex-start;
+    padding-right: 32px;
+  }
+
+  .notif-optin-icon {
+    margin-top: 2px;
+  }
+
+  .notif-optin-body {
+    font-size: 0.82rem;
+  }
+
+  .notif-optin-actions {
+    width: 100%;
+  }
+
+  .btn-notif-enable {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 14px;
+    font-size: 0.88rem;
+  }
+
+  .btn-notif-dismiss {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 4px;
+  }
+}
+
+/* ============================================================== */
 /* MAIN CONTENT & CONTAINER                                       */
 /* ============================================================== */
 .owner-container {
@@ -3471,6 +3611,141 @@ body.owner-body .lock-footer-info {
   font-size: 0.78rem;
   color: #4B5563;
   font-weight: 600;
+}
+
+/* CUSTOMER UNREACHABLE DOORSTEP COMPENSATION CONTROLS */
+#controls-unreachable-policy {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #E2E8F0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.unreachable-policy-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.unreachable-policy-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1E293B;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.unreachable-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748B;
+  background: #F1F5F9;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #E2E8F0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.unreachable-controls-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.unreachable-select {
+  flex: 1 1 240px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #F8FAFC;
+  color: #0F172A;
+  border: 1px solid #CBD5E1;
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.unreachable-select:focus {
+  outline: none;
+  border-color: #6366F1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.unreachable-custom-wrap {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  padding: 4px 10px;
+  box-sizing: border-box;
+}
+
+.unreachable-currency {
+  color: #64748B;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.unreachable-custom-input {
+  width: 65px;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  color: #0F172A;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-align: center;
+  font-family: inherit;
+  outline: none;
+}
+
+#undelivered-mode-hint {
+  margin-top: 6px;
+  display: block;
+  font-size: 0.78rem;
+  color: #64748B;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .unreachable-policy-label-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .unreachable-badge {
+    align-self: flex-start;
+  }
+
+  .unreachable-select {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .unreachable-custom-wrap {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 @media (max-width: 640px) {

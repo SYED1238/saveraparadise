@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
  */
 
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, DEFAULT_RIDERS, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, DEFAULT_RIDERS, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId, getShiftStartTimeMs } from './dataService.js';
 import {
   playNotificationSound,
   sendSystemNotification,
@@ -889,9 +889,12 @@ const initDeliveryApp = () => {
       if (o.status !== 'on_the_way') return false;
       return o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin;
     });
+    const shiftStartMs = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
     const deliveredOrders = orders.filter(o => {
       if (o.status !== 'delivered' && o.status !== 'undelivered') return false;
-      return o.assignedRiderPin === currentRider.pin;
+      if (o.assignedRiderPin !== currentRider.pin) return false;
+      const orderTs = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+      return !orderTs || orderTs >= shiftStartMs;
     });
 
     // Get rider-specific segregated COD cash in hand
@@ -927,6 +930,7 @@ const initDeliveryApp = () => {
     // Smart auto-tab switch:
     // If rider has active orders on the road, show Active tab
     // If rider has 0 active orders and tab was left on 'delivered', default to 'ready' so they see the kitchen counter
+    // Note: Do not auto-switch tab away from 'ready' while rider is picking multiple bags from kitchen counter
     const persistedTab = getPersistedRiderTab();
     if (activeTab !== 'earnings') {
       if (activeOrders.length === 0 && activeTab === 'delivered') {
@@ -934,10 +938,6 @@ const initDeliveryApp = () => {
         persistRiderTab('ready');
         updateActiveTabUI();
       } else if (!persistedTab && activeOrders.length > 0 && activeTab === 'ready') {
-        activeTab = 'active';
-        persistRiderTab('active');
-        updateActiveTabUI();
-      } else if (activeTab === 'ready' && readyOrders.length === 0 && activeOrders.length > 0) {
         activeTab = 'active';
         persistRiderTab('active');
         updateActiveTabUI();
@@ -1410,7 +1410,12 @@ const initDeliveryApp = () => {
 
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
     const payoutCfg = dataService.getPayoutConfig();
-    const deliveredCount = orders.filter(o => o.status === 'delivered' && o.assignedRiderPin === currentRider.pin).length;
+    const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
+    const deliveredCount = orders.filter(o => {
+      if (o.status !== 'delivered' || o.assignedRiderPin !== currentRider.pin) return false;
+      const ts = Number(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+      return !ts || ts >= shiftStart;
+    }).length;
     const orderPayout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);
 
     if (confirmPayoutValue) {
@@ -1669,9 +1674,12 @@ const initDeliveryApp = () => {
 
       // Calculate order payout for this order
       const payoutCfg = dataService.getPayoutConfig();
-      const currentDelivered = dataService.getOrders().filter(o => 
-        o.status === 'delivered' && o.assignedRiderPin === currentRider.pin
-      );
+      const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
+      const currentDelivered = dataService.getOrders().filter(o => {
+        if (o.status !== 'delivered' || o.assignedRiderPin !== currentRider.pin) return false;
+        const ts = Number(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+        return !ts || ts >= shiftStart;
+      });
       const orderPayout = dataService.calculateOrderPayout(activeConfirmOrder, currentDelivered.length + 1, payoutCfg);
 
       // Update in dataService with rider authorization
@@ -1772,7 +1780,7 @@ const initDeliveryApp = () => {
     activeCnrOrder = order;
 
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
-    const safeId = order.id.startsWith('#') ? order.id : `#${order.id}`;
+    const safeId = String(order?.id || '').startsWith('#') ? String(order.id) : `#${order?.id || '0000'}`;
 
     // Persistent 10-Minute Waiting Countdown Timer
     const timerStorageKey = `quickbite_cnr_start_${cleanId}`;
@@ -1786,6 +1794,12 @@ const initDeliveryApp = () => {
         waitingStartedAt: startTime
       });
       showToast(`⏱️ 10-Minute doorstep waiting timer started for ${safeId}.`, 'info');
+    }
+
+    // Show "Customer Answered / Cancel Wait" button if rider tapped accidentally
+    const btnRevertUnreachable = document.getElementById('btn-revert-unreachable');
+    if (btnRevertUnreachable) {
+      btnRevertUnreachable.style.display = 'inline-flex';
     }
 
     if (unreachableOrderBadge) unreachableOrderBadge.textContent = `ORDER ${safeId}`;
@@ -2014,9 +2028,12 @@ const initDeliveryApp = () => {
       localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
 
       const payoutCfg = dataService.getPayoutConfig();
-      const currentDelivered = dataService.getOrders().filter(o => 
-        o.status === 'delivered' && o.assignedRiderPin === currentRider.pin
-      );
+      const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
+      const currentDelivered = dataService.getOrders().filter(o => {
+        if (o.status !== 'delivered' || o.assignedRiderPin !== currentRider.pin) return false;
+        const ts = Number(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+        return !ts || ts >= shiftStart;
+      });
       const orderPayout = dataService.calculateOrderPayout(activeCnrOrder, currentDelivered.length + 1, payoutCfg);
 
       dataService.riderSafeDropPrepaid(orderId, {
@@ -2081,6 +2098,31 @@ const initDeliveryApp = () => {
       persistRiderTab('delivered');
       updateActiveTabUI();
       renderPortal();
+    });
+  }
+
+  // Revert Accidental Unreachable Wait Button ("Customer Answered / Cancel Wait")
+  const btnRevertUnreachable = document.getElementById('btn-revert-unreachable');
+  if (btnRevertUnreachable) {
+    btnRevertUnreachable.addEventListener('click', () => {
+      if (!activeCnrOrder) return;
+      const targetOrder = activeCnrOrder;
+      const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
+
+      // Revert wait in dataService and Supabase
+      dataService.cancelDoorstepWait(targetOrder.id, { riderPin: currentRider.pin });
+
+      // Clean local timer
+      if (cnrTimerInterval) {
+        clearInterval(cnrTimerInterval);
+        cnrTimerInterval = null;
+      }
+      const cleanId = String(targetOrder.id || '').trim().replace(/^#/, '');
+      localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+
+      closeUnreachableModal();
+      showToast('✓ Customer answered! Wait timer cancelled.', 'success');
+      renderOrders();
     });
   }
 
@@ -2374,8 +2416,9 @@ const initDeliveryApp = () => {
   // ========================================================
   function isRiderStatusAlerted(orderId, status) {
     try {
+      const cleanId = String(orderId || '').trim().replace(/^#/, '');
       const stored = JSON.parse(localStorage.getItem('quickbite_rider_alerted_statuses') || '{}');
-      return Boolean(stored[`${orderId}:${status}`]);
+      return Boolean(stored[`${cleanId}:${status}`] || stored[`#${cleanId}:${status}`]);
     } catch {
       return false;
     }
@@ -2383,10 +2426,11 @@ const initDeliveryApp = () => {
 
   function markRiderStatusAlerted(orderId, status) {
     try {
-      const key = `${orderId}:${status}`;
+      const cleanId = String(orderId || '').trim().replace(/^#/, '');
       const stored = JSON.parse(localStorage.getItem('quickbite_rider_alerted_statuses') || '{}');
-      stored[key] = Date.now();
       const now = Date.now();
+      stored[`${cleanId}:${status}`] = now;
+      stored[`#${cleanId}:${status}`] = now;
       const pruned = {};
       Object.keys(stored).forEach(k => {
         if (now - stored[k] < 7 * 24 * 60 * 60 * 1000) {
@@ -2715,7 +2759,12 @@ const initDeliveryApp = () => {
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
     const payoutCfg = dataService.getPayoutConfig();
     const allOrders = dataService.getOrders();
-    const deliveredCount = allOrders.filter(o => o.status === 'delivered' && o.assignedRiderPin === currentRider.pin).length;
+    const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
+    const deliveredCount = allOrders.filter(o => {
+      if (o.status !== 'delivered' || o.assignedRiderPin !== currentRider.pin) return false;
+      const ts = Number(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+      return !ts || ts >= shiftStart;
+    }).length;
     const payout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);
 
     const dropCoords = getOrderDropCoordinates(order);
@@ -2995,6 +3044,10 @@ const initDeliveryApp = () => {
   backNav.registerFallbackChecker({
     isOpen: () => modalUnreachableBackdrop && modalUnreachableBackdrop.classList.contains('open'),
     close: () => closeUnreachableModal()
+  });
+  backNav.registerFallbackChecker({
+    isOpen: () => modalPayoutBackdrop && modalPayoutBackdrop.classList.contains('open'),
+    close: () => closePayoutModal()
   });
 
   // Listen to rider session / settlement / claim events

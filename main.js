@@ -1,6 +1,8 @@
 /**
  * Savera Paradise - Interactive Logic & Animation Engine
  */
+import './performanceGovernor.js';
+import './performanceTier.css';
 import confetti from 'canvas-confetti';
 import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h, formatDisplayOrderId, getNowInIST } from './dataService.js';
 import { supabase } from './supabaseClient.js';
@@ -40,6 +42,19 @@ export function showToast(message, type = 'info', options = {}) {
 if (typeof window !== 'undefined') {
   window.showToast = showToast;
   window.showSamsungToast = showSamsungToast;
+}
+
+// Adaptive Performance Confetti Dispatcher
+export function triggerSafeConfetti(opts = {}) {
+  if (typeof window !== 'undefined' && window.__perfTier === 'lite') {
+    return; // Skip canvas calculation in Lite mode
+  }
+  try {
+    const finalOpts = (typeof window !== 'undefined' && window.__perfTier === 'balanced' && opts.particleCount)
+      ? { ...opts, particleCount: Math.min(35, opts.particleCount) }
+      : opts;
+    confetti(finalOpts);
+  } catch (e) {}
 }
 
 function initStorefrontApp() {
@@ -1257,7 +1272,18 @@ function initStorefrontApp() {
   function animateFlyToCart(startElement, imageUrl) {
     const navCircleAction = document.getElementById('nav-circle-action');
     const targetElement = navCircleAction || cartTriggerBtn;
-    if (!startElement || !targetElement || !flyContainer) return;
+    if (!startElement || !targetElement) return;
+
+    // Lite Mode: Skip heavy DOM node creation & layout reflow for instant touch response
+    if (window.__perfTier === 'lite') {
+      if (cartBadge) {
+        cartBadge.classList.add('bump');
+        setTimeout(() => cartBadge.classList.remove('bump'), 200);
+      }
+      return;
+    }
+
+    if (!flyContainer) return;
 
     const startRect = startElement.getBoundingClientRect();
     const targetRect = targetElement.getBoundingClientRect();
@@ -3096,7 +3122,7 @@ function initStorefrontApp() {
       renderCart();
 
       // Confetti burst!
-      confetti({
+      triggerSafeConfetti({
         particleCount: 80,
         spread: 60,
         origin: { y: 0.8 },
@@ -4649,7 +4675,7 @@ function initStorefrontApp() {
     }
 
     if (isNewCheckout) {
-      confetti({
+      triggerSafeConfetti({
         particleCount: 120,
         spread: 90,
         origin: { y: 0.5 },
@@ -5796,6 +5822,16 @@ function initStorefrontApp() {
           });
           if (checkoutRes.status === 403) {
             const checkoutErr = await checkoutRes.json().catch(() => ({}));
+            if (checkoutErr.challengeRequired) {
+              showToast('🔒 Rapid orders detected (3+ in 1 min). Please complete the Cloudflare check above.', 'warning');
+              const widget = document.getElementById('turnstile-checkout-widget');
+              if (widget) {
+                widget.style.display = 'flex';
+                widget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+              resetSubmitState(false);
+              return;
+            }
             showToast(checkoutErr.error || 'Bot verification failed. Automated traffic blocked.', 'error');
             resetSubmitState(true);
             return;
@@ -6103,7 +6139,7 @@ function initStorefrontApp() {
       updateAppBadge(0);
       playNotificationSound('delivered');
       try {
-        confetti({
+        triggerSafeConfetti({
           particleCount: 120,
           spread: 80,
           origin: { y: 0.6 }

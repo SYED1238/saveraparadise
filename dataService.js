@@ -67,8 +67,26 @@ export const DEFAULT_PAYOUT_CONFIG = {
   },
   flatLinear: {
     ratePerKm: 30        // ₹30 per road km driven
+  },
+  undeliveredCompensation: {
+    mode: 'zero',        // 'zero' | 'half' | 'base' | 'custom'
+    customAmount: 20     // ₹20 default custom fuel allowance
   }
 };
+
+export function getShiftStartTimeMs(refTime = Date.now()) {
+  const d = new Date(refTime);
+  const hour = d.getHours();
+  // Restaurant dinner shifts wrap up past midnight. Reset daily at 1:00 AM:
+  // If hour < 1 (00:00 - 00:59:59), the current shift started yesterday at 1:00 AM.
+  // If hour >= 1 (01:00 - 23:59:59), the current shift started today at 1:00 AM.
+  const shiftStart = new Date(d);
+  if (hour < 1) {
+    shiftStart.setDate(shiftStart.getDate() - 1);
+  }
+  shiftStart.setHours(1, 0, 0, 0);
+  return shiftStart.getTime();
+}
 
 export function parseTimestampMs(val) {
   if (!val) return Date.now();
@@ -3424,6 +3442,69 @@ class QuickBiteDataService {
                 timestamp: Date.now()
               });
             }
+          }
+        })
+        .on('broadcast', { event: 'rider_waiting_cancelled' }, (event) => {
+          const payload = event?.payload || {};
+          if (payload.orderId) {
+            const orders = this.getOrders();
+            const norm = (id) => String(id || '').trim().replace(/^#/, '');
+            const targetNorm = norm(payload.orderId);
+            const idx = orders.findIndex(o => o && norm(o.id) === targetNorm);
+            if (idx !== -1) {
+              orders[idx].riderWaitingAtDoorstep = false;
+              delete orders[idx].waitingStartedAt;
+              if (orders[idx].cancellationReason && orders[idx].cancellationReason.startsWith('[DOORSTEP_WAIT]')) {
+                orders[idx].cancellationReason = null;
+              }
+              this.saveOrders(orders, {
+                action: 'rider_waiting_cancelled',
+                orderId: orders[idx].id,
+                order: orders[idx],
+                source: 'supabase_broadcast',
+                timestamp: Date.now()
+              });
+            }
+            try {
+              const cleanId = String(payload.orderId).replace(/^#/, '');
+              localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+            } catch {}
+            this.notifyChange('rider_waiting_cancelled', payload);
+          }
+        })
+        .on('broadcast', { event: 'payout_paid' }, (event) => {
+          const payload = event?.payload || {};
+          if (payload.riderPin) {
+            const cleanPin = String(payload.riderPin).trim();
+            const riders = this.getRiders();
+            const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
+            if (idx >= 0) {
+              riders[idx].payoutPaidAt = payload.paidAt || Date.now();
+              riders[idx].payoutAmountPaid = Number(payload.amount) || 0;
+              this.saveRiders(riders);
+            }
+            try {
+              localStorage.setItem(`quickbite_rider_payout_paid_${cleanPin}`, JSON.stringify({
+                paidAt: payload.paidAt || Date.now(),
+                amount: payload.amount
+              }));
+            } catch {}
+            this.notifyChange('payout_paid', payload);
+          }
+        })
+        .on('broadcast', { event: 'cash_settled' }, (event) => {
+          const payload = event?.payload || {};
+          if (payload.riderPin) {
+            const cleanPin = String(payload.riderPin).trim();
+            const riders = this.getRiders();
+            const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
+            if (idx >= 0) {
+              riders[idx].cashSettledAt = payload.settledAt || Date.now();
+              riders[idx].cashHandoverStatus = 'taken';
+              riders[idx].cashHandoverAmount = 0;
+              this.saveRiders(riders);
+            }
+            this.notifyChange('cash_settled', payload);
           }
         })
         .subscribe((status) => {
@@ -7089,7 +7170,7 @@ class QuickBiteDataService {
       };
 
       doUpdate(order.id).then(() => {
-        const altId = order.id.startsWith('#') ? cleanId : hashId;
+        const altId = String(order.id || '').startsWith('#') ? cleanId : hashId;
         doUpdate(altId);
       }).catch(() => {
         order.pendingStatusSync = true;
@@ -7250,7 +7331,8 @@ class QuickBiteDataService {
             activeMethod: parsed.activeMethod || 'tiered_standard',
             tieredStandard: { ...DEFAULT_PAYOUT_CONFIG.tieredStandard, ...(parsed.tieredStandard || {}) },
             tieredMilestone: { ...DEFAULT_PAYOUT_CONFIG.tieredMilestone, ...(parsed.tieredMilestone || {}) },
-            flatLinear: { ...DEFAULT_PAYOUT_CONFIG.flatLinear, ...(parsed.flatLinear || {}) }
+            flatLinear: { ...DEFAULT_PAYOUT_CONFIG.flatLinear, ...(parsed.flatLinear || {}) },
+            undeliveredCompensation: { ...DEFAULT_PAYOUT_CONFIG.undeliveredCompensation, ...(parsed.undeliveredCompensation || {}) }
           };
         }
       }
@@ -7292,6 +7374,12 @@ class QuickBiteDataService {
       },
       flatLinear: {
         ratePerKm: parseNum(config.flatLinear?.ratePerKm, 30, 1)
+      },
+      undeliveredCompensation: {
+        mode: ['zero', 'half', 'base', 'custom'].includes(config.undeliveredCompensation?.mode)
+          ? config.undeliveredCompensation.mode
+          : 'zero',
+        customAmount: parseNum(config.undeliveredCompensation?.customAmount, 20, 0)
       }
     };
 
@@ -7303,6 +7391,27 @@ class QuickBiteDataService {
     this.notifyChange('payout_config_updated', cleanConfig);
     this.notifyChange('km_rate_updated', { rate: cleanConfig.flatLinear.ratePerKm });
     return cleanConfig;
+  }
+
+  calculateStandardTripPayout(order, orderIndex, cfg, distanceKm) {
+    if (cfg.activeMethod === 'tiered_milestone') {
+      const tm = cfg.tieredMilestone || DEFAULT_PAYOUT_CONFIG.tieredMilestone;
+      const { basePay, baseKm, extraKmRate, milestoneOrders, surgeExtraKmRate } = tm;
+      const isSurge = orderIndex > milestoneOrders;
+      const activeExtraRate = isSurge ? surgeExtraKmRate : extraKmRate;
+      const extraKm = Math.max(0, distanceKm - baseKm);
+      const amount = basePay + (extraKm * activeExtraRate);
+      return { amount: Math.round(amount * 100) / 100, isSurge, formula: isSurge ? `₹${basePay} (first ${baseKm}km) + ₹${(extraKm * activeExtraRate).toFixed(2)} (${extraKm.toFixed(2)}km × ₹${activeExtraRate}/km surge 🔥)` : `₹${basePay} (first ${baseKm}km) + ₹${(extraKm * activeExtraRate).toFixed(2)} (${extraKm.toFixed(2)}km × ₹${activeExtraRate}/km)` };
+    }
+    if (cfg.activeMethod === 'flat_linear') {
+      const fl = cfg.flatLinear || DEFAULT_PAYOUT_CONFIG.flatLinear;
+      return { amount: Math.round((distanceKm * fl.ratePerKm) * 100) / 100, isSurge: false, formula: `${distanceKm.toFixed(2)}km × ₹${fl.ratePerKm}/km` };
+    }
+    const ts = cfg.tieredStandard || DEFAULT_PAYOUT_CONFIG.tieredStandard;
+    const { basePay, baseKm, extraKmRate } = ts;
+    const extraKm = Math.max(0, distanceKm - baseKm);
+    const amount = basePay + (extraKm * extraKmRate);
+    return { amount: Math.round(amount * 100) / 100, isSurge: false, formula: `₹${basePay} (first ${baseKm}km) + ₹${(extraKm * extraKmRate).toFixed(2)} (${extraKm.toFixed(2)}km × ₹${extraKmRate}/km)` };
   }
 
   calculateOrderPayout(order, orderIndex = 1, config = null) {
@@ -7321,6 +7430,43 @@ class QuickBiteDataService {
       distanceKm = 1.0;
     }
     distanceKm = Math.max(0, Math.round(distanceKm * 100) / 100);
+
+    // Customer Unreachable at Doorstep Compensation Handling
+    const isUndelivered = String(order?.status || '').toLowerCase() === 'undelivered';
+    if (isUndelivered) {
+      const uCfg = cfg.undeliveredCompensation || DEFAULT_PAYOUT_CONFIG.undeliveredCompensation || { mode: 'zero', customAmount: 20 };
+      const mode = uCfg.mode || 'zero';
+      let compAmount = 0;
+      let compFormula = '₹0 (Customer unreachable - No compensation policy)';
+
+      if (mode === 'half') {
+        const standardTrip = this.calculateStandardTripPayout(order, orderIndex, cfg, distanceKm);
+        compAmount = Math.round((standardTrip.amount * 0.5) * 100) / 100;
+        compFormula = `₹${standardTrip.amount.toFixed(2)} × 50% = ₹${compAmount.toFixed(2)} (Half pay - Customer unreachable)`;
+      } else if (mode === 'base') {
+        const basePay = (cfg.activeMethod === 'tiered_milestone' ? cfg.tieredMilestone?.basePay : cfg.tieredStandard?.basePay) || 25;
+        compAmount = Number(basePay) || 25;
+        compFormula = `₹${compAmount} (Base trip fare - Customer unreachable)`;
+      } else if (mode === 'custom') {
+        compAmount = Math.max(0, Number(uCfg.customAmount) || 20);
+        compFormula = `₹${compAmount} (Fixed allowance - Customer unreachable)`;
+      }
+
+      return {
+        orderId: order?.id || null,
+        amount: compAmount,
+        distanceKm,
+        basePay: 0,
+        baseKm: 0,
+        extraKm: 0,
+        extraKmRate: 0,
+        isSurge: false,
+        isUndelivered: true,
+        orderIndex,
+        method: cfg.activeMethod,
+        formula: compFormula
+      };
+    }
 
     if (cfg.activeMethod === 'tiered_milestone') {
       const tm = cfg.tieredMilestone || DEFAULT_PAYOUT_CONFIG.tieredMilestone;
@@ -7389,8 +7535,8 @@ class QuickBiteDataService {
     const cfg = config || this.getPayoutConfig();
     const safeOrders = (riderOrders || []).filter(o => o && typeof o === 'object');
     const sorted = [...safeOrders].sort((a, b) => {
-      const tA = parseTimestampMs(a.deliveredAt || a.delivered_at || a.createdAt || 0);
-      const tB = parseTimestampMs(b.deliveredAt || b.delivered_at || b.createdAt || 0);
+      const tA = parseTimestampMs(a.deliveredAt || a.delivered_at || a.undeliveredAt || a.createdAt || 0);
+      const tB = parseTimestampMs(b.deliveredAt || b.delivered_at || b.undeliveredAt || b.createdAt || 0);
       return tA - tB;
     });
 
@@ -7450,8 +7596,10 @@ class QuickBiteDataService {
     const orders = this.getOrders();
     const riderPinStr = String(rider.pin || '').trim();
     const riderNameStr = String(rider.name || '').trim().toLowerCase();
-    const delivered = (orders || []).filter(o => {
-      if (!o || String(o.status || '').toLowerCase() !== 'delivered') return false;
+    const relevantOrders = (orders || []).filter(o => {
+      if (!o) return false;
+      const st = String(o.status || '').toLowerCase();
+      if (st !== 'delivered' && st !== 'undelivered') return false;
       const oPin = String(o.assignedRiderPin || '').trim();
       const oName = String(o.assignedRiderName || '').trim().toLowerCase();
       const matchesPin = oPin && oPin === riderPinStr;
@@ -7459,35 +7607,35 @@ class QuickBiteDataService {
       return matchesPin || matchesName;
     });
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayStartMs = todayStart.getTime();
+    const shiftStartMs = getShiftStartTimeMs();
 
-    // Bound delivered orders to today's shift window to prevent historical carryover from inflating milestone surge
-    const shiftDelivered = delivered.filter(o => {
-      const deliveredTime = parseTs(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
-      return deliveredTime >= todayStartMs;
+    // Bound delivered and undelivered orders to current shift window (resetting daily at 1:00 AM)
+    const shiftDelivered = relevantOrders.filter(o => {
+      const orderTime = parseTs(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
+      return orderTime >= shiftStartMs;
     });
 
     const payoutResult = this.calculateRiderPayout(shiftDelivered, cfg);
 
     const paidTs = parseTs(rider.payoutPaidAt);
     const paidDate = paidTs ? new Date(paidTs) : null;
-    const isPaidToday = Boolean(paidDate && !isNaN(paidDate.getTime()) && paidDate.toDateString() === new Date().toDateString());
+    const isPaidToday = Boolean(paidTs && paidTs >= shiftStartMs);
     const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
     const paidAmount = Number(rider.payoutAmountPaid) || 0;
 
-    // Filter orders delivered AFTER last payout payment during today's shift
+    // Filter orders completed AFTER last payout payment during current shift
     const unpaidOrders = shiftDelivered.filter(o => {
       if (!isPaidToday || !paidTs) return true;
-      const deliveredTime = parseTs(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
-      return deliveredTime > paidTs;
+      const orderTime = parseTs(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
+      return orderTime > paidTs;
     });
 
     const completedOffset = shiftDelivered.length - unpaidOrders.length;
     const unpaidPayout = this.calculateRiderPayout(unpaidOrders, cfg, completedOffset + 1);
     const payoutBalance = isPaidToday ? unpaidPayout.exactPayout : payoutResult.exactPayout;
     const exactBalance = payoutBalance;
+
+    const successfullyDeliveredCount = shiftDelivered.filter(o => o.status === 'delivered').length;
 
     return {
       rider,
@@ -7496,7 +7644,7 @@ class QuickBiteDataService {
       totalEarnings: payoutResult.totalPayout,
       exactEarnings: payoutResult.exactPayout,
       totalKms: payoutResult.totalKms,
-      deliveredCount: payoutResult.orderCount,
+      deliveredCount: successfullyDeliveredCount,
       surgeCount: payoutResult.surgeCount,
       isPaidToday,
       paidAmount,
@@ -7543,10 +7691,80 @@ class QuickBiteDataService {
       riders[idx].payoutAmountPaid = Number(amount) || 0;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
+      try {
+        localStorage.setItem(`quickbite_rider_payout_paid_${cleanPin}`, JSON.stringify({
+          paidAt: paidTime,
+          amount
+        }));
+      } catch {}
       this.notifyChange('payout_paid', { riderPin: cleanPin, paidAt: paidTime, amount });
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'payout_paid',
+          payload: { riderPin: cleanPin, paidAt: paidTime, amount }
+        }).catch(() => {});
+      }
       return { success: true, paidAt: paidTime, amount, rider: riders[idx] };
     }
     return { success: false };
+  }
+
+  cancelDoorstepWait(orderId, { riderPin = '' } = {}) {
+    const list = this.getOrders();
+    const norm = (id) => String(id || '').trim().replace(/^#/, '');
+    const cleanTarget = norm(orderId);
+    const order = list.find(o => o && norm(o.id) === cleanTarget);
+    if (!order) return null;
+
+    order.riderWaitingAtDoorstep = false;
+    delete order.waitingStartedAt;
+
+    if (order.cancellationReason && order.cancellationReason.startsWith('[DOORSTEP_WAIT]')) {
+      order.cancellationReason = null;
+    }
+
+    this.saveOrders(list, {
+      action: 'rider_waiting_cancelled',
+      orderId: order.id,
+      timestamp: Date.now()
+    });
+
+    try {
+      localStorage.removeItem('quickbite_order_doorstep_wait');
+      const cleanId = String(order.id || '').replace(/^#/, '');
+      localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+    } catch {}
+
+    // Resilient Supabase sync & Realtime Broadcast
+    try {
+      if (typeof supabase !== 'undefined' && supabase) {
+        const cleanId = String(order.id || '').replace(/^#/, '');
+        const hashId = `#${cleanId}`;
+        const doSync = async (tid) => {
+          try {
+            await supabase.from('orders').update({
+              cancellation_reason: null
+            }).eq('id', tid);
+          } catch {}
+        };
+        doSync(order.id);
+        if (order.id !== cleanId) doSync(cleanId);
+        if (order.id !== hashId) doSync(hashId);
+
+        if (this.sharedBroadcastChannel) {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'rider_waiting_cancelled',
+            payload: { orderId: order.id, riderPin, cancelledAt: Date.now() }
+          }).catch(() => {});
+        }
+      }
+    } catch (syncErr) {
+      console.warn('[DataService] cancelDoorstepWait remote sync fallback:', syncErr);
+    }
+
+    return order;
   }
 
   // ========================================================
@@ -7669,4 +7887,5 @@ export function formatDisplayOrderId(orderId, pickupCode) {
 }
 
 dataService.formatDisplayOrderId = formatDisplayOrderId;
+dataService.getShiftStartTimeMs = getShiftStartTimeMs;
 

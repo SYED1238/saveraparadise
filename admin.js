@@ -175,6 +175,7 @@ const initAdminApp = () => {
     });
   }
 
+  // Safe fallback for test order clearing (if present)
   const btnClearAllOrders = document.getElementById('btn-clear-all-orders');
   if (btnClearAllOrders) {
     btnClearAllOrders.addEventListener('click', async () => {
@@ -187,13 +188,77 @@ const initAdminApp = () => {
     });
   }
 
+  // Live Kitchen Connectivity & Offline Monitor
+  const connectionBanner = document.getElementById('admin-connection-banner');
+  const connectionBannerText = document.getElementById('connection-banner-text');
+  const connectionBannerIcon = document.getElementById('connection-banner-icon');
+  const btnReconnectNow = document.getElementById('btn-reconnect-now');
+
+  function updateKitchenConnectionUI(isOnline) {
+    if (!connectionBanner) return;
+    if (!isOnline) {
+      connectionBanner.className = 'admin-connection-banner offline';
+      connectionBanner.style.display = 'block';
+      if (connectionBannerIcon) connectionBannerIcon.className = 'fa-solid fa-triangle-exclamation fa-beat';
+      if (connectionBannerText) connectionBannerText.textContent = 'Kitchen Offline: Internet disconnected. Reconnecting to live orders...';
+      if (btnReconnectNow) btnReconnectNow.style.display = 'inline-block';
+    } else {
+      connectionBanner.className = 'admin-connection-banner online';
+      if (connectionBannerIcon) connectionBannerIcon.className = 'fa-solid fa-circle-check';
+      if (connectionBannerText) connectionBannerText.textContent = '🟢 Connected: Live Kitchen Stream Active';
+      if (btnReconnectNow) btnReconnectNow.style.display = 'none';
+      setTimeout(() => {
+        if (navigator.onLine && connectionBanner) {
+          connectionBanner.style.display = 'none';
+        }
+      }, 3500);
+    }
+  }
+
+  window.addEventListener('online', () => {
+    updateKitchenConnectionUI(true);
+    dataService.syncOrdersFromSupabase(true).then(() => {
+      renderOrders();
+      updateOrderBadges();
+    }).catch(() => {});
+    dataService.syncDishesFromSupabase().then(() => {
+      renderDishes();
+    }).catch(() => {});
+  });
+
+  window.addEventListener('offline', () => {
+    updateKitchenConnectionUI(false);
+  });
+
+  if (btnReconnectNow) {
+    btnReconnectNow.addEventListener('click', async () => {
+      btnReconnectNow.disabled = true;
+      btnReconnectNow.textContent = 'Retrying...';
+      try {
+        await dataService.syncOrdersFromSupabase(true);
+        updateKitchenConnectionUI(navigator.onLine);
+        renderOrders();
+        showToast('🟢 Connection verified & orders synchronized!', 'success');
+      } catch {
+        showToast('⚠️ Could not connect to server. Check Wi-Fi.', 'error');
+      } finally {
+        btnReconnectNow.disabled = false;
+        btnReconnectNow.textContent = 'Retry Connection';
+      }
+    });
+  }
+
+  if (!navigator.onLine) {
+    updateKitchenConnectionUI(false);
+  }
+
   // Initial gate check
   checkAdminSession();
 
   // ========================================================
   // STATE
   // ========================================================
-  let activeView = 'view-menu'; // 'view-menu' | 'view-orders'
+  let activeView = 'view-orders'; // 'view-orders' | 'view-menu'
   let activeCategoryFilter = 'all';
   let dishSearchQuery = '';
   let activeOrderFilter = 'accepted';
@@ -258,6 +323,16 @@ const initAdminApp = () => {
   const categoryDishesGrid = document.getElementById('category-dishes-grid');
   const catDishesEmptyState = document.getElementById('cat-dishes-empty-state');
   const catEmptyTitle = document.getElementById('cat-empty-title');
+
+  // DOM Elements - Global Menu Dish Search Across All Categories
+  const globalDishSearchInput = document.getElementById('global-dish-search-input');
+  const btnClearGlobalDishSearch = document.getElementById('btn-clear-global-dish-search');
+  const globalDishSearchResultsPanel = document.getElementById('global-dish-search-results-panel');
+  const globalDishesResultsGrid = document.getElementById('global-dishes-results-grid');
+  const globalSearchCountBadge = document.getElementById('global-search-count-badge');
+  const categoriesGridTitleBar = document.getElementById('categories-grid-title-bar');
+  const categoriesAdminGrid = document.getElementById('categories-admin-grid');
+  let globalDishSearchQuery = '';
 
   let currentOpenedCategorySlug = null;
   let catDishSearchQuery = '';
@@ -362,15 +437,7 @@ const initAdminApp = () => {
     [topBtnMenu, topBtnOrders, topBtnHours].forEach(b => b && b.classList.remove('active'));
     [capsuleBtnMenu, capsuleBtnOrders, capsuleBtnHours, capsuleBtnOffers, capsuleBtnDelivery].forEach(b => b && b.classList.remove('active'));
 
-    if (targetView === 'view-menu') {
-      if (viewMenu) viewMenu.classList.add('active');
-      if (topBtnMenu) topBtnMenu.classList.add('active');
-      if (capsuleBtnMenu) capsuleBtnMenu.classList.add('active');
-      renderCategories();
-      renderDishes();
-      // Remove other view steps from back stack
-      ['view-orders', 'view-hours', 'view-offers', 'view-delivery'].forEach(v => backNav.removeStep('admin-view-' + v));
-    } else if (targetView === 'view-orders') {
+    if (targetView === 'view-orders') {
       if (viewOrders) viewOrders.classList.add('active');
       if (topBtnOrders) topBtnOrders.classList.add('active');
       if (capsuleBtnOrders) capsuleBtnOrders.classList.add('active');
@@ -379,6 +446,14 @@ const initAdminApp = () => {
         renderOrders();
         updateOrderBadges();
       }).catch(() => {});
+      // Remove other view steps from back stack
+      ['view-menu', 'view-hours', 'view-offers', 'view-delivery'].forEach(v => backNav.removeStep('admin-view-' + v));
+    } else if (targetView === 'view-menu') {
+      if (viewMenu) viewMenu.classList.add('active');
+      if (topBtnMenu) topBtnMenu.classList.add('active');
+      if (capsuleBtnMenu) capsuleBtnMenu.classList.add('active');
+      renderCategories();
+      renderDishes();
     } else if (targetView === 'view-hours') {
       if (viewHours) viewHours.classList.add('active');
       if (topBtnHours) topBtnHours.classList.add('active');
@@ -394,8 +469,8 @@ const initAdminApp = () => {
       renderDeliveryOptions();
     }
 
-    if (recordStep && targetView !== 'view-menu') {
-      backNav.pushStep('admin-view-' + targetView, () => switchView('view-menu', false));
+    if (recordStep && targetView !== 'view-orders') {
+      backNav.pushStep('admin-view-' + targetView, () => switchView('view-orders', false));
     }
 
     try {
@@ -445,12 +520,13 @@ const initAdminApp = () => {
         const safeId = escapeHtml(cat.id);
         const safeSlug = escapeHtml(cat.slug);
         const rawImg = (cat.image || '').trim();
-        const safeImg = (typeof dataService.sanitizeCategoryImageUrl === 'function')
+        const resolvedImg = (typeof dataService.sanitizeCategoryImageUrl === 'function')
           ? dataService.sanitizeCategoryImageUrl(rawImg)
           : ((rawImg.startsWith('categories/') || rawImg.startsWith('dishes/'))
             ? `/api/r2-image?key=${encodeURIComponent(rawImg)}`
             : rawImg);
-        const thumbHtml = safeImg
+        const safeImg = escapeHtml(resolvedImg);
+        const thumbHtml = resolvedImg
           ? `<div class="cat-emoji-badge cat-admin-thumb" style="width: 44px; height: 44px; min-width: 44px; border-radius: 50%; overflow: hidden; border: 2.2px solid #EA580C; padding: 0; display: flex; align-items: center; justify-content: center; background: #F3F4F6;">
                <img src="${safeImg}" alt="${safeName}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                <span style="display: none; width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 1.4rem;">${safeEmoji}</span>
@@ -703,7 +779,7 @@ const initAdminApp = () => {
               }
               const catFileName = `category_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
               const r2Res = await cloudflareR2Service.uploadImage(file, catFileName, 'categories');
-              if (r2Res && (r2Res.key || r2Res.url)) {
+              if (r2Res && r2Res.success && (r2Res.key || r2Res.url)) {
                 const finalImg = r2Res.key
                   ? `/api/r2-image?key=${encodeURIComponent(r2Res.key)}`
                   : (typeof dataService.sanitizeCategoryImageUrl === 'function'
@@ -794,7 +870,7 @@ const initAdminApp = () => {
           }
           const fileName = `category_${editId || 'custom'}_${Date.now()}.png`;
           const r2Res = await cloudflareR2Service.uploadImage(image, fileName, 'categories');
-          if (r2Res && (r2Res.key || r2Res.url)) {
+          if (r2Res && r2Res.success && (r2Res.key || r2Res.url)) {
             image = r2Res.key
               ? `/api/r2-image?key=${encodeURIComponent(r2Res.key)}`
               : r2Res.url;
@@ -1029,6 +1105,9 @@ const initAdminApp = () => {
   function renderDishes() {
     if (currentOpenedCategorySlug) {
       renderCategoryDishes();
+    }
+    if (globalDishSearchQuery && typeof renderGlobalDishes === 'function') {
+      renderGlobalDishes();
     }
   }
 
@@ -1427,6 +1506,142 @@ const initAdminApp = () => {
       renderCategoryDishes();
     });
   }
+
+  // Global Menu Search Controller
+  function renderGlobalDishes() {
+    if (!globalDishesResultsGrid || !globalDishSearchResultsPanel) return;
+    if (!globalDishSearchQuery) {
+      globalDishSearchResultsPanel.style.display = 'none';
+      if (categoriesGridTitleBar) categoriesGridTitleBar.style.display = 'flex';
+      if (categoriesAdminGrid) categoriesAdminGrid.style.display = 'grid';
+      return;
+    }
+
+    const allDishes = dataService.getDishes() || [];
+    const tokens = globalDishSearchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+    const matched = allDishes.filter(d => {
+      const fullText = `${d.name || ''} ${d.categoryName || ''} ${d.category || ''} ${d.desc || ''} ${d.badge || ''}`.toLowerCase();
+      return tokens.every(token => fullText.includes(token));
+    });
+
+    if (categoriesGridTitleBar) categoriesGridTitleBar.style.display = 'none';
+    if (categoriesAdminGrid) categoriesAdminGrid.style.display = 'none';
+    globalDishSearchResultsPanel.style.display = 'block';
+
+    if (globalSearchCountBadge) {
+      globalSearchCountBadge.textContent = `${matched.length} Dish${matched.length === 1 ? '' : 'es'}`;
+    }
+
+    if (matched.length === 0) {
+      globalDishesResultsGrid.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 32px 16px; background: #FFFFFF; border-radius: 14px; border: 1.5px dashed var(--admin-border);">
+          <div style="font-size: 2rem; margin-bottom: 8px;">🔍</div>
+          <h3 style="margin: 0 0 6px; font-size: 1.1rem; color: var(--admin-text-main);">No dishes match "${escapeHtml(globalDishSearchQuery)}"</h3>
+          <p style="margin: 0; font-size: 0.88rem; color: var(--admin-text-muted);">Check your spelling or search by another keyword.</p>
+        </div>
+      `;
+      return;
+    }
+
+    globalDishesResultsGrid.innerHTML = matched.map(dish => {
+      const isStock = dish.inStock !== false;
+      const safeId = escapeHtml(dish.id);
+      const safeName = escapeHtml(dish.name);
+      const safeImage = sanitizeUrl(dish.image, '/images/crispy-chicken.jpg');
+      const safeBadge = dish.badge ? escapeHtml(dish.badge) : '';
+      const safeCategory = escapeHtml(dish.categoryName || dish.category || 'Menu');
+      const safePrice = Math.round(parseFloat(dish.price) || 0);
+
+      return `
+        <article class="dish-admin-card app-style-card ${!isStock ? 'sold-out' : ''}" data-id="${safeId}">
+          <div class="dish-card-inner">
+            <img src="${safeImage}" alt="${safeName}" class="dish-card-img img-is-ready" loading="lazy" onerror="this.src='/images/crispy-chicken.jpg';">
+            <div class="dish-overlay"></div>
+
+            <div class="dish-card-top-bar">
+              <button type="button" 
+                      class="btn-stock-toggle ${isStock ? 'in-stock' : 'out-of-stock'}" 
+                      data-id="${safeId}" 
+                      title="1-Tap: Click to mark ${isStock ? 'Out of Stock' : 'In Stock'}">
+                <span class="stock-toggle-dot"></span>
+                <span class="stock-toggle-label">${isStock ? 'In Stock' : 'Out of Stock'}</span>
+              </button>
+
+              <div class="dish-card-top-actions">
+                <button type="button" class="btn-dish-card-action btn-dish-card-edit btn-manage-dish-trigger" data-id="${safeId}" title="Edit ${safeName}" aria-label="Edit dish">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="dish-bottom-info">
+              <div class="dish-category-badge-chip" style="background: rgba(0,0,0,0.55); backdrop-filter: blur(4px); color: #FFFFFF; font-weight: 600; margin-bottom: 4px;">
+                📂 ${safeCategory}
+              </div>
+              ${safeBadge ? `<div class="dish-category-badge-chip">${safeBadge}</div>` : ''}
+              <h3 class="dish-title-text">${safeName}</h3>
+              <div class="dish-price-rating-row">
+                <span class="dish-price-highlight">₹${safePrice}</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    // Attach 1-Tap Stock Toggle in Global Search Results
+    globalDishesResultsGrid.querySelectorAll('.btn-stock-toggle').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        if (id) {
+          const updated = dataService.toggleDishStock(id);
+          if (updated) {
+            showToast(`${updated.name} marked ${updated.inStock ? 'In Stock' : 'Out of Stock'}!`, 'info');
+            renderGlobalDishes();
+            renderCategories();
+          }
+        }
+      });
+    });
+
+    globalDishesResultsGrid.querySelectorAll('.btn-manage-dish-trigger').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        if (id) openEditDishModal(id);
+      });
+    });
+
+    globalDishesResultsGrid.querySelectorAll('.dish-admin-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const id = card.getAttribute('data-id');
+        if (id) openEditDishModal(id);
+      });
+    });
+  }
+
+  if (globalDishSearchInput) {
+    globalDishSearchInput.addEventListener('input', (e) => {
+      globalDishSearchQuery = e.target.value.toLowerCase().trim();
+      if (btnClearGlobalDishSearch) {
+        btnClearGlobalDishSearch.style.display = globalDishSearchQuery.length > 0 ? 'block' : 'none';
+      }
+      renderGlobalDishes();
+    });
+  }
+
+  if (btnClearGlobalDishSearch) {
+    btnClearGlobalDishSearch.addEventListener('click', () => {
+      globalDishSearchInput.value = '';
+      globalDishSearchQuery = '';
+      btnClearGlobalDishSearch.style.display = 'none';
+      renderGlobalDishes();
+    });
+  }
   modalDishClose.addEventListener('click', closeDishModal);
   btnCancelDish.addEventListener('click', closeDishModal);
   modalDishBackdrop.addEventListener('click', (e) => {
@@ -1722,17 +1937,28 @@ const initAdminApp = () => {
     const undelivered = list.filter(o => o.status === 'undelivered').length;
     const cancelled = list.filter(o => o.status === 'cancelled').length;
 
-    let revenue = 0;
+    let totalRevenue = 0;
+    let todayRevenue = 0;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
     list.forEach(o => {
       // Exclude cancelled and undelivered returned orders from revenue
       if (o.status !== 'cancelled' && o.status !== 'undelivered') {
         const num = parseFloat(String(o.total ?? '0').replace(/[^0-9.]/g, ''));
-        if (!isNaN(num)) revenue += num;
+        if (!isNaN(num)) {
+          totalRevenue += num;
+          const createdMs = typeof o.createdAt === 'number' ? o.createdAt : new Date(o.createdAt).getTime();
+          if (!isNaN(createdMs) && createdMs >= todayStart) {
+            todayRevenue += num;
+          }
+        }
       }
     });
 
     const kpiCancelledOrders = document.getElementById('kpi-cancelled-orders');
     const kpiUndeliveredOrders = document.getElementById('kpi-undelivered-orders');
+    const kpiAlltimeRevenue = document.getElementById('kpi-alltime-revenue');
     if (kpiTotalOrders) kpiTotalOrders.textContent = total;
     if (kpiAcceptedOrders) kpiAcceptedOrders.textContent = accepted;
     if (kpiCookingOrders) kpiCookingOrders.textContent = cooking;
@@ -1741,7 +1967,8 @@ const initAdminApp = () => {
     if (kpiDeliveredOrders) kpiDeliveredOrders.textContent = delivered;
     if (kpiUndeliveredOrders) kpiUndeliveredOrders.textContent = undelivered;
     if (kpiCancelledOrders) kpiCancelledOrders.textContent = cancelled;
-    if (kpiTotalRevenue) kpiTotalRevenue.textContent = `₹${Math.round(revenue)}`;
+    if (kpiTotalRevenue) kpiTotalRevenue.textContent = `₹${Math.round(todayRevenue)}`;
+    if (kpiAlltimeRevenue) kpiAlltimeRevenue.textContent = `(All-time: ₹${Math.round(totalRevenue)})`;
 
     updateOrderBadges();
   }
@@ -1879,12 +2106,14 @@ const initAdminApp = () => {
         const cname = String(o.customerName || '').toLowerCase();
         const cphone = String(o.customerPhone || o.phone || '').toLowerCase();
         const pcode = String(o.pickupCode || '').toLowerCase();
+        const payMethod = (o.paymentMethod || (o.isPaidOnline ? 'online paid' : (o.doorstepUpi ? 'doorstep upi' : 'cod cash'))).toLowerCase();
         return oid.includes(q) ||
                dispId.includes(q) ||
                items.includes(q) ||
                cname.includes(q) ||
                cphone.includes(q) ||
-               pcode.includes(q);
+               pcode.includes(q) ||
+               payMethod.includes(q);
       });
     }
 
@@ -2055,13 +2284,71 @@ const initAdminApp = () => {
         </div>
       ` : '';
 
+      // Special cooking / packaging note callout directly on card
+      const customerNotes = (order.kitchenNotes || order.notes || order.customerNotes || (order.addressDetails && order.addressDetails.instructions) || '').trim();
+      const chefNoteHtml = customerNotes ? `
+        <div class="order-chef-note-box">
+          <div class="chef-note-title">
+            <i class="fa-solid fa-bell-concierge"></i> Special Cooking / Packing Note
+          </div>
+          <div class="chef-note-text">
+            "${escapeHtml(customerNotes)}"
+          </div>
+        </div>
+      ` : '';
+
+      // Distance chip
+      const distanceKm = order.addressDetails?.distanceKm || '';
+      const distanceBadgeHtml = distanceKm ? `<span class="cust-distance-chip" title="Distance from restaurant"><i class="fa-solid fa-route"></i> ${escapeHtml(distanceKm)} km</span>` : '';
+
+      // Payment Method distinction (COD vs Online vs Doorstep UPI)
+      let paymentStatusBadge = '';
+      let totalLabel = 'Total Paid';
+      if (order.isPaidOnline === true || order.paymentMethod === 'online') {
+        paymentStatusBadge = `
+          <span class="order-payment-pill is-online" title="Customer paid online via UPI/Card">
+            <i class="fa-solid fa-circle-check"></i> Paid Online
+          </span>
+        `;
+        totalLabel = 'Total Paid';
+      } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi') {
+        paymentStatusBadge = `
+          <span class="order-payment-pill is-doorstep-upi" title="Payment to be collected via Doorstep Dynamic UPI QR">
+            <i class="fa-solid fa-qrcode"></i> Doorstep UPI QR
+          </span>
+        `;
+        totalLabel = 'To Collect';
+      } else {
+        paymentStatusBadge = `
+          <span class="order-payment-pill is-cod" title="Cash to be collected upon doorstep delivery">
+            <i class="fa-solid fa-hand-holding-dollar"></i> Collect Cash (COD)
+          </span>
+        `;
+        totalLabel = 'To Collect';
+      }
+
+      // Kitchen Urgency Timer
+      let timeClass = 'order-time-tag';
+      let timeDisplay = timeAgo;
+      if (isUnstarted) {
+        if (ageMins >= 5) {
+          timeClass = 'order-time-tag time-urgent';
+          timeDisplay = `⚠️ Waiting ${ageMins}m!`;
+        } else if (ageMins >= 3) {
+          timeClass = 'order-time-tag time-warning';
+          timeDisplay = `🕒 ${timeAgo} (Prepare soon)`;
+        }
+      }
+
       return `
         <div class="order-card-admin ${cardOverdueClass}" data-id="${safeOrderId}">
           <div class="order-card-header">
             <div>
               <div class="order-id-label">${escapeHtml(displayOrderId)}</div>
-              <div class="order-pickup-code-badge"><i class="fa-solid fa-tag"></i> Write on Bag: <strong>#${bagCode}</strong></div>
-              <div class="order-time-tag"><i class="fa-regular fa-clock"></i> ${timeAgo}</div>
+              <div class="order-pickup-code-badge" title="Write this 4-digit token on the food delivery bag/box">
+                <i class="fa-solid fa-tag"></i> <span>Write on Bag:</span> <strong>#${bagCode}</strong>
+              </div>
+              <div class="${timeClass}"><i class="fa-regular fa-clock"></i> ${timeDisplay}</div>
               ${overdueBadgeHtml}
             </div>
             <span class="order-status-badge ${statusClass}">
@@ -2089,12 +2376,15 @@ const initAdminApp = () => {
               ` : `<span class="no-phone-tag">No phone</span>`}
             </div>
             ${hasRealPhone ? `<div style="font-size:0.75rem; color:#4B5563; font-weight:600; margin-bottom:2px;"><i class="fa-solid fa-phone"></i> ${escapeHtml(displayPhone)}</div>` : ''}
-            <span>📍 ${safeAddress}${order.addressDetails?.distanceKm ? ` (${escapeHtml(order.addressDetails.distanceKm)} km)` : ''}</span>
+            <span>📍 ${safeAddress}${distanceBadgeHtml}</span>
           </div>
 
           <div class="order-items-scroll-box">
             ${itemsHtml}
           </div>
+
+          ${chefNoteHtml}
+
           ${(order.status === 'cancelled' && order.cancellationReason) ? `
             <div style="background:#FEF2F2; color:#B91C1C; padding:6px 10px; border-radius:8px; font-size:0.78rem; font-weight:600; margin-bottom:8px; border:1px solid #FECACA;">
               <i class="fa-solid fa-ban"></i> Reason: ${escapeHtml(order.cancellationReason)}
@@ -2102,15 +2392,27 @@ const initAdminApp = () => {
           ` : ''}
 
           <div class="order-total-row">
-            <span class="order-total-title">Total Paid</span>
-            <span class="order-total-val">${safeTotal}</span>
+            <div class="order-payment-col">
+              ${paymentStatusBadge}
+            </div>
+            <div class="order-amount-col">
+              <span class="order-total-title">${totalLabel}</span>
+              <span class="order-total-val">${safeTotal}</span>
+            </div>
           </div>
 
           <div class="order-card-actions-bar">
-            <button type="button" class="btn-manage-order" data-id="${safeOrderId}">
-              <i class="fa-solid fa-receipt"></i> View Order
-            </button>
-            ${nextActionBtn}
+            <div class="order-actions-secondary-row">
+              <button type="button" class="btn-manage-order" data-id="${safeOrderId}">
+                <i class="fa-solid fa-receipt"></i> View Order
+              </button>
+              <button type="button" class="btn-quick-kot" data-id="${safeOrderId}" title="Quick Print Kitchen Order Ticket (KOT)">
+                <i class="fa-solid fa-print"></i> Print KOT
+              </button>
+            </div>
+            <div class="order-actions-primary-row">
+              ${nextActionBtn}
+            </div>
           </div>
         </div>
       `;
@@ -2130,6 +2432,20 @@ const initAdminApp = () => {
         e.stopPropagation();
         const id = btn.getAttribute('data-id');
         openOrderManageModal(id);
+      });
+    });
+
+    // 1B. Quick KOT Thermal Print
+    ordersContainer.querySelectorAll('.btn-quick-kot').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const order = (dataService.getOrderById ? dataService.getOrderById(id) : null) || dataService.getOrders().find(o => o.id === id);
+        if (order) {
+          printOrderKOT(order);
+        } else {
+          showToast('Order details not found.', 'warning');
+        }
       });
     });
 
@@ -2467,10 +2783,19 @@ const initAdminApp = () => {
         'cooking': 1,
         'ready_for_pickup': 2,
         'on_the_way': 3,
-        'delivered': 4
+        'delivered': 4,
+        'undelivered': 4
       };
 
       const order = (dataService.getOrderById ? dataService.getOrderById(orderId) : null) || dataService.getOrders().find(o => o.id === orderId);
+      if (order && order.status === 'cancelled') {
+        showToast('🔒 Cancelled Order: Cannot modify status of a cancelled order!', 'warning');
+        return;
+      }
+      if (order && (order.status === 'delivered' || order.status === 'undelivered')) {
+        showToast('🔒 Finalized Order: Order has reached its final delivery state!', 'warning');
+        return;
+      }
       const currentRank = order && STATUS_RANKS[order.status] !== undefined ? STATUS_RANKS[order.status] : 0;
       const targetRank = STATUS_RANKS[targetStatus] !== undefined ? STATUS_RANKS[targetStatus] : -1;
 
@@ -2509,6 +2834,12 @@ const initAdminApp = () => {
       const orderId = orderEditId ? orderEditId.value : null;
       const nextStatus = btnModalAdvanceStatus.getAttribute('data-next');
       if (!orderId || !nextStatus) return;
+
+      const order = (dataService.getOrderById ? dataService.getOrderById(orderId) : null) || dataService.getOrders().find(o => o.id === orderId);
+      if (order && (order.status === 'cancelled' || order.status === 'delivered' || order.status === 'undelivered')) {
+        showToast('🔒 Finalized Order: Cannot advance a finalized or cancelled order!', 'warning');
+        return;
+      }
 
       // STRICT: Only Delivery Boy / Rider can pick up (on_the_way) and mark delivered (delivered)!
       if (nextStatus === 'on_the_way') {
@@ -2630,6 +2961,9 @@ const initAdminApp = () => {
           </tbody>
         </table>
         <div class="kot-divider">--------------------------------</div>
+        ${Number(order.packagingFee || order.packingCharge || 0) > 0 ? `<div class="kot-row"><span>Packaging Fee:</span> <span>₹${Number(order.packagingFee || order.packingCharge || 0)}</span></div>` : ''}
+        ${Number(order.deliveryFee || 0) > 0 ? `<div class="kot-row"><span>Delivery Fee:</span> <span>₹${Number(order.deliveryFee || 0)}</span></div>` : ''}
+        ${Number(order.discount || order.discountAmount || order.couponDiscount || 0) > 0 ? `<div class="kot-row"><span>Coupon Discount:</span> <span>-₹${Number(order.discount || order.discountAmount || order.couponDiscount || 0)}</span></div>` : ''}
         <div class="kot-row" style="font-size: 13px; font-weight: 900;">
           <span>TOTAL AMOUNT:</span>
           <span>${escapeHtml(order.total || `₹${order.totalAmount || 0}`)}</span>
@@ -2818,16 +3152,18 @@ const initAdminApp = () => {
     renderOrders();
   });
 
-  btnRefreshOrders.addEventListener('click', async () => {
-    btnRefreshOrders.classList.add('rotating');
-    try {
-      await dataService.syncOrdersFromSupabase(true);
-    } catch {}
-    renderOrders();
-    updateOrderBadges();
-    btnRefreshOrders.classList.remove('rotating');
-    showToast('🔄 Orders updated!', 'info');
-  });
+  if (btnRefreshOrders) {
+    btnRefreshOrders.addEventListener('click', async () => {
+      btnRefreshOrders.classList.add('rotating');
+      try {
+        await dataService.syncOrdersFromSupabase(true);
+      } catch {}
+      renderOrders();
+      updateOrderBadges();
+      btnRefreshOrders.classList.remove('rotating');
+      showToast('🔄 Orders updated!', 'info');
+    });
+  }
 
   // ========================================================
   // 4C. KITCHEN ORDER PERSISTENT BEEPING ALARM & STOP ENGINE
@@ -2987,6 +3323,7 @@ const initAdminApp = () => {
           alarmOrdersCountBadge.textContent = `${ringingOrdersQueue.length} Order${ringingOrdersQueue.length > 1 ? 's' : ''}`;
         }
         if (alarmBannerCustomer) alarmBannerCustomer.textContent = nextOrder.customerName || 'Customer';
+        if (alarmBannerTotal) alarmBannerTotal.textContent = nextOrder.total || '₹0';
         if (alarmBannerItems) alarmBannerItems.textContent = nextOrder.itemsSummary || 'Order Items';
         return; // Retain alarm loop active for remaining orders
       }
@@ -3373,28 +3710,30 @@ const initAdminApp = () => {
 
       const now = Date.now();
       // Trigger kitchen alarm for newly arrived orders that are NOT yet acknowledged and < 15 mins old
-      const freshAccepted = newArrivals.find(o => 
+      const freshAcceptedList = newArrivals.filter(o => 
         ((o.status || 'accepted') === 'accepted' || o.status === 'pending') && 
         !o.alarmAcknowledged && 
         !o.alarmStoppedAt &&
         !isAlarmAcknowledged(o.id) &&
         (!o.createdAt || (now - parseTimestampMs(o.createdAt) < 15 * 60 * 1000))
       );
-      if (freshAccepted) {
-        const normId = String(freshAccepted.id).trim();
-        const lastAlert = recentAlertedOrderIds.get(normId) || 0;
-        if (isStaffSessionActive('admin') && (now - lastAlert >= 5000)) {
-          recentAlertedOrderIds.set(normId, now);
-          startKitchenAlarm(freshAccepted);
+      if (freshAcceptedList.length > 0) {
+        freshAcceptedList.forEach(freshAccepted => {
+          const normId = String(freshAccepted.id).trim();
+          const lastAlert = recentAlertedOrderIds.get(normId) || 0;
+          if (isStaffSessionActive('admin') && (now - lastAlert >= 5000)) {
+            recentAlertedOrderIds.set(normId, now);
+            startKitchenAlarm(freshAccepted);
 
-          const freshDispId = formatDisplayOrderId(freshAccepted.id, freshAccepted.pickupCode);
-          sendSystemNotification({
-            title: `🚨 Savera Paradise Kitchen: New Order ${freshDispId}! `,
-            body: `${freshAccepted.customerName || 'Customer'} • ${freshAccepted.itemsSummary || 'Food order'} (Total: ${freshAccepted.total || ''})`,
-            tag: `admin-order-${freshAccepted.id}`
-          });
-          flashTabTitle(`🚨 NEW ORDER ${freshDispId}!`);
-        }
+            const freshDispId = formatDisplayOrderId(freshAccepted.id, freshAccepted.pickupCode);
+            sendSystemNotification({
+              title: `🚨 Savera Paradise Kitchen: New Order ${freshDispId}! `,
+              body: `${freshAccepted.customerName || 'Customer'} • ${freshAccepted.itemsSummary || 'Food order'} (Total: ${freshAccepted.total || ''})`,
+              tag: `admin-order-${freshAccepted.id}`
+            });
+            flashTabTitle(`🚨 NEW ORDER ${freshDispId}!`);
+          }
+        });
       }
 
       renderOrders();
@@ -3596,6 +3935,27 @@ const initAdminApp = () => {
   });
   inputStoreOpen?.addEventListener('change', () => {
     if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
+  });
+
+  // Operating Hours Preset Click Handlers
+  document.querySelectorAll('.btn-time-quick-open').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.getAttribute('data-time');
+      if (inputOpenTime && t) {
+        inputOpenTime.value = t;
+        inputOpenTime.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-time-quick-close').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.getAttribute('data-time');
+      if (inputCloseTime && t) {
+        inputCloseTime.value = t;
+        inputCloseTime.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
   });
 
   function updateStoreOpenToggleUI(isOpen) {
@@ -3948,6 +4308,7 @@ const initAdminApp = () => {
       }
       if (headerStatusText) headerStatusText.textContent = '🌙 Store Closed for Night';
       if (adminStoreStatusPill) {
+        adminStoreStatusPill.style.display = 'inline-flex';
         adminStoreStatusPill.style.background = '#FEF2F2';
         adminStoreStatusPill.style.borderColor = '#FECACA';
         adminStoreStatusPill.style.color = '#991B1B';
@@ -3995,6 +4356,7 @@ const initAdminApp = () => {
       }
       if (headerStatusText) headerStatusText.textContent = `⚡ Rush (${mins}m ${secs}s)`;
       if (adminStoreStatusPill) {
+        adminStoreStatusPill.style.display = 'inline-flex';
         adminStoreStatusPill.style.background = '#FFFBEB';
         adminStoreStatusPill.style.borderColor = '#FDE68A';
         adminStoreStatusPill.style.color = '#B45309';
@@ -4025,6 +4387,7 @@ const initAdminApp = () => {
       }
       if (headerStatusText) headerStatusText.textContent = 'Live Kitchen Online';
       if (adminStoreStatusPill) {
+        adminStoreStatusPill.style.display = 'inline-flex';
         adminStoreStatusPill.style.background = '#ECFDF5';
         adminStoreStatusPill.style.borderColor = '#A7F3D0';
         adminStoreStatusPill.style.color = '#065F46';
@@ -4108,15 +4471,15 @@ const initAdminApp = () => {
     const settings = dataService.getSettings();
 
     // Populate promotional offer
-    if (inputOfferActive) inputOfferActive.checked = settings.offerActive !== false;
-    if (inputOfferCode) inputOfferCode.value = (settings.offerCode || 'SAVERA20').toUpperCase();
+    if (inputOfferActive && document.activeElement !== inputOfferActive) inputOfferActive.checked = settings.offerActive !== false;
+    if (inputOfferCode && document.activeElement !== inputOfferCode) inputOfferCode.value = (settings.offerCode || 'SAVERA20').toUpperCase();
     const offerType = settings.offerDiscountType === 'flat' ? 'flat' : 'percent';
     const currentDiscount = offerType === 'flat' ? (settings.offerDiscountAmount || 100) : (settings.offerDiscountPercent || 20);
-    if (inputOfferDiscount) inputOfferDiscount.value = currentDiscount;
-    if (inputOfferMinOrder) inputOfferMinOrder.value = settings.offerMinOrder !== undefined ? settings.offerMinOrder : 300;
-    if (inputOfferTitle) inputOfferTitle.value = (settings.offerTitle || 'Craving Savera? Get 20% OFF Today!').replace(/SMM Taj|SMM/gi, 'Savera');
-    if (inputOfferSubtext) inputOfferSubtext.value = settings.offerSubtext || 'Use coupon code at checkout for special discount.';
-    if (inputOfferFreeDelivery) inputOfferFreeDelivery.checked = settings.offerFreeDelivery !== false;
+    if (inputOfferDiscount && document.activeElement !== inputOfferDiscount) inputOfferDiscount.value = currentDiscount;
+    if (inputOfferMinOrder && document.activeElement !== inputOfferMinOrder) inputOfferMinOrder.value = settings.offerMinOrder !== undefined ? settings.offerMinOrder : 300;
+    if (inputOfferTitle && document.activeElement !== inputOfferTitle) inputOfferTitle.value = (settings.offerTitle || 'Craving Savera? Get 20% OFF Today!').replace(/SMM Taj|SMM/gi, 'Savera');
+    if (inputOfferSubtext && document.activeElement !== inputOfferSubtext) inputOfferSubtext.value = settings.offerSubtext || 'Use coupon code at checkout for special discount.';
+    if (inputOfferFreeDelivery && document.activeElement !== inputOfferFreeDelivery) inputOfferFreeDelivery.checked = settings.offerFreeDelivery !== false;
 
     setDiscountType(offerType);
 
@@ -4276,8 +4639,28 @@ const initAdminApp = () => {
     formStoreHours.addEventListener('submit', async (e) => {
       e.preventDefault();
       const current = dataService.getSettings();
-      const openT = inputOpenTime?.value?.trim() || '11:00 AM';
-      const closeT = inputCloseTime?.value?.trim() || '11:00 PM';
+
+      function normalizeTimeStr(val, defaultVal) {
+        if (!val) return defaultVal;
+        const str = String(val).trim();
+        const m = str.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)?$/i);
+        if (!m) return str;
+        let h = parseInt(m[1], 10);
+        let mins = m[2] ? parseInt(m[2], 10) : 0;
+        let period = m[3] ? m[3].toUpperCase() : (h >= 12 ? 'PM' : 'AM');
+        if (h > 12) {
+          h -= 12;
+          period = 'PM';
+        } else if (h === 0) {
+          h = 12;
+        }
+        return `${h}:${String(mins).padStart(2, '0')} ${period}`;
+      }
+
+      const openT = normalizeTimeStr(inputOpenTime?.value?.trim(), '11:00 AM');
+      const closeT = normalizeTimeStr(inputCloseTime?.value?.trim(), '11:00 PM');
+      if (inputOpenTime) inputOpenTime.value = openT;
+      if (inputCloseTime) inputCloseTime.value = closeT;
       const rawPhone = inputRestaurantPhone?.value?.trim() || current.restaurantPhone || current.helpline || '+91 98450 12345';
       const restPhone = formatStorePhoneNumber(rawPhone);
       if (inputRestaurantPhone) inputRestaurantPhone.value = restPhone;
@@ -4509,6 +4892,8 @@ const initAdminApp = () => {
         updateOfferPreview();
         const discLabel = type === 'flat' ? `₹${discount} OFF` : `${discount}% OFF`;
         const minMsg = minOrder > 0 ? ` on orders above ₹${minOrder}` : '';
+        // Auto-close promo offer panel on save
+        document.querySelector('.btn-close-offer-panel[data-target="offer-card-promo"]')?.click();
         showToast(`🎉 Settings saved! Coupon ${code} (${discLabel}${minMsg}) is now active.`, 'success');
         if (saveBtn) {
           saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
@@ -5216,12 +5601,18 @@ const initAdminApp = () => {
 
     adminRidersGrid.innerHTML = riders.map(r => {
       const pin = escapeHtml(r.pin);
-      const name = escapeHtml(r.name);
-      const phone = escapeHtml(r.phone || '');
+      const name = escapeHtml(r.name || `Rider ${r.pin}`);
+      const rawPhone = (r.phone || '').trim();
+      const phoneDigits = rawPhone.replace(/\D/g, '');
+      const hasRealPhone = phoneDigits.length >= 10;
+      const dialerPhone = hasRealPhone ? phoneDigits.slice(-10) : '';
+      const formattedPhone = hasRealPhone ? `+91 ${dialerPhone.slice(0, 5)} ${dialerPhone.slice(5)}` : escapeHtml(rawPhone);
+      const callLink = hasRealPhone ? `tel:+91${dialerPhone}` : '#';
+      const waLink = hasRealPhone ? `https://wa.me/91${dialerPhone}?text=${encodeURIComponent(`Hello ${r.name || 'Rider'}, regarding Savera Paradise food delivery.`)}` : '#';
+
       const vehicle = escapeHtml(r.vehicle || '🏍️ Bike');
-      const avatar = r.avatar || ((vehicle.includes('🛵') || vehicle.toLowerCase().includes('scooter')) ? '🛵' : ((vehicle.includes('🚗') || vehicle.toLowerCase().includes('car')) ? '🚗' : ((vehicle.includes('🚲') || vehicle.toLowerCase().includes('bicycle')) ? '🚲' : ((vehicle.includes('⚡') || vehicle.toLowerCase().includes('electric') || vehicle.toLowerCase().includes('ev')) ? '⚡' : '🏍️'))));
-      const phoneDigits = (r.phone || '').replace(/\D/g, '');
-      const callLink = phoneDigits.length >= 10 ? `tel:+91${phoneDigits.slice(-10)}` : '#';
+      const rawAvatar = r.avatar || ((vehicle.includes('🛵') || vehicle.toLowerCase().includes('scooter')) ? '🛵' : ((vehicle.includes('🚗') || vehicle.toLowerCase().includes('car')) ? '🚗' : ((vehicle.includes('🚲') || vehicle.toLowerCase().includes('bicycle')) ? '🚲' : ((vehicle.includes('⚡') || vehicle.toLowerCase().includes('electric') || vehicle.toLowerCase().includes('ev')) ? '⚡' : '🏍️'))));
+      const avatar = escapeHtml(rawAvatar);
 
       return `
         <div class="admin-rider-card" data-pin="${pin}">
@@ -5229,17 +5620,30 @@ const initAdminApp = () => {
             <div class="admin-rider-identity">
               <div class="admin-rider-avatar-wrap">
                 <span>${avatar}</span>
-                <span class="admin-rider-vehicle-pill">${vehicle}</span>
               </div>
               <div class="admin-rider-meta">
-                <h3>${name}</h3>
-                ${phone ? `<a href="${callLink}" class="admin-rider-phone-link"><i class="fa-solid fa-phone"></i> ${phone}</a>` : `<span style="color: var(--admin-text-muted); font-size: 0.82rem;"><i class="fa-solid fa-phone-slash"></i> No phone added</span>`}
+                <h3 class="admin-rider-name" title="${name}">${name}</h3>
+                <div class="admin-rider-vehicle-pill" title="${vehicle}">
+                  <span>${vehicle}</span>
+                </div>
               </div>
             </div>
-            <div class="admin-rider-pin-badge" style="background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12);" title="Secret login PIN is protected and managed in the Owner Portal">
-              <small style="color: var(--admin-text-muted);"><i class="fa-solid fa-lock" style="font-size:0.65rem;"></i> Login PIN</small>
-              <span style="letter-spacing: 2px; color: #94A3B8;">••••</span>
+            <div class="admin-rider-pin-badge" title="Secret login PIN is protected and managed in the Owner Portal">
+              <small><i class="fa-solid fa-shield-halved"></i> PIN</small>
+              <span class="pin-masked-dots">••••</span>
             </div>
+          </div>
+
+          <div class="admin-rider-phone-row">
+            ${hasRealPhone ? `
+              <a href="${callLink}" class="admin-rider-phone-link" title="Call ${name}">
+                <i class="fa-solid fa-phone"></i> ${formattedPhone}
+              </a>
+            ` : `
+              <span class="admin-rider-no-phone">
+                <i class="fa-solid fa-phone-slash"></i> No phone added
+              </span>
+            `}
           </div>
 
           <div class="admin-rider-card-footer">
@@ -5248,7 +5652,14 @@ const initAdminApp = () => {
               <span>Active • Fleet Ready</span>
             </span>
             <div class="admin-rider-actions">
-              ${phone ? `<a href="${callLink}" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; border-radius: 8px;"><i class="fa-solid fa-phone"></i> Call Rider</a>` : ''}
+              ${hasRealPhone ? `
+                <a href="${waLink}" target="_blank" rel="noopener noreferrer" class="btn-rider-wa" title="WhatsApp ${name}">
+                  <i class="fa-brands fa-whatsapp"></i>
+                </a>
+                <a href="${callLink}" class="btn-rider-call" title="Call ${name}">
+                  <i class="fa-solid fa-phone"></i> Call
+                </a>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -5301,15 +5712,21 @@ const initAdminApp = () => {
     switchView('view-delivery');
   } else if (initialHash === '#offers' || initialHash === '#offer' || initialHash === '#promo') {
     switchView('view-offers');
+  } else if (initialHash === '#menu') {
+    switchView('view-menu');
   } else if (initialHash === '#orders') {
     switchView('view-orders');
   } else {
     try {
       const savedTab = sessionStorage.getItem('quickbite_admin_tab');
-      if (savedTab && (savedTab === 'view-hours' || savedTab === 'view-orders' || savedTab === 'view-offers' || savedTab === 'view-delivery')) {
+      if (savedTab && (savedTab === 'view-hours' || savedTab === 'view-menu' || savedTab === 'view-offers' || savedTab === 'view-delivery' || savedTab === 'view-orders')) {
         switchView(savedTab);
+      } else {
+        switchView('view-orders');
       }
-    } catch {}
+    } catch {
+      switchView('view-orders');
+    }
   }
 
   window.addEventListener('hashchange', () => {
@@ -5343,8 +5760,8 @@ const initAdminApp = () => {
     close: () => closeCategoryDetailInternal()
   });
   backNav.registerFallbackChecker({
-    isOpen: () => activeView && activeView !== 'view-menu',
-    close: () => switchView('view-menu', false)
+    isOpen: () => activeView && activeView !== 'view-orders',
+    close: () => switchView('view-orders', false)
   });
 };
 

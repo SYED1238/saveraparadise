@@ -12,6 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/performanceTier.css">
 
   <!-- PWA & Mobile Web App Meta -->
   <link rel="manifest" href="/manifest.json">
@@ -30,6 +31,26 @@
   <script>
     (function() {
       try {
+        // Early Zero-Permission Performance Tier Pre-classifier
+      try {
+        var params = new URLSearchParams(window.location.search);
+        var urlOverride = params.get('perf');
+        var stored = localStorage.getItem('savera_perf_override');
+        var ov = (urlOverride || stored || '').toLowerCase();
+        var tier = 'balanced';
+        if (ov === 'ultra' || ov === 'high') tier = 'ultra';
+        else if (ov === 'lite' || ov === 'low' || ov === 'potato') tier = 'lite';
+        else if (ov === 'balanced' || ov === 'mid') tier = 'balanced';
+        else {
+          var ram = navigator.deviceMemory || 4;
+          var cores = navigator.hardwareConcurrency || 4;
+          if (ram >= 6 && cores >= 6) tier = 'ultra';
+          else if (ram >= 4) tier = 'balanced';
+          else tier = 'lite';
+        }
+        document.documentElement.classList.add('perf-tier-' + tier);
+        document.documentElement.setAttribute('data-perf-tier', tier);
+      } catch(e) {}
         if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
           document.documentElement.classList.add('pwa-customer-installed');
         } else {

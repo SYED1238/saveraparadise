@@ -3,7 +3,7 @@
  * POST /api/checkout
  */
 import { signPayload } from './_auth.js';
-import { verifyTurnstileToken, getClientIp } from './_turnstile.js';
+import { verifyTurnstileToken, getClientIp, checkOrderVelocity, recordOrderVelocity } from './_turnstile.js';
 import { hydrateEnv, isOriginAllowed, jsonResponse } from './_adapter.js';
 
 const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
@@ -164,18 +164,37 @@ export async function onRequest(context) {
 
     const clientToken = turnstileToken || request.headers.get('cf-turnstile-response') || body?.['cf-turnstile-response'];
     const clientIp = getClientIp(request);
-    const botCheck = await verifyTurnstileToken(clientToken, clientIp, null, env);
-    if (!botCheck.success) {
-      return jsonResponse({ error: botCheck.error || 'Bot verification failed. Please refresh and retry.' }, 403, Object.fromEntries(corsHeaders.entries()));
+    const rawPhone = userPhone || body?.userPhone || body?.phone || body?.customerPhone;
+    const phoneDigits = (rawPhone !== undefined && rawPhone !== null && String(rawPhone).trim() !== '')
+      ? String(rawPhone).replace(/\D/g, '').slice(-10)
+      : '';
+
+    // Adaptive Velocity: Allow 2 fast orders per 60s without token.
+    // Trigger Turnstile verification requirement on 3rd rapid order within 60s.
+    const isTestLocalhost = isTestEnv && (clientIp === '127.0.0.1' || clientIp === '');
+    const ipVelocity = isTestLocalhost ? { allowedWithoutToken: true } : checkOrderVelocity('ip:' + (clientIp || 'unknown'));
+    const phoneVelocity = (isTestLocalhost || !phoneDigits) ? { allowedWithoutToken: true } : checkOrderVelocity('phone:' + phoneDigits);
+    const isRapidOrderBurst = (!ipVelocity.allowedWithoutToken || !phoneVelocity.allowedWithoutToken);
+
+    if (clientToken) {
+      const botCheck = await verifyTurnstileToken(clientToken, clientIp, null, env);
+      if (!botCheck.success) {
+        return jsonResponse({
+          error: botCheck.error || 'Bot verification failed. Automated traffic blocked.',
+          botBlocked: true
+        }, 403, Object.fromEntries(corsHeaders.entries()));
+      }
+    } else if (isRapidOrderBurst) {
+      return jsonResponse({
+        error: 'Rapid orders detected (3+ orders in under a minute). Please complete the Cloudflare security verification challenge.',
+        challengeRequired: true,
+        botBlocked: true
+      }, 403, Object.fromEntries(corsHeaders.entries()));
     }
 
     // 10-digit Indian Mobile Validation
-    const rawPhone = userPhone || body?.userPhone || body?.phone || body?.customerPhone;
-    if (rawPhone !== undefined && rawPhone !== null && String(rawPhone).trim() !== '') {
-      const phoneDigits = String(rawPhone).replace(/\D/g, '').slice(-10);
-      if (!/^[6-9]\d{9}$/.test(phoneDigits)) {
-        return jsonResponse({ error: 'A valid 10-digit Indian mobile number (starting with 6-9) is required' }, 400, Object.fromEntries(corsHeaders.entries()));
-      }
+    if (phoneDigits && !/^[6-9]\d{9}$/.test(phoneDigits)) {
+      return jsonResponse({ error: 'A valid 10-digit Indian mobile number (starting with 6-9) is required' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -441,6 +460,12 @@ export async function onRequest(context) {
     };
 
     const checkoutToken = signPayload(checkoutPayload, env);
+
+    // Record order velocity for IP and Phone (skipped for local unit test runs)
+    if (!isTestLocalhost) {
+      recordOrderVelocity('ip:' + (clientIp || 'unknown'));
+      if (phoneDigits) recordOrderVelocity('phone:' + phoneDigits);
+    }
 
     return jsonResponse({
       success: true,

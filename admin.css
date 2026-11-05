@@ -4837,7 +4837,9 @@ label.btn-file-upload i {
 
 .mov-preset-btn,
 .min-order-preset-btn,
-.threshold-preset-btn {
+.threshold-preset-btn,
+.unlocked-min-btn,
+.unlocked-pct-btn {
   padding: 6px 14px;
   background: #F3F4F6;
   color: var(--admin-text-main);
@@ -4851,14 +4853,18 @@ label.btn-file-upload i {
 
 .mov-preset-btn:hover,
 .min-order-preset-btn:hover,
-.threshold-preset-btn:hover {
+.threshold-preset-btn:hover,
+.unlocked-min-btn:hover,
+.unlocked-pct-btn:hover {
   background: #E5E7EB;
   border-color: #D1D5DB;
 }
 
 .mov-preset-btn.active,
 .min-order-preset-btn.active,
-.threshold-preset-btn.active {
+.threshold-preset-btn.active,
+.unlocked-min-btn.active,
+.unlocked-pct-btn.active {
   background: var(--admin-accent);
   color: #FFFFFF;
   border-color: var(--admin-accent);
@@ -6024,14 +6030,14 @@ body.kitchen-alarm-ringing::before {
    ========================================================================== */
 .admin-riders-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
   gap: 16px;
   margin-top: 16px;
 }
 
 .admin-rider-card {
-  background: var(--admin-card-bg, #181512);
-  border: 1px solid var(--admin-border, rgba(255, 255, 255, 0.1));
+  background: #FFFFFF;
+  border: 1.5px solid var(--admin-border, #E5E7EB);
   border-radius: var(--radius-md, 14px);
   padding: 16px 18px;
   display: flex;
@@ -6039,129 +6045,223 @@ body.kitchen-alarm-ringing::before {
   gap: 12px;
   position: relative;
   transition: all 0.25s ease;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .admin-rider-card:hover {
-  border-color: rgba(255, 90, 38, 0.35);
+  border-color: #FB923C;
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 6px 18px rgba(251, 146, 60, 0.12);
 }
 
 .admin-rider-card-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .admin-rider-identity {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  flex: 1;
 }
 
 .admin-rider-avatar-wrap {
-  position: relative;
   width: 48px;
   height: 48px;
+  min-width: 48px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 2px solid var(--brand-primary, #FF5A26);
+  background: #FFF7ED;
+  border: 2px solid #FB923C;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.4rem;
-  overflow: visible;
+  font-size: 1.45rem;
   flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(234, 88, 12, 0.15);
+}
+
+.admin-rider-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-rider-name {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #111827;
+  margin: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-rider-vehicle-pill {
-  position: absolute;
-  bottom: -4px;
-  right: -6px;
-  background: #0F172A;
-  color: #FFFFFF;
-  font-size: 0.65rem;
-  font-weight: 800;
-  padding: 2px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #F3F4F6;
+  color: #374151;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #E5E7EB;
+  max-width: fit-content;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.admin-rider-meta h3 {
-  font-size: 1.05rem;
+.admin-rider-pin-badge {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  color: #475569;
+  padding: 4px 8px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.admin-rider-pin-badge small {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748B;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+}
+
+.pin-masked-dots {
+  font-size: 0.88rem;
+  letter-spacing: 1.5px;
+  color: #475569;
   font-weight: 800;
-  color: var(--admin-text-main, #FFFFFF);
-  margin: 0 0 4px 0;
+  line-height: 1;
+}
+
+.admin-rider-phone-row {
+  display: flex;
+  align-items: center;
+  margin-top: -2px;
 }
 
 .admin-rider-phone-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #10B981;
-  font-size: 0.85rem;
+  color: #065F46;
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.82rem;
   font-weight: 700;
   text-decoration: none;
+  transition: all 0.2s ease;
 }
 
 .admin-rider-phone-link:hover {
-  text-decoration: underline;
+  background: #D1FAE5;
+  border-color: #6EE7B7;
+  color: #047857;
 }
 
-.admin-rider-pin-badge {
-  background: linear-gradient(135deg, rgba(255, 90, 38, 0.2), rgba(245, 158, 11, 0.15));
-  border: 1.5px solid rgba(255, 90, 38, 0.5);
-  color: #FF9466;
-  padding: 6px 12px;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  font-weight: 900;
-  letter-spacing: 1.5px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-.admin-rider-pin-badge small {
-  font-size: 0.62rem;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.7);
-  letter-spacing: 0.5px;
-  margin-bottom: 2px;
+.admin-rider-no-phone {
+  color: #9CA3AF;
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .admin-rider-card-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid #F3F4F6;
   padding-top: 12px;
   margin-top: 2px;
+  gap: 8px;
 }
 
 .admin-rider-status-tag {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 700;
-  color: #34D399;
+  color: #065F46;
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  padding: 3px 8px;
+  border-radius: 999px;
 }
 
 .admin-rider-status-tag .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #10B981;
-  box-shadow: 0 0 8px #10B981;
 }
 
 .admin-rider-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+.btn-rider-call {
+  background: #059669;
+  color: #FFFFFF !important;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 1px 3px rgba(5, 150, 105, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-rider-call:hover {
+  background: #047857;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(5, 150, 105, 0.35);
+}
+
+.btn-rider-wa {
+  background: #25D366;
+  color: #FFFFFF !important;
+  font-size: 0.88rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(37, 211, 102, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-rider-wa:hover {
+  background: #1EBE5D;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(37, 211, 102, 0.35);
 }
 
 .btn-rider-action-edit,
@@ -6179,21 +6279,21 @@ body.kitchen-alarm-ringing::before {
 }
 
 .btn-rider-action-edit {
-  background: rgba(255, 255, 255, 0.1);
-  color: #FFFFFF;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #F3F4F6;
+  color: #374151;
+  border: 1px solid #D1D5DB;
 }
 
 .btn-rider-action-edit:hover {
-  background: rgba(255, 90, 38, 0.25);
-  border-color: rgba(255, 90, 38, 0.5);
-  color: #FF9466;
+  background: #FFF7ED;
+  border-color: #FB923C;
+  color: #EA580C;
 }
 
 .btn-rider-action-del {
-  background: rgba(239, 68, 68, 0.12);
-  color: #F87171;
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: #FEE2E2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
 }
 
 .btn-rider-action-del:hover {
@@ -6884,4 +6984,387 @@ html, body, .admin-body {
   background: #DBEAFE;
   color: #1E40AF;
   border: 1px solid #BFDBFE;
+}
+
+
+/* Spinner animation for Refresh and loading buttons */
+.rotating {
+  animation: admin-spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes admin-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ======================================================== */
+/* KITCHEN CONNECTIVITY & EFFICIENCY ENHANCEMENTS            */
+/* ======================================================== */
+
+/* Live Connectivity Banner */
+.admin-connection-banner {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: center;
+  z-index: 1001;
+  transition: all 0.3s ease;
+  position: sticky;
+  top: 0;
+}
+
+.admin-connection-banner.offline {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border-bottom: 1.5px solid #FCA5A5;
+}
+
+.admin-connection-banner.online {
+  background: #ECFDF5;
+  color: #065F46;
+  border-bottom: 1.5px solid #A7F3D0;
+}
+
+.connection-banner-inner {
+  max-width: 1360px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.btn-banner-reconnect {
+  background: #B91C1C;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-banner-reconnect:hover {
+  opacity: 0.9;
+}
+
+/* 1-Click Print KOT Button on Order Cards */
+.btn-quick-kot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  min-height: 42px;
+  background: #FFFFFF;
+  color: #1F2937;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-quick-kot:hover {
+  background: #F3F4F6;
+  border-color: #9CA3AF;
+  color: #111827;
+  transform: translateY(-1px);
+}
+
+.btn-quick-kot:active {
+  transform: translateY(0);
+}
+
+.btn-quick-kot i {
+  color: #4B5563;
+  font-size: 0.92rem;
+}
+
+/* ======================================================== */
+/* UPGRADED KITCHEN LIVE ORDER CARD & ERGONOMICS            */
+/* ======================================================== */
+
+/* 1. Large High-Visibility Bag Token */
+.order-pickup-code-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #FFFBEB;
+  color: #92400E;
+  border: 1.5px solid #FCD34D;
+  padding: 5px 12px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  margin-top: 6px;
+  box-shadow: 0 1px 3px rgba(245, 158, 11, 0.12);
+}
+
+.order-pickup-code-badge strong {
+  background: #F59E0B;
+  color: #FFFFFF;
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  display: inline-block;
+  line-height: 1.2;
+}
+
+/* 2. Kitchen Urgency Timer */
+.order-time-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--admin-text-muted);
+  margin-top: 4px;
+}
+
+.order-time-tag.time-warning {
+  color: #D97706;
+  font-weight: 700;
+}
+
+.order-time-tag.time-urgent {
+  color: #DC2626;
+  font-weight: 800;
+  background: #FEE2E2;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #FECACA;
+}
+
+/* 3. Special Cooking / Packing Note Callout */
+.order-chef-note-box {
+  background: #FFFBEB;
+  border: 1.5px solid #FDE68A;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  box-shadow: 0 1px 3px rgba(245, 158, 11, 0.08);
+}
+
+.order-chef-note-box .chef-note-title {
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #92400E;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.order-chef-note-box .chef-note-text {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #78350F;
+  line-height: 1.35;
+  font-style: italic;
+}
+
+/* 4. Distance Chip */
+.cust-distance-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #F3F4F6;
+  color: #374151;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid #E5E7EB;
+  margin-left: 6px;
+}
+
+/* 5. Payment Distinction Pills (COD vs Online) */
+.order-payment-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 5px 11px;
+  border-radius: 8px;
+  letter-spacing: 0.02em;
+}
+
+.order-payment-pill.is-online {
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1.5px solid #A7F3D0;
+}
+
+.order-payment-pill.is-online i {
+  color: #10B981;
+}
+
+.order-payment-pill.is-cod {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1.5px solid #FCD34D;
+}
+
+.order-payment-pill.is-cod i {
+  color: #D97706;
+}
+
+.order-payment-pill.is-doorstep-upi {
+  background: #EFF6FF;
+  color: #1E40AF;
+  border: 1.5px solid #BFDBFE;
+}
+
+.order-payment-pill.is-doorstep-upi i {
+  color: #3B82F6;
+}
+
+/* Upgraded Order Total Row */
+.order-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1.5px dashed var(--admin-border, #E5E7EB);
+  margin-bottom: 14px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.order-amount-col {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.order-total-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--admin-text-muted);
+  text-transform: uppercase;
+}
+
+.order-total-val {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--brand-primary, #FF5A26);
+}
+
+/* 6. Ergonomic 2-Tier Order Action Buttons (Mobile & Desktop) */
+.order-card-actions-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.order-actions-secondary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+}
+
+.order-actions-secondary-row .btn-manage-order {
+  width: 100%;
+  min-height: 44px;
+  background: #181512;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.order-actions-secondary-row .btn-manage-order:hover {
+  background: var(--admin-accent);
+  transform: translateY(-1px);
+}
+
+.order-actions-secondary-row .btn-quick-kot {
+  width: 100%;
+  min-height: 44px;
+  background: #FFFFFF;
+  color: #1F2937;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.order-actions-secondary-row .btn-quick-kot:hover {
+  background: #F3F4F6;
+  border-color: #9CA3AF;
+  color: #111827;
+  transform: translateY(-1px);
+}
+
+.order-actions-primary-row {
+  width: 100%;
+}
+
+.order-actions-primary-row .btn-advance-status {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 16px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.order-actions-primary-row .btn-advance-status:hover {
+  transform: translateY(-1px);
+}
+
+/* Preset Operating Hours Pills */
+.btn-time-quick-open:hover,
+.btn-time-quick-close:hover {
+  background: #E5E7EB !important;
+  border-color: #9CA3AF !important;
+}
+
+.btn-time-quick-open:active,
+.btn-time-quick-close:active {
+  background: var(--admin-accent) !important;
+  color: #FFFFFF !important;
+  border-color: var(--admin-accent) !important;
 }

@@ -98,3 +98,59 @@ export async function verifyTurnstileToken(token, clientIp = '', customSecret = 
     return { success: false, error: 'Security check service communication error.' };
   }
 }
+
+// ==========================================
+// ADAPTIVE ORDER VELOCITY TRACKER (SMART RATE LIMITING)
+// Fast lane for normal customers (orders 1 & 2 in 60s).
+// Triggers Turnstile verification on 3rd rapid order within 60s.
+// ==========================================
+const RECENT_ORDERS_WINDOW_MS = 60 * 1000;
+const MAX_FAST_ORDERS_PER_WINDOW = 2;
+const velocityHistory = new Map();
+
+export function checkOrderVelocity(identifier) {
+  if (!identifier) return { allowedWithoutToken: true, recentCount: 0 };
+  const now = Date.now();
+  const cutoff = now - RECENT_ORDERS_WINDOW_MS;
+
+  let timestamps = velocityHistory.get(identifier) || [];
+  timestamps = timestamps.filter(t => t > cutoff);
+
+  const count = timestamps.length;
+  if (count >= MAX_FAST_ORDERS_PER_WINDOW) {
+    return {
+      allowedWithoutToken: false,
+      recentCount: count,
+      requiresChallenge: true
+    };
+  }
+
+  return {
+    allowedWithoutToken: true,
+    recentCount: count,
+    requiresChallenge: false
+  };
+}
+
+export function recordOrderVelocity(identifier) {
+  if (!identifier) return;
+  const now = Date.now();
+  const cutoff = now - RECENT_ORDERS_WINDOW_MS;
+  let timestamps = velocityHistory.get(identifier) || [];
+  timestamps = timestamps.filter(t => t > cutoff);
+  timestamps.push(now);
+  velocityHistory.set(identifier, timestamps);
+
+  if (velocityHistory.size > 2000) {
+    for (const [k, v] of velocityHistory.entries()) {
+      const active = v.filter(t => t > cutoff);
+      if (active.length === 0) velocityHistory.delete(k);
+      else velocityHistory.set(k, active);
+    }
+  }
+}
+
+export function resetOrderVelocity(identifier) {
+  if (identifier) velocityHistory.delete(identifier);
+  else velocityHistory.clear();
+}

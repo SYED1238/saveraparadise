@@ -133,4 +133,60 @@ test('CLOUDFLARE TURNSTILE INVISIBLE BOT PROTECTION SUITE', async (t) => {
     assert.ok(indexHtml.includes('id="turnstile-checkout-widget"'), 'Includes turnstile widget container element');
   });
 
+  await t.test('10. Velocity-Based Verification: Fast lane permits 1st & 2nd order without token', async () => {
+    const testIp = '198.51.100.42';
+    const testPhone = '9876543299';
+
+    // Order 1 (Fast Lane)
+    const { req: req1, res: res1 } = createMockReqRes({
+      headers: { 'x-forwarded-for': testIp },
+      body: {
+        items: [{ id: 'dish-chicken-biryani-half', name: 'Chicken Biryani (Half)', quantity: 1, price: 130 }],
+        customerPhone: testPhone
+      }
+    });
+    await checkoutHandler(req1, res1);
+    assert.equal(res1.statusCode, 200, 'Order 1 passes fast lane with 200 OK without token');
+
+    // Order 2 (Fast Lane)
+    const { req: req2, res: res2 } = createMockReqRes({
+      headers: { 'x-forwarded-for': testIp },
+      body: {
+        items: [{ id: 'dish-chicken-biryani-half', name: 'Chicken Biryani (Half)', quantity: 1, price: 130 }],
+        customerPhone: testPhone
+      }
+    });
+    await checkoutHandler(req2, res2);
+    assert.equal(res2.statusCode, 200, 'Order 2 passes fast lane with 200 OK without token');
+  });
+
+  await t.test('11. Velocity-Based Verification: 3rd order in <60s triggers Turnstile challenge', async () => {
+    const testIp = '198.51.100.42';
+    const testPhone = '9876543299';
+
+    // Order 3 without token -> Blocked by Velocity Engine
+    const { req: req3, res: res3 } = createMockReqRes({
+      headers: { 'x-forwarded-for': testIp },
+      body: {
+        items: [{ id: 'dish-chicken-biryani-half', name: 'Chicken Biryani (Half)', quantity: 1, price: 130 }],
+        customerPhone: testPhone
+      }
+    });
+    await checkoutHandler(req3, res3);
+    assert.equal(res3.statusCode, 403, 'Order 3 without token is rejected with 403 Forbidden');
+    assert.equal(res3.bodyData?.challengeRequired, true, 'Flags challengeRequired: true for rapid order burst');
+
+    // Order 3 with valid token -> Human verified, passes successfully!
+    const { req: req3Verified, res: res3Verified } = createMockReqRes({
+      headers: { 'x-forwarded-for': testIp },
+      body: {
+        items: [{ id: 'dish-chicken-biryani-half', name: 'Chicken Biryani (Half)', quantity: 1, price: 130 }],
+        customerPhone: testPhone,
+        turnstileToken: 'valid-test-client-token'
+      }
+    });
+    await checkoutHandler(req3Verified, res3Verified);
+    assert.equal(res3Verified.statusCode, 200, 'Order 3 with valid Turnstile token passes with 200 OK');
+  });
+
 });

@@ -2273,6 +2273,15 @@ function initNavigation() {
     input.addEventListener('change', () => updateLiveSimulatorPreview());
   });
 
+  // Toggle custom amount box on undelivered compensation mode change
+  const uModeSelect = document.getElementById('payout-undelivered-mode');
+  const uWrapBox = document.getElementById('wrap-undelivered-custom');
+  if (uModeSelect && uWrapBox) {
+    uModeSelect.addEventListener('change', () => {
+      uWrapBox.style.display = uModeSelect.value === 'custom' ? 'inline-flex' : 'none';
+    });
+  }
+
   // Flat Linear Presets Chips
   document.querySelectorAll('.btn-fl-preset').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2718,6 +2727,21 @@ function syncPayoutConfigUI() {
 
   setVal('cfg-fl-rate', cfg.flatLinear.ratePerKm);
 
+  // Sync Customer Unreachable Compensation controls
+  const uModeEl = document.getElementById('payout-undelivered-mode');
+  const uAmtEl = document.getElementById('payout-undelivered-amount');
+  const uWrap = document.getElementById('wrap-undelivered-custom');
+  const uCfg = cfg.undeliveredCompensation || { mode: 'zero', customAmount: 20 };
+  if (uModeEl && uModeEl !== activeEl) {
+    uModeEl.value = uCfg.mode || 'zero';
+  }
+  if (uAmtEl && uAmtEl !== activeEl) {
+    uAmtEl.value = uCfg.customAmount || 20;
+  }
+  if (uWrap) {
+    uWrap.style.display = (uModeEl && uModeEl.value === 'custom') ? 'inline-flex' : 'none';
+  }
+
   // Update card formula tags
   const fTS = document.getElementById('formula-tag-ts');
   if (fTS) fTS.textContent = `₹${cfg.tieredStandard.basePay} first ${cfg.tieredStandard.baseKm}km + ₹${cfg.tieredStandard.extraKmRate}/km extra`;
@@ -2799,6 +2823,11 @@ function readCurrentPayoutConfigFromUI() {
     return !isNaN(v) ? v : fallback;
   };
 
+  const uModeEl = document.getElementById('payout-undelivered-mode');
+  const uAmtEl = document.getElementById('payout-undelivered-amount');
+  const undeliveredMode = uModeEl ? uModeEl.value : (currentCfg.undeliveredCompensation?.mode || 'zero');
+  const undeliveredAmount = uAmtEl ? (parseFloat(uAmtEl.value) || 20) : (currentCfg.undeliveredCompensation?.customAmount || 20);
+
   return {
     activeMethod: activeMethod || 'tiered_standard',
     tieredStandard: {
@@ -2815,6 +2844,10 @@ function readCurrentPayoutConfigFromUI() {
     },
     flatLinear: {
       ratePerKm: numVal('cfg-fl-rate', 30)
+    },
+    undeliveredCompensation: {
+      mode: ['zero', 'half', 'base', 'custom'].includes(undeliveredMode) ? undeliveredMode : 'zero',
+      customAmount: Math.max(0, undeliveredAmount)
     }
   };
 }

@@ -2959,7 +2959,7 @@ input:checked + .slider:before {
     display: none;
   }
   .rider-main-container {
-    padding: 12px 10px;
+    padding: 12px 10px 110px 10px;
   }
   .card-locations-grid {
     grid-template-columns: 1fr;
@@ -5935,4 +5935,13 @@ input:checked + .slider:before {
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.3);
   color: #2563EB;
+}
+
+/* Disabled State for Rider Action Buttons */
+.btn-action-pill.disabled,
+.btn-action-icon.disabled {
+  opacity: 0.35 !important;
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+  filter: grayscale(1);
 }

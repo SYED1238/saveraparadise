@@ -178,19 +178,19 @@
 
     <!-- Real-time Notification Permission Opt-In Banner -->
     <div class="owner-notif-optin-banner" id="owner-notif-optin-banner" style="display: none;" role="region" aria-label="Notification Setup">
-      <div class="owner-notif-optin-content" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.22)); border-bottom: 1px solid rgba(245, 158, 11, 0.35); color: #FFF; font-size: 0.88rem;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <i class="fa-solid fa-bell" style="color: #f59e0b; font-size: 1.1rem;"></i>
-          <div>
-            <strong style="color: #fbbf24;">Enable Executive Audio & Push Alerts:</strong>
-            <span style="opacity: 0.9;"> Hear instant chimes when riders request Cash Handovers, when UPI Payouts execute, and when new Orders arrive.</span>
+      <div class="owner-notif-optin-content">
+        <div class="notif-optin-text-group">
+          <i class="fa-solid fa-bell notif-optin-icon"></i>
+          <div class="notif-optin-body">
+            <strong class="notif-optin-title">Enable Executive Audio & Push Alerts:</strong>
+            <span class="notif-optin-desc">Hear instant chimes when riders request Cash Handovers, when UPI Payouts execute, and when new Orders arrive.</span>
           </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-          <button type="button" class="btn-owner-action" id="btn-owner-enable-notifs" style="background: #f59e0b; color: #000; font-weight: 700; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer;">
+        <div class="notif-optin-actions">
+          <button type="button" class="btn-owner-action btn-notif-enable" id="btn-owner-enable-notifs">
             <i class="fa-solid fa-check"></i> Enable Alerts
           </button>
-          <button type="button" id="btn-owner-dismiss-notifs" aria-label="Dismiss" style="background: transparent; color: #FFF; border: none; font-size: 1.1rem; cursor: pointer; padding: 4px 8px;">
+          <button type="button" id="btn-owner-dismiss-notifs" aria-label="Dismiss" class="btn-notif-dismiss" title="Dismiss banner">
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
@@ -864,6 +864,31 @@
                   <span class="stepper-hint">Tap preset to set rate immediately</span>
                 </div>
               </div>
+            </div>
+
+            <!-- Customer Unreachable Doorstep Compensation Policy -->
+            <div class="payout-controls-group" id="controls-unreachable-policy">
+              <div class="unreachable-policy-label-row">
+                <label for="payout-undelivered-mode" class="unreachable-policy-label">
+                  <i class="fa-solid fa-phone-slash" style="color: #F59E0B;"></i> Customer Unreachable Compensation
+                </label>
+                <span class="unreachable-badge">When returned to kitchen</span>
+              </div>
+              <div class="unreachable-controls-row">
+                <select id="payout-undelivered-mode" class="unreachable-select">
+                  <option value="zero">₹0 (No Compensation - Default)</option>
+                  <option value="half">50% Half Distance Pay (Compensate rider trip)</option>
+                  <option value="base">Fixed Base Fare (₹25 standard trip base)</option>
+                  <option value="custom">Custom Fixed Fuel Allowance (₹)</option>
+                </select>
+                <div id="wrap-undelivered-custom" class="unreachable-custom-wrap">
+                  <span class="unreachable-currency">₹</span>
+                  <input type="number" id="payout-undelivered-amount" min="0" max="200" step="5" value="20" class="unreachable-custom-input" />
+                </div>
+              </div>
+              <span class="stepper-hint" id="undelivered-mode-hint">
+                If rider waited 10 minutes at doorstep and had to return food to kitchen, choose trip compensation policy.
+              </span>
             </div>
 
             <!-- LIVE INTERACTIVE TRIP CALCULATOR PREVIEW -->

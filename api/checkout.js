@@ -5,7 +5,7 @@
  * clamps quantities, and issues an HMAC signature for authoritative orders.
  */
 import { signPayload } from './_auth.js';
-import { verifyTurnstileToken, getClientIp } from './_turnstile.js';
+import { verifyTurnstileToken, getClientIp, checkOrderVelocity, recordOrderVelocity } from './_turnstile.js';
 
 const ALLOWED_ORIGINS = [
   'https://foodbliz.in',
@@ -181,24 +181,40 @@ export default async function handler(req, res) {
 
   const { items, promoCode, appliedPromo, storeSettings, catalogDishes, turnstileToken, userPhone, lat, lng } = body || {};
 
-  // Cloudflare Turnstile Invisible Bot Defense
+  // Cloudflare Turnstile & Velocity-Based Bot Defense (Adaptive Rate Limiting)
   const clientToken = turnstileToken || req.headers?.['cf-turnstile-response'] || body?.['cf-turnstile-response'];
   const clientIp = getClientIp(req);
-  const botCheck = await verifyTurnstileToken(clientToken, clientIp);
-  if (!botCheck.success) {
+  const rawPhone = userPhone || body?.userPhone || body?.phone || body?.customerPhone;
+  const phoneDigits = (rawPhone !== undefined && rawPhone !== null && String(rawPhone).trim() !== '')
+    ? String(rawPhone).replace(/\D/g, '').slice(-10)
+    : '';
+
+  // Adaptive Velocity: Allow 2 fast orders per 60s without token.
+  // Trigger Turnstile verification requirement on 3rd rapid order within 60s.
+  const isTestLocalhost = isTestEnv && (clientIp === '127.0.0.1' || clientIp === '');
+  const ipVelocity = isTestLocalhost ? { allowedWithoutToken: true } : checkOrderVelocity('ip:' + (clientIp || 'unknown'));
+  const phoneVelocity = (isTestLocalhost || !phoneDigits) ? { allowedWithoutToken: true } : checkOrderVelocity('phone:' + phoneDigits);
+  const isRapidOrderBurst = (!ipVelocity.allowedWithoutToken || !phoneVelocity.allowedWithoutToken);
+
+  if (clientToken) {
+    const botCheck = await verifyTurnstileToken(clientToken, clientIp);
+    if (!botCheck.success) {
+      return res.status(403).json({
+        error: botCheck.error || 'Bot verification failed. Automated traffic blocked.',
+        botBlocked: true
+      });
+    }
+  } else if (isRapidOrderBurst) {
     return res.status(403).json({
-      error: botCheck.error || 'Bot verification failed. Automated traffic blocked.',
+      error: 'Rapid orders detected (3+ orders in under a minute). Please complete the Cloudflare security verification challenge.',
+      challengeRequired: true,
       botBlocked: true
     });
   }
 
   // 10-digit Indian Mobile Validation
-  const rawPhone = userPhone || body?.userPhone || body?.phone || body?.customerPhone;
-  if (rawPhone !== undefined && rawPhone !== null && String(rawPhone).trim() !== '') {
-    const phoneDigits = String(rawPhone).replace(/\D/g, '').slice(-10);
-    if (!/^[6-9]\d{9}$/.test(phoneDigits)) {
-      return res.status(400).json({ error: 'A valid 10-digit Indian mobile number (starting with 6-9) is required' });
-    }
+  if (phoneDigits && !/^[6-9]\d{9}$/.test(phoneDigits)) {
+    return res.status(400).json({ error: 'A valid 10-digit Indian mobile number (starting with 6-9) is required' });
   }
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -420,6 +436,12 @@ export default async function handler(req, res) {
     itemCount: verifiedItems.length,
     timestamp: Date.now()
   });
+
+  // Record order velocity for IP and Phone (skipped for local unit test runs)
+  if (!isTestLocalhost) {
+    recordOrderVelocity('ip:' + (clientIp || 'unknown'));
+    if (phoneDigits) recordOrderVelocity('phone:' + phoneDigits);
+  }
 
   return res.status(200).json({
     verified: true,

@@ -221,13 +221,22 @@
     </div>
   </header>
 
+  <!-- KITCHEN LIVE CONNECTIVITY BANNER -->
+  <div id="admin-connection-banner" class="admin-connection-banner" style="display: none;" role="alert">
+    <div class="connection-banner-inner">
+      <i class="fa-solid fa-triangle-exclamation" id="connection-banner-icon"></i>
+      <span id="connection-banner-text">Kitchen Offline: Internet disconnected. Reconnecting to live orders...</span>
+      <button type="button" id="btn-reconnect-now" class="btn-banner-reconnect" style="display: none;">Retry Connection</button>
+    </div>
+  </div>
+
   <!-- MAIN ADMIN APP CONTAINER -->
   <main class="admin-main">
     
     <!-- ============================================================== -->
     <!-- VIEW 1: MENU & CATEGORY MANAGEMENT                             -->
     <!-- ============================================================== -->
-    <section class="admin-view active" id="view-menu">
+    <section class="admin-view" id="view-menu">
       
       <!-- View Heading -->
       <div class="admin-view-header">
@@ -247,7 +256,29 @@
 
       <!-- 1. CATEGORIES MANAGEMENT SECTION (OVERVIEW) -->
       <div class="admin-card-section categories-section" id="categories-overview-panel">
-        <div class="section-title-bar">
+        <!-- Global Dish Search Across All Categories -->
+        <div class="menu-global-search-wrap" style="margin-bottom: 18px;">
+          <div class="cat-search-box" style="display: flex; align-items: center; background: #FFFFFF; border: 1.5px solid var(--admin-border); border-radius: 12px; padding: 0 14px; height: 46px; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
+            <i class="fa-solid fa-magnifying-glass" style="color: var(--admin-text-muted); margin-right: 10px; font-size: 0.95rem;"></i>
+            <input type="text" id="global-dish-search-input" placeholder="Search any food dish across all categories (e.g. Biryani, Crispy Chicken)..." style="flex: 1; border: none; outline: none; background: transparent; font-size: 0.92rem; color: var(--admin-text-main);">
+            <button type="button" class="clear-btn" id="btn-clear-global-dish-search" style="display: none; background: none; border: none; cursor: pointer; color: #9CA3AF; font-size: 1.1rem; padding: 4px;">✕</button>
+          </div>
+        </div>
+
+        <!-- Global Search Results Container (Hidden by default, shown when query typed) -->
+        <div id="global-dish-search-results-panel" style="display: none; margin-bottom: 24px;">
+          <div class="section-title-bar" style="margin-bottom: 12px;">
+            <div class="title-with-count">
+              <span class="section-icon">🔍</span>
+              <h2>Menu Search Results</h2>
+              <span class="count-pill" id="global-search-count-badge">0 Dishes</span>
+            </div>
+            <span class="section-hint">Instant 1-tap in-stock toggle or edit dish</span>
+          </div>
+          <div class="dishes-admin-grid" id="global-dishes-results-grid"></div>
+        </div>
+
+        <div class="section-title-bar" id="categories-grid-title-bar">
           <div class="title-with-count">
             <span class="section-icon">🗂️</span>
             <h2>Active Categories</h2>
@@ -320,7 +351,7 @@
     <!-- ============================================================== -->
     <!-- VIEW 2: LIVE ORDERS MANAGEMENT                                 -->
     <!-- ============================================================== -->
-    <section class="admin-view" id="view-orders">
+    <section class="admin-view active" id="view-orders">
       
       <!-- View Heading -->
       <div class="admin-view-header">
@@ -399,16 +430,19 @@
         <div class="revenue-overview-left">
           <div class="revenue-overview-icon">💰</div>
           <div class="revenue-overview-data">
-            <span class="revenue-overview-label">STORE REVENUE</span>
-            <span class="revenue-overview-value" id="kpi-total-revenue">₹0</span>
+            <span class="revenue-overview-label">TODAY'S SHIFT REVENUE</span>
+            <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
+              <span class="revenue-overview-value" id="kpi-total-revenue">₹0</span>
+              <span id="kpi-alltime-revenue" style="font-size: 0.78rem; color: var(--admin-text-muted); font-weight: 600;" title="Cumulative all-time revenue">(All-time: ₹0)</span>
+            </div>
           </div>
         </div>
         <div class="revenue-overview-right">
           <button type="button" class="btn-all-orders-pill" id="btn-filter-all-orders" data-filter="all">
             All Orders (<span id="kpi-total-orders">0</span>)
           </button>
-          <button type="button" class="btn-clear-all-orders" id="btn-clear-all-orders" title="Clear all test orders and renew store data" style="margin-left: 8px; background: rgba(239, 68, 68, 0.1); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 999px; padding: 6px 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-trash-can"></i> Clear All Orders
+          <button type="button" class="btn-refresh-orders" id="btn-refresh-orders" title="Sync live orders from server" style="margin-left: 8px; background: #F3F4F6; color: var(--admin-text-main); border: 1px solid var(--admin-border); border-radius: 999px; padding: 6px 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-arrows-rotate" id="refresh-orders-icon"></i> Refresh
           </button>
         </div>
       </div>
@@ -427,7 +461,7 @@
 
         <div class="orders-search-input-wrap">
           <i class="fa-solid fa-magnifying-glass"></i>
-          <input type="text" id="order-search-input" placeholder="Search by Order ID (e.g. #QB-8942) or items...">
+          <input type="text" id="order-search-input" placeholder="Search by Order ID (#QB-..), customer, items, or COD/Online...">
         </div>
       </div>
 
@@ -648,11 +682,23 @@
               <div class="form-group">
                 <label for="input-open-time"><i class="fa-regular fa-clock"></i> Kitchen Opening Time</label>
                 <input type="text" id="input-open-time" value="11:00 AM" placeholder="e.g. 11:00 AM">
+                <div class="time-presets-pills" style="margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;">
+                  <button type="button" class="btn-time-quick-open" data-time="10:00 AM" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 6px; border: 1px solid #D1D5DB; background: #F3F4F6; cursor: pointer; color: #374151;">10:00 AM</button>
+                  <button type="button" class="btn-time-quick-open" data-time="11:00 AM" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 6px; border: 1px solid #D1D5DB; background: #F3F4F6; cursor: pointer; color: #374151;">11:00 AM</button>
+                  <button type="button" class="btn-time-quick-open" data-time="11:30 AM" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 6px; border: 1px solid #D1D5DB; background: #F3F4F6; cursor: pointer; color: #374151;">11:30 AM</button>
+                  <button type="button" class="btn-time-quick-open" data-time="12:00 PM" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 6px; border: 1px solid #D1D5DB; background: #F3F4F6; cursor: pointer; color: #374151;">12:00 PM</button>
+                </div>
               </div>
 
               <div class="form-group">
                 <label for="input-close-time"><i class="fa-solid fa-moon"></i> Kitchen Closing Time</label>
                 <input type="text" id="input-close-time" value="11:00 PM" placeholder="e.g. 11:00 PM">
+                <div class="time-presets-pills" style="margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;">
+                  <button type="button" class="btn-time-quick-close" data-time="10:30 PM" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 6px; border: 1px solid #D1D5DB; background: #F3F4F6; cursor: pointer; color: #374151;">10:30 PM</button>
+                  <button type="button" class="btn-time-quick-close" data-time="11:00 PM" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 6px; border: 1px solid #D1D5DB; background: #F3F4F6; cursor: pointer; color: #374151;">11:00 PM</button>
+                  <button type="button" class="btn-time-quick-close" data-time="11:30 PM" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 6px; border: 1px solid #D1D5DB; background: #F3F4F6; cursor: pointer; color: #374151;">11:30 PM</button>
+                  <button type="button" class="btn-time-quick-close" data-time="12:00 AM" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 6px; border: 1px solid #D1D5DB; background: #F3F4F6; cursor: pointer; color: #374151;">12:00 AM</button>
+                </div>
               </div>
             </div>
 
@@ -1282,18 +1328,8 @@
   <nav class="mobile-floating-bar admin-floating-bar" id="admin-floating-bar" aria-label="Admin Navigation">
     <div class="floating-capsule admin-two-btn-capsule admin-three-btn-capsule admin-four-btn-capsule admin-five-btn-capsule">
       
-      <!-- BUTTON 1: Menu & Categories -->
-      <button class="capsule-nav-btn admin-nav-btn active" id="capsule-btn-menu" data-target="view-menu" aria-label="Menu and Categories">
-        <div class="capsule-icon-bubble">
-          <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/>
-          </svg>
-        </div>
-        <span class="capsule-label">Menu</span>
-      </button>
-
-      <!-- BUTTON 2: Live Orders -->
-      <button class="capsule-nav-btn admin-nav-btn" id="capsule-btn-orders" data-target="view-orders" aria-label="Live Orders Hub">
+      <!-- BUTTON 1: Live Orders -->
+      <button class="capsule-nav-btn admin-nav-btn active" id="capsule-btn-orders" data-target="view-orders" aria-label="Live Orders Hub">
         <div class="capsule-icon-bubble">
           <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
             <path d="M18 17H6v-2h12v2zm0-4H6v-2h12v2zm0-4H6V7h12v2zM3 22l1.5-1.5L6 22l1.5-1.5L9 22l1.5-1.5L12 22l1.5-1.5L15 22l1.5-1.5L18 22l1.5-1.5L21 22V2l-1.5 1.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2 4.5 3.5 3 2v20z"/>
@@ -1301,6 +1337,16 @@
           <span class="capsule-badge-pill" id="capsule-order-badge">0</span>
         </div>
         <span class="capsule-label">Orders</span>
+      </button>
+
+      <!-- BUTTON 2: Menu & Categories -->
+      <button class="capsule-nav-btn admin-nav-btn" id="capsule-btn-menu" data-target="view-menu" aria-label="Menu and Categories">
+        <div class="capsule-icon-bubble">
+          <svg class="capsule-svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/>
+          </svg>
+        </div>
+        <span class="capsule-label">Menu</span>
       </button>
 
       <!-- BUTTON 3: Hours & Rush Control -->
