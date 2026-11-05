@@ -5219,7 +5219,7 @@ const initAdminApp = () => {
       const name = escapeHtml(r.name);
       const phone = escapeHtml(r.phone || '');
       const vehicle = escapeHtml(r.vehicle || '🏍️ Bike');
-      const avatar = r.avatar || (vehicle.includes('Scooter') ? '🛵' : (vehicle.includes('Car') ? '🚗' : '🏍️'));
+      const avatar = r.avatar || ((vehicle.includes('🛵') || vehicle.toLowerCase().includes('scooter')) ? '🛵' : ((vehicle.includes('🚗') || vehicle.toLowerCase().includes('car')) ? '🚗' : ((vehicle.includes('🚲') || vehicle.toLowerCase().includes('bicycle')) ? '🚲' : ((vehicle.includes('⚡') || vehicle.toLowerCase().includes('electric') || vehicle.toLowerCase().includes('ev')) ? '⚡' : '🏍️'))));
       const phoneDigits = (r.phone || '').replace(/\D/g, '');
       const callLink = phoneDigits.length >= 10 ? `tel:+91${phoneDigits.slice(-10)}` : '#';
 

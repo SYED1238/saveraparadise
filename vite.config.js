@@ -74,6 +74,20 @@ function r2DevMiddlewarePlugin() {
           req.url = cleanUrlMap[normalized] + query;
         }
 
+        // Serve direct CSS stylesheet requests with authoritative text/css Content-Type only for <link> stylesheets (not JS imports)
+        if (url.endsWith('.css') && !req.url.includes('import') && req.headers['sec-fetch-dest'] === 'style') {
+          const cleanPath = url.replace(/^\/+/, '');
+          const localPath = resolve(__dirname, cleanPath);
+          const publicPath = resolve(__dirname, 'public', cleanPath);
+          const targetPath = fs.existsSync(localPath) ? localPath : (fs.existsSync(publicPath) ? publicPath : null);
+          if (targetPath) {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'text/css; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache');
+            return res.end(fs.readFileSync(targetPath));
+          }
+        }
+
         // POST /api/admin-auth
         if (req.method === 'POST' && url === '/api/admin-auth') {
           const chunks = [];

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dataService } from '../dataService.js';
@@ -134,4 +136,36 @@ test.describe('OWNER PORTAL FLEET MANAGEMENT & SECRET PIN SEGREGATION SUITE', ()
     assert.equal(adminBadgeHtml.includes('7392'), false, 'Kitchen admin must NEVER expose plaintext rider PIN');
   });
 
+  test('7. Vehicle Name & Model Customization: supports vehicleName, vehicleType, and parses correctly', async () => {
+    const ownerHtmlPath = fs.existsSync('owner.html') ? 'owner.html' : 'savera-cloudflare-migration/owner.html';
+    const html = fs.readFileSync(ownerHtmlPath, 'utf-8');
+    assert.ok(html.includes('id="owner-rider-vehicle-name"'), 'owner.html must contain #owner-rider-vehicle-name input');
+    assert.ok(html.includes('id="owner-rider-vehicle"'), 'owner.html must contain #owner-rider-vehicle select');
+
+    const { parseRiderVehicle } = await import('../owner.js');
+    assert.equal(typeof parseRiderVehicle, 'function', 'parseRiderVehicle must be exported from owner.js');
+
+    // Parse existing rider vehicles with models
+    assert.deepEqual(parseRiderVehicle('🛵 TVS Jupiter'), { type: '🛵 Scooter', name: 'TVS Jupiter' });
+    assert.deepEqual(parseRiderVehicle('🏍️ Honda Activa'), { type: '🏍️ Bike', name: 'Honda Activa' });
+    assert.deepEqual(parseRiderVehicle('⚡ Ather 450X'), { type: '⚡ Electric / EV', name: 'Ather 450X' });
+    assert.deepEqual(parseRiderVehicle('🏍️ Bike'), { type: '🏍️ Bike', name: '' });
+
+    // Save rider with vehicleName and vehicleType
+    const pin = dataService.generateUniqueRiderPin();
+    const saved = dataService.saveOrUpdateRider({
+      pin,
+      name: 'Sameer Pasha',
+      phone: '+91 98888 12345',
+      vehicleType: '🛵 Scooter',
+      vehicleName: 'Honda Activa 6G',
+      vehicle: '🛵 Honda Activa 6G'
+    });
+
+    assert.ok(saved);
+    assert.equal(saved.vehicle, '🛵 Honda Activa 6G');
+    assert.equal(saved.vehicleType, '🛵 Scooter');
+    assert.equal(saved.vehicleName, 'Honda Activa 6G');
+    assert.equal(saved.avatar, '🛵');
+  });
 });

@@ -219,7 +219,7 @@ export const DEFAULT_RIDERS = [
     pin: '2233',
     name: 'Zaid Khan',
     phone: '+91 98451 22334',
-    vehicle: '🏍️ Bike',
+    vehicle: '🏍️ Honda Activa 6G',
     avatar: '🏍️',
     avatarImg: '/avatars/rider-1.svg',
     status: 'online'
@@ -229,7 +229,7 @@ export const DEFAULT_RIDERS = [
     pin: '4422',
     name: 'Tanveer Ahmed',
     phone: '+91 97777 66666',
-    vehicle: '🏍️ Bike',
+    vehicle: '🏍️ Bajaj Pulsar 150',
     avatar: '🏍️',
     avatarImg: '/avatars/rider-2.svg',
     status: 'online'
@@ -239,7 +239,7 @@ export const DEFAULT_RIDERS = [
     pin: '4455',
     name: 'Salman Ahmed',
     phone: '+91 96666 55555',
-    vehicle: '🛵 Scooter',
+    vehicle: '🛵 TVS Jupiter',
     avatar: '🛵',
     avatarImg: '/avatars/rider-1.svg',
     status: 'online'
@@ -249,8 +249,8 @@ export const DEFAULT_RIDERS = [
     pin: '8811',
     name: 'Arif Khan',
     phone: '+91 95555 44444',
-    vehicle: '🏍️ Bike',
-    avatar: '🏍️',
+    vehicle: '⚡ Ather 450X EV',
+    avatar: '⚡',
     avatarImg: '/avatars/rider-2.svg',
     status: 'online'
   }
@@ -3074,7 +3074,9 @@ class QuickBiteDataService {
               cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
               trackingToken: remote.tracking_token || local?.trackingToken || null,
               alarmAcknowledged: local?.alarmAcknowledged || false,
-              alarmStoppedAt: local?.alarmStoppedAt || null
+              alarmStoppedAt: local?.alarmStoppedAt || null,
+              riderPayoutAmount: local?.riderPayoutAmount || null,
+              riderPayoutFormula: local?.riderPayoutFormula || null
             };
 
             if (remote.tracking_token) {
@@ -5653,6 +5655,13 @@ class QuickBiteDataService {
       if (order.paymentMethod) fullPayload.payment_method = order.paymentMethod;
       if (typeof order.isPaidOnline === 'boolean') fullPayload.is_paid_online = order.isPaidOnline;
       if (typeof order.doorstepUpi === 'boolean') fullPayload.doorstep_upi = order.doorstepUpi;
+      if (order.status === 'delivered') {
+        const hasPayment = order.doorstepUpi || order.isPaidOnline || (typeof extraData?.cashCollected === 'number' && extraData.cashCollected > 0);
+        if (hasPayment) {
+          fullPayload.payment_status = 'Paid';
+          order.paymentStatus = 'Paid';
+        }
+      }
       if (typeof extraData?.cashCollected === 'number' || typeof order.cashCollected === 'number' || typeof order.cash_collected === 'number') {
         const cashAmt = typeof extraData?.cashCollected === 'number' ? extraData.cashCollected : (order.cashCollected || order.cash_collected || 0);
         fullPayload.cash_collected = cashAmt;
@@ -6555,6 +6564,16 @@ class QuickBiteDataService {
         riders = Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_RIDERS.map(r => ({ ...r }));
       }
 
+      // Self-healing: if localStorage accumulated runaway duplicate test riders (> 10 riders), prune back to canonical roster
+      if (Array.isArray(riders) && riders.length > 10) {
+        const canonicalPins = new Set(DEFAULT_RIDERS.map(r => String(r.pin).trim()));
+        const clean = riders.filter(r => canonicalPins.has(String(r.pin).trim()));
+        riders = clean.length >= 4 ? clean : DEFAULT_RIDERS.map(r => ({ ...r }));
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('quickbite_riders', JSON.stringify(riders));
+        }
+      }
+
       // Sanitize riders (clean broken image URLs mistakenly saved as name/avatar)
       let needsResave = false;
       riders = riders.map(r => {
@@ -6604,10 +6623,10 @@ class QuickBiteDataService {
       if (!error && Array.isArray(data) && data.length > 0) {
         const localList = this.getRiders();
         const localMap = new Map(localList.map(r => [r.pin, r]));
-        data.forEach(r => {
+        const mapped = data.map(r => {
           const pin = String(r.pin).trim();
           const existing = localMap.get(pin);
-          localMap.set(pin, {
+          return {
             ...(existing || {}),
             pin,
             id: r.id || `rider-${pin}`,
@@ -6615,12 +6634,11 @@ class QuickBiteDataService {
             phone: r.phone || existing?.phone || '',
             vehicle: r.vehicle || existing?.vehicle || '🏍️ Bike',
             status: r.status || existing?.status || 'online',
-            avatar: r.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : '🏍️'),
+            avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
             avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
             cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null
-          });
+          };
         });
-        const mapped = Array.from(localMap.values());
         this.ridersCache = mapped;
         localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
         this.notifyChange('riders', { action: 'sync_riders', source: 'supabase' });
@@ -6695,7 +6713,12 @@ class QuickBiteDataService {
     const existing = idx >= 0 ? riders[idx] : null;
 
     const vehicle = riderData.vehicle || existing?.vehicle || '🏍️ Bike';
-    const avatarEmoji = vehicle.includes('Scooter') ? '🛵' : (vehicle.includes('Car') ? '🚗' : '🏍️');
+    const vStr = String(vehicle || '') + ' ' + String(riderData.vehicleType || '');
+    const avatarEmoji = (vStr.includes('🛵') || vStr.toLowerCase().includes('scooter')) ? '🛵'
+      : (vStr.includes('🚗') || vStr.toLowerCase().includes('car')) ? '🚗'
+      : (vStr.includes('🚲') || vStr.toLowerCase().includes('bicycle')) ? '🚲'
+      : (vStr.includes('⚡') || vStr.toLowerCase().includes('electric') || vStr.toLowerCase().includes('ev')) ? '⚡'
+      : '🏍️';
 
     const updatedRider = {
       ...(existing || {}),
@@ -6705,6 +6728,8 @@ class QuickBiteDataService {
       name: (riderData.name || existing?.name || `Rider ${pin}`).trim(),
       phone: riderData.phone !== undefined ? String(riderData.phone).trim() : (existing?.phone || ''),
       vehicle,
+      vehicleType: riderData.vehicleType || existing?.vehicleType || '',
+      vehicleName: riderData.vehicleName || existing?.vehicleName || '',
       status: riderData.status || existing?.status || 'online',
       avatar: riderData.avatar && !riderData.avatar.startsWith('http') ? riderData.avatar : avatarEmoji,
       avatarImg: riderData.avatarImg || existing?.avatarImg || '/avatars/rider-1.svg',
@@ -6719,8 +6744,8 @@ class QuickBiteDataService {
     this.saveRiders(riders);
     this.notifyChange('rider_session', { pin: updatedRider.pin, rider: updatedRider, timestamp: Date.now() });
 
-    // Sync to Supabase Cloud
-    if (supabase) {
+    // Sync to Supabase Cloud (browser context only, guard against test pollution)
+    if (supabase && typeof window !== 'undefined') {
       const parseBigintTs = (val) => {
         if (!val) return null;
         if (typeof val === 'number') return Math.round(val);
@@ -6769,8 +6794,8 @@ class QuickBiteDataService {
 
     this.notifyChange('riders', { action: 'delete_rider', pin: cleanPin, timestamp: Date.now() });
 
-    // Sync deletion to Supabase Cloud
-    if (supabase) {
+    // Sync deletion to Supabase Cloud (browser context only, guard against test pollution)
+    if (supabase && typeof window !== 'undefined') {
       supabase.from('riders').delete().eq('pin', cleanPin).then(({ error }) => {
         if (error) console.warn('[DataService] deleteRider supabase error:', error.message);
       }, (err) => {
@@ -7069,11 +7094,13 @@ class QuickBiteDataService {
     const settledAt = parseTs(rider.cashSettledAt);
 
     const riderPinStr = String(rider.pin || '').trim();
-    const riderDelivered = orders.filter(o => {
+    const riderNameStr = String(rider.name || '').trim().toLowerCase();
+    const riderDelivered = (orders || []).filter(o => {
       if (!o || String(o.status || '').toLowerCase() !== 'delivered') return false;
       const oPin = String(o.assignedRiderPin || '').trim();
+      const oName = String(o.assignedRiderName || '').trim().toLowerCase();
       const matchesPin = oPin && oPin === riderPinStr;
-      const matchesName = !oPin && o.assignedRiderName && rider.name && o.assignedRiderName.trim().toLowerCase() === rider.name.trim().toLowerCase();
+      const matchesName = !oPin && oName && riderNameStr && oName === riderNameStr;
       if (!matchesPin && !matchesName) return false;
       const deliveredTime = parseTs(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
       return deliveredTime > settledAt;
@@ -7125,6 +7152,16 @@ class QuickBiteDataService {
       riders[idx].cashHandoverAmount = amount;
       riders[idx].cashHandoverRequestedAt = requestedAt;
       this.saveRiders(riders);
+      this.saveOrUpdateRider(riders[idx]);
+      try {
+        if (this.sharedBroadcastChannel) {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'cash_handover_requested',
+            payload: { riderPin: cleanPin, amount, requestedAt, rider: riders[idx] }
+          }).catch(() => {});
+        }
+      } catch {}
       this.notifyChange('cash_handover_requested', { riderPin: cleanPin, amount, requestedAt });
       return { success: true, amount, requestedAt, rider: riders[idx] };
     }
@@ -7264,7 +7301,8 @@ class QuickBiteDataService {
     distanceKm = Math.max(0, Math.round(distanceKm * 100) / 100);
 
     if (cfg.activeMethod === 'tiered_milestone') {
-      const { basePay, baseKm, extraKmRate, milestoneOrders, surgeExtraKmRate } = cfg.tieredMilestone;
+      const tm = cfg.tieredMilestone || DEFAULT_PAYOUT_CONFIG.tieredMilestone;
+      const { basePay, baseKm, extraKmRate, milestoneOrders, surgeExtraKmRate } = tm;
       const isSurge = orderIndex > milestoneOrders;
       const activeExtraRate = isSurge ? surgeExtraKmRate : extraKmRate;
       const extraKm = Math.max(0, distanceKm - baseKm);
@@ -7287,7 +7325,8 @@ class QuickBiteDataService {
     }
 
     if (cfg.activeMethod === 'flat_linear') {
-      const { ratePerKm } = cfg.flatLinear;
+      const fl = cfg.flatLinear || DEFAULT_PAYOUT_CONFIG.flatLinear;
+      const { ratePerKm } = fl;
       const amount = distanceKm * ratePerKm;
       return {
         orderId: order?.id || null,
@@ -7305,7 +7344,8 @@ class QuickBiteDataService {
     }
 
     // Default: tiered_standard
-    const { basePay, baseKm, extraKmRate } = cfg.tieredStandard;
+    const ts = cfg.tieredStandard || DEFAULT_PAYOUT_CONFIG.tieredStandard;
+    const { basePay, baseKm, extraKmRate } = ts;
     const extraKm = Math.max(0, distanceKm - baseKm);
     const amount = basePay + (extraKm * extraKmRate);
     return {
@@ -7323,9 +7363,10 @@ class QuickBiteDataService {
     };
   }
 
-  calculateRiderPayout(riderOrders, config = null) {
+  calculateRiderPayout(riderOrders, config = null, startIndex = 1) {
     const cfg = config || this.getPayoutConfig();
-    const sorted = [...(riderOrders || [])].sort((a, b) => {
+    const safeOrders = (riderOrders || []).filter(o => o && typeof o === 'object');
+    const sorted = [...safeOrders].sort((a, b) => {
       const tA = parseTimestampMs(a.deliveredAt || a.delivered_at || a.createdAt || 0);
       const tB = parseTimestampMs(b.deliveredAt || b.delivered_at || b.createdAt || 0);
       return tA - tB;
@@ -7334,11 +7375,12 @@ class QuickBiteDataService {
     let totalPayout = 0;
     let totalKms = 0;
     let surgeCount = 0;
+    const start = Number(startIndex) || 1;
     const details = sorted.map((order, idx) => {
-      const item = this.calculateOrderPayout(order, idx + 1, cfg);
-      totalPayout += item.amount;
-      totalKms += item.distanceKm;
-      if (item.isSurge) surgeCount++;
+      const item = this.calculateOrderPayout(order, start + idx, cfg);
+      totalPayout += (item?.amount || 0);
+      totalKms += (item?.distanceKm || 0);
+      if (item?.isSurge) surgeCount++;
       return item;
     });
 
@@ -7385,11 +7427,13 @@ class QuickBiteDataService {
 
     const orders = this.getOrders();
     const riderPinStr = String(rider.pin || '').trim();
-    const delivered = orders.filter(o => {
+    const riderNameStr = String(rider.name || '').trim().toLowerCase();
+    const delivered = (orders || []).filter(o => {
       if (!o || String(o.status || '').toLowerCase() !== 'delivered') return false;
       const oPin = String(o.assignedRiderPin || '').trim();
+      const oName = String(o.assignedRiderName || '').trim().toLowerCase();
       const matchesPin = oPin && oPin === riderPinStr;
-      const matchesName = !oPin && o.assignedRiderName && rider.name && o.assignedRiderName.trim().toLowerCase() === rider.name.trim().toLowerCase();
+      const matchesName = !oPin && oName && riderNameStr && oName === riderNameStr;
       return matchesPin || matchesName;
     });
 
@@ -7418,7 +7462,8 @@ class QuickBiteDataService {
       return deliveredTime > paidTs;
     });
 
-    const unpaidPayout = this.calculateRiderPayout(unpaidOrders, cfg);
+    const completedOffset = shiftDelivered.length - unpaidOrders.length;
+    const unpaidPayout = this.calculateRiderPayout(unpaidOrders, cfg, completedOffset + 1);
     const payoutBalance = isPaidToday ? unpaidPayout.exactPayout : payoutResult.exactPayout;
     const exactBalance = payoutBalance;
 
@@ -7555,15 +7600,22 @@ class QuickBiteDataService {
     });
   }
 
-  riderSafeDropPrepaid(orderId, { safeDropNote = 'Left at customer doorstep / security guard', riderPin = '' } = {}) {
-    return this.updateOrderStatus(orderId, 'delivered', 'rider', {
+  riderSafeDropPrepaid(orderId, { safeDropNote = 'Left at customer doorstep / security guard', riderPin = '', riderPayoutAmount = null, riderPayoutFormula = null } = {}) {
+    const extra = {
       safeDrop: true,
       safeDropNote: String(safeDropNote).trim() || 'Left at doorstep/guard',
       riderWaitingAtDoorstep: false,
       cashCollected: 0,
       cash_collected: 0,
       assignedRiderPin: riderPin || undefined
-    });
+    };
+    if (riderPayoutAmount !== null && riderPayoutAmount !== undefined) {
+      extra.riderPayoutAmount = riderPayoutAmount;
+    }
+    if (riderPayoutFormula) {
+      extra.riderPayoutFormula = riderPayoutFormula;
+    }
+    return this.updateOrderStatus(orderId, 'delivered', 'rider', extra);
   }
 }
 

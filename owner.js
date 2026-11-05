@@ -3,7 +3,7 @@
 // Read-Only Live Analytics, Financial Audits, Fleet KMs & Payouts
 // ==============================================================
 
-import { dataService, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId } from './dataService.js';
+import { dataService, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId, DEFAULT_PAYOUT_CONFIG } from './dataService.js';
 import {
   escapeHtml,
   sanitizePhone,
@@ -35,6 +35,18 @@ function showToast(message, type = 'info') {
   });
 }
 
+export function formatInr(val) {
+  const n = Number(val);
+  return isNaN(n) ? '0' : n.toLocaleString('en-IN');
+}
+
+export function getRiderInitial(name) {
+  if (!name || typeof name === 'object') return 'R';
+  const str = String(name).trim();
+  const first = str.charAt(0).toUpperCase();
+  return /^[A-Z0-9]$/i.test(first) ? first : 'R';
+}
+
 // --- STATE MANAGEMENT ---
 let currentPeriod = 'today'; // 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom'
 let customStartDate = null;
@@ -44,9 +56,20 @@ let searchQuery = '';
 let riderPayoutRate = 35; // ₹35 default per delivered order
 let enteredPin = '';
 let isOwnerAuthenticated = false;
-let activeView = 'view-overview'; // 'view-overview' | 'view-orders' | 'view-cash' | 'view-payouts' | 'view-fleet'
+let activeView = 'view-overview'; // 'view-overview' | 'view-orders' | 'view-cash' | 'view-payouts' | 'view-fleet' | 'view-reports'
 let ownerOrdersPage = 1;
 const OWNER_ORDERS_PER_PAGE = 25;
+let isPayoutSettingsOpen = false;
+
+// --- CALENDAR & HISTORICAL AUDIT STATE ---
+let calCurrentYear = new Date().getFullYear();
+let calCurrentMonth = new Date().getMonth(); // 0 - 11
+let calMode = 'single'; // 'single' | 'range'
+let calSelectedDate = new Date();
+let calRangeStart = new Date();
+let calRangeEnd = new Date();
+let reportOrderSearchQuery = '';
+let reportStatusFilter = 'all';
 
 // ==============================================================
 // In-flight payout lock tracking to prevent race conditions during 15s polls
@@ -103,15 +126,26 @@ if (typeof document !== 'undefined') {
   initOrdersFilterControls();
   initNavigation();
   initActions();
+  initCalendarReportsView();
 
   // Check existing session using cryptographic token and expiry validation
   if (isOwnerSessionValid()) {
-    if (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview') && dataService.getOrders().length === 0) {
+    const isPreview = window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('preview');
+    const existingRiders = (function() {
+      try {
+        const raw = localStorage.getItem('quickbite_riders');
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    })();
+
+    if (isPreview && (dataService.getOrders().length === 0 || existingRiders.length > 4)) {
       try {
         const now = new Date().toISOString();
         const mockRiders = [
-          { pin: '1122', name: 'Salman Khan', phone: '9876543210', vehicle: '🏍️ Honda Activa' },
-          { pin: '3344', name: 'Imran Ali', phone: '9876543211', vehicle: '🛵 TVS Jupiter' }
+          { pin: '2233', name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', avatar: '🏍️', status: 'online' },
+          { pin: '4422', name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', avatar: '🏍️', status: 'online' },
+          { pin: '4455', name: 'Salman Ahmed', phone: '+91 96666 55555', vehicle: '🛵 TVS Jupiter', avatar: '🛵', status: 'online' },
+          { pin: '8811', name: 'Arif Khan', phone: '+91 95555 44444', vehicle: '⚡ Ather 450X EV', avatar: '⚡', status: 'online' }
         ];
         const mockOrders = [
           {
@@ -126,8 +160,8 @@ if (typeof document !== 'undefined') {
             total: 920,
             paymentMethod: 'COD',
             status: 'delivered',
-            assignedRiderPin: '1122',
-            assignedRiderName: 'Salman Khan'
+            assignedRiderPin: '2233',
+            assignedRiderName: 'Zaid Khan'
           },
           {
             id: 'ord_preview_2',
@@ -142,8 +176,8 @@ if (typeof document !== 'undefined') {
             paymentMethod: 'Online UPI',
             isPaidOnline: true,
             status: 'delivered',
-            assignedRiderPin: '1122',
-            assignedRiderName: 'Salman Khan'
+            assignedRiderPin: '2233',
+            assignedRiderName: 'Zaid Khan'
           },
           {
             id: 'ord_preview_3',
@@ -157,8 +191,8 @@ if (typeof document !== 'undefined') {
             total: 260,
             paymentMethod: 'COD',
             status: 'cooking',
-            assignedRiderPin: '3344',
-            assignedRiderName: 'Imran Ali'
+            assignedRiderPin: '4422',
+            assignedRiderName: 'Tanveer Ahmed'
           }
         ];
         localStorage.setItem('quickbite_orders', JSON.stringify(mockOrders));
@@ -414,6 +448,10 @@ function initPeriodFilters() {
       if (!btn) return;
 
       const period = btn.getAttribute('data-period');
+      if (period === 'calendar' || btn.id === 'btn-period-calendar') {
+        switchOwnerView('view-reports');
+        return;
+      }
       if (period === 'custom') {
         toggleCustomRangeCard();
         return;
@@ -464,6 +502,22 @@ function initPeriodFilters() {
     btnCloseCustom.addEventListener('click', () => {
       const customCard = document.getElementById('custom-range-card');
       if (customCard) customCard.style.display = 'none';
+    });
+  }
+
+  const btnOpenCalCard = document.getElementById('btn-open-calendar-from-card');
+  if (btnOpenCalCard) {
+    btnOpenCalCard.addEventListener('click', () => {
+      const customCard = document.getElementById('custom-range-card');
+      if (customCard) customCard.style.display = 'none';
+      switchOwnerView('view-reports');
+    });
+  }
+
+  const btnOwnerHeaderCal = document.getElementById('btn-owner-calendar');
+  if (btnOwnerHeaderCal) {
+    btnOwnerHeaderCal.addEventListener('click', () => {
+      switchOwnerView('view-reports');
     });
   }
 
@@ -621,16 +675,22 @@ function renderDashboard() {
   updateCounterCashDrawerSummary(orders);
 
   // 3. Selective View Rendering: only render DOM elements for the currently active tab
-  if (activeView === 'view-fleet') {
-    renderRiderFleetTable(orders);
-  } else if (activeView === 'view-orders') {
-    renderOrdersTable(orders);
-  } else if (activeView === 'view-cash') {
-    renderCashSettlementsView(orders);
-  } else if (activeView === 'view-payouts') {
-    renderKmPayoutsView(orders);
-  } else if (activeView === 'view-overview' || !activeView) {
-    // Overview tab is active; renderKPICards & updateCounterCashDrawerSummary populated the cards
+  try {
+    if (activeView === 'view-fleet') {
+      renderRiderFleetTable(orders);
+    } else if (activeView === 'view-orders') {
+      renderOrdersTable(orders);
+    } else if (activeView === 'view-cash') {
+      renderCashSettlementsView(orders);
+    } else if (activeView === 'view-payouts') {
+      renderKmPayoutsView(orders);
+    } else if (activeView === 'view-reports') {
+      renderReportsView();
+    } else if (activeView === 'view-overview' || !activeView) {
+      // Overview tab is active; renderKPICards & updateCounterCashDrawerSummary populated the cards
+    }
+  } catch (viewErr) {
+    console.error(`[Owner] Error rendering active view ${activeView}:`, viewErr);
   }
 
   // 4. Live Reactivity: If invoice receipt modal is open, refresh with fresh order data
@@ -941,9 +1001,9 @@ function renderRiderFleetTable(orders) {
 
     let netBadgeHtml = '';
     if (cash > 0) {
-      netBadgeHtml = `<span class="settle-badge deposit"><i class="fa-solid fa-arrow-down-long"></i> COD: ₹${cash.toLocaleString('en-IN')} | Fee: ₹${riderPayout.toLocaleString('en-IN')}</span>`;
+      netBadgeHtml = `<span class="settle-badge deposit"><i class="fa-solid fa-arrow-down-long"></i> COD: ₹${formatInr(cash)} | Fee: ₹${formatInr(riderPayout)}</span>`;
     } else if (riderPayout > 0) {
-      netBadgeHtml = `<span class="settle-badge pay"><i class="fa-solid fa-arrow-up-long"></i> Pay Fee ₹${riderPayout.toLocaleString('en-IN')}</span>`;
+      netBadgeHtml = `<span class="settle-badge pay"><i class="fa-solid fa-arrow-up-long"></i> Pay Fee ₹${formatInr(riderPayout)}</span>`;
     } else {
       netBadgeHtml = `<span class="settle-badge balanced"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`;
     }
@@ -952,18 +1012,18 @@ function renderRiderFleetTable(orders) {
       <tr>
         <td>
           <div class="rider-cell-meta">
-            <div class="rider-avatar-bubble">${escapeHtml(st.name.charAt(0).toUpperCase())}</div>
+            <div class="rider-avatar-bubble">${escapeHtml(getRiderInitial(st.name))}</div>
             <div class="rider-name-box">
-              <span class="rider-name">${escapeHtml(st.name)}</span>
+              <span class="rider-name">${escapeHtml(st.name || 'Delivery Partner')}</span>
               ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : '<span style="font-size:0.74rem;color:#64748b;">No phone</span>'}
             </div>
           </div>
         </td>
         <td>
-          <span style="font-size: 0.8rem; color: var(--owner-text-muted);">${escapeHtml(st.vehicle)}</span>
+          <span style="font-size: 0.8rem; color: var(--owner-text-muted);">${escapeHtml(st.vehicle || '🏍️ Bike')}</span>
         </td>
         <td>
-          <span class="badge-rider-pin-table" title="Secret Login PIN">${escapeHtml(st.pin)}</span>
+          <span class="badge-rider-pin-table" title="Secret Login PIN">${escapeHtml(st.pin || '----')}</span>
         </td>
         <td class="text-center font-bold" style="font-size: 0.95rem;">
           ${deliveryCount}
@@ -975,13 +1035,13 @@ function renderRiderFleetTable(orders) {
           ${avgKmPerOrder} km
         </td>
         <td class="text-right num-amber" style="font-weight: 700; font-size: 0.92rem;">
-          ₹${cash.toLocaleString('en-IN')}
+          ₹${formatInr(cash)}
         </td>
         <td class="text-right" style="color: var(--owner-teal); font-weight: 600;">
           ${online} orders
         </td>
         <td class="text-right num-purple" style="font-weight: 700;">
-          ₹${riderPayout.toLocaleString('en-IN')}
+          ₹${formatInr(riderPayout)}
         </td>
         <td class="text-right">
           ${netBadgeHtml}
@@ -1068,10 +1128,10 @@ function renderRiderFleetTable(orders) {
           <div class="rider-card-mobile ${statusClass}">
             <div class="rc-header">
               <div class="rc-profile">
-                <div class="rider-avatar-bubble">${escapeHtml(st.name.charAt(0).toUpperCase())}</div>
+                <div class="rider-avatar-bubble">${escapeHtml(getRiderInitial(st.name))}</div>
                 <div>
-                  <h4 class="rc-name">${escapeHtml(st.name)}</h4>
-                  <span class="rc-vehicle">${escapeHtml(st.vehicle)}</span>
+                  <h4 class="rc-name">${escapeHtml(st.name || 'Delivery Partner')}</h4>
+                  <span class="rc-vehicle">${escapeHtml(st.vehicle || '🏍️ Bike')}</span>
                 </div>
               </div>
               ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rc-call-btn" title="Call ${escapeHtml(st.name)}"><i class="fa-solid fa-phone"></i> Call</a>` : ''}
@@ -1190,6 +1250,34 @@ function initOrdersFilterControls() {
       renderOrdersTable(getFilteredOrders());
     });
   }
+
+  // Orders View Toggle (Cards vs Table)
+  const ordersViewToggle = document.getElementById('orders-view-toggle');
+  if (ordersViewToggle) {
+    if (typeof window !== 'undefined' && window.innerWidth > 768) {
+      ordersViewToggle.querySelectorAll('.btn-view-toggle').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-view') === 'table');
+      });
+    }
+
+    ordersViewToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-view-toggle');
+      if (!btn) return;
+      const view = btn.getAttribute('data-view');
+      ordersViewToggle.querySelectorAll('.btn-view-toggle').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const cards = document.getElementById('orders-cards-container');
+      const table = document.getElementById('orders-table-wrapper');
+      if (view === 'table') {
+        if (cards) cards.style.display = 'none';
+        if (table) table.style.display = 'block';
+      } else {
+        if (cards) cards.style.display = 'grid';
+        if (table) table.style.display = 'none';
+      }
+    });
+  }
 }
 
 function renderOrdersTable(orders) {
@@ -1290,6 +1378,7 @@ function renderOrdersTable(orders) {
   }
 
   tbody.innerHTML = pageOrders.map(o => {
+    const rawId = String(o.id || '');
     const cleanId = formatDisplayOrderId(o.id, o.pickupCode);
     const dateStr = o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
 
@@ -1379,7 +1468,7 @@ function renderOrdersTable(orders) {
     } else {
       ordersCardsContainer.innerHTML = pageOrders.map(o => {
         const rawId = String(o.id || '');
-        const cleanId = o.cleanId || (rawId.startsWith('#QB-') ? rawId : `#QB-${rawId.slice(-4)}`);
+        const cleanId = formatDisplayOrderId(o.id, o.pickupCode);
         const dateStr = o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
         const custName = o.customerName || o.customer_name || 'Customer';
         const phone = extractPhoneFromOrder(o);
@@ -1695,6 +1784,11 @@ function initActions() {
   // Delivery Boys View Toggle (Cards vs Table)
   const riderViewToggle = document.getElementById('rider-view-toggle');
   if (riderViewToggle) {
+    if (typeof window !== 'undefined' && window.innerWidth > 768) {
+      riderViewToggle.querySelectorAll('.btn-view-toggle').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-view') === 'table');
+      });
+    }
     riderViewToggle.addEventListener('click', (e) => {
       const btn = e.target.closest('.btn-view-toggle');
       if (!btn) return;
@@ -1891,6 +1985,32 @@ function initActions() {
 // ==============================================================
 // 10. OWNER FLEET ONBOARDING & PASSCODE MANAGEMENT
 // ==============================================================
+export function parseRiderVehicle(rawVehicle) {
+  const str = String(rawVehicle || '').trim();
+  if (!str) return { type: '🏍️ Bike', name: '' };
+
+  let type = '🏍️ Bike';
+  if (str.includes('🛵') || str.toLowerCase().includes('scooter')) {
+    type = '🛵 Scooter';
+  } else if (str.includes('🚲') || str.toLowerCase().includes('bicycle')) {
+    type = '🚲 Bicycle';
+  } else if (str.includes('🚗') || str.toLowerCase().includes('car')) {
+    type = '🚗 Car';
+  } else if (str.includes('⚡') || str.toLowerCase().includes('electric') || str.toLowerCase().includes('ev')) {
+    type = '⚡ Electric / EV';
+  } else {
+    type = '🏍️ Bike';
+  }
+
+  let name = str.replace(/^[\p{Extended_Pictographic}\uFE0F\s]+/u, '').trim();
+  const cleanCategory = type.replace(/^[\p{Extended_Pictographic}\uFE0F\s]+/u, '').trim().toLowerCase();
+  if (name.toLowerCase() === cleanCategory || ['bike', 'scooter', 'bicycle', 'car', 'electric / ev', 'ev'].includes(name.toLowerCase())) {
+    name = '';
+  }
+
+  return { type, name };
+}
+
 function openOwnerRiderModal(pin = null) {
   const modal = document.getElementById('owner-rider-modal');
   if (!modal) return;
@@ -1902,6 +2022,7 @@ function openOwnerRiderModal(pin = null) {
   const nameInput = document.getElementById('owner-rider-name');
   const phoneInput = document.getElementById('owner-rider-phone');
   const vehicleSelect = document.getElementById('owner-rider-vehicle');
+  const vehicleNameInput = document.getElementById('owner-rider-vehicle-name');
 
   if (pin) {
     const rider = dataService.getRiderByPin(pin);
@@ -1912,7 +2033,10 @@ function openOwnerRiderModal(pin = null) {
     if (pinInput) pinInput.value = rider.pin;
     if (nameInput) nameInput.value = rider.name || '';
     if (phoneInput) phoneInput.value = rider.phone || '';
-    if (vehicleSelect) vehicleSelect.value = rider.vehicle || '🏍️ Bike';
+
+    const parsed = parseRiderVehicle(rider.vehicle);
+    if (vehicleSelect) vehicleSelect.value = rider.vehicleType || parsed.type;
+    if (vehicleNameInput) vehicleNameInput.value = rider.vehicleName || parsed.name;
   } else {
     const generatedPin = dataService.generateUniqueRiderPin();
     if (modalTitle) modalTitle.textContent = 'Add Delivery Boy';
@@ -1922,6 +2046,7 @@ function openOwnerRiderModal(pin = null) {
     if (nameInput) nameInput.value = '';
     if (phoneInput) phoneInput.value = '';
     if (vehicleSelect) vehicleSelect.value = '🏍️ Bike';
+    if (vehicleNameInput) vehicleNameInput.value = '';
   }
 
   modal.style.display = 'flex';
@@ -1951,12 +2076,18 @@ function handleOwnerRiderSubmit(e) {
   const nameInput = document.getElementById('owner-rider-name');
   const phoneInput = document.getElementById('owner-rider-phone');
   const vehicleSelect = document.getElementById('owner-rider-vehicle');
+  const vehicleNameInput = document.getElementById('owner-rider-vehicle-name');
 
   const originalPin = (origPinInput?.value || '').trim();
   let pin = (pinInput?.value || '').trim();
   const name = (nameInput?.value || '').trim();
   const phone = (phoneInput?.value || '').trim();
-  const vehicle = vehicleSelect?.value || '🏍️ Bike';
+  const vehicleType = (vehicleSelect?.value || '🏍️ Bike').trim();
+  const vehicleName = (vehicleNameInput?.value || '').trim();
+
+  // Combine Type emoji and Vehicle Name (e.g., "🏍️ Honda Activa", "🛵 TVS Jupiter", or "🏍️ Bike" if name is blank)
+  const emoji = vehicleType.split(' ')[0] || '🏍️';
+  const vehicle = vehicleName ? `${emoji} ${vehicleName}` : vehicleType;
 
   if (!name) {
     showToast('⚠️ Please enter delivery boy full name.', 'warning');
@@ -1986,7 +2117,9 @@ function handleOwnerRiderSubmit(e) {
       pin,
       name,
       phone: formattedPhone,
-      vehicle
+      vehicle,
+      vehicleType,
+      vehicleName
     };
 
     // Reassign existing orders pointing to originalPin so deliveries and cash records are preserved
@@ -2007,7 +2140,7 @@ function handleOwnerRiderSubmit(e) {
     dataService.deleteRider(originalPin);
     saved = dataService.saveOrUpdateRider(updatedRider);
   } else {
-    saved = dataService.saveOrUpdateRider({ pin, name, phone: formattedPhone, vehicle });
+    saved = dataService.saveOrUpdateRider({ pin, name, phone: formattedPhone, vehicle, vehicleType, vehicleName });
   }
 
   closeOwnerRiderModal();
@@ -2030,6 +2163,11 @@ function initNavigation() {
   // Toggles for Cash View
   const cashViewToggle = document.getElementById('cash-view-toggle');
   if (cashViewToggle) {
+    if (typeof window !== 'undefined' && window.innerWidth > 768) {
+      cashViewToggle.querySelectorAll('.btn-view-toggle').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-view') === 'table');
+      });
+    }
     cashViewToggle.addEventListener('click', (e) => {
       const btn = e.target.closest('.btn-view-toggle');
       if (!btn) return;
@@ -2052,6 +2190,11 @@ function initNavigation() {
   // Toggles for Payout View
   const payoutViewToggle = document.getElementById('payout-view-toggle');
   if (payoutViewToggle) {
+    if (typeof window !== 'undefined' && window.innerWidth > 768) {
+      payoutViewToggle.querySelectorAll('.btn-view-toggle').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-view') === 'table');
+      });
+    }
     payoutViewToggle.addEventListener('click', (e) => {
       const btn = e.target.closest('.btn-view-toggle');
       if (!btn) return;
@@ -2067,53 +2210,6 @@ function initNavigation() {
       } else {
         if (cards) cards.style.display = 'grid';
         if (table) table.style.display = 'none';
-      }
-    });
-  }
-
-  // Payout Settings Panel Visibility State & Helpers
-  let isPayoutSettingsOpen = false;
-
-  function openPayoutSettingsPanel(scroll = true) {
-    const panel = document.getElementById('payout-settings-panel');
-    if (!panel) return;
-    isPayoutSettingsOpen = true;
-    panel.style.display = 'block';
-    panel.classList.remove('panel-opened-pulse');
-    void panel.offsetWidth;
-    panel.classList.add('panel-opened-pulse');
-
-    if (scroll) {
-      setTimeout(() => {
-        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 40);
-    }
-    updatePayoutButtonHints();
-  }
-
-  function closePayoutSettingsPanel() {
-    const panel = document.getElementById('payout-settings-panel');
-    if (!panel) return;
-    isPayoutSettingsOpen = false;
-    panel.style.display = 'none';
-    updatePayoutButtonHints();
-  }
-
-  function updatePayoutButtonHints() {
-    const cfg = dataService.getPayoutConfig();
-    const currentMethod = cfg.activeMethod || 'tiered_standard';
-    document.querySelectorAll('.payout-method-card').forEach(card => {
-      const m = card.getAttribute('data-method');
-      const isAct = m === currentMethod;
-      const hint = card.querySelector('.pm-open-hint');
-      if (hint) {
-        if (isAct) {
-          hint.innerHTML = isPayoutSettingsOpen 
-            ? '<i class="fa-solid fa-sliders"></i> Settings Open ▾' 
-            : '<i class="fa-solid fa-pen-to-square"></i> Tap to Edit Settings';
-        } else {
-          hint.innerHTML = '<i class="fa-solid fa-arrow-down"></i> Open Settings';
-        }
       }
     });
   }
@@ -2321,155 +2417,176 @@ function renderCashSettlementsView(orders) {
   const alertBanner = document.getElementById('cash-alert-banner');
   if (!cardsContainer && !tbody) return;
 
-  const riders = dataService.getRiders();
-  const pendingHandovers = riders.filter(r => r.cashHandoverStatus === 'pending_owner_approval');
+  try {
+    const rawRiders = dataService.getRiders();
+    const riders = Array.isArray(rawRiders) ? rawRiders.filter(r => r && typeof r === 'object') : [];
+    const pendingHandovers = riders.filter(r => r.cashHandoverStatus === 'pending_owner_approval');
 
-  // 1. Alert Banner
-  if (alertBanner) {
-    if (pendingHandovers.length > 0) {
-      const names = pendingHandovers.map(r => r.name).join(', ');
-      const totalPending = pendingHandovers.reduce((sum, r) => sum + (Number(r.cashHandoverAmount) || 0), 0);
-      const titleEl = document.getElementById('cash-alert-title');
-      const descEl = document.getElementById('cash-alert-desc');
-      if (titleEl) titleEl.textContent = `⚠️ Pending COD Cash Handover (${pendingHandovers.length} Rider${pendingHandovers.length > 1 ? 's' : ''})!`;
-      if (descEl) descEl.textContent = `${names} submitted ₹${totalPending.toLocaleString('en-IN')} cash. Please collect physical cash and click "Mark as Taken".`;
-      alertBanner.style.display = 'flex';
-    } else {
-      alertBanner.style.display = 'none';
+    // 1. Alert Banner
+    if (alertBanner) {
+      if (pendingHandovers.length > 0) {
+        const names = pendingHandovers.map(r => r.name || `Rider ${r.pin || ''}`).join(', ');
+        const totalPending = pendingHandovers.reduce((sum, r) => sum + (Number(r.cashHandoverAmount) || 0), 0);
+        const titleEl = document.getElementById('cash-alert-title');
+        const descEl = document.getElementById('cash-alert-desc');
+        if (titleEl) titleEl.textContent = `⚠️ Pending COD Cash Handover (${pendingHandovers.length} Rider${pendingHandovers.length > 1 ? 's' : ''})!`;
+        if (descEl) descEl.textContent = `${names} submitted ₹${formatInr(totalPending)} cash. Please collect physical cash and click "Mark as Taken".`;
+        alertBanner.style.display = 'flex';
+      } else {
+        alertBanner.style.display = 'none';
+      }
     }
-  }
 
-  if (!riders || riders.length === 0) {
+    if (!riders || riders.length === 0) {
+      if (cardsContainer) {
+        cardsContainer.innerHTML = `
+          <div class="owner-empty-card" style="grid-column: 1 / -1;">
+            <i class="fa-solid fa-vault"></i>
+            <p>No delivery boys registered in fleet yet.</p>
+          </div>
+        `;
+      }
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; padding: 32px 16px; color: var(--owner-text-muted);">
+              No delivery boys registered in fleet yet.
+            </td>
+          </tr>
+        `;
+      }
+      return;
+    }
+
+    // Build rows & cards
+    const cashList = riders.map(r => {
+      let summary = null;
+      try {
+        summary = dataService.getRiderCashSummary(r.pin);
+      } catch (sumErr) {
+        console.warn('[Owner] getRiderCashSummary error for rider:', r.pin, sumErr);
+      }
+      const rawCashInHand = r.cashHandoverAmount ? Number(r.cashHandoverAmount) : (summary?.cashInHand ?? 0);
+      const cashInHand = isNaN(rawCashInHand) ? 0 : rawCashInHand;
+      const codOrdersCount = Array.isArray(summary?.codOrders) ? summary.codOrders.length : 0;
+      const isPending = r.cashHandoverStatus === 'pending_owner_approval';
+      const lastTakenTime = r.cashTakenAt ? new Date(r.cashTakenAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Not yet today';
+
+      return {
+        pin: String(r.pin || '').trim(),
+        name: String(r.name || `Rider ${r.pin || ''}`).trim() || 'Delivery Partner',
+        phone: String(r.phone || '').trim(),
+        vehicle: String(r.vehicle || '🏍️ Bike').trim(),
+        cashInHand,
+        codOrdersCount,
+        isPending,
+        lastTakenTime
+      };
+    });
+
+    // Render Table
+    if (tbody) {
+      tbody.innerHTML = cashList.map(st => {
+        let statusBadge = '';
+        let actionBtn = '';
+
+        if (st.isPending) {
+          statusBadge = `<span class="badge-handover-pending"><i class="fa-solid fa-triangle-exclamation"></i> Submitted (₹${formatInr(st.cashInHand)})</span>`;
+          actionBtn = `
+            <button type="button" class="btn-mark-cash-taken" data-pin="${escapeHtml(st.pin)}" data-amount="${st.cashInHand}">
+              <i class="fa-solid fa-hand-holding-dollar"></i> Mark as Taken (₹${formatInr(st.cashInHand)})
+            </button>
+          `;
+        } else if (st.cashInHand > 0) {
+          statusBadge = `<span class="badge-payout-pending"><i class="fa-solid fa-money-bill"></i> In Rider Hand (₹${formatInr(st.cashInHand)})</span>`;
+          actionBtn = `
+            <button type="button" class="btn-mark-cash-taken" data-pin="${escapeHtml(st.pin)}" data-amount="${st.cashInHand}">
+              <i class="fa-solid fa-hand-holding-dollar"></i> Mark as Taken (₹${formatInr(st.cashInHand)})
+            </button>
+          `;
+        } else {
+          statusBadge = `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Settled (₹0)</span>`;
+          actionBtn = `<button type="button" class="btn-mark-cash-taken" disabled><i class="fa-solid fa-check"></i> Taken</button>`;
+        }
+
+        return `
+          <tr>
+            <td>
+              <div class="rider-cell-meta">
+                <div class="rider-avatar-bubble">${escapeHtml(getRiderInitial(st.name))}</div>
+                <div class="rider-name-box">
+                  <span class="rider-name">${escapeHtml(st.name)}</span>
+                  ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : ''}
+                </div>
+              </div>
+            </td>
+            <td><span style="font-size:0.8rem; color:var(--owner-text-muted);">${escapeHtml(st.vehicle)}</span></td>
+            <td class="text-center font-bold">${st.codOrdersCount}</td>
+            <td class="text-right num-amber" style="font-size: 0.95rem; font-weight: 800;">₹${formatInr(st.cashInHand)}</td>
+            <td><span style="font-size: 0.78rem; color: var(--owner-text-muted);">${st.lastTakenTime}</span></td>
+            <td class="text-center">${actionBtn}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // Render Mobile Cards
     if (cardsContainer) {
-      cardsContainer.innerHTML = `
-        <div class="owner-empty-card" style="grid-column: 1 / -1;">
-          <i class="fa-solid fa-vault"></i>
-          <p>No delivery boys registered in fleet yet.</p>
-        </div>
-      `;
+      cardsContainer.innerHTML = cashList.map(st => {
+        let cardBorder = st.isPending ? 'border-left: 4px solid #EF4444;' : (st.cashInHand > 0 ? 'border-left: 4px solid #F59E0B;' : 'border-left: 4px solid #10B981;');
+        let statusText = st.isPending ? '⚠️ Rider Submitted Cash • Waiting for your Confirmation' : (st.cashInHand > 0 ? '💵 Physical cash currently with rider' : '✅ All collected cash deposited into counter drawer');
+
+        return `
+          <div class="rider-card-mobile" style="${cardBorder}">
+            <div class="rc-header">
+              <div class="rc-profile">
+                <div class="rider-avatar-bubble">${escapeHtml(getRiderInitial(st.name))}</div>
+                <div>
+                  <h4 class="rc-name">${escapeHtml(st.name)}</h4>
+                  <span class="rc-vehicle">${escapeHtml(st.vehicle)}</span>
+                </div>
+              </div>
+              ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rc-call-btn"><i class="fa-solid fa-phone"></i> Call</a>` : ''}
+            </div>
+
+            <div class="rc-settle-box" style="margin-top: 10px;">
+              <div class="rc-settle-meta">
+                <span class="rc-settle-title">${st.isPending ? 'HANDOVER SUBMITTED' : 'COD CASH BALANCE'}</span>
+                <span class="rc-settle-formula">${statusText}</span>
+              </div>
+              <div class="rc-settle-amount num-amber" style="font-size: 1.25rem; font-weight: 800;">
+                ₹${formatInr(st.cashInHand)}
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 8px;">
+              <span style="font-size: 0.76rem; color: #94A3B8;"><i class="fa-regular fa-clock"></i> Last taken: ${st.lastTakenTime}</span>
+              ${st.cashInHand > 0 ? `
+                <button type="button" class="btn-mark-cash-taken" data-pin="${escapeHtml(st.pin)}" data-amount="${st.cashInHand}">
+                  <i class="fa-solid fa-hand-holding-dollar"></i> Mark as Taken (₹${formatInr(st.cashInHand)})
+                </button>
+              ` : `
+                <button type="button" class="btn-mark-cash-taken" disabled style="opacity:0.4; cursor:default;">
+                  <i class="fa-solid fa-check"></i> Taken
+                </button>
+              `}
+            </div>
+          </div>
+        `;
+      }).join('');
     }
+  } catch (err) {
+    console.error('[Owner] renderCashSettlementsView failed:', err);
     if (tbody) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="6" style="text-align: center; padding: 32px 16px; color: var(--owner-text-muted);">
-            No delivery boys registered in fleet yet.
+          <td colspan="6" style="text-align: center; padding: 28px 16px; color: var(--owner-text-muted);">
+            <i class="fa-solid fa-triangle-exclamation" style="color: #F59E0B; font-size: 1.4rem; margin-bottom: 6px; display: block;"></i>
+            Unable to load cash settlement records. Tap Refresh to retry.
           </td>
         </tr>
       `;
     }
-    return;
-  }
-
-  // Build rows & cards
-  const cashList = riders.map(r => {
-    const summary = dataService.getRiderCashSummary(r.pin);
-    const cashInHand = r.cashHandoverAmount ? Number(r.cashHandoverAmount) : summary.cashInHand;
-    const codOrdersCount = summary.codOrders.length;
-    const isPending = r.cashHandoverStatus === 'pending_owner_approval';
-    const lastTakenTime = r.cashTakenAt ? new Date(r.cashTakenAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Not yet today';
-
-    return {
-      pin: r.pin,
-      name: r.name,
-      phone: r.phone || '',
-      vehicle: r.vehicle || '🏍️ Bike',
-      cashInHand,
-      codOrdersCount,
-      isPending,
-      lastTakenTime
-    };
-  });
-
-  // Render Table
-  if (tbody) {
-    tbody.innerHTML = cashList.map(st => {
-      let statusBadge = '';
-      let actionBtn = '';
-
-      if (st.isPending) {
-        statusBadge = `<span class="badge-handover-pending"><i class="fa-solid fa-triangle-exclamation"></i> Submitted (₹${st.cashInHand.toLocaleString('en-IN')})</span>`;
-        actionBtn = `
-          <button type="button" class="btn-mark-cash-taken" data-pin="${escapeHtml(st.pin)}" data-amount="${st.cashInHand}">
-            <i class="fa-solid fa-hand-holding-dollar"></i> Mark as Taken (₹${st.cashInHand.toLocaleString('en-IN')})
-          </button>
-        `;
-      } else if (st.cashInHand > 0) {
-        statusBadge = `<span class="badge-payout-pending"><i class="fa-solid fa-money-bill"></i> In Rider Hand (₹${st.cashInHand.toLocaleString('en-IN')})</span>`;
-        actionBtn = `
-          <button type="button" class="btn-mark-cash-taken" data-pin="${escapeHtml(st.pin)}" data-amount="${st.cashInHand}">
-            <i class="fa-solid fa-hand-holding-dollar"></i> Mark as Taken (₹${st.cashInHand.toLocaleString('en-IN')})
-          </button>
-        `;
-      } else {
-        statusBadge = `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Settled (₹0)</span>`;
-        actionBtn = `<button type="button" class="btn-mark-cash-taken" disabled><i class="fa-solid fa-check"></i> Taken</button>`;
-      }
-
-      return `
-        <tr>
-          <td>
-            <div class="rider-cell-meta">
-              <div class="rider-avatar-bubble">${escapeHtml(st.name.charAt(0).toUpperCase())}</div>
-              <div class="rider-name-box">
-                <span class="rider-name">${escapeHtml(st.name)}</span>
-                ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : ''}
-              </div>
-            </div>
-          </td>
-          <td><span style="font-size:0.8rem; color:var(--owner-text-muted);">${escapeHtml(st.vehicle)}</span></td>
-          <td class="text-center font-bold">${st.codOrdersCount}</td>
-          <td class="text-right num-amber" style="font-size: 0.95rem; font-weight: 800;">₹${st.cashInHand.toLocaleString('en-IN')}</td>
-          <td><span style="font-size: 0.78rem; color: var(--owner-text-muted);">${st.lastTakenTime}</span></td>
-          <td class="text-center">${actionBtn}</td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  // Render Mobile Cards
-  if (cardsContainer) {
-    cardsContainer.innerHTML = cashList.map(st => {
-      let cardBorder = st.isPending ? 'border-left: 4px solid #EF4444;' : (st.cashInHand > 0 ? 'border-left: 4px solid #F59E0B;' : 'border-left: 4px solid #10B981;');
-      let statusText = st.isPending ? '⚠️ Rider Submitted Cash • Waiting for your Confirmation' : (st.cashInHand > 0 ? '💵 Physical cash currently with rider' : '✅ All collected cash deposited into counter drawer');
-
-      return `
-        <div class="rider-card-mobile" style="${cardBorder}">
-          <div class="rc-header">
-            <div class="rc-profile">
-              <div class="rider-avatar-bubble">${escapeHtml(st.name.charAt(0).toUpperCase())}</div>
-              <div>
-                <h4 class="rc-name">${escapeHtml(st.name)}</h4>
-                <span class="rc-vehicle">${escapeHtml(st.vehicle)}</span>
-              </div>
-            </div>
-            ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rc-call-btn"><i class="fa-solid fa-phone"></i> Call</a>` : ''}
-          </div>
-
-          <div class="rc-settle-box" style="margin-top: 10px;">
-            <div class="rc-settle-meta">
-              <span class="rc-settle-title">${st.isPending ? 'HANDOVER SUBMITTED' : 'COD CASH BALANCE'}</span>
-              <span class="rc-settle-formula">${statusText}</span>
-            </div>
-            <div class="rc-settle-amount num-amber" style="font-size: 1.25rem; font-weight: 800;">
-              ₹${st.cashInHand.toLocaleString('en-IN')}
-            </div>
-          </div>
-
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 8px;">
-            <span style="font-size: 0.76rem; color: #94A3B8;"><i class="fa-regular fa-clock"></i> Last taken: ${st.lastTakenTime}</span>
-            ${st.cashInHand > 0 ? `
-              <button type="button" class="btn-mark-cash-taken" data-pin="${escapeHtml(st.pin)}" data-amount="${st.cashInHand}">
-                <i class="fa-solid fa-hand-holding-dollar"></i> Mark as Taken (₹${st.cashInHand.toLocaleString('en-IN')})
-              </button>
-            ` : `
-              <button type="button" class="btn-mark-cash-taken" disabled style="opacity:0.4; cursor:default;">
-                <i class="fa-solid fa-check"></i> Taken
-              </button>
-            `}
-          </div>
-        </div>
-      `;
-    }).join('');
   }
 
   // Wire Mark as Taken button listeners
@@ -2492,9 +2609,54 @@ function renderCashSettlementsView(orders) {
 // 13. RIDER PAYOUT MODELS & DAILY SETTLEMENT CONTROLLER
 // ==============================================================
 
+function openPayoutSettingsPanel(scroll = true) {
+  const panel = document.getElementById('payout-settings-panel');
+  if (!panel) return;
+  isPayoutSettingsOpen = true;
+  panel.style.display = 'block';
+  panel.classList.remove('panel-opened-pulse');
+  void panel.offsetWidth;
+  panel.classList.add('panel-opened-pulse');
+
+  if (scroll) {
+    setTimeout(() => {
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 40);
+  }
+  updatePayoutButtonHints();
+}
+
+function closePayoutSettingsPanel() {
+  const panel = document.getElementById('payout-settings-panel');
+  if (!panel) return;
+  isPayoutSettingsOpen = false;
+  panel.style.display = 'none';
+  updatePayoutButtonHints();
+}
+
+function updatePayoutButtonHints() {
+  const cfg = dataService.getPayoutConfig() || DEFAULT_PAYOUT_CONFIG;
+  const currentMethod = cfg?.activeMethod || 'tiered_standard';
+  document.querySelectorAll('.payout-method-card').forEach(card => {
+    const m = card.getAttribute('data-method');
+    const isAct = m === currentMethod;
+    const hint = card.querySelector('.pm-open-hint');
+    if (hint) {
+      if (isAct) {
+        hint.innerHTML = isPayoutSettingsOpen 
+          ? '<i class="fa-solid fa-sliders"></i> Settings Open ▾' 
+          : '<i class="fa-solid fa-pen-to-square"></i> Tap to Edit Settings';
+      } else {
+        hint.innerHTML = '<i class="fa-solid fa-arrow-down"></i> Open Settings';
+      }
+    }
+  });
+}
+
 function syncPayoutConfigUI() {
-  const cfg = dataService.getPayoutConfig();
-  const method = cfg.activeMethod || 'tiered_standard';
+  try {
+    const cfg = dataService.getPayoutConfig() || DEFAULT_PAYOUT_CONFIG;
+    const method = cfg?.activeMethod || 'tiered_standard';
 
   // 1. Update active button styling & aria attributes
   document.querySelectorAll('.payout-method-card').forEach(card => {
@@ -2620,6 +2782,9 @@ function syncPayoutConfigUI() {
 
   updateLiveSimulatorPreview();
   updatePayoutButtonHints();
+  } catch (err) {
+    console.warn('[Owner] syncPayoutConfigUI warning:', err);
+  }
 }
 
 function readCurrentPayoutConfigFromUI() {
@@ -2679,291 +2844,362 @@ function renderKmPayoutsView(orders) {
   const tbody = document.getElementById('payout-table-body');
   if (!cardsContainer && !tbody) return;
 
-  // Sync Payout Method UI
-  syncPayoutConfigUI();
+  try {
+    // Sync Payout Method UI
+    syncPayoutConfigUI();
 
-  const riders = dataService.getRiders();
-  const payoutConfig = dataService.getPayoutConfig();
+    const rawRiders = dataService.getRiders();
+    const payoutConfig = dataService.getPayoutConfig() || DEFAULT_PAYOUT_CONFIG;
+    const validRiders = Array.isArray(rawRiders) ? rawRiders.filter(r => r && typeof r === 'object') : [];
 
-  if (!riders || riders.length === 0) {
-    if (cardsContainer) {
-      cardsContainer.innerHTML = `
-        <div class="owner-empty-card" style="grid-column: 1 / -1;">
-          <i class="fa-solid fa-calculator"></i>
-          <p>No delivery boys registered in fleet yet.</p>
-        </div>
-      `;
+    if (validRiders.length === 0) {
+      if (cardsContainer) {
+        cardsContainer.innerHTML = `
+          <div class="owner-empty-card" style="grid-column: 1 / -1;">
+            <i class="fa-solid fa-calculator"></i>
+            <p>No delivery boys registered in fleet yet.</p>
+          </div>
+        `;
+      }
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="9" style="text-align: center; padding: 32px 16px; color: var(--owner-text-muted);">
+              No delivery boys registered in fleet yet.
+            </td>
+          </tr>
+        `;
+      }
+      return;
     }
+
+    const safeOrders = Array.isArray(orders) ? orders : [];
+    const deliveredOrders = safeOrders.filter(o => o && String(o.status || '').toLowerCase() === 'delivered');
+
+    // Pre-index delivered orders by rider PIN and name for high-performance O(1) matching with 100+ riders
+    const ordersByPin = new Map();
+    const ordersByName = new Map();
+
+    deliveredOrders.forEach(o => {
+      const oPin = String(o.assignedRiderPin || '').trim();
+      const oName = String(o.assignedRiderName || '').trim().toLowerCase();
+      if (oPin) {
+        if (!ordersByPin.has(oPin)) ordersByPin.set(oPin, []);
+        ordersByPin.get(oPin).push(o);
+      } else if (oName) {
+        if (!ordersByName.has(oName)) ordersByName.set(oName, []);
+        ordersByName.get(oName).push(o);
+      }
+    });
+
+    const safeNumber = (val) => {
+      const n = Number(val);
+      return isNaN(n) ? 0 : n;
+    };
+
+    const payoutList = validRiders.map(r => {
+      const riderPinStr = String(r.pin || '').trim();
+      const riderNameStr = String(r.name || `Rider ${riderPinStr || ''}`).trim() || 'Delivery Partner';
+      const riderInitial = getRiderInitial(riderNameStr);
+      const riderPhone = String(r.phone || '').trim();
+      const riderVehicle = String(r.vehicle || '🏍️ Bike').trim();
+
+      // Find matching delivered orders from indexed maps
+      const pinOrders = riderPinStr ? (ordersByPin.get(riderPinStr) || []) : [];
+      const nameOrders = (!riderPinStr && riderNameStr) ? (ordersByName.get(riderNameStr.toLowerCase()) || []) : [];
+      const riderOrders = pinOrders.length > 0 ? pinOrders : nameOrders;
+
+      let payoutResult = null;
+      try {
+        payoutResult = dataService.calculateRiderPayout(riderOrders, payoutConfig);
+      } catch (pErr) {
+        console.warn('[Owner] calculateRiderPayout error for rider:', riderPinStr, pErr);
+        payoutResult = { totalPayout: 0, exactPayout: 0, totalKms: 0, orderCount: riderOrders.length, surgeCount: 0 };
+      }
+
+      const calculatedPayout = safeNumber(payoutResult?.totalPayout);
+      const exactPayout = safeNumber(payoutResult?.exactPayout || calculatedPayout);
+      const roundedKms = safeNumber(payoutResult?.totalKms);
+
+      let modelBadge = '';
+      const method = payoutConfig?.activeMethod || 'tiered_standard';
+      if (method === 'tiered_milestone') {
+        const surge = payoutResult?.surgeCount > 0 ? `${payoutResult.surgeCount} Surge 🔥` : 'Standard';
+        modelBadge = `<span class="pm-badge badge-purple" style="font-size:0.72rem;"><i class="fa-solid fa-trophy"></i> Milestone (${surge})</span>`;
+      } else if (method === 'flat_linear') {
+        const rate = payoutConfig?.flatLinear?.ratePerKm ?? 30;
+        modelBadge = `<span class="pm-badge badge-amber" style="font-size:0.72rem;"><i class="fa-solid fa-road"></i> Flat ₹${rate}/km</span>`;
+      } else {
+        const base = payoutConfig?.tieredStandard?.basePay ?? 25;
+        modelBadge = `<span class="pm-badge badge-green" style="font-size:0.72rem;"><i class="fa-solid fa-shield-halved"></i> Tiered Base ₹${base}</span>`;
+      }
+
+      let cashInHand = 0;
+      try {
+        const summary = dataService.getRiderCashSummary(r.pin);
+        cashInHand = safeNumber(summary?.cashInHand);
+      } catch (sumErr) {
+        console.warn('[Owner] Cash summary warning for rider:', riderPinStr, sumErr);
+      }
+
+      // Multi-delivery dynamic payout balance
+      let payoutSummary = null;
+      try {
+        payoutSummary = (typeof dataService.getRiderPayoutSummary === 'function')
+          ? dataService.getRiderPayoutSummary(r.pin)
+          : null;
+      } catch (sumErr) {
+        console.warn('[Owner] Payout summary warning for rider:', riderPinStr, sumErr);
+      }
+
+      const payoutBalance = payoutSummary ? safeNumber(payoutSummary.payoutBalance) : calculatedPayout;
+      const paidDate = r.payoutPaidAt ? new Date(r.payoutPaidAt) : null;
+      const isPaidToday = Boolean(paidDate && !isNaN(paidDate.getTime()) && paidDate.toDateString() === new Date().toDateString());
+      const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+      const paidAmount = safeNumber(r.payoutAmountPaid) || (payoutSummary ? safeNumber(payoutSummary.paidAmount) : calculatedPayout);
+
+      const hasUnpaidBalance = (payoutBalance !== undefined) ? payoutBalance > 0 : (!isPaidToday && calculatedPayout > 0);
+      const currentPayable = (payoutBalance !== undefined && payoutBalance > 0) ? payoutBalance : calculatedPayout;
+
+      return {
+        pin: riderPinStr,
+        name: riderNameStr,
+        initial: riderInitial,
+        phone: riderPhone,
+        vehicle: riderVehicle,
+        deliveredCount: riderOrders.length,
+        kms: roundedKms,
+        modelBadge,
+        calculatedPayout,
+        exactPayout,
+        payoutBalance,
+        hasUnpaidBalance,
+        currentPayable,
+        cashInHand,
+        isPaidToday,
+        paidTime,
+        paidAmount
+      };
+    });
+
+    // Render Table
+    if (tbody) {
+      tbody.innerHTML = payoutList.map(st => {
+        const statusBadge = st.isPaidToday
+          ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
+          : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`;
+
+        let actionBtn = '';
+        if (activeInFlightPayoutPins && activeInFlightPayoutPins.has(st.pin)) {
+          actionBtn = `<button type="button" class="btn-payout-upi" disabled style="opacity:0.7; cursor:wait;"><i class="fa-solid fa-spinner fa-spin"></i> Processing...</button>`;
+        } else if (st.hasUnpaidBalance) {
+          actionBtn = `
+            <div style="display:flex; gap:6px; justify-content:center;">
+              <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}" title="Mark Paid in Cash from Drawer">
+                <i class="fa-solid fa-money-bill-wave"></i> Cash (₹${formatInr(st.currentPayable)})
+              </button>
+              <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}" title="Instant Transfer via Cashfree Payouts">
+                <i class="fa-solid fa-bolt"></i> UPI (₹${formatInr(st.currentPayable)})
+              </button>
+            </div>
+          `;
+        } else {
+          actionBtn = `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-check"></i> Paid</button>`;
+        }
+
+        return `
+          <tr>
+            <td>
+              <div class="rider-cell-meta">
+                <div class="rider-avatar-bubble">${escapeHtml(st.initial)}</div>
+                <div class="rider-name-box">
+                  <span class="rider-name">${escapeHtml(st.name)}</span>
+                  ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : ''}
+                </div>
+              </div>
+            </td>
+            <td><span style="font-size:0.8rem; color:var(--owner-text-muted);">${escapeHtml(st.vehicle)}</span></td>
+            <td class="text-center font-bold">${st.deliveredCount}</td>
+            <td class="text-center font-bold" style="color: var(--owner-purple);"><i class="fa-solid fa-route"></i> ${st.kms} km</td>
+            <td class="text-center">${st.modelBadge}</td>
+            <td class="text-right num-purple" style="font-weight: 800; font-size: 0.95rem;">₹${formatInr(st.calculatedPayout)}</td>
+            <td class="text-right num-amber" style="font-weight: 700;">₹${formatInr(st.cashInHand)}</td>
+            <td class="text-center">${statusBadge}</td>
+            <td class="text-center">${actionBtn}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // Render Mobile Cards
+    if (cardsContainer) {
+      cardsContainer.innerHTML = payoutList.map(st => {
+        const statusBadge = st.isPaidToday
+          ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
+          : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`;
+
+        return `
+          <div class="rider-card-mobile" style="${st.isPaidToday ? 'border-left: 4px solid #10B981;' : 'border-left: 4px solid #8B5CF6;'}">
+            <div class="rc-header">
+              <div class="rc-profile">
+                <div class="rider-avatar-bubble">${escapeHtml(st.initial)}</div>
+                <div>
+                  <h4 class="rc-name">${escapeHtml(st.name)}</h4>
+                  <span class="rc-vehicle">${escapeHtml(st.vehicle)}</span>
+                </div>
+              </div>
+              ${statusBadge}
+            </div>
+
+            <div class="rc-metrics-grid" style="margin-top: 12px;">
+              <div class="rc-metric">
+                <span class="rc-val">${st.deliveredCount}</span>
+                <span class="rc-lbl">Delivered</span>
+              </div>
+              <div class="rc-metric">
+                <span class="rc-val" style="color: var(--owner-purple);">${st.kms} km</span>
+                <span class="rc-lbl">Road Run</span>
+              </div>
+              <div class="rc-metric">
+                <span class="rc-val" style="display:flex; justify-content:center;">${st.modelBadge}</span>
+                <span class="rc-lbl">Model</span>
+              </div>
+              <div class="rc-metric">
+                <span class="rc-val num-purple">₹${formatInr(st.calculatedPayout)}</span>
+                <span class="rc-lbl">Day Payout</span>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--owner-border);">
+              <div style="font-size: 0.78rem; color: var(--owner-text-muted);">
+                COD Cash: <strong class="num-amber">₹${formatInr(st.cashInHand)}</strong>
+              </div>
+              ${(activeInFlightPayoutPins && activeInFlightPayoutPins.has(st.pin)) ? `
+                <button type="button" class="btn-payout-upi" disabled style="opacity:0.7; cursor:wait;">
+                  <i class="fa-solid fa-spinner fa-spin"></i> Processing...
+                </button>
+              ` : (st.hasUnpaidBalance ? `
+                <div style="display:flex; gap:6px;">
+                  <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}">
+                    <i class="fa-solid fa-money-bill-wave"></i> Cash
+                  </button>
+                  <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}">
+                    <i class="fa-solid fa-bolt"></i> UPI
+                  </button>
+                </div>
+              ` : `
+                <button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;">
+                  <i class="fa-solid fa-check"></i> Paid
+                </button>
+              `)}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Wire Mark Paid button listeners
+    document.querySelectorAll('.btn-mark-payout-paid').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const pin = btn.getAttribute('data-pin');
+        const amount = btn.getAttribute('data-amount');
+        if (!pin) return;
+        const res = dataService.markRiderPayoutPaid(pin, amount);
+        if (res && res.success) {
+          const riderName = res.rider?.name || 'Rider';
+          showToast(`✅ Payout of ₹${Number(amount || 0).toLocaleString('en-IN')} marked as paid to ${riderName}!`, 'success');
+          renderDashboard();
+        }
+      };
+    });
+
+    // Wire Cashfree Instant UPI Payout button listeners
+    document.querySelectorAll('.btn-payout-upi').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const pin = btn.getAttribute('data-pin');
+        const amount = Number(btn.getAttribute('data-amount')) || 0;
+        const name = btn.getAttribute('data-name') || 'Delivery Partner';
+        const phone = btn.getAttribute('data-phone') || '';
+        if (!pin || amount <= 0 || (activeInFlightPayoutPins && activeInFlightPayoutPins.has(pin))) return;
+
+        const confirmed = confirm(`⚡ Initiate Cashfree Instant UPI Payout of ₹${amount.toLocaleString('en-IN')} to ${name} (${phone || 'Rider'})?`);
+        if (!confirmed) return;
+
+        if (activeInFlightPayoutPins) activeInFlightPayoutPins.add(pin);
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
+
+        try {
+          const token = (typeof ensureAdminToken === 'function')
+            ? await ensureAdminToken('owner')
+            : (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || '');
+          const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+          const deterministicTransferId = `payout_${pin}_${dateKey}_${Date.now()}`;
+
+          const resp = await fetch('/api/cashfree-payout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token || ''}`,
+              'x-admin-token': token || ''
+            },
+            body: JSON.stringify({
+              riderPin: pin,
+              transferId: deterministicTransferId,
+              amount,
+              phone,
+              name,
+              upiVpa: (function() { const rd = (typeof dataService !== 'undefined' && dataService.getRiderByPin) ? dataService.getRiderByPin(pin) : null; return (rd && rd.upiVpa) ? rd.upiVpa : `${phone || pin}@upi`; })()
+            })
+          });
+          const res = await resp.json();
+          if (res && res.success && (res.status === 'SUCCESS' || res.status === 'RECEIVED' || res.status === 'PENDING' || !res.status)) {
+            dataService.markRiderPayoutPaid(pin, amount);
+            playNotificationSound('payout_received');
+            triggerDeviceVibration([120, 60, 180]);
+            flashTabTitle('⚡ PAYOUT COMPLETED');
+            showToast(`⚡ Instant Payout of ₹${amount.toLocaleString('en-IN')} sent to ${name} via Cashfree!`, 'success');
+            sendSystemNotification({
+              title: '⚡ Instant Payout Executed',
+              body: `₹${amount.toLocaleString('en-IN')} transferred to ${name} via Cashfree UPI.`,
+              tag: `owner-payout-${pin}`,
+              data: { url: '/owner.html' }
+            });
+          } else {
+            throw new Error(res.message || 'Payout transfer failed');
+          }
+        } catch (err) {
+          console.error('[OwnerPayout] Instant transfer error:', err);
+          showToast(`❌ Cashfree payout failed: ${err.message || 'Transfer could not be completed'}`, 'error');
+        } finally {
+          if (activeInFlightPayoutPins) activeInFlightPayoutPins.delete(pin);
+          renderDashboard();
+        }
+      };
+    });
+  } catch (err) {
+    console.error('[Owner] renderKmPayoutsView failed:', err);
     if (tbody) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="9" style="text-align: center; padding: 32px 16px; color: var(--owner-text-muted);">
-            No delivery boys registered in fleet yet.
+          <td colspan="9" style="text-align: center; padding: 28px 16px; color: var(--owner-text-muted);">
+            <i class="fa-solid fa-triangle-exclamation" style="color: #F59E0B; font-size: 1.4rem; margin-bottom: 6px; display: block;"></i>
+            Unable to load payout records. Tap Refresh to retry.
           </td>
         </tr>
       `;
     }
-    return;
-  }
-
-  const deliveredOrders = orders.filter(o => o && String(o.status).toLowerCase() === 'delivered');
-
-  const payoutList = riders.map(r => {
-    const riderPinStr = String(r.pin || '').trim();
-    const riderOrders = deliveredOrders.filter(o => {
-      const oPin = String(o.assignedRiderPin || '').trim();
-      if (oPin && oPin === riderPinStr) return true;
-      if (!oPin && o.assignedRiderName && r.name && o.assignedRiderName.trim().toLowerCase() === r.name.trim().toLowerCase()) return true;
-      return false;
-    });
-
-    const payoutResult = dataService.calculateRiderPayout(riderOrders, payoutConfig);
-    const calculatedPayout = payoutResult.totalPayout;
-    const roundedKms = payoutResult.totalKms;
-
-    let modelBadge = '';
-    if (payoutConfig.activeMethod === 'tiered_milestone') {
-      modelBadge = `<span class="pm-badge badge-purple" style="font-size:0.72rem;"><i class="fa-solid fa-trophy"></i> Milestone (${payoutResult.surgeCount > 0 ? `${payoutResult.surgeCount} Surge 🔥` : 'Standard'})</span>`;
-    } else if (payoutConfig.activeMethod === 'flat_linear') {
-      modelBadge = `<span class="pm-badge badge-amber" style="font-size:0.72rem;"><i class="fa-solid fa-road"></i> Flat ₹${payoutConfig.flatLinear.ratePerKm}/km</span>`;
-    } else {
-      modelBadge = `<span class="pm-badge badge-green" style="font-size:0.72rem;"><i class="fa-solid fa-shield-halved"></i> Tiered Base ₹${payoutConfig.tieredStandard.basePay}</span>`;
-    }
-
-    const summary = dataService.getRiderCashSummary(r.pin);
-    const cashInHand = summary.cashInHand;
-
-    // Multi-delivery dynamic payout balance
-    const payoutSummary = (typeof dataService.getRiderPayoutSummary === 'function')
-      ? dataService.getRiderPayoutSummary(r.pin)
-      : null;
-    const payoutBalance = payoutSummary ? payoutSummary.payoutBalance : calculatedPayout;
-    const paidDate = r.payoutPaidAt ? new Date(r.payoutPaidAt) : null;
-    const isPaidToday = Boolean(paidDate && !isNaN(paidDate.getTime()) && paidDate.toDateString() === new Date().toDateString());
-    const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
-    const paidAmount = Number(r.payoutAmountPaid) || (payoutSummary ? payoutSummary.paidAmount : calculatedPayout);
-
-    const hasUnpaidBalance = (payoutBalance !== undefined) ? payoutBalance > 0 : (!isPaidToday && calculatedPayout > 0);
-    const currentPayable = (payoutBalance !== undefined && payoutBalance > 0) ? payoutBalance : calculatedPayout;
-
-    return {
-      pin: r.pin,
-      name: r.name,
-      phone: r.phone || '',
-      vehicle: r.vehicle || '🏍️ Bike',
-      deliveredCount: riderOrders.length,
-      kms: roundedKms,
-      modelBadge,
-      calculatedPayout,
-      exactPayout: payoutResult.exactPayout,
-      payoutBalance,
-      hasUnpaidBalance,
-      currentPayable,
-      cashInHand,
-      isPaidToday,
-      paidTime,
-      paidAmount
-    };
-  });
-
-  // Render Table
-  if (tbody) {
-    tbody.innerHTML = payoutList.map(st => {
-      const statusBadge = st.isPaidToday
-        ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${st.paidAmount.toLocaleString('en-IN')} (${st.paidTime})</span>`
-        : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`;
-
-      const hasUnpaidBalance = (st.payoutBalance !== undefined) ? st.payoutBalance > 0 : (!st.isPaidToday && st.calculatedPayout > 0);
-      const currentPayable = (st.payoutBalance !== undefined && st.payoutBalance > 0) ? st.payoutBalance : st.calculatedPayout;
-      let actionBtn = '';
-      if (activeInFlightPayoutPins.has(st.pin)) {
-        actionBtn = `<button type="button" class="btn-payout-upi" disabled style="opacity:0.7; cursor:wait;"><i class="fa-solid fa-spinner fa-spin"></i> Processing...</button>`;
-      } else if (hasUnpaidBalance) {
-        actionBtn = `
-          <div style="display:flex; gap:6px; justify-content:center;">
-            <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${currentPayable}" title="Mark Paid in Cash from Drawer">
-              <i class="fa-solid fa-money-bill-wave"></i> Cash (₹${currentPayable})
-            </button>
-            <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${currentPayable}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}" title="Instant Transfer via Cashfree Payouts">
-              <i class="fa-solid fa-bolt"></i> UPI (₹${currentPayable})
-            </button>
-          </div>
-        `;
-      } else {
-        actionBtn = `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-check"></i> Paid</button>`;
-      }
-
-      return `
-        <tr>
-          <td>
-            <div class="rider-cell-meta">
-              <div class="rider-avatar-bubble">${escapeHtml(st.name.charAt(0).toUpperCase())}</div>
-              <div class="rider-name-box">
-                <span class="rider-name">${escapeHtml(st.name)}</span>
-                ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : ''}
-              </div>
-            </div>
-          </td>
-          <td><span style="font-size:0.8rem; color:var(--owner-text-muted);">${escapeHtml(st.vehicle)}</span></td>
-          <td class="text-center font-bold">${st.deliveredCount}</td>
-          <td class="text-center font-bold" style="color: var(--owner-purple);"><i class="fa-solid fa-route"></i> ${st.kms} km</td>
-          <td class="text-center">${st.modelBadge}</td>
-          <td class="text-right num-purple" style="font-weight: 800; font-size: 0.95rem;">₹${st.calculatedPayout.toLocaleString('en-IN')}</td>
-          <td class="text-right num-amber" style="font-weight: 700;">₹${st.cashInHand.toLocaleString('en-IN')}</td>
-          <td class="text-center">${statusBadge}</td>
-          <td class="text-center">${actionBtn}</td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  // Render Mobile Cards
-  if (cardsContainer) {
-    cardsContainer.innerHTML = payoutList.map(st => {
-      const statusBadge = st.isPaidToday
-        ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${st.paidAmount.toLocaleString('en-IN')} (${st.paidTime})</span>`
-        : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`;
-
-      return `
-        <div class="rider-card-mobile" style="${st.isPaidToday ? 'border-left: 4px solid #10B981;' : 'border-left: 4px solid #8B5CF6;'}">
-          <div class="rc-header">
-            <div class="rc-profile">
-              <div class="rider-avatar-bubble">${escapeHtml(st.name.charAt(0).toUpperCase())}</div>
-              <div>
-                <h4 class="rc-name">${escapeHtml(st.name)}</h4>
-                <span class="rc-vehicle">${escapeHtml(st.vehicle)}</span>
-              </div>
-            </div>
-            ${statusBadge}
-          </div>
-
-          <div class="rc-metrics-grid" style="margin-top: 12px;">
-            <div class="rc-metric">
-              <span class="rc-val">${st.deliveredCount}</span>
-              <span class="rc-lbl">Delivered</span>
-            </div>
-            <div class="rc-metric">
-              <span class="rc-val" style="color: var(--owner-purple);">${st.kms} km</span>
-              <span class="rc-lbl">Road Run</span>
-            </div>
-            <div class="rc-metric">
-              <span class="rc-val" style="display:flex; justify-content:center;">${st.modelBadge}</span>
-              <span class="rc-lbl">Model</span>
-            </div>
-            <div class="rc-metric">
-              <span class="rc-val num-purple">₹${st.calculatedPayout.toLocaleString('en-IN')}</span>
-              <span class="rc-lbl">Day Payout</span>
-            </div>
-          </div>
-
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--owner-border);">
-            <div style="font-size: 0.78rem; color: var(--owner-text-muted);">
-              COD Cash: <strong class="num-amber">₹${st.cashInHand.toLocaleString('en-IN')}</strong>
-            </div>
-            ${activeInFlightPayoutPins.has(st.pin) ? `
-              <button type="button" class="btn-payout-upi" disabled style="opacity:0.7; cursor:wait;">
-                <i class="fa-solid fa-spinner fa-spin"></i> Processing...
-              </button>
-            ` : (st.hasUnpaidBalance ? `
-              <div style="display:flex; gap:6px;">
-                <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}">
-                  <i class="fa-solid fa-money-bill-wave"></i> Cash
-                </button>
-                <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}">
-                  <i class="fa-solid fa-bolt"></i> UPI
-                </button>
-              </div>
-            ` : `
-              <button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;">
-                <i class="fa-solid fa-check"></i> Paid
-              </button>
-            `)}
-          </div>
+    if (cardsContainer) {
+      cardsContainer.innerHTML = `
+        <div class="owner-empty-card" style="grid-column: 1 / -1;">
+          <i class="fa-solid fa-triangle-exclamation" style="color: #F59E0B;"></i>
+          <p>Unable to load payout records. Tap Refresh to retry.</p>
         </div>
       `;
-    }).join('');
+    }
   }
-
-  // Wire Mark Paid button listeners
-  document.querySelectorAll('.btn-mark-payout-paid').forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const pin = btn.getAttribute('data-pin');
-      const amount = btn.getAttribute('data-amount');
-      if (!pin) return;
-      const res = dataService.markRiderPayoutPaid(pin, amount);
-      if (res.success) {
-        showToast(`✅ Payout of ₹${Number(amount).toLocaleString('en-IN')} marked as paid to ${res.rider.name}!`, 'success');
-        renderDashboard();
-      }
-    };
-  });
-
-  // Wire Cashfree Instant UPI Payout button listeners
-  document.querySelectorAll('.btn-payout-upi').forEach(btn => {
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      const pin = btn.getAttribute('data-pin');
-      const amount = Number(btn.getAttribute('data-amount')) || 0;
-      const name = btn.getAttribute('data-name') || 'Delivery Partner';
-      const phone = btn.getAttribute('data-phone') || '';
-      if (!pin || amount <= 0 || activeInFlightPayoutPins.has(pin)) return;
-
-      const confirmed = confirm(`⚡ Initiate Cashfree Instant UPI Payout of ₹${amount.toLocaleString('en-IN')} to ${name} (${phone || 'Rider'})?`);
-      if (!confirmed) return;
-
-      activeInFlightPayoutPins.add(pin);
-      btn.disabled = true;
-      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
-
-      try {
-        const token = (typeof ensureAdminToken === 'function')
-          ? await ensureAdminToken('owner')
-          : (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || '');
-        const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const deterministicTransferId = `payout_${pin}_${dateKey}_${Date.now()}`;
-
-        const resp = await fetch('/api/cashfree-payout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token || ''}`,
-            'x-admin-token': token || ''
-          },
-          body: JSON.stringify({
-            riderPin: pin,
-            transferId: deterministicTransferId,
-            amount,
-            phone,
-            name,
-            upiVpa: (function() { const rd = (typeof dataService !== 'undefined' && dataService.getRiderByPin) ? dataService.getRiderByPin(pin) : null; return (rd && rd.upiVpa) ? rd.upiVpa : `${phone || pin}@upi`; })()
-          })
-        });
-        const res = await resp.json();
-        if (res && res.success && (res.status === 'SUCCESS' || res.status === 'RECEIVED' || res.status === 'PENDING' || !res.status)) {
-          dataService.markRiderPayoutPaid(pin, amount);
-          playNotificationSound('payout_received');
-          triggerDeviceVibration([120, 60, 180]);
-          flashTabTitle('⚡ PAYOUT COMPLETED');
-          showToast(`⚡ Instant Payout of ₹${amount.toLocaleString('en-IN')} sent to ${name} via Cashfree!`, 'success');
-          sendSystemNotification({
-            title: '⚡ Instant Payout Executed',
-            body: `₹${amount.toLocaleString('en-IN')} transferred to ${name} via Cashfree UPI.`,
-            tag: `owner-payout-${pin}`,
-            data: { url: '/owner.html' }
-          });
-        } else {
-          throw new Error(res.message || 'Payout transfer failed');
-        }
-      } catch (err) {
-        console.error('[OwnerPayout] Instant transfer error:', err);
-        showToast(`❌ Cashfree payout failed: ${err.message || 'Transfer could not be completed'}`, 'error');
-      } finally {
-        activeInFlightPayoutPins.delete(pin);
-        renderDashboard();
-      }
-    };
-  });
 }
 
 function printExecutiveReport() {
@@ -3114,3 +3350,1212 @@ function exportOrdersToCSV() {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// ==============================================================
+// 12. SALES CALENDAR & HISTORICAL FINANCIAL AUDIT (READ-ONLY)
+// ==============================================================
+
+/**
+ * Returns formatted Date string YYYY-MM-DD in local time
+ */
+export function toLocalDateKey(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Returns whether two Date objects represent the same calendar day
+ */
+export function isSameCalendarDay(d1, d2) {
+  if (!d1 || !d2) return false;
+  return d1.getFullYear() === d2.getFullYear() &&
+         d1.getMonth() === d2.getMonth() &&
+         d1.getDate() === d2.getDate();
+}
+
+/**
+ * Initializes the Sales Calendar & Audit Reports module
+ */
+function initCalendarReportsView() {
+  const today = new Date();
+  calCurrentYear = today.getFullYear();
+  calCurrentMonth = today.getMonth();
+  calSelectedDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  calRangeStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  calRangeEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  // Calendar Collapsible Panel Toggle
+  const toggleCalPanel = (forceState) => {
+    const wrapper = document.getElementById('owner-calendar-collapsible-wrapper');
+    const bar = document.getElementById('calendar-compact-bar');
+    if (!wrapper) return;
+    const isCurrentlyOpen = wrapper.style.display !== 'none';
+    const nextState = forceState !== undefined ? forceState : !isCurrentlyOpen;
+    wrapper.style.display = nextState ? 'block' : 'none';
+    if (bar) {
+      if (nextState) bar.classList.add('is-open');
+      else bar.classList.remove('is-open');
+    }
+    if (nextState) {
+      renderCalendarMonth(calCurrentYear, calCurrentMonth);
+    }
+  };
+
+  const btnToggleBar = document.getElementById('btn-toggle-calendar-panel');
+  if (btnToggleBar) {
+    btnToggleBar.addEventListener('click', () => toggleCalPanel());
+  }
+
+  const btnDoneCal = document.getElementById('btn-done-calendar');
+  if (btnDoneCal) {
+    btnDoneCal.addEventListener('click', () => toggleCalPanel(false));
+  }
+
+  const btnDoneCalTop = document.getElementById('btn-done-calendar-top');
+  if (btnDoneCalTop) {
+    btnDoneCalTop.addEventListener('click', () => toggleCalPanel(false));
+  }
+
+  // Accordion Dropdown Bars Toggle
+  const setupAccordion = (toggleId, bodyId, containerId) => {
+    const toggle = document.getElementById(toggleId);
+    const body = document.getElementById(bodyId);
+    const container = document.getElementById(containerId);
+    if (!toggle || !body) return;
+
+    toggle.addEventListener('click', () => {
+      const isCurrentlyOpen = body.style.display !== 'none';
+      body.style.display = isCurrentlyOpen ? 'none' : 'block';
+      if (container) {
+        if (isCurrentlyOpen) container.classList.remove('is-open');
+        else container.classList.add('is-open');
+      }
+      toggle.setAttribute('aria-expanded', isCurrentlyOpen ? 'false' : 'true');
+    });
+  };
+
+  setupAccordion('rep-bar-riders-toggle', 'rep-body-riders', 'report-section-riders');
+  setupAccordion('rep-bar-dishes-toggle', 'rep-body-dishes', 'report-section-dishes');
+  setupAccordion('rep-bar-orders-toggle', 'rep-body-orders', 'report-section-orders');
+
+  // Mode buttons
+  const btnModeSingle = document.getElementById('btn-cal-mode-single');
+  const btnModeRange = document.getElementById('btn-cal-mode-range');
+  const endGroup = document.getElementById('report-input-end-group');
+
+  if (btnModeSingle) {
+    btnModeSingle.addEventListener('click', () => {
+      calMode = 'single';
+      btnModeSingle.classList.add('active');
+      if (btnModeRange) btnModeRange.classList.remove('active');
+      if (endGroup) endGroup.style.display = 'none';
+      renderCalendarMonth(calCurrentYear, calCurrentMonth);
+      renderReportsView();
+    });
+  }
+
+  if (btnModeRange) {
+    btnModeRange.addEventListener('click', () => {
+      calMode = 'range';
+      btnModeRange.classList.add('active');
+      if (btnModeSingle) btnModeSingle.classList.remove('active');
+      if (endGroup) endGroup.style.display = 'flex';
+      renderCalendarMonth(calCurrentYear, calCurrentMonth);
+      renderReportsView();
+    });
+  }
+
+  // Month navigation
+  const btnPrev = document.getElementById('btn-cal-prev');
+  const btnNext = document.getElementById('btn-cal-next');
+  const btnJumpToday = document.getElementById('btn-cal-jump-today');
+
+  if (btnPrev) {
+    btnPrev.addEventListener('click', () => {
+      calCurrentMonth--;
+      if (calCurrentMonth < 0) {
+        calCurrentMonth = 11;
+        calCurrentYear--;
+      }
+      renderCalendarMonth(calCurrentYear, calCurrentMonth);
+    });
+  }
+
+  if (btnNext) {
+    btnNext.addEventListener('click', () => {
+      const now = new Date();
+      if (calCurrentYear < now.getFullYear() || (calCurrentYear === now.getFullYear() && calCurrentMonth < now.getMonth())) {
+        calCurrentMonth++;
+        if (calCurrentMonth > 11) {
+          calCurrentMonth = 0;
+          calCurrentYear++;
+        }
+        renderCalendarMonth(calCurrentYear, calCurrentMonth);
+      } else {
+        showToast('Future dates cannot be selected for historical audits', 'info');
+      }
+    });
+  }
+
+  if (btnJumpToday) {
+    btnJumpToday.addEventListener('click', () => {
+      const now = new Date();
+      calCurrentYear = now.getFullYear();
+      calCurrentMonth = now.getMonth();
+      calSelectedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      calRangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      calRangeEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      renderCalendarMonth(calCurrentYear, calCurrentMonth);
+      renderReportsView();
+    });
+  }
+
+  // Quick Preset Pills
+  const presetsContainer = document.getElementById('calendar-presets-pills');
+  if (presetsContainer) {
+    presetsContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('.cal-preset-pill');
+      if (!btn) return;
+      presetsContainer.querySelectorAll('.cal-preset-pill').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+
+      const preset = btn.getAttribute('data-preset');
+      applyCalendarPreset(preset);
+    });
+  }
+
+  // Direct Date input apply
+  const btnApplyDirect = document.getElementById('btn-cal-apply-direct');
+  const inputStart = document.getElementById('report-input-start');
+  const inputEnd = document.getElementById('report-input-end');
+
+  if (inputStart) inputStart.value = toLocalDateKey(calSelectedDate);
+  if (inputEnd) inputEnd.value = toLocalDateKey(calSelectedDate);
+
+  if (btnApplyDirect) {
+    btnApplyDirect.addEventListener('click', () => {
+      if (!inputStart || !inputStart.value) return;
+      const parsedStart = new Date(inputStart.value + 'T00:00:00');
+      if (isNaN(parsedStart.getTime())) return;
+
+      if (calMode === 'single') {
+        calSelectedDate = parsedStart;
+        calCurrentYear = parsedStart.getFullYear();
+        calCurrentMonth = parsedStart.getMonth();
+      } else {
+        const parsedEnd = (inputEnd && inputEnd.value) ? new Date(inputEnd.value + 'T23:59:59') : new Date(inputStart.value + 'T23:59:59');
+        if (parsedStart <= parsedEnd) {
+          calRangeStart = parsedStart;
+          calRangeEnd = parsedEnd;
+        } else {
+          calRangeStart = parsedEnd;
+          calRangeEnd = parsedStart;
+        }
+        calCurrentYear = calRangeEnd.getFullYear();
+        calCurrentMonth = calRangeEnd.getMonth();
+      }
+      renderCalendarMonth(calCurrentYear, calCurrentMonth);
+      renderReportsView();
+    });
+  }
+
+  // Print & CSV buttons
+  const btnPrintCal = document.getElementById('btn-print-calendar-report');
+  if (btnPrintCal) {
+    btnPrintCal.addEventListener('click', () => printCalendarReport());
+  }
+
+  const btnExportCal = document.getElementById('btn-export-calendar-csv');
+  if (btnExportCal) {
+    btnExportCal.addEventListener('click', () => exportCalendarReportCSV());
+  }
+
+  // Sync to Overview Button
+  const btnSyncOverview = document.getElementById('btn-sync-to-overview');
+  if (btnSyncOverview) {
+    btnSyncOverview.addEventListener('click', () => {
+      const bounds = getCalendarReportDateBounds();
+      customStartDate = bounds.start;
+      customEndDate = bounds.end;
+      currentPeriod = 'custom';
+
+      const pillsContainer = document.getElementById('owner-period-pills');
+      if (pillsContainer) {
+        pillsContainer.querySelectorAll('.period-pill').forEach(p => p.classList.remove('active'));
+        const customPill = document.getElementById('btn-period-custom');
+        if (customPill) customPill.classList.add('active');
+      }
+
+      switchOwnerView('view-overview');
+      showToast(`Filter applied across all tabs: ${bounds.label}`, 'success');
+    });
+  }
+
+  // Search input in report
+  const searchInput = document.getElementById('report-orders-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      reportOrderSearchQuery = (e.target.value || '').trim().toLowerCase();
+      renderReportOrdersTable();
+    });
+  }
+
+  // Status pills in report
+  const statusPills = document.getElementById('report-status-pills');
+  if (statusPills) {
+    statusPills.addEventListener('click', (e) => {
+      const btn = e.target.closest('.order-filter-pill');
+      if (!btn) return;
+      statusPills.querySelectorAll('.order-filter-pill').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      reportStatusFilter = btn.getAttribute('data-rep-status') || 'all';
+      renderReportOrdersTable();
+    });
+  }
+
+  // Initial render of month and report
+  renderCalendarMonth(calCurrentYear, calCurrentMonth);
+  renderReportsView();
+}
+
+/**
+ * Handles preset clicks on the calendar widget
+ */
+function applyCalendarPreset(preset) {
+  const now = new Date();
+  const btnModeSingle = document.getElementById('btn-cal-mode-single');
+  const btnModeRange = document.getElementById('btn-cal-mode-range');
+  const endGroup = document.getElementById('report-input-end-group');
+
+  if (preset === 'today') {
+    calMode = 'single';
+    if (btnModeSingle) btnModeSingle.classList.add('active');
+    if (btnModeRange) btnModeRange.classList.remove('active');
+    if (endGroup) endGroup.style.display = 'none';
+    calSelectedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    calCurrentYear = now.getFullYear();
+    calCurrentMonth = now.getMonth();
+  } else if (preset === 'yesterday') {
+    calMode = 'single';
+    if (btnModeSingle) btnModeSingle.classList.add('active');
+    if (btnModeRange) btnModeRange.classList.remove('active');
+    if (endGroup) endGroup.style.display = 'none';
+    const yest = new Date(now);
+    yest.setDate(yest.getDate() - 1);
+    calSelectedDate = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate());
+    calCurrentYear = yest.getFullYear();
+    calCurrentMonth = yest.getMonth();
+  } else if (preset === 'last7') {
+    calMode = 'range';
+    if (btnModeRange) btnModeRange.classList.add('active');
+    if (btnModeSingle) btnModeSingle.classList.remove('active');
+    if (endGroup) endGroup.style.display = 'flex';
+    calRangeEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    calRangeStart = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
+    calRangeStart = new Date(calRangeStart.getFullYear(), calRangeStart.getMonth(), calRangeStart.getDate());
+    calCurrentYear = now.getFullYear();
+    calCurrentMonth = now.getMonth();
+  } else if (preset === 'thismonth') {
+    calMode = 'range';
+    if (btnModeRange) btnModeRange.classList.add('active');
+    if (btnModeSingle) btnModeSingle.classList.remove('active');
+    if (endGroup) endGroup.style.display = 'flex';
+    calRangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    calRangeEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    calCurrentYear = now.getFullYear();
+    calCurrentMonth = now.getMonth();
+  } else if (preset === 'lastmonth') {
+    calMode = 'range';
+    if (btnModeRange) btnModeRange.classList.add('active');
+    if (btnModeSingle) btnModeSingle.classList.remove('active');
+    if (endGroup) endGroup.style.display = 'flex';
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
+    calRangeStart = lastMonthStart;
+    calRangeEnd = lastMonthEnd;
+    calCurrentYear = lastMonthStart.getFullYear();
+    calCurrentMonth = lastMonthStart.getMonth();
+  } else if (preset === 'all') {
+    calMode = 'range';
+    if (btnModeRange) btnModeRange.classList.add('active');
+    if (btnModeSingle) btnModeSingle.classList.remove('active');
+    if (endGroup) endGroup.style.display = 'flex';
+    calRangeStart = new Date(2025, 0, 1);
+    calRangeEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    calCurrentYear = now.getFullYear();
+    calCurrentMonth = now.getMonth();
+  }
+
+  // Sync inputs
+  const inputStart = document.getElementById('report-input-start');
+  const inputEnd = document.getElementById('report-input-end');
+  if (inputStart) inputStart.value = toLocalDateKey(calMode === 'single' ? calSelectedDate : calRangeStart);
+  if (inputEnd) inputEnd.value = toLocalDateKey(calMode === 'single' ? calSelectedDate : calRangeEnd);
+
+  renderCalendarMonth(calCurrentYear, calCurrentMonth);
+  renderReportsView();
+}
+
+/**
+ * Renders the visual month calendar grid for a given year and month
+ */
+function renderCalendarMonth(year, month) {
+  const gridEl = document.getElementById('calendar-days-grid');
+  const labelEl = document.getElementById('cal-month-year-label');
+  if (!gridEl) return;
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  if (labelEl) {
+    labelEl.textContent = `${monthNames[month]} ${year}`;
+  }
+
+  gridEl.innerHTML = '';
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+  // Aggregate orders by day for visual indicators
+  const allOrders = dataService.getOrders();
+  const ordersByDateKey = new Map();
+  allOrders.forEach(o => {
+    if (!o) return;
+    const ts = o.createdAt ? new Date(o.createdAt).getTime() : (o.updatedAt ? new Date(o.updatedAt).getTime() : 0);
+    if (!ts) return;
+    const dateKey = toLocalDateKey(new Date(ts));
+    const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
+    if (!ordersByDateKey.has(dateKey)) {
+      ordersByDateKey.set(dateKey, { count: 0, revenue: 0 });
+    }
+    const stat = ordersByDateKey.get(dateKey);
+    stat.count++;
+    if (String(o.status || '').toLowerCase() === 'delivered') {
+      stat.revenue += rawTotal;
+    }
+  });
+
+  // Calculate days
+  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 = Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  // Trailing days from previous month
+  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const prevDayNum = daysInPrevMonth - i;
+    const cell = document.createElement('div');
+    cell.className = 'cal-day-cell is-other-month';
+    cell.innerHTML = `<span class="cal-day-num">${prevDayNum}</span>`;
+    gridEl.appendChild(cell);
+  }
+
+  // Days of current month
+  for (let d = 1; d <= daysInMonth; d++) {
+    const cellDate = new Date(year, month, d);
+    const dateKey = toLocalDateKey(cellDate);
+    const cellTime = cellDate.getTime();
+    const cell = document.createElement('div');
+    cell.className = 'cal-day-cell';
+    cell.setAttribute('data-date', dateKey);
+
+    const isToday = isSameCalendarDay(cellDate, now);
+    const isFuture = cellTime > todayStart;
+
+    if (isToday) cell.classList.add('is-today');
+    if (isFuture) cell.classList.add('is-future');
+
+    // Selection highlight
+    if (calMode === 'single') {
+      if (isSameCalendarDay(cellDate, calSelectedDate)) {
+        cell.classList.add('is-selected');
+      }
+    } else if (calMode === 'range') {
+      const s = calRangeStart ? new Date(calRangeStart.getFullYear(), calRangeStart.getMonth(), calRangeStart.getDate()).getTime() : 0;
+      const e = calRangeEnd ? new Date(calRangeEnd.getFullYear(), calRangeEnd.getMonth(), calRangeEnd.getDate()).getTime() : 0;
+
+      if (calRangeStart && isSameCalendarDay(cellDate, calRangeStart)) {
+        cell.classList.add('range-start');
+      }
+      if (calRangeEnd && isSameCalendarDay(cellDate, calRangeEnd)) {
+        cell.classList.add('range-end');
+      }
+      if (s && e && cellTime > s && cellTime < e) {
+        cell.classList.add('in-range');
+      }
+    }
+
+    // Sales dot
+    const dayOrders = ordersByDateKey.get(dateKey);
+    let dotHtml = '';
+    if (dayOrders && dayOrders.count > 0) {
+      cell.classList.add('has-sales');
+      dotHtml = `<span class="cal-sales-dot" title="${dayOrders.count} orders · ₹${Math.round(dayOrders.revenue).toLocaleString('en-IN')}"></span>`;
+    }
+
+    cell.innerHTML = `<span class="cal-day-num">${d}</span>${dotHtml}`;
+
+    if (!isFuture) {
+      cell.addEventListener('click', () => {
+        handleCalendarDayClick(cellDate);
+      });
+    }
+
+    gridEl.appendChild(cell);
+  }
+
+  // Leading days of next month to fill grid row
+  const totalRendered = firstDayOfWeek + daysInMonth;
+  const remainingCells = (7 - (totalRendered % 7)) % 7;
+  for (let n = 1; n <= remainingCells; n++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-day-cell is-other-month';
+    cell.innerHTML = `<span class="cal-day-num">${n}</span>`;
+    gridEl.appendChild(cell);
+  }
+}
+
+/**
+ * Handles day cell click
+ */
+function handleCalendarDayClick(date) {
+  const inputStart = document.getElementById('report-input-start');
+  const inputEnd = document.getElementById('report-input-end');
+
+  if (calMode === 'single') {
+    calSelectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if (inputStart) inputStart.value = toLocalDateKey(calSelectedDate);
+    if (inputEnd) inputEnd.value = toLocalDateKey(calSelectedDate);
+
+    renderCalendarMonth(calCurrentYear, calCurrentMonth);
+    renderReportsView();
+
+    // Auto-collapse calendar on mobile to avoid long scrolling
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      const wrapper = document.getElementById('owner-calendar-collapsible-wrapper');
+      const bar = document.getElementById('calendar-compact-bar');
+      if (wrapper) wrapper.style.display = 'none';
+      if (bar) bar.classList.remove('is-open');
+    }
+  } else if (calMode === 'range') {
+    if (!calRangeStart || (calRangeStart && calRangeEnd)) {
+      // Begin new range
+      calRangeStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      calRangeEnd = null;
+      if (inputStart) inputStart.value = toLocalDateKey(calRangeStart);
+      if (inputEnd) inputEnd.value = '';
+      renderCalendarMonth(calCurrentYear, calCurrentMonth);
+    } else if (calRangeStart && !calRangeEnd) {
+      // Complete range
+      const clickedTime = date.getTime();
+      const startTime = calRangeStart.getTime();
+
+      if (clickedTime < startTime) {
+        calRangeEnd = calRangeStart;
+        calRangeStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      } else {
+        calRangeEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      }
+
+      if (inputStart) inputStart.value = toLocalDateKey(calRangeStart);
+      if (inputEnd) inputEnd.value = toLocalDateKey(calRangeEnd);
+
+      renderCalendarMonth(calCurrentYear, calCurrentMonth);
+      renderReportsView();
+
+      // Auto-collapse calendar on mobile once range selection is complete
+      if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+        const wrapper = document.getElementById('owner-calendar-collapsible-wrapper');
+        const bar = document.getElementById('calendar-compact-bar');
+        if (wrapper) wrapper.style.display = 'none';
+        if (bar) bar.classList.remove('is-open');
+      }
+    }
+  }
+}
+
+/**
+ * Returns date bounds object { start, end, label, typeTag, isSingleDay }
+ */
+export function getCalendarReportDateBounds() {
+  if (calMode === 'single') {
+    const start = new Date(calSelectedDate.getFullYear(), calSelectedDate.getMonth(), calSelectedDate.getDate(), 0, 0, 0, 0);
+    const end = new Date(calSelectedDate.getFullYear(), calSelectedDate.getMonth(), calSelectedDate.getDate(), 23, 59, 59, 999);
+    const isToday = isSameCalendarDay(calSelectedDate, new Date());
+    const label = calSelectedDate.toLocaleDateString('en-IN', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    return {
+      start,
+      end,
+      label,
+      typeTag: isToday ? "TODAY'S LIVE AUDIT" : "SINGLE DAY AUDIT",
+      isSingleDay: true
+    };
+  } else {
+    const rStart = calRangeStart || calSelectedDate;
+    const rEnd = calRangeEnd || calRangeStart || calSelectedDate;
+    const s = rStart < rEnd ? rStart : rEnd;
+    const e = rStart < rEnd ? rEnd : rStart;
+
+    const start = new Date(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0, 0);
+    const end = new Date(e.getFullYear(), e.getMonth(), e.getDate(), 23, 59, 59, 999);
+    const daysCount = Math.max(1, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
+
+    const startStr = s.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const endStr = e.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const label = `${startStr} – ${endStr} (${daysCount} Days Full Report)`;
+
+    return {
+      start,
+      end,
+      label,
+      typeTag: "DATE RANGE FULL REPORT",
+      isSingleDay: false
+    };
+  }
+}
+
+/**
+ * Returns orders falling strictly inside the calendar's active date bounds
+ */
+export function getOrdersForCalendarReport() {
+  const bounds = getCalendarReportDateBounds();
+  const allOrders = dataService.getOrders();
+
+  return allOrders.filter(o => {
+    if (!o) return false;
+    const orderTimestamp = o.createdAt ? new Date(o.createdAt).getTime() : (o.updatedAt ? new Date(o.updatedAt).getTime() : 0);
+    return orderTimestamp >= bounds.start.getTime() && orderTimestamp <= bounds.end.getTime();
+  });
+}
+
+/**
+ * Master renderer for View 6: Sales Calendar & Financial Audit Reports
+ */
+function renderReportsView() {
+  try {
+    const bounds = getCalendarReportDateBounds();
+    const orders = getOrdersForCalendarReport();
+
+    // 1. Update Horizon Meta
+    const rangeLabel = document.getElementById('cal-active-range-label');
+    const rangeSub = document.getElementById('cal-active-range-sub');
+    const bannerTag = document.getElementById('report-banner-type-tag');
+    const bannerDate = document.getElementById('report-banner-date-heading');
+    const bannerOrders = document.getElementById('report-banner-orders-count');
+    const bannerTime = document.getElementById('report-banner-timestamp');
+
+    if (rangeLabel) rangeLabel.textContent = bounds.label;
+    if (rangeSub) rangeSub.textContent = bounds.isSingleDay ? 'Single day sales & rider payout audit' : 'Date range full report';
+    if (bannerTag) bannerTag.textContent = bounds.typeTag;
+    if (bannerDate) bannerDate.textContent = bounds.label;
+    if (bannerTime) bannerTime.textContent = `Generated: ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+
+    // Update Top Compact Calendar Bar
+    const barTypeTag = document.getElementById('cal-bar-type-tag');
+    const barDateDisplay = document.getElementById('cal-bar-date-display');
+    if (barTypeTag) barTypeTag.textContent = bounds.typeTag;
+    if (barDateDisplay) barDateDisplay.textContent = bounds.label;
+
+    // 2. Financial Aggregations
+    let totalRevenue = 0;
+    let codRevenue = 0;
+    let onlineRevenue = 0;
+    let codCount = 0;
+    let onlineCount = 0;
+    let totalFleetKms = 0;
+    const deliveredOrders = [];
+
+    orders.forEach(o => {
+      const status = String(o.status || '').toLowerCase();
+      const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
+      const isOnline = isOnlineOrderPayment(o);
+
+      if (status === 'delivered') {
+        deliveredOrders.push(o);
+        totalRevenue = Math.round((totalRevenue + rawTotal) * 100) / 100;
+
+        if (isOnline) {
+          onlineRevenue = Math.round((onlineRevenue + rawTotal) * 100) / 100;
+          onlineCount++;
+        } else {
+          codRevenue = Math.round((codRevenue + rawTotal) * 100) / 100;
+          codCount++;
+        }
+
+        const dist = Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0);
+        totalFleetKms += dist;
+      }
+    });
+
+    const aov = deliveredOrders.length > 0 ? Math.round(totalRevenue / deliveredOrders.length) : 0;
+    const codPercent = totalRevenue > 0 ? Math.round((codRevenue / totalRevenue) * 100) : 0;
+    const onlinePercent = totalRevenue > 0 ? (100 - codPercent) : 0;
+
+    // 3. Rider Payouts Calculation for this period
+    const payoutConfig = dataService.getPayoutConfig();
+    let totalRiderPayouts = 0;
+    const ordersByRider = new Map();
+
+    deliveredOrders.forEach(o => {
+      const rPin = String(o.assignedRiderPin || '').trim();
+      const rName = (o.assignedRiderName || '').trim().toLowerCase();
+      const key = rPin || rName || 'unassigned';
+      if (!ordersByRider.has(key)) ordersByRider.set(key, []);
+      ordersByRider.get(key).push(o);
+    });
+
+    ordersByRider.forEach((rOrders) => {
+      const payoutResult = dataService.calculateRiderPayout(rOrders, payoutConfig);
+      totalRiderPayouts = Math.round((totalRiderPayouts + (payoutResult.exactPayout || payoutResult.totalPayout || 0)) * 100) / 100;
+    });
+
+    const netDrawerCash = Math.round((codRevenue - totalRiderPayouts) * 100) / 100;
+    const netRetention = Math.round((totalRevenue - totalRiderPayouts) * 100) / 100;
+
+    // 4. Update KPI Metric Cards
+    const elTotalRev = document.getElementById('rep-total-revenue');
+    const elDelivCount = document.getElementById('rep-delivered-count');
+    const elAov = document.getElementById('rep-aov');
+    const elCodRev = document.getElementById('rep-cod-revenue');
+    const elCodCount = document.getElementById('rep-cod-count');
+    const elCodPct = document.getElementById('rep-cod-percent');
+    const elOnlineRev = document.getElementById('rep-online-revenue');
+    const elOnlineCount = document.getElementById('rep-online-count');
+    const elOnlinePct = document.getElementById('rep-online-percent');
+    const elRiderPayout = document.getElementById('rep-rider-payouts');
+    const elRiderDeliv = document.getElementById('rep-rider-deliveries');
+    const elFleetKms = document.getElementById('rep-fleet-kms');
+    const elDrawerNet = document.getElementById('rep-drawer-net');
+    const elDrawerMath = document.getElementById('rep-drawer-math');
+    const elNetRetention = document.getElementById('rep-net-retention');
+
+    if (elTotalRev) elTotalRev.textContent = `₹${formatInr(totalRevenue)}`;
+    if (elDelivCount) elDelivCount.textContent = `${deliveredOrders.length} delivered orders`;
+    if (elAov) elAov.textContent = `AOV: ₹${aov}`;
+
+    if (elCodRev) elCodRev.textContent = `₹${formatInr(codRevenue)}`;
+    if (elCodCount) elCodCount.textContent = `${codCount} cash orders`;
+    if (elCodPct) elCodPct.textContent = `${codPercent}% of Sales`;
+
+    if (elOnlineRev) elOnlineRev.textContent = `₹${formatInr(onlineRevenue)}`;
+    if (elOnlineCount) elOnlineCount.textContent = `${onlineCount} UPI/online orders`;
+    if (elOnlinePct) elOnlinePct.textContent = `${onlinePercent}% of Sales`;
+
+    if (elRiderPayout) elRiderPayout.textContent = `₹${formatInr(totalRiderPayouts)}`;
+    if (elRiderDeliv) elRiderDeliv.textContent = `${deliveredOrders.length} deliveries`;
+    if (elFleetKms) elFleetKms.textContent = `${totalFleetKms.toFixed(1)} km driven`;
+
+    if (elDrawerNet) {
+      if (netDrawerCash >= 0) {
+        elDrawerNet.textContent = `₹${formatInr(netDrawerCash)}`;
+        elDrawerNet.className = 'report-kpi-val num-emerald';
+      } else {
+        elDrawerNet.textContent = `−₹${formatInr(Math.abs(netDrawerCash))}`;
+        elDrawerNet.className = 'report-kpi-val num-amber';
+      }
+    }
+    if (elDrawerMath) {
+      elDrawerMath.textContent = `₹${formatInr(codRevenue)} Cash In − ₹${formatInr(totalRiderPayouts)} Payout`;
+    }
+
+    if (elNetRetention) elNetRetention.textContent = `₹${formatInr(netRetention)}`;
+    if (bannerOrders) bannerOrders.textContent = `${deliveredOrders.length} Delivered (${orders.length} Total Orders)`;
+
+    // 5. Payment Split Bar
+    const barCash = document.getElementById('rep-bar-cash');
+    const barOnline = document.getElementById('rep-bar-online');
+    const legCash = document.getElementById('rep-legend-cash');
+    const legOnline = document.getElementById('rep-legend-online');
+
+    if (barCash) barCash.style.width = `${codPercent}%`;
+    if (barOnline) barOnline.style.width = `${onlinePercent}%`;
+    if (legCash) legCash.textContent = `₹${formatInr(codRevenue)} (${codPercent}%)`;
+    if (legOnline) legOnline.textContent = `₹${formatInr(onlineRevenue)} (${onlinePercent}%)`;
+
+    // 6. Sub-Tables
+    renderReportRiderTable(deliveredOrders, payoutConfig);
+    renderReportDishesTable(deliveredOrders, totalRevenue);
+    renderReportOrdersTable();
+  } catch (err) {
+    console.error('[Owner] renderReportsView failed:', err);
+  }
+}
+
+/**
+ * Renders the Delivery Boys Settlement table for the chosen period
+ */
+function renderReportRiderTable(deliveredOrders, payoutConfig) {
+  const tbody = document.getElementById('report-rider-tbody');
+  if (!tbody) return;
+
+  try {
+    const rawRiders = dataService.getRiders();
+    const riders = Array.isArray(rawRiders) ? rawRiders.filter(r => r && typeof r === 'object') : [];
+    const riderOrdersMap = new Map();
+
+    (deliveredOrders || []).forEach(o => {
+      const rPin = String(o?.assignedRiderPin || '').trim();
+      const rName = String(o?.assignedRiderName || '').trim().toLowerCase();
+      const key = rPin || rName || 'unassigned';
+      if (!riderOrdersMap.has(key)) riderOrdersMap.set(key, []);
+      riderOrdersMap.get(key).push(o);
+    });
+
+    const activeRidersList = [];
+
+    riders.forEach(r => {
+      const key = String(r.pin || '').trim();
+      const rOrders = riderOrdersMap.get(key) || [];
+      if (rOrders.length > 0) {
+        activeRidersList.push({ rider: r, orders: rOrders });
+      }
+    });
+
+    // Include any assignments not matched by pin
+    riderOrdersMap.forEach((rOrders, key) => {
+      const matched = activeRidersList.some(item => String(item?.rider?.pin || '').trim() === key || String(item?.rider?.name || '').trim().toLowerCase() === key);
+      if (!matched && key !== 'unassigned') {
+        const sample = rOrders[0];
+        activeRidersList.push({
+          rider: { name: sample?.assignedRiderName || 'Delivery Boy', pin: sample?.assignedRiderPin || '----', vehicle: '🏍️ Bike' },
+          orders: rOrders
+        });
+      }
+    });
+
+    if (activeRidersList.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center" style="padding: 24px; color: #94A3B8;"><i class="fa-solid fa-motorcycle" style="font-size: 1.4rem; opacity: 0.5; margin-bottom: 6px; display: block;"></i>No delivery boy orders recorded in this period horizon.</td></tr>`;
+      updateReportRiderFooter(0, 0, 0, 0, 0);
+      return;
+    }
+
+    let totalDeliveries = 0;
+    let totalKms = 0;
+    let totalPayouts = 0;
+    let totalCash = 0;
+    let totalNet = 0;
+
+    tbody.innerHTML = activeRidersList.map(({ rider, orders }) => {
+      const delivCount = orders.length;
+      totalDeliveries += delivCount;
+
+      let riderKms = 0;
+      let riderCodCash = 0;
+
+      orders.forEach(o => {
+        riderKms += Number(o?.addressDetails?.distanceKm || o?.distance_km || o?.distanceKm || 0);
+        if (!isOnlineOrderPayment(o)) {
+          const cash = (typeof o?.cashCollected === 'number' && o.cashCollected > 0)
+            ? o.cashCollected
+            : (Number(String(o?.total || '0').replace(/[^0-9.]/g, '')) || 0);
+          riderCodCash += cash;
+        }
+      });
+
+      totalKms += riderKms;
+      totalCash += riderCodCash;
+
+      const payoutRes = dataService.calculateRiderPayout(orders, payoutConfig);
+      const payoutAmt = payoutRes?.exactPayout || payoutRes?.totalPayout || 0;
+      totalPayouts += payoutAmt;
+
+      const netToDrawer = Math.round((riderCodCash - payoutAmt) * 100) / 100;
+      totalNet += netToDrawer;
+
+      const rName = String(rider?.name || 'Delivery Partner').trim();
+      const rPin = String(rider?.pin || '----').trim();
+      const rVehicle = String(rider?.vehicle || '🏍️ Bike').trim();
+
+      return `
+        <tr>
+          <td><strong>${escapeHtml(rName)}</strong> <span style="font-size: 0.72rem; color: #94A3B8;">(PIN: ${escapeHtml(rPin)})</span></td>
+          <td>${escapeHtml(rVehicle)}</td>
+          <td class="text-center">${delivCount}</td>
+          <td class="text-center">${riderKms.toFixed(1)} km</td>
+          <td class="text-right num-purple font-bold">₹${formatInr(Math.round(payoutAmt))}</td>
+          <td class="text-right num-amber font-bold">₹${formatInr(Math.round(riderCodCash))}</td>
+          <td class="text-right font-bold ${netToDrawer >= 0 ? 'num-emerald' : 'num-amber'}">₹${formatInr(netToDrawer)}</td>
+          <td class="text-center"><span class="status-chip success"><i class="fa-solid fa-lock"></i> Audited</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    updateReportRiderFooter(totalDeliveries, totalKms, totalPayouts, totalCash, totalNet);
+
+    const previewRiders = document.getElementById('rep-bar-preview-riders');
+    if (previewRiders) {
+      previewRiders.textContent = `${activeRidersList.length} Riders · ₹${formatInr(Math.round(totalPayouts))} Paid`;
+    }
+  } catch (err) {
+    console.error('[Owner] renderReportRiderTable failed:', err);
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center" style="padding: 24px; color: #94A3B8;">Unable to calculate rider settlements for this period.</td></tr>`;
+  }
+}
+
+function updateReportRiderFooter(deliveries, kms, payouts, cash, net) {
+  const fDeliv = document.getElementById('rep-foot-deliveries');
+  const fKms = document.getElementById('rep-foot-kms');
+  const fPay = document.getElementById('rep-foot-payouts');
+  const fCash = document.getElementById('rep-foot-cash');
+  const fNet = document.getElementById('rep-foot-net');
+
+  if (fDeliv) fDeliv.textContent = `${deliveries}`;
+  if (fKms) fKms.textContent = `${kms.toFixed(1)} km`;
+  if (fPay) fPay.textContent = `₹${Math.round(payouts).toLocaleString('en-IN')}`;
+  if (fCash) fCash.textContent = `₹${Math.round(cash).toLocaleString('en-IN')}`;
+  if (fNet) fNet.textContent = `₹${Math.round(net).toLocaleString('en-IN')}`;
+}
+
+/**
+ * Renders the Menu Dish Sales breakdown table
+ */
+function renderReportDishesTable(deliveredOrders, totalRevenue) {
+  const tbody = document.getElementById('report-dishes-tbody');
+  const tfootQty = document.getElementById('rep-dishes-total-qty');
+  const tfootRev = document.getElementById('rep-dishes-total-revenue');
+  if (!tbody) return;
+
+  const dishMap = new Map();
+
+  deliveredOrders.forEach(o => {
+    const items = Array.isArray(o.items) ? o.items : [];
+    items.forEach(it => {
+      const name = it.name || 'Menu Dish';
+      const cat = it.category || 'Specialty';
+      const qty = Number(it.quantity || 1);
+      const price = Number(it.price || 0);
+      const itemTotal = price * qty;
+
+      if (!dishMap.has(name)) {
+        dishMap.set(name, { name, category: cat, quantity: 0, price, revenue: 0 });
+      }
+      const itemStat = dishMap.get(name);
+      itemStat.quantity += qty;
+      itemStat.revenue += itemTotal;
+      if (price > 0) itemStat.price = price;
+    });
+  });
+
+  const dishList = Array.from(dishMap.values()).sort((a, b) => b.revenue - a.revenue);
+
+  if (dishList.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 24px; color: #94A3B8;"><i class="fa-solid fa-utensils" style="font-size: 1.4rem; opacity: 0.5; margin-bottom: 6px; display: block;"></i>No itemized dish sales recorded for delivered orders in this period.</td></tr>`;
+    if (tfootQty) tfootQty.textContent = '0 items';
+    if (tfootRev) tfootRev.textContent = '₹0';
+    return;
+  }
+
+  let totalQty = 0;
+  let totalDishesRev = 0;
+
+  tbody.innerHTML = dishList.map(dish => {
+    totalQty += dish.quantity;
+    totalDishesRev += dish.revenue;
+    const share = totalRevenue > 0 ? Math.round((dish.revenue / totalRevenue) * 100) : 0;
+
+    return `
+      <tr>
+        <td><strong>${dish.name}</strong></td>
+        <td><span class="report-meta-chip" style="font-size: 0.7rem;">${dish.category}</span></td>
+        <td class="text-center font-bold">${dish.quantity}</td>
+        <td class="text-right">₹${dish.price.toLocaleString('en-IN')}</td>
+        <td class="text-right font-bold num-gold">₹${Math.round(dish.revenue).toLocaleString('en-IN')}</td>
+        <td class="text-right">${share}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  if (tfootQty) tfootQty.textContent = `${totalQty} items`;
+  if (tfootRev) tfootRev.textContent = `₹${Math.round(totalDishesRev).toLocaleString('en-IN')}`;
+
+  const previewDishes = document.getElementById('rep-bar-preview-dishes');
+  if (previewDishes) {
+    previewDishes.textContent = `${dishList.length} Dishes (${totalQty} Items) · ₹${Math.round(totalDishesRev).toLocaleString('en-IN')}`;
+  }
+}
+
+/**
+ * Renders the Orders Audit table for the active date selection
+ */
+function renderReportOrdersTable() {
+  const tbody = document.getElementById('report-orders-tbody');
+  const countLabel = document.getElementById('rep-orders-count-label');
+  if (!tbody) return;
+
+  const orders = getOrdersForCalendarReport();
+
+  // Filter by search & status
+  const filtered = orders.filter(o => {
+    if (!o) return false;
+    const status = String(o.status || '').toLowerCase();
+    const isOnline = isOnlineOrderPayment(o);
+
+    // Status filter
+    if (reportStatusFilter === 'delivered' && status !== 'delivered') return false;
+    if (reportStatusFilter === 'cash' && isOnline) return false;
+    if (reportStatusFilter === 'online' && !isOnline) return false;
+    if (reportStatusFilter === 'cancelled' && status !== 'cancelled') return false;
+
+    // Search query
+    if (reportOrderSearchQuery) {
+      const q = reportOrderSearchQuery;
+      const idMatch = String(o.id || '').toLowerCase().includes(q) || String(o.cleanId || '').toLowerCase().includes(q);
+      const custMatch = String(o.customerName || '').toLowerCase().includes(q);
+      const phoneMatch = String(extractPhoneFromOrder(o) || '').includes(q);
+      const riderMatch = String(o.assignedRiderName || '').toLowerCase().includes(q);
+      if (!idMatch && !custMatch && !phoneMatch && !riderMatch) return false;
+    }
+
+    return true;
+  });
+
+  if (countLabel) countLabel.textContent = `${filtered.length}`;
+
+  const previewOrders = document.getElementById('rep-bar-preview-orders');
+  if (previewOrders) {
+    previewOrders.textContent = `${filtered.length} Orders (${orders.filter(o => String(o.status || '').toLowerCase() === 'delivered').length} Delivered)`;
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center" style="padding: 30px; color: #94A3B8;"><i class="fa-solid fa-receipt" style="font-size: 1.6rem; opacity: 0.5; margin-bottom: 8px; display: block;"></i>No orders found matching this period and filter selection.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(o => {
+    const cleanId = formatDisplayOrderId(o.id, o.pickupCode);
+    const dateObj = o.createdAt ? new Date(o.createdAt) : new Date();
+    const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const isOnline = isOnlineOrderPayment(o);
+    const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
+    const items = Array.isArray(o.items) ? o.items : [];
+    const itemsSummary = items.map(it => `${it.quantity || 1}x ${it.name}`).join(', ') || 'Item';
+    const status = String(o.status || 'accepted');
+
+    return `
+      <tr>
+        <td><strong>${cleanId}</strong></td>
+        <td style="font-size: 0.78rem; color: #64748B;">${timeStr}</td>
+        <td>
+          <div style="font-weight: 600;">${o.customerName || 'Online Guest'}</div>
+          <div style="font-size: 0.72rem; color: #94A3B8;">${extractPhoneFromOrder(o) || 'No phone'}</div>
+        </td>
+        <td style="max-width: 220px; font-size: 0.78rem; color: #475569;" title="${itemsSummary}">${itemsSummary}</td>
+        <td>
+          <span class="report-meta-chip ${isOnline ? 'num-teal' : 'num-amber'}" style="font-size: 0.7rem;">
+            <i class="fa-solid ${isOnline ? 'fa-credit-card' : 'fa-money-bill-wave'}"></i>
+            ${isOnline ? 'Online/UPI' : 'COD Cash'}
+          </span>
+        </td>
+        <td style="font-size: 0.8rem;">${o.assignedRiderName ? `<i class="fa-solid fa-motorcycle" style="color: #7C3AED;"></i> ${o.assignedRiderName}` : '<span style="color: #94A3B8;">Unassigned</span>'}</td>
+        <td class="text-right font-bold" style="font-size: 0.92rem;">₹${rawTotal.toLocaleString('en-IN')}</td>
+        <td class="text-center"><span class="status-chip ${status === 'delivered' ? 'success' : (status === 'cancelled' ? 'cancelled' : 'pending')}">${status}</span></td>
+        <td class="text-center">
+          <button type="button" class="btn-cal-order-receipt" data-order-id="${o.id}" style="background: #F1F5F9; border: 1px solid #CBD5E1; color: #0F172A; border-radius: 6px; padding: 4px 8px; font-size: 0.74rem; font-weight: 700; cursor: pointer;">
+            <i class="fa-solid fa-receipt"></i> Invoice
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // Bind invoice button clicks
+  tbody.querySelectorAll('.btn-cal-order-receipt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orderId = btn.getAttribute('data-order-id');
+      const order = orders.find(o => o && o.id === orderId);
+      if (order) openInvoiceModal(order);
+    });
+  });
+}
+
+/**
+ * Generates an executive printable financial audit statement for the selected date or range
+ */
+function printCalendarReport() {
+  const bounds = getCalendarReportDateBounds();
+  const orders = getOrdersForCalendarReport();
+  const printContainer = document.getElementById('print-report-container');
+  if (!printContainer) return;
+
+  let totalRev = 0;
+  let codRev = 0;
+  let onlineRev = 0;
+  let deliveredCount = 0;
+  let totalKms = 0;
+  const deliveredOrders = [];
+
+  orders.forEach(o => {
+    if (String(o.status || '').toLowerCase() === 'delivered') {
+      deliveredCount++;
+      deliveredOrders.push(o);
+      const amt = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
+      totalRev += amt;
+      if (isOnlineOrderPayment(o)) onlineRev += amt;
+      else codRev += amt;
+      totalKms += Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0);
+    }
+  });
+
+  const payoutConfig = dataService.getPayoutConfig();
+  let totalPayouts = 0;
+  const ordersByRider = new Map();
+
+  deliveredOrders.forEach(o => {
+    const key = String(o.assignedRiderPin || o.assignedRiderName || 'unassigned').trim();
+    if (!ordersByRider.has(key)) ordersByRider.set(key, []);
+    ordersByRider.get(key).push(o);
+  });
+
+  ordersByRider.forEach(rOrders => {
+    const res = dataService.calculateRiderPayout(rOrders, payoutConfig);
+    totalPayouts += (res.exactPayout || res.totalPayout || 0);
+  });
+
+  const netDrawer = Math.round(codRev - totalPayouts);
+  const netRetention = Math.round(totalRev - totalPayouts);
+
+  printContainer.innerHTML = `
+    <div style="padding: 28px; font-family: sans-serif; color: #000; background: #FFF;">
+      <div style="border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+          <h1 style="margin: 0; font-size: 1.6rem; letter-spacing: -0.01em;">👑 SAVERA PARADISE</h1>
+          <h3 style="margin: 4px 0 0 0; font-size: 1.1rem; color: #111;">Executive Sales & Rider Settlement Statement</h3>
+          <p style="margin: 4px 0 0 0; font-size: 0.82rem; color: #555;">Audited Horizon: <strong>${bounds.label}</strong></p>
+        </div>
+        <div style="text-align: right; font-size: 0.78rem; color: #666;">
+          <div>Generated on: ${new Date().toLocaleString('en-IN')}</div>
+          <div style="font-weight: bold; color: #111; margin-top: 2px;">🔒 100% READ-ONLY CERTIFIED RECORD</div>
+        </div>
+      </div>
+
+      <!-- Financial Metrics Grid -->
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
+        <div style="border: 1px solid #000; padding: 12px; border-radius: 6px;">
+          <span style="display: block; font-size: 0.72rem; color: #444; font-weight: bold;">TOTAL SALES EARNINGS</span>
+          <span style="font-size: 1.4rem; font-weight: bold;">₹${totalRev.toLocaleString('en-IN')}</span>
+          <div style="font-size: 0.72rem; color: #666;">${deliveredCount} orders delivered</div>
+        </div>
+        <div style="border: 1px solid #000; padding: 12px; border-radius: 6px;">
+          <span style="display: block; font-size: 0.72rem; color: #444; font-weight: bold;">CASH (COD) COLLECTED</span>
+          <span style="font-size: 1.4rem; font-weight: bold;">₹${codRev.toLocaleString('en-IN')}</span>
+          <div style="font-size: 0.72rem; color: #666;">Physical Counter Cash</div>
+        </div>
+        <div style="border: 1px solid #000; padding: 12px; border-radius: 6px;">
+          <span style="display: block; font-size: 0.72rem; color: #444; font-weight: bold;">ONLINE & UPI (BANK)</span>
+          <span style="font-size: 1.4rem; font-weight: bold;">₹${onlineRev.toLocaleString('en-IN')}</span>
+          <div style="font-size: 0.72rem; color: #666;">Direct in Bank Account</div>
+        </div>
+        <div style="border: 1px solid #000; padding: 12px; border-radius: 6px;">
+          <span style="display: block; font-size: 0.72rem; color: #444; font-weight: bold;">PAID TO RIDERS</span>
+          <span style="font-size: 1.4rem; font-weight: bold;">₹${Math.round(totalPayouts).toLocaleString('en-IN')}</span>
+          <div style="font-size: 0.72rem; color: #666;">${totalKms.toFixed(1)} km fleet driven</div>
+        </div>
+        <div style="border: 1px solid #000; padding: 12px; border-radius: 6px;">
+          <span style="display: block; font-size: 0.72rem; color: #444; font-weight: bold;">NET CASH IN DRAWER</span>
+          <span style="font-size: 1.4rem; font-weight: bold;">₹${netDrawer.toLocaleString('en-IN')}</span>
+          <div style="font-size: 0.72rem; color: #666;">Food Cash − Rider Pay</div>
+        </div>
+        <div style="border: 1px solid #000; padding: 12px; border-radius: 6px;">
+          <span style="display: block; font-size: 0.72rem; color: #444; font-weight: bold;">NET SALES RETENTION</span>
+          <span style="font-size: 1.4rem; font-weight: bold;">₹${netRetention.toLocaleString('en-IN')}</span>
+          <div style="font-size: 0.72rem; color: #666;">Sales − Rider Expenses</div>
+        </div>
+      </div>
+
+      <!-- Rider Settlement Table Snapshot -->
+      <div style="margin-top: 20px;">
+        <h4 style="margin: 0 0 8px 0; font-size: 0.95rem; text-transform: uppercase;">Delivery Boys Settlement Breakdown</h4>
+        ${document.getElementById('report-rider-table')?.outerHTML || '<p>No delivery riders.</p>'}
+      </div>
+
+      <!-- Dish Sales Summary Snapshot -->
+      <div style="margin-top: 24px;">
+        <h4 style="margin: 0 0 8px 0; font-size: 0.95rem; text-transform: uppercase;">Menu Items Sales Summary</h4>
+        ${document.getElementById('report-dishes-table')?.outerHTML || '<p>No menu items.</p>'}
+      </div>
+
+      <!-- Signatures -->
+      <div style="margin-top: 48px; display: flex; justify-content: space-between; font-size: 0.85rem; color: #333;">
+        <div>Executive Auditor: Owner Portal System</div>
+        <div style="border-top: 1px solid #000; width: 220px; text-align: center; padding-top: 6px;">Proprietor / Owner Signature</div>
+      </div>
+    </div>
+  `;
+
+  window.print();
+}
+
+/**
+ * Exports the selected date / range orders into CSV
+ */
+function exportCalendarReportCSV() {
+  const bounds = getCalendarReportDateBounds();
+  const orders = getOrdersForCalendarReport();
+
+  const headers = [
+    'Order ID',
+    'Date',
+    'Time',
+    'Customer Name',
+    'Customer Phone',
+    'Delivery Address',
+    'Distance (KM)',
+    'Payment Mode',
+    'Order Total (INR)',
+    'Order Status',
+    'Assigned Delivery Boy',
+    'Items Summary'
+  ];
+
+  const rows = orders.map(o => {
+    const cleanId = formatDisplayOrderId(o.id, o.pickupCode);
+    const dateObj = o.createdAt ? new Date(o.createdAt) : new Date();
+    const dateStr = dateObj.toLocaleDateString('en-IN');
+    const timeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const dist = Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0).toFixed(1);
+    const payment = isOnlineOrderPayment(o) ? 'Online / UPI' : 'Cash (COD)';
+    const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
+    const status = String(o.status || 'pending');
+    const items = Array.isArray(o.items) ? o.items : [];
+    const itemsSummary = items.map(it => `${it.quantity || 1}x ${it.name}`).join('; ');
+
+    return [
+      sanitizeCsvCell(cleanId),
+      sanitizeCsvCell(dateStr),
+      sanitizeCsvCell(timeStr),
+      sanitizeCsvCell(o.customerName || o.customer_name || 'Customer'),
+      sanitizeCsvCell(extractPhoneFromOrder(o) || ''),
+      sanitizeCsvCell(cleanDeliveryAddress(o.deliveryAddress || o.delivery_address || '')),
+      sanitizeCsvCell(dist),
+      sanitizeCsvCell(payment),
+      sanitizeCsvCell(rawTotal),
+      sanitizeCsvCell(status),
+      sanitizeCsvCell(o.assignedRiderName || 'Unassigned'),
+      sanitizeCsvCell(itemsSummary)
+    ].join(',');
+  });
+
+  const csvText = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  const safeLabel = bounds.label.replace(/[^a-zA-Z0-9_-]/g, '_');
+  link.setAttribute('download', `Savera_Paradise_Sales_Audit_${safeLabel}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+

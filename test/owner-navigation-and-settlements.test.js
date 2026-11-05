@@ -236,4 +236,23 @@ test.describe('OWNER NAVIGATION BAR & SETTLEMENTS INTEGRATION SUITE', () => {
     assert.equal(summary.deliveredCount, 2, 'Delivered orders count both COD and Online');
   });
 
+  test('9. Orders View Toggle & Table Stream: owner.js binds orders-view-toggle and defines rawId in order rows', () => {
+    const html = fs.readFileSync(path.join(rootDir, 'owner.html'), 'utf-8');
+    assert.ok(html.includes('id="orders-view-toggle"'), 'owner.html must contain #orders-view-toggle');
+    assert.ok(html.includes('id="orders-cards-container"'), 'owner.html must contain #orders-cards-container');
+    assert.ok(html.includes('id="orders-table-wrapper"'), 'owner.html must contain #orders-table-wrapper');
+
+    const js = fs.readFileSync(path.join(rootDir, 'owner.js'), 'utf-8');
+    assert.ok(js.includes("document.getElementById('orders-view-toggle')"), 'owner.js must wire up orders-view-toggle');
+    assert.ok(js.includes("const rawId = String(o.id || '')"), 'owner.js must declare rawId before receipt button rendering');
+  });
+
+  test('10. Mobile Responsive Layout: owner.css contains strict viewport isolation, min-width: 0 on filters, and prevents horizontal overflow', () => {
+    const css = fs.readFileSync(path.join(rootDir, 'owner.css'), 'utf-8');
+    assert.ok(css.includes('body.owner-body'), 'owner.css must style body.owner-body');
+    assert.ok(css.includes('overflow-x: hidden'), 'owner.css must enforce overflow-x: hidden to eliminate mobile side-scrolling');
+    assert.ok(css.includes('.owner-view-tab'), 'owner.css must define .owner-view-tab constraints');
+    assert.ok(css.includes('.status-pills-row'), 'owner.css must style .status-pills-row');
+    assert.ok(css.includes('scrollbar-width: none'), 'owner.css must hide scrollbar for clean touch swipe');
+  });
 });

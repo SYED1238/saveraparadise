@@ -296,16 +296,10 @@ const initDeliveryApp = () => {
     if (isStaffSessionActive('rider')) {
       let activeRider = dataService.getActiveRider();
       if (!activeRider) {
-        if (Array.isArray(DEFAULT_RIDERS) && DEFAULT_RIDERS.length > 0) {
-          activeRider = DEFAULT_RIDERS[0];
-          dataService.saveOrUpdateRider(activeRider);
-          dataService.setActiveRiderPin(activeRider.pin);
-        } else {
-          clearStaffSession('rider');
-          if (riderLockOverlay) riderLockOverlay.classList.remove('unlocked');
-          if (riderPasscodeLock) riderPasscodeLock.reset();
-          return;
-        }
+        clearStaffSession('rider');
+        if (riderLockOverlay) riderLockOverlay.classList.remove('unlocked');
+        if (riderPasscodeLock) riderPasscodeLock.reset();
+        return;
       }
       if (riderLockOverlay) { riderLockOverlay.classList.add('unlocked'); riderLockOverlay.style.display = 'none'; }
       updateRiderProfileHeader();
@@ -487,7 +481,9 @@ const initDeliveryApp = () => {
     }
 
     const orders = allOrders || dataService.getOrders();
-    earningsTripsList.innerHTML = details.map((item, idx) => {
+    const reversedDetails = [...details].reverse();
+    earningsTripsList.innerHTML = reversedDetails.map((item, revIdx) => {
+      const tripNumber = details.length - revIdx;
       const matchedOrder = orders.find(o => o.id === item.orderId) || {};
       const isCod = isCashOnDelivery(matchedOrder);
       const cashAmt = extractCashAmount(matchedOrder.total);
@@ -507,8 +503,8 @@ const initDeliveryApp = () => {
         <div class="earnings-trip-card">
           <div class="trip-card-header">
             <div class="trip-id-wrap">
-              <span class="trip-index">#${details.length - idx}</span>
-              <strong class="trip-order-id">${escapeHtml(item.orderId || `Trip ${idx + 1}`)}</strong>
+              <span class="trip-index">#${tripNumber}</span>
+              <strong class="trip-order-id">${escapeHtml(item.orderId || `Trip ${tripNumber}`)}</strong>
               ${surgeBadge}
             </div>
             <div class="trip-payout-val">
@@ -550,7 +546,7 @@ const initDeliveryApp = () => {
 
   function handleGpsPosition(pos) {
     if (pos.coords && pos.coords.accuracy && pos.coords.accuracy > 150) {
-      // Discard low-accuracy GPS fixes (>150m) to prevent erratic tracker map jitter
+      // Discard excessively coarse GPS fixes (>150m) to prevent erratic tracker map jitter
       return;
     }
     riderLiveLocation.lat = pos.coords.latitude;
@@ -642,16 +638,26 @@ const initDeliveryApp = () => {
       },
       (err) => {
         console.warn('[Rider GPS] High-accuracy fix standby:', err.message);
+        if (err && err.code === 1) {
+          clearTimeout(gpsFallbackTimeout);
+          riderLiveLocation.hasGps = false;
+          updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
+          return;
+        }
         // Fallback attempt: low accuracy (resolves instantly via Wi-Fi/cell in mobile browsers)
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             clearTimeout(gpsFallbackTimeout);
             handleGpsPosition(pos);
           },
-          () => {
+          (fallbackErr) => {
             clearTimeout(gpsFallbackTimeout);
             riderLiveLocation.hasGps = false;
-            updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
+            if (fallbackErr && fallbackErr.code === 1) {
+              updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
+            } else {
+              updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
+            }
           },
           { enableHighAccuracy: false, timeout: 2500, maximumAge: 60000 }
         );
@@ -868,15 +874,20 @@ const initDeliveryApp = () => {
 
     // 1. Calculate Metrics (Segregated per Delivery Partner)
     // ready: Cooking / preparing orders in kitchen queue (pending, accepted, cooking) available for pickup
-    // active: Out for delivery tasks ONLY assigned to this specific rider
+    // readyForPickup: Only orders packed and waiting on kitchen counter
+    // active: Out for delivery tasks assigned to this specific rider or awaiting fleet claim
     // delivered: Delivered orders completed by this specific rider
     const readyOrders = orders.filter(o => 
       (o.status === 'ready_for_pickup' || o.status === 'cooking' || o.status === 'accepted' || o.status === 'pending') &&
       (!o.assignedRiderPin || o.assignedRiderPin === currentRider.pin)
     );
+    const readyForPickupOrders = orders.filter(o => 
+      o.status === 'ready_for_pickup' &&
+      (!o.assignedRiderPin || o.assignedRiderPin === currentRider.pin)
+    );
     const activeOrders = orders.filter(o => {
       if (o.status !== 'on_the_way') return false;
-      return o.assignedRiderPin === currentRider.pin;
+      return o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin;
     });
     const deliveredOrders = orders.filter(o => {
       if (o.status !== 'delivered' && o.status !== 'undelivered') return false;
@@ -910,8 +921,8 @@ const initDeliveryApp = () => {
     // Update native PWA icon badge counter for rider
     updateAppBadge(readyOrders.length + activeOrders.length);
 
-    // Update Live Ready Parcels Chips on the permanent pickup card
-    renderParcelReadyChips(readyOrders);
+    // Update Live Ready Parcels Chips on the permanent pickup card strictly for counter-ready orders
+    renderParcelReadyChips(readyForPickupOrders);
 
     // Smart auto-tab switch:
     // If rider has active orders on the road, show Active tab
@@ -1042,8 +1053,8 @@ const initDeliveryApp = () => {
     riderOrdersList.innerHTML = displayList.map((order, orderIdx) => {
       const isCod = isCashOnDelivery(order);
       const cashAmount = extractCashAmount(order.total);
-      const cleanId = escapeHtml(order.id.replace('#', ''));
-      const safeId = escapeHtml(order.id);
+      const cleanId = escapeHtml(String(order.id || '').replace(/^#+/, ''));
+      const safeId = escapeHtml(String(order.id || ''));
       const safeCustomerName = escapeHtml(order.customerName || 'Online Guest');
 
       // Customer exact pinned drop location coordinates
@@ -1083,7 +1094,7 @@ const initDeliveryApp = () => {
       const waDigits = hasRealPhone ? cleanPhoneDigits.slice(-10) : '';
       const whatsappUrl = waDigits
         ? `https://wa.me/91${waDigits}?text=${encodeURIComponent(whatsappText)}`
-        : '#';
+        : 'javascript:void(0)';
 
       const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recent';
 
@@ -1141,7 +1152,7 @@ const initDeliveryApp = () => {
             <div class="row-customer-info">
               <div class="row-customer-name-bar">
                 <h4 class="row-customer-name">${safeCustomerName}</h4>
-                <a href="${hasRealPhone ? `tel:${dialerPhone}` : '#'}" class="row-customer-phone-pill ${hasRealPhone ? 'active' : 'missing'}" title="${hasRealPhone ? `Call Customer: ${escapeHtml(displayPhone)}` : 'Customer phone not provided'}">
+                <a href="${hasRealPhone ? `tel:${dialerPhone}` : 'javascript:void(0)'}" class="row-customer-phone-pill ${hasRealPhone ? 'active' : 'missing'}" title="${hasRealPhone ? `Call Customer: ${escapeHtml(displayPhone)}` : 'Customer phone not provided'}">
                   <i class="fa-solid fa-phone"></i>
                   <span>${escapeHtml(displayPhone)}</span>
                 </a>
@@ -1167,7 +1178,7 @@ const initDeliveryApp = () => {
                 </a>
 
                 <!-- 2. Call Button (Symbol Only) -->
-                <a href="${hasRealPhone ? `tel:${dialerPhone}` : '#'}" class="btn-action-pill btn-action-icon btn-action-call ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `Call Customer: ${escapeHtml(displayPhone)}` : 'Customer phone not provided'}" aria-label="Call Customer">
+                <a href="${hasRealPhone ? `tel:${dialerPhone}` : 'javascript:void(0)'}" class="btn-action-pill btn-action-icon btn-action-call ${!hasRealPhone ? 'disabled' : ''}" title="${hasRealPhone ? `Call Customer: ${escapeHtml(displayPhone)}` : 'Customer phone not provided'}" aria-label="Call Customer">
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="#FFFFFF" aria-hidden="true" style="display: block;">
                     <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.5 3.92c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.54c0-.55-.45-1-.99-1z"/>
                   </svg>
@@ -1215,7 +1226,8 @@ const initDeliveryApp = () => {
       // TAB 3: DELIVERED TODAY ('delivered')
       // ==========================================
       const isUndelivered = order.status === 'undelivered';
-      const orderPayout = dataService.calculateOrderPayout(order, orderIdx + 1, payoutCfg);
+      const chronologicalIndex = Math.max(1, displayList.length - orderIdx);
+      const orderPayout = dataService.calculateOrderPayout(order, chronologicalIndex, payoutCfg);
 
       return `
         <article class="rider-order-row row-delivered ${isUndelivered ? 'row-undelivered' : ''}" data-order-id="${safeId}">
@@ -1791,7 +1803,7 @@ const initDeliveryApp = () => {
 
     if (cnrCustomerPhoneDisplay) cnrCustomerPhoneDisplay.textContent = displayPhone;
     if (cnrBtnCallCustomer) {
-      cnrBtnCallCustomer.href = hasRealPhone ? `tel:${dialerPhone}` : '#';
+      cnrBtnCallCustomer.href = hasRealPhone ? `tel:${dialerPhone}` : 'javascript:void(0)';
       cnrBtnCallCustomer.classList.toggle('disabled', !hasRealPhone);
     }
 
@@ -1799,7 +1811,7 @@ const initDeliveryApp = () => {
     if (cnrBtnWhatsapp) {
       const urgentWaMsg = `Hello ${order.customerName || 'Customer'}, this is your Savera Paradise delivery partner. I have reached your doorstep with Order ${safeId}. I tried calling you on ${displayPhone} but could not reach you. Please open the door or call me back immediately. Thank you!`;
       const waDigits = hasRealPhone ? `91${validTenDigits}` : '';
-      cnrBtnWhatsapp.href = hasRealPhone ? `https://wa.me/${waDigits}?text=${encodeURIComponent(urgentWaMsg)}` : '#';
+      cnrBtnWhatsapp.href = hasRealPhone ? `https://wa.me/${waDigits}?text=${encodeURIComponent(urgentWaMsg)}` : 'javascript:void(0)';
       cnrBtnWhatsapp.classList.toggle('disabled', !hasRealPhone);
     }
 
@@ -1935,7 +1947,11 @@ const initDeliveryApp = () => {
       const orderId = activeCnrOrder.id;
       const cleanId = String(orderId).replace(/^#/, '');
       const timerStorageKey = `quickbite_cnr_start_${cleanId}`;
-      const startTime = Number(localStorage.getItem(timerStorageKey)) || 0;
+      let startTime = Number(localStorage.getItem(timerStorageKey)) || 0;
+      if (!startTime) {
+        startTime = Number(activeCnrOrder.waitingStartedAt) || Date.now();
+        localStorage.setItem(timerStorageKey, String(startTime));
+      }
       const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
       if (startTime > 0 && elapsedSeconds < 600) {
         const remaining = Math.ceil((600 - elapsedSeconds) / 60);
@@ -1997,9 +2013,17 @@ const initDeliveryApp = () => {
 
       localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
 
+      const payoutCfg = dataService.getPayoutConfig();
+      const currentDelivered = dataService.getOrders().filter(o => 
+        o.status === 'delivered' && o.assignedRiderPin === currentRider.pin
+      );
+      const orderPayout = dataService.calculateOrderPayout(activeCnrOrder, currentDelivered.length + 1, payoutCfg);
+
       dataService.riderSafeDropPrepaid(orderId, {
         safeDropNote: note,
-        riderPin: currentRider.pin
+        riderPin: currentRider.pin,
+        riderPayoutAmount: orderPayout.amount,
+        riderPayoutFormula: orderPayout.formula
       });
 
       try {
@@ -2007,7 +2031,8 @@ const initDeliveryApp = () => {
       } catch {}
 
       closeUnreachableModal();
-      showToast(`🚪 Order ${orderId} delivered via Safe Drop: ${note}`, 'success');
+      const updatedSummary = dataService.getRiderPayoutSummary(currentRider.pin);
+      showToast(`🚪 Order ${orderId} delivered via Safe Drop: ${note} (+₹${orderPayout.amount.toFixed(2)} credited! Balance: ₹${updatedSummary.payoutBalance.toFixed(2)})`, 'success');
 
       activeTab = 'delivered';
       persistRiderTab('delivered');
@@ -2024,7 +2049,11 @@ const initDeliveryApp = () => {
       const cleanId = String(orderId).replace(/^#/, '');
 
       // Enforce 10-minute wait time before prepaid order can be returned to kitchen
-      const startTime = parseInt(localStorage.getItem(`quickbite_cnr_start_${cleanId}`) || '0', 10);
+      let startTime = parseInt(localStorage.getItem(`quickbite_cnr_start_${cleanId}`) || '0', 10);
+      if (!startTime) {
+        startTime = Number(activeCnrOrder.waitingStartedAt) || Date.now();
+        localStorage.setItem(`quickbite_cnr_start_${cleanId}`, String(startTime));
+      }
       const elapsedSeconds = startTime > 0 ? Math.floor((Date.now() - startTime) / 1000) : 0;
       if (startTime > 0 && elapsedSeconds < 600) {
         const remaining = 600 - elapsedSeconds;
@@ -2576,7 +2605,8 @@ const initDeliveryApp = () => {
     // Prevent confusing rider login PIN with parcel order number
     const allRosterPins = (dataService.getRiders() || []).map(r => r && r.pin).filter(Boolean);
     const knownRiderPins = Array.from(new Set([...allRosterPins, currentRider.pin, '2233', '4422', '4455', '8811']));
-    if (knownRiderPins.includes(code)) {
+    const existingOrderWithCode = dataService.findOrderByBagCode(code);
+    if (!existingOrderWithCode && knownRiderPins.includes(code)) {
       showToast(`⚠️ PIN ${code} is a Rider Login PIN! Enter the 4-digit food bag number (e.g. #1001 or #4941) to claim a parcel.`, 'warning');
       if (inputBagCode) {
         inputBagCode.classList.add('shake');
@@ -2589,7 +2619,7 @@ const initDeliveryApp = () => {
     isClaimingBag = true;
     try {
       // 1. Check if order exists in local orders
-      let order = dataService.findOrderByBagCode(code);
+      let order = existingOrderWithCode || dataService.findOrderByBagCode(code);
 
       // Resilient check directly from localStorage in case of cross-tab sync latency
       if (!order) {
@@ -2629,7 +2659,15 @@ const initDeliveryApp = () => {
         return;
       }
 
-      // 3. Reject unknown or terminal bag codes instead of fabricating a demo order in production
+      // 3. Fallback sync from Supabase before rejecting unknown bag code
+      if (!order) {
+        try {
+          await dataService.syncOrdersFromSupabase(true);
+          order = dataService.findOrderByBagCode(code);
+        } catch {}
+      }
+
+      // 4. Reject unknown or terminal bag codes instead of fabricating a demo order in production
       if (!order) {
         showToast(`❌ No active order found with 4-digit bag code #${code}. Please check the receipt code.`, 'error');
         if (inputBagCode) {

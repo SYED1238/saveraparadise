@@ -147,6 +147,12 @@
           <span class="hide-mobile" id="owner-sound-text">Alerts: Active</span>
         </button>
 
+        <!-- Calendar & Date Reports Quick Action -->
+        <button type="button" class="btn-owner-action btn-calendar-highlight" id="btn-owner-calendar" title="Open Sales Calendar & Historical Reports">
+          <i class="fa-solid fa-calendar-days"></i>
+          <span class="hide-mobile">Calendar & Reports</span>
+        </button>
+
         <!-- Quick Action Buttons -->
         <button type="button" class="btn-owner-action" id="btn-owner-refresh" title="Refresh Live Data">
           <i class="fa-solid fa-rotate"></i>
@@ -241,6 +247,14 @@
             </div>
             <span class="owner-nav-label">Fleet</span>
           </button>
+
+          <!-- 6. CALENDAR & REPORTS -->
+          <button type="button" class="owner-nav-btn" id="owner-nav-reports" data-target="view-reports" aria-label="Sales Calendar & Reports">
+            <div class="owner-icon-bubble">
+              <i class="fa-solid fa-calendar-days"></i>
+            </div>
+            <span class="owner-nav-label">Reports</span>
+          </button>
         </div>
       </nav>
 
@@ -266,6 +280,9 @@
             <button type="button" class="period-pill" data-period="custom" id="btn-period-custom">
               <i class="fa-solid fa-sliders"></i> Custom
             </button>
+            <button type="button" class="period-pill period-calendar-pill" id="btn-period-calendar" title="Open Interactive Sales Calendar & Range Report">
+              <i class="fa-solid fa-calendar-days"></i> Calendar
+            </button>
           </div>
         </div>
 
@@ -288,6 +305,9 @@
           </div>
           <button type="button" class="btn-apply-custom-range" id="btn-apply-custom-range">
             <i class="fa-solid fa-check"></i> Apply Filter
+          </button>
+          <button type="button" class="btn-open-calendar-from-card" id="btn-open-calendar-from-card" title="Open Full Sales Calendar">
+            <i class="fa-solid fa-calendar-days"></i> Open Calendar
           </button>
           <button type="button" class="btn-close-custom-range" id="btn-close-custom-range">
             <i class="fa-solid fa-xmark"></i>
@@ -992,6 +1012,424 @@
         </section>
       </div><!-- End #view-fleet -->
 
+      <!-- ========================================================== -->
+      <!-- VIEW 6: SALES CALENDAR & HISTORICAL AUDIT REPORTS (READ-ONLY)-->
+      <!-- ========================================================== -->
+      <div class="owner-view-tab" id="view-reports" style="display: none;">
+        <section class="owner-section" id="section-reports">
+          <!-- Section Header -->
+          <div class="section-header-row">
+            <div>
+              <div class="reports-header-title-wrap">
+                <h2 class="section-title"><i class="fa-solid fa-calendar-days"></i> Sales Calendar & Financial Audit Reports</h2>
+                <span class="readonly-badge-pill" title="This view is strictly read-only for financial auditing">
+                  <i class="fa-solid fa-shield-halved"></i> 100% Read-Only
+                </span>
+              </div>
+              <p class="section-sub">Pick any date (current or past) to audit that day's earnings, or select a date range ("till this date to this date") for a comprehensive sales, cash, UPI, and rider payout report.</p>
+            </div>
+            <div class="section-badge-info">
+              <button type="button" class="btn-owner-action" id="btn-print-calendar-report" title="Print Selected Period Executive Report">
+                <i class="fa-solid fa-print"></i> <span class="hide-mobile">Print Statement</span>
+              </button>
+              <button type="button" class="btn-owner-action" id="btn-export-calendar-csv" title="Export Selected Period to CSV">
+                <i class="fa-solid fa-file-csv"></i> <span class="hide-mobile">Export CSV</span>
+              </button>
+              <button type="button" class="btn-owner-action" id="btn-sync-to-overview" title="Apply this date selection across all Owner views">
+                <i class="fa-solid fa-sliders"></i> <span class="hide-mobile">Filter Entire Portal</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Mobile-Optimized Compact Calendar Dropdown Bar -->
+          <div class="calendar-compact-bar" id="calendar-compact-bar">
+            <div class="cal-compact-main" id="btn-toggle-calendar-panel" role="button" tabindex="0" title="Tap to open or close calendar">
+              <div class="cal-compact-date-wrap">
+                <span class="cal-compact-icon"><i class="fa-solid fa-calendar-days"></i></span>
+                <div>
+                  <div class="cal-compact-horizon-label" id="cal-bar-type-tag">SINGLE DAY REPORT</div>
+                  <div class="cal-compact-date" id="cal-bar-date-display">Today, 04 Nov 2026</div>
+                </div>
+              </div>
+              <div class="cal-compact-action-wrap">
+                <span class="cal-compact-hint-badge" id="cal-compact-hint-badge"><i class="fa-solid fa-sliders"></i> Change Date</span>
+                <i class="fa-solid fa-chevron-down cal-dropdown-arrow" id="cal-toggle-chevron"></i>
+              </div>
+            </div>
+
+            <!-- Quick 1-Tap Presets Strip (Instant Switching Without Scrolling) -->
+            <div class="calendar-presets-pills cal-quick-strip" id="calendar-presets-pills">
+              <button type="button" class="cal-preset-pill active" data-preset="today">Today</button>
+              <button type="button" class="cal-preset-pill" data-preset="yesterday">Yesterday</button>
+              <button type="button" class="cal-preset-pill" data-preset="last7">7 Days</button>
+              <button type="button" class="cal-preset-pill" data-preset="thismonth">This Month</button>
+              <button type="button" class="cal-preset-pill" data-preset="lastmonth">Last Month</button>
+              <button type="button" class="cal-preset-pill" data-preset="all">All-Time</button>
+            </div>
+          </div>
+
+          <!-- Collapsible Calendar Drawer / Dropdown Panel -->
+          <div class="owner-calendar-collapsible-wrapper" id="owner-calendar-collapsible-wrapper" style="display: none;">
+            <div class="owner-calendar-card" id="owner-calendar-card">
+              <div class="calendar-top-controls">
+                <!-- Mode Switcher -->
+                <div class="calendar-mode-toggle" id="calendar-mode-toggle">
+                  <button type="button" class="cal-mode-btn active" data-mode="single" id="btn-cal-mode-single">
+                    <i class="fa-solid fa-calendar-day"></i> Single Day View
+                  </button>
+                  <button type="button" class="cal-mode-btn" data-mode="range" id="btn-cal-mode-range">
+                    <i class="fa-solid fa-calendar-week"></i> Date Range (From – To)
+                  </button>
+                </div>
+                <button type="button" class="btn-cal-close-panel" id="btn-done-calendar-top" title="Close Calendar">
+                  <i class="fa-solid fa-xmark"></i> Close
+                </button>
+              </div>
+
+              <div class="calendar-body-layout">
+                <!-- Left/Center: Visual Calendar Month -->
+                <div class="calendar-month-widget">
+                  <div class="calendar-month-header">
+                    <button type="button" class="btn-cal-nav" id="btn-cal-prev" title="Previous Month">
+                      <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <div class="calendar-month-title-wrap">
+                      <h3 class="calendar-month-name" id="cal-month-year-label">November 2026</h3>
+                      <button type="button" class="btn-cal-jump-today" id="btn-cal-jump-today">Jump to Today</button>
+                    </div>
+                    <button type="button" class="btn-cal-nav" id="btn-cal-next" title="Next Month">
+                      <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                  </div>
+
+                  <!-- Calendar Weekdays -->
+                  <div class="calendar-weekdays-row">
+                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                  </div>
+
+                  <!-- Calendar Days Grid (Populated dynamically) -->
+                  <div class="calendar-days-grid" id="calendar-days-grid">
+                    <!-- Populated by renderCalendarMonth() -->
+                  </div>
+
+                  <div class="calendar-legend-hint">
+                    <span class="legend-item"><span class="cal-dot-sample has-sales"></span> Has Orders / Sales</span>
+                    <span class="legend-item"><span class="cal-dot-sample today"></span> Today</span>
+                    <span class="legend-item"><span class="cal-dot-sample selected"></span> Selected</span>
+                    <span class="legend-item"><span class="cal-dot-sample range"></span> Date Range Span</span>
+                  </div>
+                </div>
+
+                <!-- Right: Direct Date Input & Selection Meta -->
+                <div class="calendar-direct-panel">
+                  <h4 class="direct-panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Date Horizon Selection</h4>
+                  <div class="direct-inputs-grid">
+                    <div class="direct-input-group">
+                      <label for="report-input-start">From / Single Date:</label>
+                      <input type="date" id="report-input-start" class="cal-native-input" />
+                    </div>
+                    <div class="direct-input-group" id="report-input-end-group" style="display: none;">
+                      <label for="report-input-end">Till Date:</label>
+                      <input type="date" id="report-input-end" class="cal-native-input" />
+                    </div>
+                  </div>
+
+                  <button type="button" class="btn-cal-apply-direct" id="btn-cal-apply-direct">
+                    <i class="fa-solid fa-magnifying-glass-chart"></i> Generate Audit Report
+                  </button>
+
+                  <div class="calendar-selected-summary-card" id="cal-selected-summary-card">
+                    <span class="summary-card-label">CURRENT AUDIT HORIZON</span>
+                    <div class="summary-card-date" id="cal-active-range-label">Wednesday, 04 Nov 2026</div>
+                    <div class="summary-card-sub" id="cal-active-range-sub">Single day sales & rider payout audit</div>
+                  </div>
+
+                  <div class="calendar-readonly-note">
+                    <i class="fa-solid fa-lock"></i>
+                    <span><strong>Audit Protection:</strong> Historical financial figures, cash transactions, and rider settlement calculations are displayed in strict read-only mode to preserve ledger accuracy.</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Close Done Bar at bottom of calendar -->
+              <div class="calendar-bottom-done-row">
+                <button type="button" class="btn-done-calendar" id="btn-done-calendar">
+                  <i class="fa-solid fa-check"></i> Done (Apply & View Report)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dynamic Report Content Area (Updated upon selecting date or date range) -->
+          <div class="report-dynamic-content" id="report-dynamic-content">
+            <!-- Active Horizon Banner -->
+            <div class="report-horizon-banner">
+              <div class="horizon-badge-group">
+                <span class="horizon-calendar-icon"><i class="fa-solid fa-calendar-check"></i></span>
+                <div>
+                  <div class="horizon-type-tag" id="report-banner-type-tag">SINGLE DAY REPORT</div>
+                  <h3 class="horizon-date-heading" id="report-banner-date-heading">Wednesday, 04 November 2026</h3>
+                </div>
+              </div>
+              <div class="horizon-meta-group">
+                <span class="report-meta-chip"><i class="fa-solid fa-shield-halved"></i> Read-Only Record</span>
+                <span class="report-meta-chip" id="report-banner-orders-count">0 Delivered Orders</span>
+                <span class="report-meta-chip" id="report-banner-timestamp">Generated: Live</span>
+              </div>
+            </div>
+
+            <!-- Executive Metric Cards -->
+            <div class="report-kpi-grid">
+              <!-- Card 1: Total Sales -->
+              <div class="report-kpi-card card-revenue">
+                <div class="report-kpi-top">
+                  <span class="report-kpi-icon icon-gold"><i class="fa-solid fa-indian-rupee-sign"></i></span>
+                  <span class="report-kpi-title">TOTAL SALES EARNINGS</span>
+                </div>
+                <div class="report-kpi-val" id="rep-total-revenue">₹0</div>
+                <div class="report-kpi-sub">
+                  <span id="rep-delivered-count">0 delivered orders</span>
+                  <span class="kpi-dot">•</span>
+                  <span id="rep-aov">AOV: ₹0</span>
+                </div>
+              </div>
+
+              <!-- Card 2: Cash (COD) -->
+              <div class="report-kpi-card card-cash">
+                <div class="report-kpi-top">
+                  <span class="report-kpi-icon icon-amber"><i class="fa-solid fa-money-bill-wave"></i></span>
+                  <span class="report-kpi-title">CASH (COD) COLLECTED</span>
+                </div>
+                <div class="report-kpi-val num-amber" id="rep-cod-revenue">₹0</div>
+                <div class="report-kpi-sub">
+                  <span id="rep-cod-count">0 cash orders</span>
+                  <span class="kpi-dot">•</span>
+                  <span id="rep-cod-percent">0% of Sales</span>
+                </div>
+              </div>
+
+              <!-- Card 3: Online & UPI -->
+              <div class="report-kpi-card card-online">
+                <div class="report-kpi-top">
+                  <span class="report-kpi-icon icon-teal"><i class="fa-solid fa-credit-card"></i></span>
+                  <span class="report-kpi-title">UPI & ONLINE (BANK)</span>
+                </div>
+                <div class="report-kpi-val num-teal" id="rep-online-revenue">₹0</div>
+                <div class="report-kpi-sub">
+                  <span id="rep-online-count">0 UPI/prepaid orders</span>
+                  <span class="kpi-dot">•</span>
+                  <span id="rep-online-percent">0% of Sales</span>
+                </div>
+              </div>
+
+              <!-- Card 4: Paid to Riders -->
+              <div class="report-kpi-card card-rider">
+                <div class="report-kpi-top">
+                  <span class="report-kpi-icon icon-purple"><i class="fa-solid fa-motorcycle"></i></span>
+                  <span class="report-kpi-title">PAID TO RIDERS</span>
+                </div>
+                <div class="report-kpi-val num-purple" id="rep-rider-payouts">₹0</div>
+                <div class="report-kpi-sub">
+                  <span id="rep-rider-deliveries">0 deliveries</span>
+                  <span class="kpi-dot">•</span>
+                  <span id="rep-fleet-kms">0.0 km driven</span>
+                </div>
+              </div>
+
+              <!-- Card 5: Net Drawer Cash -->
+              <div class="report-kpi-card card-drawer">
+                <div class="report-kpi-top">
+                  <span class="report-kpi-icon icon-emerald"><i class="fa-solid fa-vault"></i></span>
+                  <span class="report-kpi-title">NET CASH IN DRAWER</span>
+                </div>
+                <div class="report-kpi-val num-emerald" id="rep-drawer-net">₹0</div>
+                <div class="report-kpi-sub">
+                  <span id="rep-drawer-math">Cash Collected − Payouts</span>
+                </div>
+              </div>
+
+              <!-- Card 6: Net Restaurant Retention -->
+              <div class="report-kpi-card card-retention">
+                <div class="report-kpi-top">
+                  <span class="report-kpi-icon icon-blue"><i class="fa-solid fa-scale-balanced"></i></span>
+                  <span class="report-kpi-title">NET SALES RETENTION</span>
+                </div>
+                <div class="report-kpi-val num-blue" id="rep-net-retention">₹0</div>
+                <div class="report-kpi-sub">
+                  <span>Sales minus Rider Delivery Pay</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cash vs Online Visual Split -->
+            <div class="report-ratio-card">
+              <div class="ratio-bar-header">
+                <span class="ratio-title"><i class="fa-solid fa-chart-pie"></i> Payment Mode Breakdown (Cash vs UPI)</span>
+                <div class="ratio-legend">
+                  <span class="legend-item legend-cash"><span class="legend-square"></span> COD Cash: <strong id="rep-legend-cash">₹0 (0%)</strong></span>
+                  <span class="legend-item legend-online"><span class="legend-square"></span> Online & UPI: <strong id="rep-legend-online">₹0 (0%)</strong></span>
+                </div>
+              </div>
+              <div class="ratio-bar-track">
+                <div class="ratio-segment segment-cash" id="rep-bar-cash" style="width: 50%;"></div>
+                <div class="ratio-segment segment-online" id="rep-bar-online" style="width: 50%;"></div>
+              </div>
+            </div>
+
+            <!-- Section 1: Delivery Boy Payouts Dropdown Bar -->
+            <div class="report-detail-accordion" id="report-section-riders">
+              <div class="report-accordion-bar" id="rep-bar-riders-toggle" role="button" tabindex="0" aria-expanded="false" title="Tap to expand or collapse rider payouts">
+                <div class="rep-bar-left">
+                  <span class="rep-bar-icon-bubble icon-purple"><i class="fa-solid fa-motorcycle"></i></span>
+                  <div>
+                    <h3 class="rep-bar-title">Delivery Boys Payouts & Performance</h3>
+                    <span class="rep-bar-sub" id="rep-bar-preview-riders">0 Riders · ₹0 Payout</span>
+                  </div>
+                </div>
+                <div class="rep-bar-right">
+                  <span class="rep-tap-hint">Tap to view full table</span>
+                  <i class="fa-solid fa-chevron-down rep-chevron" id="chevron-riders"></i>
+                </div>
+              </div>
+
+              <div class="report-accordion-body" id="rep-body-riders" style="display: none;">
+                <div class="owner-table-wrapper">
+                  <table class="owner-table" id="report-rider-table">
+                    <thead>
+                      <tr>
+                        <th>Delivery Boy</th>
+                        <th>Vehicle</th>
+                        <th class="text-center">Deliveries</th>
+                        <th class="text-center">Total KMs</th>
+                        <th class="text-right">Rider Payout</th>
+                        <th class="text-right">COD Cash in Hand</th>
+                        <th class="text-right">Net to Drawer</th>
+                        <th class="text-center">Settlement Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="report-rider-tbody">
+                      <!-- Populated dynamically -->
+                    </tbody>
+                    <tfoot id="report-rider-tfoot">
+                      <tr class="table-totals-row">
+                        <td colspan="2"><strong>FLEET AUDIT TOTALS</strong></td>
+                        <td class="text-center" id="rep-foot-deliveries">0</td>
+                        <td class="text-center" id="rep-foot-kms">0.0 km</td>
+                        <td class="text-right num-purple" id="rep-foot-payouts">₹0</td>
+                        <td class="text-right num-amber" id="rep-foot-cash">₹0</td>
+                        <td class="text-right num-emerald" id="rep-foot-net">₹0</td>
+                        <td class="text-center"><span class="status-chip success">Audited</span></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Section 2: Menu Items & Dishes Sold Dropdown Bar -->
+            <div class="report-detail-accordion" id="report-section-dishes">
+              <div class="report-accordion-bar" id="rep-bar-dishes-toggle" role="button" tabindex="0" aria-expanded="false" title="Tap to expand or collapse dish sales">
+                <div class="rep-bar-left">
+                  <span class="rep-bar-icon-bubble icon-gold"><i class="fa-solid fa-utensils"></i></span>
+                  <div>
+                    <h3 class="rep-bar-title">Menu Items & Dish Sales Audit</h3>
+                    <span class="rep-bar-sub" id="rep-bar-preview-dishes">0 Dishes Sold · ₹0</span>
+                  </div>
+                </div>
+                <div class="rep-bar-right">
+                  <span class="rep-tap-hint">Tap to view full table</span>
+                  <i class="fa-solid fa-chevron-down rep-chevron" id="chevron-dishes"></i>
+                </div>
+              </div>
+
+              <div class="report-accordion-body" id="rep-body-dishes" style="display: none;">
+                <div class="owner-table-wrapper">
+                  <table class="owner-table" id="report-dishes-table">
+                    <thead>
+                      <tr>
+                        <th>Menu Item</th>
+                        <th>Category</th>
+                        <th class="text-center">Quantity Sold</th>
+                        <th class="text-right">Unit Price</th>
+                        <th class="text-right">Total Revenue</th>
+                        <th class="text-right">% of Food Sales</th>
+                      </tr>
+                    </thead>
+                    <tbody id="report-dishes-tbody">
+                      <!-- Populated dynamically -->
+                    </tbody>
+                    <tfoot id="report-dishes-tfoot">
+                      <tr class="table-totals-row">
+                        <td colspan="2"><strong>TOTAL DISH SALES</strong></td>
+                        <td class="text-center" id="rep-dishes-total-qty">0 items</td>
+                        <td></td>
+                        <td class="text-right num-gold" id="rep-dishes-total-revenue">₹0</td>
+                        <td class="text-right">100%</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Section 3: Orders Stream Audit List Dropdown Bar -->
+            <div class="report-detail-accordion" id="report-section-orders">
+              <div class="report-accordion-bar" id="rep-bar-orders-toggle" role="button" tabindex="0" aria-expanded="false" title="Tap to expand or collapse orders and receipts">
+                <div class="rep-bar-left">
+                  <span class="rep-bar-icon-bubble icon-blue"><i class="fa-solid fa-receipt"></i></span>
+                  <div>
+                    <h3 class="rep-bar-title">Orders Audit Log & Receipts (<span id="rep-orders-count-label">0</span>)</h3>
+                    <span class="rep-bar-sub" id="rep-bar-preview-orders">0 Orders in Horizon</span>
+                  </div>
+                </div>
+                <div class="rep-bar-right">
+                  <span class="rep-tap-hint">Tap to view & search orders</span>
+                  <i class="fa-solid fa-chevron-down rep-chevron" id="chevron-orders"></i>
+                </div>
+              </div>
+
+              <div class="report-accordion-body" id="rep-body-orders" style="display: none;">
+                <div class="report-orders-filter-row" style="margin-bottom: 12px; padding: 12px 14px 0 14px;">
+                  <div class="search-input-wrap">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="report-orders-search" placeholder="Search order ID, customer, rider, phone...">
+                  </div>
+                  <div class="status-pills-row" id="report-status-pills">
+                    <button type="button" class="order-filter-pill active" data-rep-status="all">All</button>
+                    <button type="button" class="order-filter-pill" data-rep-status="delivered">Delivered</button>
+                    <button type="button" class="order-filter-pill" data-rep-status="cash">Cash (COD)</button>
+                    <button type="button" class="order-filter-pill" data-rep-status="online">UPI/Online</button>
+                    <button type="button" class="order-filter-pill" data-rep-status="cancelled">Cancelled</button>
+                  </div>
+                </div>
+
+                <div class="owner-table-wrapper">
+                  <table class="owner-table" id="report-orders-table">
+                    <thead>
+                      <tr>
+                        <th>Order ID</th>
+                        <th>Time</th>
+                        <th>Customer & Phone</th>
+                        <th>Items Ordered</th>
+                        <th>Payment Mode</th>
+                        <th>Assigned Rider</th>
+                        <th class="text-right">Total Amount</th>
+                        <th class="text-center">Status</th>
+                        <th class="text-center">Invoice</th>
+                      </tr>
+                    </thead>
+                    <tbody id="report-orders-tbody">
+                      <!-- Populated dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- End #report-dynamic-content -->
+        </section>
+      </div><!-- End #view-reports -->
+
     </main>
 
     <!-- Footer -->
@@ -1068,15 +1506,23 @@
           <span class="owner-field-hint">Used by kitchen & customers to contact the rider during delivery.</span>
         </div>
 
-        <div class="owner-form-group">
-          <label for="owner-rider-vehicle" class="owner-form-label"><i class="fa-solid fa-bicycle"></i> Vehicle Type</label>
-          <select id="owner-rider-vehicle" class="owner-form-select">
-            <option value="🏍️ Bike">🏍️ Bike</option>
-            <option value="🛵 Scooter">🛵 Scooter</option>
-            <option value="🚲 Bicycle">🚲 Bicycle</option>
-            <option value="🚗 Car">🚗 Car</option>
-          </select>
+        <div class="owner-form-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px;">
+          <div class="owner-form-group">
+            <label for="owner-rider-vehicle" class="owner-form-label"><i class="fa-solid fa-bicycle"></i> Vehicle Type</label>
+            <select id="owner-rider-vehicle" class="owner-form-select">
+              <option value="🏍️ Bike">🏍️ Bike</option>
+              <option value="🛵 Scooter">🛵 Scooter</option>
+              <option value="🚲 Bicycle">🚲 Bicycle</option>
+              <option value="🚗 Car">🚗 Car</option>
+              <option value="⚡ Electric / EV">⚡ Electric / EV</option>
+            </select>
+          </div>
+          <div class="owner-form-group">
+            <label for="owner-rider-vehicle-name" class="owner-form-label"><i class="fa-solid fa-motorcycle"></i> Vehicle Name / Model</label>
+            <input type="text" id="owner-rider-vehicle-name" class="owner-form-input" placeholder="e.g. Honda Activa, Splendor" maxlength="50" />
+          </div>
         </div>
+        <span class="owner-field-hint" style="margin-top: -6px; margin-bottom: 8px;">Vehicle type and model appear on customer order tracking and kitchen dispatch.</span>
 
         <div class="owner-form-group">
           <label class="owner-form-label"><i class="fa-solid fa-key"></i> Secret 4-Digit Login PIN</label>
