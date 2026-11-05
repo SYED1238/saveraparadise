@@ -1,5 +1,8 @@
 package com.sascrispy.portal;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -47,7 +50,11 @@ public class MainActivity extends AppCompatActivity {
 
         setupWebView();
         requestAppPermissions();
-        startOrderMonitorService();
+
+        // Only Kitchen tablet runs background OrderMonitorService
+        if (getPackageName().contains("kitchen")) {
+            startOrderMonitorService();
+        }
 
         String targetUrl = getString(R.string.portal_url);
         if (savedInstanceState == null) {
@@ -135,12 +142,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void requestAppPermissions() {
+        boolean isRider = getPackageName().contains("rider");
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            String[] permissions = {
-                Manifest.permission.POST_NOTIFICATIONS,
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            };
+            List<String> perms = new ArrayList<>();
+            perms.add(Manifest.permission.POST_NOTIFICATIONS);
+            if (isRider) {
+                perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+                perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+            }
+            String[] permissions = perms.toArray(new String[0]);
             boolean needsRequest = false;
             for (String perm : permissions) {
                 if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
@@ -151,7 +162,7 @@ public class MainActivity extends AppCompatActivity {
             if (needsRequest) {
                 ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE);
             }
-        } else {
+        } else if (isRider) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, new String[]{
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -174,11 +185,10 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
+        if (requestCode == PERMISSION_REQUEST_CODE && getPackageName().contains("kitchen")) {
             startOrderMonitorService();
         }
     }

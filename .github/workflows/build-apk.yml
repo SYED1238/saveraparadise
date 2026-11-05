@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -39,7 +39,7 @@ jobs:
       - name: Generate Production Release Keystore
         run: |
           cd android/app
-          keytool -genkey -v -keystore release.jks -alias saveraparadise -keyalg RSA -keysize 2048 -validity 10000 -storepass "SaveraParadise2026!" -keypass "SaveraParadise2026!" -dname "CN=Savera Paradise Kitchen, OU=Kitchen, O=Savera Paradise, L=Bengaluru, ST=Karnataka, C=IN"
+          keytool -genkey -v -keystore release.jks -alias saveraparadise -keyalg RSA -keysize 2048 -validity 10000 -storepass "SaveraParadise2026!" -keypass "SaveraParadise2026!" -dname "CN=Savera Paradise, OU=Mobile, O=Savera Paradise, L=Bengaluru, ST=Karnataka, C=IN"
 
       - name: Build Admin, Rider, and Owner APKs
         run: |
