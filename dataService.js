@@ -5441,6 +5441,12 @@ class QuickBiteDataService {
       return null;
     }
 
+    // Terminal state protection: Cancelled orders can NEVER transition to any other status
+    if (order.status === 'cancelled') {
+      console.warn(`[DataService] Action blocked: Order ${orderId} has already been cancelled and cannot be changed to "${newStatus}".`);
+      return null;
+    }
+
     // Order Cancellation handling
     if (newStatus === 'cancelled') {
       if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered', 'undelivered'].includes(order.status)) {

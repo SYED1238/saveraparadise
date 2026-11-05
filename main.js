@@ -1347,6 +1347,7 @@ function initStorefrontApp() {
     renderCart();
 
     showToast(`Added ${qty > 1 ? qty + 'x ' : ''}${item.name} to basket! 🛒`, 'success');
+    if (typeof prewarmTurnstile === 'function') prewarmTurnstile();
   }
 
   function removeFromCart(id) {
@@ -2792,6 +2793,7 @@ function initStorefrontApp() {
     if (cartDrawerBackdrop) cartDrawerBackdrop.classList.add('open');
     document.body.classList.add('cart-drawer-open');
     document.body.style.overflow = 'hidden';
+    if (typeof prewarmTurnstile === 'function') prewarmTurnstile();
 
     // Auto-prefill active offer code so customer only needs to press Apply
     const settings = dataService.getSettings();
@@ -5173,12 +5175,21 @@ function initStorefrontApp() {
     const container = document.getElementById('turnstile-checkout-widget');
     if (!container || typeof window.turnstile === 'undefined') return;
 
+    // Preserve already verified token if still valid
+    if (activeTurnstileToken) {
+      return;
+    }
+
     if (turnstileWidgetId !== null) {
       try {
+        const existingToken = window.turnstile.getResponse(turnstileWidgetId);
+        if (existingToken) {
+          activeTurnstileToken = existingToken;
+          return;
+        }
         window.turnstile.reset(turnstileWidgetId);
-        activeTurnstileToken = '';
-        return;
       } catch (_) {}
+      return;
     }
 
     try {
@@ -5202,12 +5213,42 @@ function initStorefrontApp() {
     }
   }
 
-  async function getTurnstileToken() {
+  function prewarmTurnstile() {
+    if (activeTurnstileToken) return;
+    if (typeof window.turnstile !== 'undefined') {
+      initTurnstileCheckoutWidget();
+    } else {
+      let attempts = 0;
+      const pollTimer = setInterval(() => {
+        attempts++;
+        if (typeof window.turnstile !== 'undefined') {
+          clearInterval(pollTimer);
+          initTurnstileCheckoutWidget();
+        } else if (attempts >= 30) {
+          clearInterval(pollTimer);
+        }
+      }, 150);
+    }
+  }
+
+  // Pre-warm invisible verification as early as possible on page load
+  if (typeof window !== 'undefined') {
+    if (document.readyState === 'complete') {
+      prewarmTurnstile();
+    } else {
+      window.addEventListener('load', prewarmTurnstile, { once: true });
+    }
+  }
+
+  async function getTurnstileToken(maxWaitMs = 3500) {
     if (activeTurnstileToken) return activeTurnstileToken;
     if (typeof window.turnstile !== 'undefined' && turnstileWidgetId !== null) {
       try {
         const resp = window.turnstile.getResponse(turnstileWidgetId);
-        if (resp) return resp;
+        if (resp) {
+          activeTurnstileToken = resp;
+          return resp;
+        }
       } catch (_) {}
     }
     const isLocalhost = Boolean(
@@ -5218,11 +5259,38 @@ function initStorefrontApp() {
     if (isLocalhost) {
       return 'dev-turnstile-token-' + Date.now();
     }
+    if (typeof window.turnstile === 'undefined') {
+      console.warn('[Turnstile] Verification library blocked or unreachable. Permitting fallback token.');
+      return 'client-fallback-turnstile-token';
+    }
+
+    if (turnstileWidgetId === null) {
+      initTurnstileCheckoutWidget();
+    }
+
+    // Gracefully poll in background up to maxWaitMs
+    const startWait = Date.now();
+    const intervalMs = 100;
+    while (Date.now() - startWait < maxWaitMs) {
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+      if (activeTurnstileToken) return activeTurnstileToken;
+      if (typeof window.turnstile !== 'undefined' && turnstileWidgetId !== null) {
+        try {
+          const resp = window.turnstile.getResponse(turnstileWidgetId);
+          if (resp) {
+            activeTurnstileToken = resp;
+            return resp;
+          }
+        } catch (_) {}
+      }
+    }
+    console.warn('[Turnstile] Token wait elapsed (' + maxWaitMs + 'ms).');
     return '';
   }
 
   function openCheckoutModalInternal() {
     renderCheckoutAddresses();
+    prewarmTurnstile();
     initTurnstileCheckoutWidget();
     if (modalCheckoutBackdrop) {
       modalCheckoutBackdrop.classList.add('open');
@@ -5463,17 +5531,19 @@ function initStorefrontApp() {
       const originalBtnHtml = btnPlaceOrderFinal.innerHTML;
       btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting Order...';
 
-      const resetSubmitState = () => {
+      const resetSubmitState = (clearTurnstile = false) => {
         isSubmittingOrder = false;
         if (btnPlaceOrderFinal) {
           btnPlaceOrderFinal.disabled = false;
           btnPlaceOrderFinal.innerHTML = originalBtnHtml;
         }
-        activeTurnstileToken = '';
-        if (typeof window.turnstile !== 'undefined' && turnstileWidgetId !== null) {
-          try {
-            window.turnstile.reset(turnstileWidgetId);
-          } catch (_) {}
+        if (clearTurnstile) {
+          activeTurnstileToken = '';
+          if (typeof window.turnstile !== 'undefined' && turnstileWidgetId !== null) {
+            try {
+              window.turnstile.reset(turnstileWidgetId);
+            } catch (_) {}
+          }
         }
       };
 
@@ -5694,11 +5764,17 @@ function initStorefrontApp() {
         }
 
         // Retrieve invisible Cloudflare Turnstile bot verification token
-        const turnstileToken = await getTurnstileToken();
+        if (!activeTurnstileToken && btnPlaceOrderFinal) {
+          btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Securing your order...';
+        }
+        const turnstileToken = await getTurnstileToken(3500);
         if (!turnstileToken) {
           showToast('🔒 Please complete the security verification challenge before placing your order.', 'warning');
           resetSubmitState();
           return;
+        }
+        if (btnPlaceOrderFinal) {
+          btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting Order...';
         }
 
         // Server-side verification & anti-price tampering check via /api/checkout
@@ -5721,7 +5797,7 @@ function initStorefrontApp() {
           if (checkoutRes.status === 403) {
             const checkoutErr = await checkoutRes.json().catch(() => ({}));
             showToast(checkoutErr.error || 'Bot verification failed. Automated traffic blocked.', 'error');
-            resetSubmitState();
+            resetSubmitState(true);
             return;
           }
           if (checkoutRes.ok) {
@@ -5826,7 +5902,7 @@ function initStorefrontApp() {
         console.error('[Checkout]: Uncaught error during order placement:', submitErr);
         showToast(`❌ Order submission issue: ${submitErr?.message || 'Please check your connection and try again'}.`, 'error');
       } finally {
-        resetSubmitState();
+        resetSubmitState(true);
       }
     });
   }
