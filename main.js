@@ -2,7 +2,7 @@
  * Savera Paradise - Interactive Logic & Animation Engine
  */
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h, formatDisplayOrderId } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h, formatDisplayOrderId, getNowInIST } from './dataService.js';
 import { supabase } from './supabaseClient.js';
 import {
   playNotificationSound,
@@ -1560,7 +1560,7 @@ function initStorefrontApp() {
   function startDishScheduleTicker() {
     if (dishScheduleTicker) return; // Prevent duplicate tickers
     dishScheduleTicker = setInterval(() => {
-      const now = new Date();
+      const now = (typeof getNowInIST === 'function') ? getNowInIST(new Date()) : new Date();
       const dishes = (typeof dataService !== 'undefined' && dataService.getDishes) ? dataService.getDishes() : [];
       const dishesMap = new Map(dishes.map(d => [d.id, d]));
       let needsReEvaluation = false;
@@ -8754,7 +8754,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     const openMinutes = parseTimeToMinutes(openTimeStr);
     const closeMinutes = parseTimeToMinutes(closeTimeStr);
 
-    const now = new Date();
+    const now = (typeof getNowInIST === 'function') ? getNowInIST(new Date()) : new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     let headline = 'Kitchen Closed';

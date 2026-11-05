@@ -2352,6 +2352,19 @@ export function formatTime12h(timeStr) {
 }
 
 /**
+ * Returns a Date object shifted to Asia/Kolkata (India Standard Time - UTC+5:30)
+ * Guarantees operating hours, dish timers, and cutoffs remain strictly aligned with the restaurant in Ramanagara.
+ */
+export function getNowInIST(date = new Date()) {
+  try {
+    const istString = date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+    const istDate = new Date(istString);
+    if (!isNaN(istDate.getTime())) return istDate;
+  } catch {}
+  return date;
+}
+
+/**
  * Evaluates live availability for a dish based on day of the week and serving hours.
  */
 export function getDishScheduleStatus(dish, now = new Date()) {
@@ -2371,9 +2384,12 @@ export function getDishScheduleStatus(dish, now = new Date()) {
     };
   }
 
+  // Authoritative India Standard Time (IST) evaluation
+  const istNow = getNowInIST(now);
+
   const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const DAY_LABELS = { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' };
-  const currentDayCode = DAY_NAMES[now.getDay()];
+  const currentDayCode = DAY_NAMES[istNow.getDay()];
 
   let availableDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   if (Array.isArray(dish.availableDays) && dish.availableDays.length > 0) {
@@ -2391,7 +2407,7 @@ export function getDishScheduleStatus(dish, now = new Date()) {
   if (!isAvailableToday) {
     let nextDayName = '';
     for (let i = 1; i <= 7; i++) {
-      const nextIdx = (now.getDay() + i) % 7;
+      const nextIdx = (istNow.getDay() + i) % 7;
       const nextCode = DAY_NAMES[nextIdx];
       if (availableDays.includes(nextCode)) {
         if (i === 1) nextDayName = 'Tomorrow';
@@ -2418,22 +2434,22 @@ export function getDishScheduleStatus(dish, now = new Date()) {
     const [fromH, fromM] = fromStr.split(':').map(Number);
     const [toH, toM] = toStr.split(':').map(Number);
 
-    const startTime = new Date(now);
+    const startTime = new Date(istNow);
     startTime.setHours(fromH || 0, fromM || 0, 0, 0);
 
-    const endTime = new Date(now);
+    const endTime = new Date(istNow);
     endTime.setHours(toH || 0, toM || 0, 0, 0);
 
     // If serving extends past midnight (e.g. 18:00 to 01:00)
     if (endTime <= startTime) {
-      if (now.getHours() < toH || (now.getHours() === toH && now.getMinutes() < toM)) {
+      if (istNow.getHours() < toH || (istNow.getHours() === toH && istNow.getMinutes() < toM)) {
         startTime.setDate(startTime.getDate() - 1);
       } else {
         endTime.setDate(endTime.getDate() + 1);
       }
     }
 
-    const currentMillis = now.getTime();
+    const currentMillis = istNow.getTime();
     const startMillis = startTime.getTime();
     const endMillis = endTime.getTime();
 
