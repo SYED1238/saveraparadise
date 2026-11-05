@@ -6,7 +6,7 @@ import { signPayload } from './_auth.js';
 import { verifyTurnstileToken, getClientIp } from './_turnstile.js';
 import { hydrateEnv, isOriginAllowed, jsonResponse } from './_adapter.js';
 
-const isTestEnv = (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test');
+const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
 const FALLBACK_SUPABASE_URL = isTestEnv ? '' : 'https://zrgkglwqkdxmwrgepnqh.supabase.co';
 const FALLBACK_SUPABASE_ANON_KEY = isTestEnv ? '' : 'sb_publishable_obyAWrTPc2oIxF3V9Bp23Q_cd_WxEZk';
 

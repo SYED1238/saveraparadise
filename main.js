@@ -1330,9 +1330,13 @@ function initStorefrontApp() {
 
     const existing = cart.find(i => i.id === item.id);
     if (existing) {
-      existing.quantity += qty;
+      if (existing.quantity >= 50) {
+        showToast(`Maximum limit of 50 units reached for "${item.name}"`, 'warning');
+        return;
+      }
+      existing.quantity = Math.min(50, existing.quantity + qty);
     } else {
-      cart.push({ ...item, quantity: qty });
+      cart.push({ ...item, quantity: Math.min(50, qty) });
     }
 
     saveCart();
@@ -1354,6 +1358,11 @@ function initStorefrontApp() {
   function updateQuantity(id, delta) {
     const item = cart.find(i => i.id === id);
     if (!item) return;
+
+    if (delta > 0 && item.quantity >= 50) {
+      showToast(`Maximum limit of 50 units reached for "${item.name}"`, 'warning');
+      return;
+    }
 
     if (delta > 0) {
       const liveDishes = (typeof dataService !== 'undefined' && dataService.getDishes) ? dataService.getDishes() : [];
@@ -2301,6 +2310,10 @@ function initStorefrontApp() {
         showToast(`🕒 "${activeDetailItem.name}" is currently outside serving hours.`, 'info');
         return;
       }
+      if (activeDetailQty >= 50) {
+        showToast('Maximum 50 units allowed per item', 'warning');
+        return;
+      }
       activeDetailQty += 1;
       updateModalSubmitPrice();
     });
@@ -2761,7 +2774,7 @@ function initStorefrontApp() {
       const customSubtext = (settings.unlockedDealsSubtext || '').trim();
       if (barText) {
         if (customSubtext && !/^Shop for ₹\d+ to unlock special menu prices!$/i.test(customSubtext)) {
-          barText.innerHTML = `${customSubtext} (Add <strong>₹${needed}</strong> more for <span class="unlocked-bar-highlight">${discountPct}% OFF</span>!)`;
+          barText.innerHTML = `${escapeHtml(customSubtext)} (Add <strong>₹${needed}</strong> more for <span class="unlocked-bar-highlight">${discountPct}% OFF</span>!)`;
         } else {
           barText.innerHTML = `Add <strong>₹${needed}</strong> more to unlock <span class="unlocked-bar-highlight">${discountPct}% OFF</span> special prices!`;
         }
@@ -4858,21 +4871,36 @@ function initStorefrontApp() {
         const orderToReorder = allUserOrders.find(o => o.id === id);
         if (orderToReorder && orderToReorder.items) {
           const catalogDishes = dataService.getDishes() || [];
+          const skippedDishes = [];
           orderToReorder.items.forEach(item => {
-            const foundInCart = cart.find(c => c.name === item.name);
+            const matchedCatalog = catalogDishes.find(d => d.id === item.id || (item.name && d.name && d.name.toLowerCase() === item.name.toLowerCase()));
+            if (!matchedCatalog) {
+              skippedDishes.push(`"${item.name || 'Item'}" (unavailable)`);
+              return;
+            }
+            if (matchedCatalog.inStock === false) {
+              skippedDishes.push(`"${matchedCatalog.name}" (sold out)`);
+              return;
+            }
+            const cleanPrice = Number(matchedCatalog.price);
+            const addQty = Math.max(1, Math.min(50, Number(item.quantity) || 1));
+            const foundInCart = cart.find(c => c.id === matchedCatalog.id || (c.name && matchedCatalog.name && c.name.toLowerCase() === matchedCatalog.name.toLowerCase()));
             if (foundInCart) {
-              foundInCart.quantity += (item.quantity || 1);
+              foundInCart.price = cleanPrice;
+              foundInCart.quantity = Math.min(50, foundInCart.quantity + addQty);
             } else {
-              const matchedCatalog = catalogDishes.find(d => d.name === item.name || d.id === item.id);
               cart.push({
-                id: matchedCatalog ? matchedCatalog.id : ('reorder-' + Math.random().toString(36).substr(2, 6)),
-                name: item.name,
-                price: parseFloat(item.price) || (matchedCatalog ? parseFloat(matchedCatalog.price) : 150),
-                image: (matchedCatalog && matchedCatalog.image) ? matchedCatalog.image : (item.image || '/images/crispy-chicken.jpg'),
-                quantity: item.quantity || 1
+                id: matchedCatalog.id,
+                name: matchedCatalog.name,
+                price: cleanPrice,
+                image: matchedCatalog.image || item.image || '/images/crispy-chicken.jpg',
+                quantity: addQty
               });
             }
           });
+          if (skippedDishes.length > 0) {
+            showToast(`Note: ${skippedDishes.join(', ')} could not be added.`, 'info', 5000);
+          }
           saveCart();
           renderCart();
           closeMyOrdersModalInternal();
@@ -5611,7 +5639,8 @@ function initStorefrontApp() {
         const rawDeliveryFee = ((isFreeDelivEnabled && freeDelivThreshold > 0 && cartSubtotal >= freeDelivThreshold) || promoFreeDelivery)
           ? 0
           : standardDelivFee;
-        calculatedTotal += rawDeliveryFee;
+        const platformFee = Number(settings.platformFee || 0);
+        calculatedTotal += rawDeliveryFee + platformFee;
         const totalAmount = `₹${Math.round(calculatedTotal)}`;
         const customerAddressText = selectedAddr.details || selectedAddr.fullText || `${selectedAddr.flatNo}, ${selectedAddr.area}${selectedAddr.city ? ', ' + selectedAddr.city : ''}${selectedAddr.pincode ? ' - ' + selectedAddr.pincode : ''}`;
         const fullAddressText = `${selectedAddr.tag ? `[${selectedAddr.tag}] ` : ''}${customerAddressText} [Phone: ${customerContactPhone}]`;
@@ -5633,6 +5662,7 @@ function initStorefrontApp() {
           promoCode: appliedPromo || null,
           discount: calculatedDiscount,
           deliveryFee: rawDeliveryFee,
+          platformFee: platformFee,
           addressDetails: {
             tag: selectedAddr.tag,
             details: customerAddressText,
@@ -5710,6 +5740,9 @@ function initStorefrontApp() {
               }
               if (typeof checkoutData.deliveryFee === 'number') {
                 newOrder.deliveryFee = checkoutData.deliveryFee;
+              }
+              if (typeof checkoutData.platformFee === 'number') {
+                newOrder.platformFee = checkoutData.platformFee;
               }
               newOrder.checkoutSignature = checkoutData.signature || checkoutData.checkoutToken || '';
             }
