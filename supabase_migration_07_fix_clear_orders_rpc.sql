@@ -1,6 +1,7 @@
 -- ==============================================================================
 -- SAVERA PARADISE — SUPABASE MIGRATION 07
 -- Fix clear_all_orders RPC to comply with safeupdate (WHERE clause requirement)
+-- SECURITY HARDENING: Revoke public/anon execution to eliminate anonymous data deletion
 -- ==============================================================================
 
 CREATE OR REPLACE FUNCTION public.clear_all_orders()
@@ -22,4 +23,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.clear_all_orders() TO anon, authenticated, service_role;
+-- Security Lockdown: Strictly restrict order clearing to service_role (used by authenticated Owner endpoint)
+REVOKE ALL ON FUNCTION public.clear_all_orders() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.clear_all_orders() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.clear_all_orders() FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_all_orders() TO service_role;

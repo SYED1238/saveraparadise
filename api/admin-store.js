@@ -74,9 +74,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Action parameter is required' });
   }
 
-  // Role Gate: Modifying store settings requires Executive Owner session
-  if (action === 'save_settings' && auth.payload?.role !== 'owner') {
-    return res.status(403).json({ error: 'Forbidden: Owner role required to modify store settings' });
+  // Role Gate: Modifying store settings or clearing orders requires Executive Owner session
+  if ((action === 'save_settings' || action === 'clear_orders') && auth.payload?.role !== 'owner') {
+    return res.status(403).json({ error: `Forbidden: Owner role required for ${action}` });
   }
 
   const isTestEnv = Boolean(
@@ -122,6 +122,9 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Valid pin and status (online, offline, inactive) are required' });
         }
         return res.status(200).json({ success: true, pin, status });
+      }
+      if (action === 'clear_orders') {
+        return res.status(200).json({ success: true, message: 'All orders cleared successfully', deletedCount: 0 });
       }
     }
     return res.status(503).json({ error: 'Database service credentials not configured on server' });
@@ -299,6 +302,20 @@ export default async function handler(req, res) {
         const { data, error } = await sb.from('riders').update({ status }).eq('pin', pin).select();
         if (error) throw error;
         return res.status(200).json({ success: true, rider: data && data.length > 0 ? data[0] : null });
+      }
+
+      case 'clear_orders': {
+        const { data, error } = await sb.rpc('clear_all_orders');
+        if (error) {
+          // Fallback if RPC is blocked: cancel all active orders
+          await sb.from('orders').update({
+            status: 'cancelled',
+            status_label: 'Cancelled',
+            step_index: -1,
+            cancellation_reason: 'Cleared by restaurant owner'
+          }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
+        }
+        return res.status(200).json({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 });
       }
 
       default:

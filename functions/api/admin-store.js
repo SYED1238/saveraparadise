@@ -72,9 +72,9 @@ export async function onRequest(context) {
     return jsonResponse({ error: 'Action parameter is required' }, 400, Object.fromEntries(corsHeaders.entries()));
   }
 
-  // Role Gate: Modifying store settings requires Executive Owner session
-  if (action === 'save_settings' && auth.payload?.role !== 'owner') {
-    return jsonResponse({ error: 'Forbidden: Owner role required to modify store settings' }, 403, Object.fromEntries(corsHeaders.entries()));
+  // Role Gate: Modifying store settings or clearing orders requires Executive Owner session
+  if ((action === 'save_settings' || action === 'clear_orders') && auth.payload?.role !== 'owner') {
+    return jsonResponse({ error: `Forbidden: Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
 
   // 3. Initialize authoritative Supabase service client
@@ -123,6 +123,9 @@ export async function onRequest(context) {
           return jsonResponse({ error: 'Valid pin and status (online, offline, inactive) are required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
         return jsonResponse({ success: true, pin, status }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+      if (action === 'clear_orders') {
+        return jsonResponse({ success: true, message: 'All orders cleared successfully', deletedCount: 0 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
     }
     console.warn('[AdminStore] Supabase service credentials missing');
@@ -306,6 +309,20 @@ export async function onRequest(context) {
         const { data, error } = await sb.from('riders').update({ status }).eq('pin', pin).select();
         if (error) throw error;
         return jsonResponse({ success: true, rider: data && data.length > 0 ? data[0] : null }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      case 'clear_orders': {
+        const { data, error } = await sb.rpc('clear_all_orders');
+        if (error) {
+          // Fallback if RPC is blocked: cancel all active orders
+          await sb.from('orders').update({
+            status: 'cancelled',
+            status_label: 'Cancelled',
+            step_index: -1,
+            cancellation_reason: 'Cleared by restaurant owner'
+          }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
+        }
+        return jsonResponse({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       default:

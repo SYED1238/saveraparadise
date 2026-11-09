@@ -1394,4 +1394,96 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.ok(!dsContent.includes(".from('riders').upsert("), 'dataService must not directly upsert to riders table');
     assert.ok(!dsContent.includes(".from('riders').delete("), 'dataService must not directly delete from riders table');
   });
+
+  await t.test('33. POST /api/admin-store clear_orders strictly requires Owner session and rejects kitchen staff/riders', async () => {
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const adminToken = createAdminToken('admin');
+    const ownerToken = createAdminToken('owner');
+    const riderToken = createAdminToken(undefined, 'rider', { riderPin: '2233' });
+
+    // 1. Rider role is rejected with 401
+    const { req: riderReq, res: riderRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: { action: 'clear_orders' }
+    });
+    await adminStoreHandler(riderReq, riderRes);
+    assert.equal(riderRes.statusCode, 401);
+
+    // 2. Kitchen admin role is rejected with 403 (owner required to clear store data)
+    const { req: adminReq, res: adminRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminToken}` },
+      body: { action: 'clear_orders' }
+    });
+    await adminStoreHandler(adminReq, adminRes);
+    assert.equal(adminRes.statusCode, 403);
+    assert.match(adminRes.responseData?.error, /Owner role required/i);
+
+    // 3. Owner role succeeds with 200
+    const { req: ownerReq, res: ownerRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      body: { action: 'clear_orders' }
+    });
+    await adminStoreHandler(ownerReq, ownerRes);
+    assert.equal(ownerRes.statusCode, 200);
+    assert.equal(ownerRes.responseData?.success, true);
+
+    // Cloudflare Pages parity
+    const cfOwnerReq = new Request('https://saveraparadise.com/api/admin-store', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ownerToken}`
+      },
+      body: JSON.stringify({ action: 'clear_orders' })
+    });
+    const cfOwnerRes = await cloudflareAdminStoreHandler({ request: cfOwnerReq, env: mockCfEnv });
+    assert.equal(cfOwnerRes.status, 200);
+  });
+
+  await t.test('34. clear_all_orders() RPC security hardening in Migration 07 and dataService', () => {
+    // 1. Migration 07 does NOT grant execute to anon or authenticated
+    const mig07Content = fs.readFileSync(path.resolve(rootDir, 'supabase_migration_07_fix_clear_orders_rpc.sql'), 'utf8');
+    assert.ok(!mig07Content.includes('TO anon, authenticated'), 'Migration 07 must not grant execute to anon or authenticated');
+    assert.match(mig07Content, /REVOKE ALL ON FUNCTION public\.clear_all_orders\(\) FROM PUBLIC/i);
+    assert.match(mig07Content, /REVOKE EXECUTE ON FUNCTION public\.clear_all_orders\(\) FROM anon/i);
+    assert.match(mig07Content, /GRANT EXECUTE ON FUNCTION public\.clear_all_orders\(\) TO service_role/i);
+
+    // 2. dataService.js routes clearOrders through _adminStoreAction('clear_orders')
+    const dsContent = fs.readFileSync(path.resolve(rootDir, 'dataService.js'), 'utf8');
+    assert.ok(!dsContent.includes("supabase.rpc('clear_all_orders'"), 'dataService must not invoke clear_all_orders RPC directly from browser');
+    assert.match(dsContent, /this\._adminStoreAction\('clear_orders'\)/);
+  });
+
+  await t.test('35. Master Consolidated Production Security Script (supabase_production_security_hardening.sql)', () => {
+    const masterPath = path.resolve(rootDir, 'supabase_production_security_hardening.sql');
+    assert.ok(fs.existsSync(masterPath), 'Master production security hardening script must exist');
+    const masterContent = fs.readFileSync(masterPath, 'utf8');
+
+    // 1. Dangerous RPC lockdown
+    assert.match(masterContent, /REVOKE EXECUTE ON FUNCTION public\.clear_all_orders\(\) FROM anon/i);
+    assert.match(masterContent, /GRANT EXECUTE ON FUNCTION public\.clear_all_orders\(\) TO service_role/i);
+    assert.match(masterContent, /DROP FUNCTION IF EXISTS public\.verify_rider_pin/i);
+
+    // 2. Riders table lockdown
+    assert.match(masterContent, /REVOKE ALL ON TABLE public\.riders FROM anon/i);
+    assert.match(masterContent, /GRANT ALL ON TABLE public\.riders TO service_role/i);
+
+    // 3. Orders table lockdown
+    assert.match(masterContent, /REVOKE ALL ON TABLE public\.orders FROM anon/i);
+    assert.match(masterContent, /GRANT ALL ON TABLE public\.orders TO service_role/i);
+
+    // 4. Guest order tracking RPC
+    assert.match(masterContent, /CREATE OR REPLACE FUNCTION public\.track_guest_order/i);
+    assert.match(masterContent, /GRANT EXECUTE ON FUNCTION public\.track_guest_order\(TEXT, UUID\) TO anon/i);
+
+    // 5. Monotonic lifecycle trigger
+    assert.match(masterContent, /CREATE TRIGGER trg_order_status_monotonicity/i);
+
+    // 6. Transaction safety
+    assert.match(masterContent, /^BEGIN;/m);
+    assert.match(masterContent, /COMMIT;$/m);
+  });
 });

@@ -6053,26 +6053,14 @@ class QuickBiteDataService {
       });
     } catch {}
 
-    try {
-      if (typeof supabase !== 'undefined' && supabase) {
-        let cleared = false;
-        if (typeof supabase.rpc === 'function') {
-          const rpcRes = await supabase.rpc('clear_all_orders');
-          if (!rpcRes?.error) cleared = true;
-        }
-        if (!cleared && typeof supabase.from === 'function') {
-          // If hard delete is blocked by immutability trigger or RPC requires WHERE clause,
-          // mark all active orders as cancelled so they immediately clear from the active kitchen pipeline
-          await supabase.from('orders').update({
-            status: 'cancelled',
-            status_label: 'Cancelled',
-            step_index: -1,
-            cancellation_reason: 'Cleared by admin'
-          }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
-        }
+    // Security Hardening: Clearing orders requires authenticated Owner session via /api/admin-store.
+    // Direct browser calls to clear_all_orders RPC have been eliminated.
+    if (this.isStaffAuthorized()) {
+      try {
+        await this._adminStoreAction('clear_orders');
+      } catch (e) {
+        console.warn('[DataService] clearOrders server sync error:', e?.message);
       }
-    } catch (e) {
-      console.warn('[Supabase] Clear orders error:', e);
     }
 
     this.notifyChange('orders', { action: 'orders_cleared' });
