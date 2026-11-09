@@ -24,15 +24,15 @@ BEGIN
       
     -- Authenticated or staff can manage riders
     CREATE POLICY "staff_read_riders" ON public.riders
-      FOR SELECT USING (true);
+      FOR SELECT TO authenticated USING (true);
       
     CREATE POLICY "staff_update_riders" ON public.riders
-      FOR UPDATE USING (true) WITH CHECK (true);
+      FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
   END IF;
 END $$;
 
 -- 2. HARDEN DISHES & CATEGORIES (PUBLIC READ, SERVICE_ROLE & VERIFIED STAFF WRITE ONLY)
-DO $
+DO $$
 BEGIN
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'dishes') THEN
     DROP POLICY IF EXISTS "app_manage_dishes" ON public.dishes;
@@ -72,10 +72,10 @@ BEGIN
       USING ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'))
       WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'));
   END IF;
-END $;
+END $$;
 
 -- 3. HARDEN STORE SETTINGS (PUBLIC READ, SERVICE_ROLE & VERIFIED STAFF WRITE ONLY)
-DO $
+DO $$
 BEGIN
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'store_settings') THEN
     DROP POLICY IF EXISTS "app_manage_store_settings" ON public.store_settings;
@@ -94,4 +94,4 @@ BEGIN
       USING ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'))
       WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'));
   END IF;
-END $;
+END $$;

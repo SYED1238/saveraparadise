@@ -1001,4 +1001,156 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     const cfConcurrentData = await cfConcurrentRes.json();
     assert.match(cfConcurrentData.error, /already claimed by another rider or is no longer available/i);
   });
+
+  await t.test('28. Atomic status update race prevention, COD cash collection validation & Migration 10 riders table security', async () => {
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const riderToken = createAdminToken(undefined, 'rider', { riderPin: '5566' });
+
+    // 1. Migration 10, Migration 06 & setup.sql verification
+    const mig10Path = path.resolve(rootDir, 'supabase_migration_10_secure_riders_rls.sql');
+    assert.ok(fs.existsSync(mig10Path), 'Migration 10 file must exist');
+    const mig10Content = fs.readFileSync(mig10Path, 'utf8');
+    assert.match(mig10Content, /REVOKE ALL ON TABLE public\.riders FROM anon/i, 'Migration 10 must revoke all permissions from anon');
+    assert.match(mig10Content, /REVOKE ALL ON TABLE public\.riders FROM authenticated/i, 'Migration 10 must revoke all permissions from authenticated');
+    assert.match(mig10Content, /REVOKE ALL ON TABLE public\.riders FROM public/i, 'Migration 10 must revoke all permissions from public');
+    assert.match(mig10Content, /GRANT ALL ON TABLE public\.riders TO service_role/i, 'Migration 10 must grant permissions to service_role');
+    assert.match(mig10Content, /ALTER TABLE public\.riders ENABLE ROW LEVEL SECURITY/i, 'Migration 10 must enable RLS on riders');
+
+    const setupPath = path.resolve(rootDir, 'supabase_setup.sql');
+    const setupContent = fs.readFileSync(setupPath, 'utf8');
+    assert.ok(!setupContent.includes('CREATE POLICY "public_read_riders"'), 'setup.sql must not have public read policy on riders');
+    assert.match(setupContent, /REVOKE ALL ON TABLE public\.riders FROM anon/i, 'setup.sql must revoke anon access on riders');
+
+    const mig06Path = path.resolve(rootDir, 'supabase_migration_06_secure_rls_and_payouts.sql');
+    const mig06Content = fs.readFileSync(mig06Path, 'utf8');
+    assert.ok(!/DO\s+\$(?!\$)/.test(mig06Content), 'Migration 06 must not have malformed single-dollar DO $ block');
+    assert.match(mig06Content, /DO\s+\$\$/i, 'Migration 06 must have valid DO $ block');
+
+    const testOrders = [
+      { id: '#QB-RACE-1', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹400', numeric_total: 400, payment_status: 'Pending', is_paid_online: false },
+      { id: '#QB-PREPAID-1', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹600', numeric_total: 600, payment_status: 'Paid', is_paid_online: true }
+    ];
+
+    // 2. update_status reassignment race condition (409 Conflict)
+    // Node handler
+    const { req: raceReq, res: raceRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-RACE-1',
+        status: 'delivered',
+        simulateOrders: testOrders,
+        simulateReassignmentRace: true
+      }
+    });
+    await orderActionHandler(raceReq, raceRes);
+    assert.equal(raceRes.statusCode, 409, 'Node handler must return 409 Conflict on reassignment race');
+    assert.match(raceRes.responseData?.error, /order ownership or status has changed/i);
+
+    // Cloudflare Pages parity
+    const cfRaceReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${riderToken}`
+      },
+      body: JSON.stringify({
+        action: 'update_status',
+        orderId: '#QB-RACE-1',
+        status: 'delivered',
+        simulateOrders: testOrders,
+        simulateReassignmentRace: true
+      })
+    });
+    const cfRaceRes = await cloudflareOrderActionHandler({ request: cfRaceReq, env: mockCfEnv });
+    assert.equal(cfRaceRes.status, 409, 'Cloudflare handler must return 409 Conflict on reassignment race');
+    const cfRaceData = await cfRaceRes.json();
+    assert.match(cfRaceData.error, /order ownership or status has changed/i);
+
+    // 3. Cash on Delivery (COD) Validation
+    // 3a. Negative cash rejected with 400
+    const { req: negCashReq, res: negCashRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-RACE-1',
+        status: 'delivered',
+        cashCollected: -100,
+        simulateOrders: testOrders
+      }
+    });
+    await orderActionHandler(negCashReq, negCashRes);
+    assert.equal(negCashRes.statusCode, 400, 'Negative cash must be rejected');
+    assert.match(negCashRes.responseData?.error, /cannot be negative/i);
+
+    // 3b. Excessive cash (> 2x total) rejected with 400
+    const { req: excessCashReq, res: excessCashRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-RACE-1',
+        status: 'delivered',
+        cashCollected: 5000,
+        simulateOrders: testOrders
+      }
+    });
+    await orderActionHandler(excessCashReq, excessCashRes);
+    assert.equal(excessCashRes.statusCode, 400, 'Excessive cash must be rejected');
+    assert.match(excessCashRes.responseData?.error, /exceeds reasonable total/i);
+
+    // Cloudflare Pages excess cash check
+    const cfExcessReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${riderToken}`
+      },
+      body: JSON.stringify({
+        action: 'update_status',
+        orderId: '#QB-RACE-1',
+        status: 'delivered',
+        cashCollected: 5000,
+        simulateOrders: testOrders
+      })
+    });
+    const cfExcessRes = await cloudflareOrderActionHandler({ request: cfExcessReq, env: mockCfEnv });
+    assert.equal(cfExcessRes.status, 400);
+
+    // 3c. Prepaid order resets cash_collected to 0 and keeps payment_status = 'Paid'
+    const { req: prepaidReq, res: prepaidRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-PREPAID-1',
+        status: 'delivered',
+        cashCollected: 600,
+        simulateOrders: testOrders
+      }
+    });
+    await orderActionHandler(prepaidReq, prepaidRes);
+    assert.equal(prepaidRes.statusCode, 200);
+    assert.equal(prepaidRes.responseData?.order?.cash_collected, 0, 'Prepaid order must have 0 cash collected');
+    assert.equal(prepaidRes.responseData?.order?.payment_status, 'Paid');
+
+    // 3d. Valid COD collection sets payment_status = 'Paid' and records cash_collected
+    const { req: codValidReq, res: codValidRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-RACE-1',
+        status: 'delivered',
+        cashCollected: 400,
+        simulateOrders: testOrders
+      }
+    });
+    await orderActionHandler(codValidReq, codValidRes);
+    assert.equal(codValidRes.statusCode, 200);
+    assert.equal(codValidRes.responseData?.order?.cash_collected, 400);
+    assert.equal(codValidRes.responseData?.order?.payment_status, 'Paid');
+  });
 });

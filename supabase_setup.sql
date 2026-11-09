@@ -213,22 +213,21 @@ CREATE POLICY "authenticated_update_orders" ON public.orders
     OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
   );
 
--- 2.3B Riders: Public read; staff/service role manage
+-- 2.3B Riders: Restricted to service_role; anon access strictly revoked to protect PINs
 DROP POLICY IF EXISTS "allow_all_riders" ON public.riders;
 DROP POLICY IF EXISTS "public_read_riders" ON public.riders;
 DROP POLICY IF EXISTS "riders_staff_only" ON public.riders;
+DROP POLICY IF EXISTS "service_role_manage_riders" ON public.riders;
 
-CREATE POLICY "public_read_riders" ON public.riders
-  FOR SELECT USING (true);
+REVOKE ALL ON TABLE public.riders FROM anon;
+REVOKE ALL ON TABLE public.riders FROM public;
+REVOKE ALL ON TABLE public.riders FROM authenticated;
+GRANT ALL ON TABLE public.riders TO service_role;
 
-CREATE POLICY "riders_staff_only" ON public.riders
-  FOR ALL USING (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider')
-    OR auth.role() = 'service_role'
-  ) WITH CHECK (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff')
-    OR auth.role() = 'service_role'
-  );
+CREATE POLICY "service_role_manage_riders" ON public.riders
+  FOR ALL TO service_role
+  USING (true)
+  WITH CHECK (true);
 
 -- Secure Single-Rider PIN Verification RPC
 CREATE OR REPLACE FUNCTION public.verify_rider_pin(p_pin TEXT)

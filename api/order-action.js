@@ -233,12 +233,48 @@ export default async function handler(req, res) {
           if (existing.status !== 'on_the_way' || !['delivered', 'undelivered'].includes(status)) {
             return res.status(400).json({ error: `Invalid status transition from "${existing.status}" to "${status}" for rider` });
           }
+          if (body.simulateReassignmentRace) {
+            return res.status(409).json({
+              error: 'Order ownership or status has changed. Delivery status update rejected.'
+            });
+          }
         }
+
+        let enforcedCash = 0;
+        let enforcedPaymentStatus = existing.payment_status || 'Pending';
+        if (status === 'delivered') {
+          const isPrepaid = existing.is_paid_online || existing.payment_status === 'Paid';
+          if (isPrepaid) {
+            enforcedPaymentStatus = 'Paid';
+            enforcedCash = 0;
+          } else {
+            const orderTotal = Math.round(
+              typeof existing.numeric_total === 'number'
+                ? existing.numeric_total
+                : (parseFloat(String(existing.total || 0).replace(/[^0-9.]/g, '')) || 0)
+            );
+            if (typeof body.cashCollected === 'number' && Number.isFinite(body.cashCollected)) {
+              if (body.cashCollected < 0) {
+                return res.status(400).json({ error: 'Cash collected cannot be negative' });
+              }
+              if (orderTotal > 0 && body.cashCollected > orderTotal * 2) {
+                return res.status(400).json({ error: `Cash collected (₹${body.cashCollected}) exceeds reasonable total for order (₹${orderTotal})` });
+              }
+              enforcedCash = body.cashCollected;
+              if (body.cashCollected >= orderTotal && orderTotal > 0) {
+                enforcedPaymentStatus = 'Paid';
+              }
+            }
+          }
+        }
+
         const updated = {
           ...existing,
           status,
           step_index: status === 'delivered' ? 4 : (typeof body.stepIndex === 'number' ? body.stepIndex : existing.step_index),
           status_label: status === 'delivered' ? 'Delivered' : (status === 'undelivered' ? 'Undelivered' : (body.statusLabel || existing.status_label)),
+          cash_collected: enforcedCash,
+          payment_status: enforcedPaymentStatus,
           ...(status === 'delivered' ? { delivered_at: Date.now() } : {}),
           ...(status === 'undelivered' ? { undelivered_at: Date.now() } : {})
         };
@@ -449,25 +485,56 @@ export default async function handler(req, res) {
 
         // Payment status & Cash collection handling
         if (status === 'delivered') {
-          if (paymentStatus === 'Paid') {
+          const isPrepaid = existing.is_paid_online || existing.payment_status === 'Paid';
+          if (isPrepaid) {
             updatePayload.payment_status = 'Paid';
-          }
-          if (typeof cashCollected === 'number' && Number.isFinite(cashCollected) && cashCollected >= 0) {
-            updatePayload.cash_collected = cashCollected;
-            if (cashCollected > 0) {
+            updatePayload.cash_collected = 0;
+          } else {
+            const orderTotal = Math.round(
+              typeof existing.numeric_total === 'number'
+                ? existing.numeric_total
+                : (parseFloat(String(existing.total || 0).replace(/[^0-9.]/g, '')) || 0)
+            );
+            if (typeof cashCollected === 'number' && Number.isFinite(cashCollected)) {
+              if (cashCollected < 0) {
+                return res.status(400).json({ error: 'Cash collected cannot be negative' });
+              }
+              if (orderTotal > 0 && cashCollected > orderTotal * 2) {
+                return res.status(400).json({ error: `Cash collected (₹${cashCollected}) exceeds reasonable total for order (₹${orderTotal})` });
+              }
+              updatePayload.cash_collected = cashCollected;
+              if (cashCollected >= orderTotal && orderTotal > 0) {
+                updatePayload.payment_status = 'Paid';
+              }
+            } else if (paymentStatus === 'Paid') {
               updatePayload.payment_status = 'Paid';
             }
           }
         }
 
-        const { data: updated, error: updateErr } = await sb
+        let query = sb
           .from('orders')
           .update(updatePayload)
-          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
-          .select()
-          .maybeSingle();
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`);
+
+        if (auth.payload?.role === 'rider') {
+          const riderPin = String(auth.payload.riderPin || '').trim();
+          query = query
+            .eq('assigned_rider_pin', riderPin)
+            .eq('status', 'on_the_way');
+        }
+
+        const { data: updatedList, error: updateErr } = await query.select();
 
         if (updateErr) throw updateErr;
+
+        if (auth.payload?.role === 'rider' && (!updatedList || updatedList.length === 0)) {
+          return res.status(409).json({
+            error: 'Order ownership or status has changed. Delivery status update rejected.'
+          });
+        }
+
+        const updated = updatedList && updatedList.length > 0 ? updatedList[0] : null;
         return res.status(200).json({ success: true, order: updated });
       }
 
