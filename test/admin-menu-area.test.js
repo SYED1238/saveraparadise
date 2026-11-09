@@ -108,4 +108,53 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
       assert.ok(adminHtmlContent.includes(elem), `admin.html missing required element: ${elem}`);
     }
   });
+
+  it('8. dataService.js safely executes dish and category mutations without calling undefined .catch on Supabase builders', () => {
+    const dataServicePath = path.resolve(process.cwd(), 'dataService.js');
+    const dataServiceContent = fs.readFileSync(dataServicePath, 'utf8');
+
+    // Asserts no direct .catch call on naked supabase.from(...).update/insert/delete without Promise.resolve
+    assert.doesNotMatch(
+      dataServiceContent,
+      /^\s*supabase\.from\([^)]+\)\.(insert|update|delete)[^;\n]+\.catch\(/m,
+      'supabase query builder must not directly invoke .catch (PostgrestFilterBuilder is a thenable lacking .catch)'
+    );
+  });
+
+  it('9. admin.js strictly awaits authoritative dataService dish and category mutations', () => {
+    // Verifies formDish awaits updateDish and addDish
+    assert.match(
+      adminJsContent,
+      /await\s+dataService\.updateDish\(/,
+      'admin.js must await dataService.updateDish before showing success'
+    );
+    assert.match(
+      adminJsContent,
+      /await\s+dataService\.addDish\(/,
+      'admin.js must await dataService.addDish before showing success'
+    );
+    // Verifies formCategory awaits updateCategory and addCategory
+    assert.match(
+      adminJsContent,
+      /await\s+dataService\.updateCategory\(/,
+      'admin.js must await dataService.updateCategory before showing success'
+    );
+    assert.match(
+      adminJsContent,
+      /await\s+dataService\.addCategory\(/,
+      'admin.js must await dataService.addCategory before showing success'
+    );
+  });
+
+  it('10. api/admin-store.js and functions/api/admin-store.js guard against 0-row silent updates', () => {
+    const nodeApiPath = path.resolve(process.cwd(), 'api/admin-store.js');
+    const cfApiPath = path.resolve(process.cwd(), 'functions/api/admin-store.js');
+    const nodeApiContent = fs.readFileSync(nodeApiPath, 'utf8');
+    const cfApiContent = fs.readFileSync(cfApiPath, 'utf8');
+
+    for (const content of [nodeApiContent, cfApiContent]) {
+      assert.match(content, /upsertRes\s*=\s*await\s+sb\.from\('dishes'\)\.upsert/, 'Must upsert unseeded dish if update touched 0 rows');
+      assert.match(content, /upsertRes\s*=\s*await\s+sb\.from\('categories'\)\.upsert/, 'Must upsert unseeded category if update touched 0 rows');
+    }
+  });
 });

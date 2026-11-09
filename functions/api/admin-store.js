@@ -154,8 +154,18 @@ export async function onRequest(context) {
           return jsonResponse({ error: 'Dish ID and updates payload are required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
         const updates = sanitizeDishFields(rawUpdates);
-        const { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
+        let { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          // If dish record was not yet in table, upsert it with ID to ensure persistence
+          const upsertPayload = { id, ...updates };
+          const upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+          if (upsertRes.error) throw upsertRes.error;
+          data = upsertRes.data;
+        }
+        if (!data || data.length === 0) {
+          return jsonResponse({ error: `Dish '${id}' not found in database to update` }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
@@ -166,6 +176,9 @@ export async function onRequest(context) {
         }
         const { data, error } = await sb.from('dishes').update({ in_stock }).eq('id', id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          return jsonResponse({ error: `Dish '${id}' not found in database to toggle stock` }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
@@ -194,8 +207,17 @@ export async function onRequest(context) {
         if (!id || !updates || typeof updates !== 'object') {
           return jsonResponse({ error: 'Category ID and updates payload are required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        const { data, error } = await sb.from('categories').update(updates).eq('id', id).select();
+        let { data, error } = await sb.from('categories').update(updates).eq('id', id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          const upsertPayload = { id, ...updates };
+          const upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          if (upsertRes.error) throw upsertRes.error;
+          data = upsertRes.data;
+        }
+        if (!data || data.length === 0) {
+          return jsonResponse({ error: `Category '${id}' not found in database to update` }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
@@ -205,7 +227,8 @@ export async function onRequest(context) {
           return jsonResponse({ error: 'Category ID is required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
         if (catKey) {
-          await sb.from('dishes').delete().or(`category.eq.${catKey},category.eq.${id}`);
+          const { error: cascadeErr } = await sb.from('dishes').delete().or(`category.eq.${catKey},category.eq.${id}`);
+          if (cascadeErr) throw cascadeErr;
         }
         const { error } = await sb.from('categories').delete().eq('id', id);
         if (error) throw error;

@@ -692,7 +692,7 @@ const initAdminApp = () => {
     backNav.removeStep('modal-category');
   }
 
-  function deleteCategoryPrompt(id) {
+  async function deleteCategoryPrompt(id) {
     if (id === 'all' || id === 'cat-all') {
       showToast('The "All" category is the storefront master filter and cannot be deleted.', 'info');
       return;
@@ -708,10 +708,14 @@ const initAdminApp = () => {
       : `Are you sure you want to delete category "${cat.name}"?`;
 
     if (confirm(confirmMsg)) {
-      dataService.deleteCategory(id);
-      renderCategories();
-      renderDishes();
-      showToast(`Category "${cat.name}" removed!`, 'info');
+      try {
+        await dataService.deleteCategory(id);
+        renderCategories();
+        renderDishes();
+        showToast(`Category "${cat.name}" removed!`, 'info');
+      } catch (err) {
+        showToast(`Error deleting category: ${err?.message || err}`, 'error');
+      }
     }
   }
 
@@ -892,7 +896,7 @@ const initAdminApp = () => {
         }
         showToast('"All" category photo updated successfully!', 'success');
       } else if (editId) {
-        dataService.updateCategory(editId, { name, emoji, image });
+        await dataService.updateCategory(editId, { name, emoji, image });
         if (image) {
           dataService.saveCategoryImage(editId, image);
           const cats = dataService.getCategories();
@@ -904,7 +908,7 @@ const initAdminApp = () => {
         }
         showToast(`Category updated to "${name}"!`, 'success');
       } else {
-        dataService.addCategory({ name, emoji, image });
+        await dataService.addCategory({ name, emoji, image });
         showToast(`Category "${name}" created!`, 'success');
       }
 
@@ -1066,20 +1070,27 @@ const initAdminApp = () => {
 
     // 1-Tap Quick In-Stock / Out-of-Stock Toggle
     categoryDishesGrid.querySelectorAll('.btn-stock-toggle').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute('data-id');
         if (!id) return;
-        const updatedDish = dataService.toggleDishStock(id);
-        if (updatedDish) {
-          const isNowInStock = updatedDish.inStock !== false;
-          showToast(
-            isNowInStock 
-              ? `✅ "${updatedDish.name}" is now Back in Stock!` 
-              : `⚠️ "${updatedDish.name}" marked Out of Stock!`,
-            isNowInStock ? 'success' : 'info'
-          );
-          renderCategoryDishes();
+        btn.disabled = true;
+        try {
+          const updatedDish = await dataService.toggleDishStock(id);
+          if (updatedDish) {
+            const isNowInStock = updatedDish.inStock !== false;
+            showToast(
+              isNowInStock 
+                ? `✅ "${updatedDish.name}" is now Back in Stock!` 
+                : `⚠️ "${updatedDish.name}" marked Out of Stock!`,
+              isNowInStock ? 'success' : 'info'
+            );
+            renderCategoryDishes();
+          }
+        } catch (err) {
+          showToast(`Error toggling stock: ${err?.message || err}`, 'error');
+        } finally {
+          btn.disabled = false;
         }
       });
     });
@@ -1459,10 +1470,14 @@ const initAdminApp = () => {
           console.warn('[Cloudflare R2] delete error:', e);
         }
       }
-      dataService.deleteDish(id);
-      renderDishes();
-      renderCategories();
-      showToast(`Dish "${dish.name}" removed from menu!`, 'info');
+      try {
+        await dataService.deleteDish(id);
+        renderDishes();
+        renderCategories();
+        showToast(`Dish "${dish.name}" removed from menu!`, 'info');
+      } catch (err) {
+        showToast(`Error deleting dish: ${err?.message || err}`, 'error');
+      }
     }
   }
 
@@ -1594,15 +1609,22 @@ const initAdminApp = () => {
 
     // Attach 1-Tap Stock Toggle in Global Search Results
     globalDishesResultsGrid.querySelectorAll('.btn-stock-toggle').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute('data-id');
         if (id) {
-          const updated = dataService.toggleDishStock(id);
-          if (updated) {
-            showToast(`${updated.name} marked ${updated.inStock ? 'In Stock' : 'Out of Stock'}!`, 'info');
-            renderGlobalDishes();
-            renderCategories();
+          btn.disabled = true;
+          try {
+            const updated = await dataService.toggleDishStock(id);
+            if (updated) {
+              showToast(`${updated.name} marked ${updated.inStock ? 'In Stock' : 'Out of Stock'}!`, 'info');
+              renderGlobalDishes();
+              renderCategories();
+            }
+          } catch (err) {
+            showToast(`Error toggling stock: ${err?.message || err}`, 'error');
+          } finally {
+            btn.disabled = false;
           }
         }
       });
@@ -1788,7 +1810,7 @@ const initAdminApp = () => {
     });
   }
 
-  formDish.addEventListener('submit', (e) => {
+  formDish.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (isSubmittingDish) return;
     if (isUploadingDishPhoto) {
@@ -1857,11 +1879,15 @@ const initAdminApp = () => {
 
     isSubmittingDish = true;
     const submitBtn = formDish.querySelector('button[type="submit"]') || btnSaveDish;
-    if (submitBtn) submitBtn.disabled = true;
+    const origBtnContent = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+    }
 
     try {
       if (editId) {
-        dataService.updateDish(editId, {
+        await dataService.updateDish(editId, {
           name,
           category,
           categoryName,
@@ -1882,7 +1908,7 @@ const initAdminApp = () => {
         });
         showToast(`Dish "${name}" updated successfully!`, 'success');
       } else {
-        dataService.addDish({
+        await dataService.addDish({
           name,
           category,
           categoryName,
@@ -1912,7 +1938,10 @@ const initAdminApp = () => {
       showToast(`Error saving dish: ${err?.message || err}`, 'error');
     } finally {
       isSubmittingDish = false;
-      if (submitBtn) submitBtn.disabled = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = origBtnContent;
+      }
     }
   });
 

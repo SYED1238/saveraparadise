@@ -4728,7 +4728,6 @@ class QuickBiteDataService {
     list.push(newCat);
     this.saveCategories(list);
 
-    // Asynchronously push to Supabase safely
     const payload = {
       id: newCat.id,
       name: newCat.name,
@@ -4737,18 +4736,36 @@ class QuickBiteDataService {
     };
     if (newCat.image) payload.image = newCat.image;
 
-    this._adminStoreSync('add_category', { category: payload });
-    if (supabase) {
-      supabase.from('categories').insert([payload]).catch(() => {});
-    }
+    const serverPromise = (async () => {
+      try {
+        if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+          await this._adminStoreAction('add_category', { category: payload });
+        } else if (supabase) {
+          const { error } = await supabase.from('categories').insert([payload]);
+          if (error) console.warn('[DataService] Direct supabase addCategory error:', error.message);
+        }
+      } catch (err) {
+        console.warn('[DataService] addCategory server error:', err?.message || err);
+        if (this.isStaffAuthorized()) {
+          const curList = this.getCategories().filter(c => c.id !== newCat.id);
+          this.saveCategories(curList);
+          throw err;
+        }
+      }
+      return newCat;
+    })();
 
-    return newCat;
+    const result = { ...newCat };
+    result.then = (onF, onR) => serverPromise.then(onF, onR);
+    result.catch = (onR) => serverPromise.catch(onR);
+    return result;
   }
 
   updateCategory(id, updatedData) {
     const list = this.getCategories();
     const idx = list.findIndex(c => c.id === id || c.slug === id);
     if (idx !== -1) {
+      const prevCat = { ...list[idx] };
       list[idx] = { ...list[idx], ...updatedData };
       if (list[idx].image !== undefined) {
         const sanitized = sanitizeCategoryImageUrl(list[idx].image);
@@ -4758,7 +4775,6 @@ class QuickBiteDataService {
       }
       this.saveCategories(list);
 
-      // Asynchronously update in Supabase safely
       const updatePayload = {
         name: list[idx].name,
         emoji: list[idx].emoji,
@@ -4766,12 +4782,29 @@ class QuickBiteDataService {
       };
       if (list[idx].image !== undefined) updatePayload.image = list[idx].image;
 
-      this._adminStoreSync('update_category', { id: list[idx].id, updates: updatePayload });
-      if (supabase) {
-        supabase.from('categories').update(updatePayload).eq('id', list[idx].id).catch(() => {});
-      }
+      const serverPromise = (async () => {
+        try {
+          if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+            await this._adminStoreAction('update_category', { id: list[idx].id, updates: updatePayload });
+          } else if (supabase) {
+            const { error } = await supabase.from('categories').update(updatePayload).eq('id', list[idx].id);
+            if (error) console.warn('[DataService] Direct supabase updateCategory error:', error.message);
+          }
+        } catch (err) {
+          console.warn('[DataService] updateCategory server error:', err?.message || err);
+          if (this.isStaffAuthorized()) {
+            list[idx] = prevCat;
+            this.saveCategories(list);
+            throw err;
+          }
+        }
+        return list[idx];
+      })();
 
-      return list[idx];
+      const result = { ...list[idx] };
+      result.then = (onF, onR) => serverPromise.then(onF, onR);
+      result.catch = (onR) => serverPromise.catch(onR);
+      return result;
     }
     return null;
   }
@@ -4791,20 +4824,36 @@ class QuickBiteDataService {
       const remainingDishes = dishes.filter(d => d && d.category !== catKey && d.category !== cat.id && d.category !== cat.slug);
       if (remainingDishes.length !== dishes.length) {
         this.saveDishes(remainingDishes);
-        supabase.from('dishes').delete().or(`category.eq.${catKey},category.eq.${cat.id || ''}`).then(({ error }) => {
-          if (error) console.warn('[Supabase] deleteCategory cascade dishes error:', error.message);
-        });
       }
     }
 
-    // Asynchronously delete via authenticated Admin API
     const catKey = cat ? (cat.slug || cat.id) : id;
-    this._adminStoreSync('delete_category', { id: cat ? cat.id : id, catKey });
-    if (supabase) {
-      supabase.from('categories').delete().eq('id', cat ? cat.id : id).catch(() => {});
-    }
+    const serverPromise = (async () => {
+      try {
+        if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+          await this._adminStoreAction('delete_category', { id: cat ? cat.id : id, catKey });
+        } else if (supabase) {
+          if (catKey) {
+            await supabase.from('dishes').delete().or(`category.eq.${catKey},category.eq.${cat?.id || ''}`);
+          }
+          const { error } = await supabase.from('categories').delete().eq('id', cat ? cat.id : id);
+          if (error) console.warn('[DataService] Direct supabase deleteCategory error:', error.message);
+        }
+      } catch (err) {
+        console.warn('[DataService] deleteCategory server error:', err?.message || err);
+        if (this.isStaffAuthorized() && cat) {
+          list.push(cat);
+          this.saveCategories(list);
+          throw err;
+        }
+      }
+      return true;
+    })();
 
-    return true;
+    const result = { success: true };
+    result.then = (onF, onR) => serverPromise.then(onF, onR);
+    result.catch = (onR) => serverPromise.catch(onR);
+    return result;
   }
 
   getDishes() {
@@ -5001,12 +5050,30 @@ class QuickBiteDataService {
       available_from: newDish.availableFrom,
       available_to: newDish.availableTo
     };
-    this._adminStoreSync('add_dish', { dish: dishPayload });
-    if (supabase) {
-      supabase.from('dishes').insert([dishPayload]).catch(() => {});
-    }
+    const serverPromise = (async () => {
+      try {
+        if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+          await this._adminStoreAction('add_dish', { dish: dishPayload });
+        } else if (supabase) {
+          const { error } = await supabase.from('dishes').insert([dishPayload]);
+          if (error) console.warn('[DataService] Direct supabase addDish error:', error.message);
+        }
+      } catch (err) {
+        console.warn('[DataService] addDish server error:', err?.message || err);
+        if (this.isStaffAuthorized()) {
+          const currentList = this.getDishes();
+          const filtered = currentList.filter(d => d.id !== newDish.id);
+          this.saveDishes(filtered);
+          throw err;
+        }
+      }
+      return newDish;
+    })();
 
-    return newDish;
+    const result = { ...newDish };
+    result.then = (onF, onR) => serverPromise.then(onF, onR);
+    result.catch = (onR) => serverPromise.catch(onR);
+    return result;
   }
 
   updateDish(id, updatedData) {
@@ -5016,6 +5083,7 @@ class QuickBiteDataService {
       if (updatedData && updatedData.image) {
         updatedData.image = sanitizeDishImageUrl(updatedData.image);
       }
+      const previousDish = { ...list[idx] };
       list[idx] = { ...list[idx], ...updatedData };
       this.saveDishes(list);
 
@@ -5031,22 +5099,38 @@ class QuickBiteDataService {
         diet: d.diet,
         description: d.desc,
         in_stock: d.inStock,
-          available_days: d.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-          time_restricted: Boolean(d.timeRestricted),
-          available_from: d.availableFrom || '',
-          available_to: d.availableTo || ''
+        available_days: d.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+        time_restricted: Boolean(d.timeRestricted),
+        available_from: d.availableFrom || '',
+        available_to: d.availableTo || ''
       };
-      // Guard: Only update image in Supabase if it's a valid remote/R2 URL and NOT raw Base64 data
       if (d.image && !d.image.startsWith('data:')) {
         updatePayload.image = sanitizeDishImageUrl(d.image);
       }
 
-      this._adminStoreSync('update_dish', { id, updates: updatePayload });
-      if (supabase) {
-        supabase.from('dishes').update(updatePayload).eq('id', id).catch(() => {});
-      }
+      const serverPromise = (async () => {
+        try {
+          if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+            await this._adminStoreAction('update_dish', { id, updates: updatePayload });
+          } else if (supabase) {
+            const { error } = await supabase.from('dishes').update(updatePayload).eq('id', id);
+            if (error) console.warn('[DataService] Direct supabase updateDish error:', error.message);
+          }
+        } catch (err) {
+          console.warn('[DataService] updateDish server error:', err?.message || err);
+          if (this.isStaffAuthorized()) {
+            list[idx] = previousDish;
+            this.saveDishes(list);
+            throw err;
+          }
+        }
+        return list[idx];
+      })();
 
-      return list[idx];
+      const result = { ...list[idx] };
+      result.then = (onF, onR) => serverPromise.then(onF, onR);
+      result.catch = (onR) => serverPromise.catch(onR);
+      return result;
     }
     return null;
   }
@@ -5055,30 +5139,66 @@ class QuickBiteDataService {
     const list = this.getDishes();
     const dish = list.find(d => d.id === id);
     if (dish) {
+      const prevStock = dish.inStock;
       dish.inStock = !dish.inStock;
       this.saveDishes(list);
 
-      this._adminStoreSync('toggle_stock', { id, in_stock: dish.inStock });
-      if (supabase) {
-        supabase.from('dishes').update({ in_stock: dish.inStock }).eq('id', id).catch(() => {});
-      }
+      const serverPromise = (async () => {
+        try {
+          if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+            await this._adminStoreAction('toggle_stock', { id, in_stock: dish.inStock });
+          } else if (supabase) {
+            const { error } = await supabase.from('dishes').update({ in_stock: dish.inStock }).eq('id', id);
+            if (error) console.warn('[DataService] Direct supabase toggleStock error:', error.message);
+          }
+        } catch (err) {
+          console.warn('[DataService] toggleDishStock server error:', err?.message || err);
+          if (this.isStaffAuthorized()) {
+            dish.inStock = prevStock;
+            this.saveDishes(list);
+            throw err;
+          }
+        }
+        return dish;
+      })();
 
-      return dish;
+      const result = { ...dish };
+      result.then = (onF, onR) => serverPromise.then(onF, onR);
+      result.catch = (onR) => serverPromise.catch(onR);
+      return result;
     }
     return null;
   }
 
   deleteDish(id) {
     const list = this.getDishes();
+    const dish = list.find(d => d.id === id);
     const filtered = list.filter(d => d.id !== id);
     this.saveDishes(filtered);
 
-    this._adminStoreSync('delete_dish', { id });
-    if (supabase) {
-      supabase.from('dishes').delete().eq('id', id).catch(() => {});
-    }
+    const serverPromise = (async () => {
+      try {
+        if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+          await this._adminStoreAction('delete_dish', { id });
+        } else if (supabase) {
+          const { error } = await supabase.from('dishes').delete().eq('id', id);
+          if (error) console.warn('[DataService] Direct supabase deleteDish error:', error.message);
+        }
+      } catch (err) {
+        console.warn('[DataService] deleteDish server error:', err?.message || err);
+        if (this.isStaffAuthorized() && dish) {
+          list.push(dish);
+          this.saveDishes(list);
+          throw err;
+        }
+      }
+      return true;
+    })();
 
-    return true;
+    const result = { success: true };
+    result.then = (onF, onR) => serverPromise.then(onF, onR);
+    result.catch = (onR) => serverPromise.catch(onR);
+    return result;
   }
 
   // --- ORDERS ---
@@ -6022,7 +6142,7 @@ class QuickBiteDataService {
         ...updatePayload
       }).catch(() => {
         if (supabase) {
-          supabase.from('orders').update(updatePayload).eq('id', orderId).catch(() => {});
+          Promise.resolve(supabase.from('orders').update(updatePayload).eq('id', orderId)).catch(() => {});
         }
       });
     } catch (e) {}

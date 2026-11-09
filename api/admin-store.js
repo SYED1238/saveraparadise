@@ -151,8 +151,18 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Dish ID and updates payload are required' });
         }
         const updates = sanitizeDishFields(rawUpdates);
-        const { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
+        let { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          // If dish record was not yet in table, upsert it with ID to ensure persistence
+          const upsertPayload = { id, ...updates };
+          const upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+          if (upsertRes.error) throw upsertRes.error;
+          data = upsertRes.data;
+        }
+        if (!data || data.length === 0) {
+          return res.status(404).json({ error: `Dish '${id}' not found in database to update` });
+        }
         return res.status(200).json({ success: true, data });
       }
 
@@ -163,6 +173,9 @@ export default async function handler(req, res) {
         }
         const { data, error } = await sb.from('dishes').update({ in_stock }).eq('id', id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          return res.status(404).json({ error: `Dish '${id}' not found in database to toggle stock` });
+        }
         return res.status(200).json({ success: true, data });
       }
 
@@ -189,8 +202,17 @@ export default async function handler(req, res) {
         if (!id || !updates || typeof updates !== 'object') {
           return res.status(400).json({ error: 'Category ID and updates payload are required' });
         }
-        const { data, error } = await sb.from('categories').update(updates).eq('id', id).select();
+        let { data, error } = await sb.from('categories').update(updates).eq('id', id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          const upsertPayload = { id, ...updates };
+          const upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          if (upsertRes.error) throw upsertRes.error;
+          data = upsertRes.data;
+        }
+        if (!data || data.length === 0) {
+          return res.status(404).json({ error: `Category '${id}' not found in database to update` });
+        }
         return res.status(200).json({ success: true, data });
       }
 
@@ -198,7 +220,8 @@ export default async function handler(req, res) {
         const { id, catKey } = body;
         if (!id) return res.status(400).json({ error: 'Category ID is required' });
         if (catKey) {
-          await sb.from('dishes').delete().or(`category.eq.${catKey},category.eq.${id}`);
+          const { error: cascadeErr } = await sb.from('dishes').delete().or(`category.eq.${catKey},category.eq.${id}`);
+          if (cascadeErr) throw cascadeErr;
         }
         const { error } = await sb.from('categories').delete().eq('id', id);
         if (error) throw error;
