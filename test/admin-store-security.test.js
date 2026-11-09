@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAdminToken, signPayload } from '../api/_auth.js';
+import { verifyTurnstileToken as verifyCloudflareTurnstile } from '../functions/api/_turnstile.js';
 import adminStoreHandler from '../api/admin-store.js';
 import orderActionHandler from '../api/order-action.js';
 
@@ -288,6 +289,69 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(res.responseData?.order?.total, '₹450');
   });
 
+  await t.test('16b. POST /api/order-action create_order extracts numericTotal and never saves ₹0 for verified orders', async () => {
+    // Simulates token from functions/api/checkout.js which emits numericTotal
+    const validToken = signPayload({
+      numericTotal: 320,
+      discount: 0,
+      deliveryFee: 40,
+      platformFee: 0,
+      items: [{ name: 'Chicken Kebab', price: 140, quantity: 2 }],
+      timestamp: Date.now()
+    });
+
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        checkoutToken: validToken,
+        order: {
+          id: '#QB-TEST-320',
+          total: '₹10',
+          items: [{ name: 'Chicken Kebab', price: 140, quantity: 2 }]
+        }
+      }
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.responseData?.success, true);
+    assert.equal(res.responseData?.order?.total, '₹320', 'Total must be correctly formatted from numericTotal, not ₹0');
+  });
+
+  await t.test('16c. POST /api/order-action create_order enforces signed cart items from decoded token (prevents cart item swapping)', async () => {
+    // Token was generated for 1 Chai (₹15)
+    const validChaiToken = signPayload({
+      numericTotal: 15,
+      total: '₹15',
+      items: [{ name: 'Chai', price: 15, quantity: 1 }],
+      timestamp: Date.now()
+    });
+
+    // Attacker sends the ₹15 token but swaps cart to expensive Biryani
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        checkoutToken: validChaiToken,
+        order: {
+          id: '#QB-TEST-SWAP',
+          total: '₹15',
+          items: [
+            { name: 'Mutton Biryani Special', price: 350, quantity: 4 },
+            { name: 'Tandoori Platter', price: 600, quantity: 2 }
+          ]
+        }
+      }
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.responseData?.success, true);
+    // Items MUST be the signed items (Chai), not the swapped Biryani items
+    assert.equal(res.responseData?.order?.items?.length, 1);
+    assert.equal(res.responseData?.order?.items?.[0]?.name, 'Chai');
+    assert.equal(res.responseData?.order?.items_summary, '1x Chai');
+  });
+
   await t.test('17. POST /api/order-action create_order permits authenticated staff session', async () => {
     const staffToken = createAdminToken();
     const { req, res } = createMockReqRes({
@@ -333,5 +397,12 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
       /CREATE\s+POLICY\s+"[^"]+"\s+ON\s+public\.orders[^;]*?FOR\s+INSERT[^;]*?TO\s+[^;]*\b(?:anon|public)\b/i,
       'Migration 09 must not grant INSERT to anon or public'
     );
+  });
+
+  await t.test('19. verifyTurnstileToken fails closed in production when secret is missing', async () => {
+    const prodEnv = { NODE_ENV: 'production' };
+    const res = await verifyCloudflareTurnstile('some-token', '127.0.0.1', null, prodEnv);
+    assert.equal(res.success, false, 'Must fail closed when secret is missing in production');
+    assert.equal(res.unconfigured, true);
   });
 });

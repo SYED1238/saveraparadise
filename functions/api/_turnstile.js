@@ -14,7 +14,9 @@ export function getTurnstileSecretKey(env = null) {
   if (envSecret && String(envSecret).trim()) {
     return String(envSecret).trim();
   }
-  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
+  const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) ||
+    (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+  if (!isProd) {
     return CLOUDFLARE_TEST_SECRET_KEY_PASS;
   }
   return '';
@@ -41,6 +43,12 @@ export async function verifyTurnstileToken(token, clientIp = '', customSecret = 
   const secret = customSecret || getTurnstileSecretKey(env);
 
   if (!secret) {
+    const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) ||
+      (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+    if (isProd) {
+      console.error('[Turnstile] CRITICAL: CLOUDFLARE_TURNSTILE_SECRET_KEY not set in production. Blocking unverified request.');
+      return { success: false, error: 'Security bot verification is not configured in production.', unconfigured: true };
+    }
     console.warn('[Turnstile] CLOUDFLARE_TURNSTILE_SECRET_KEY not set. Bypassing check in unconfigured state.');
     return { success: true, bypassed: true };
   }

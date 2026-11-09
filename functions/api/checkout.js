@@ -463,6 +463,7 @@ export async function onRequest(context) {
       appliedDeal: (finalAppliedType === 'unlocked_deal' || finalAppliedType === 'combined_deals_promo') ? appliedDeal : null,
       deliveryFee,
       platformFee,
+      total,
       numericTotal: total,
       items: verifiedItems,
       userPhone: userPhone ? String(userPhone).slice(-10) : null,
@@ -488,6 +489,7 @@ export async function onRequest(context) {
       deliveryFee,
       platformFee,
       total,
+
       numericTotal: total,
       items: verifiedItems,
       signature: checkoutToken,

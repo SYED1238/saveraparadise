@@ -442,6 +442,7 @@ export default async function handler(req, res) {
     discount,
     total: authoritativeTotal,
     numericTotal: calculatedTotal,
+    items: verifiedItems,
     itemCount: verifiedItems.length,
     timestamp: Date.now()
   });

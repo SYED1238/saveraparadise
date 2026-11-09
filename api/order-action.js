@@ -114,6 +114,20 @@ export default async function handler(req, res) {
       const decoded = checkoutToken ? verifySignedPayload(checkoutToken) : null;
       const cleanId = orderData.id || '#QB-TEST-1001';
       const trackingToken = orderData.tracking_token || orderData.trackingToken || crypto.randomUUID();
+      const rawNum = typeof decoded?.numericTotal === 'number'
+        ? decoded.numericTotal
+        : (typeof decoded?.total === 'number'
+            ? decoded.total
+            : parseFloat(String(decoded?.total || 0).replace(/[^0-9.]/g, '')));
+      const enforcedTotal = (Number.isFinite(rawNum) && rawNum >= 0)
+        ? `\u20B9${Math.round(rawNum)}`
+        : (decoded?.total || orderData.total || '₹0');
+      const enforcedItems = (Array.isArray(decoded?.items) && decoded.items.length > 0)
+        ? decoded.items
+        : (orderData.items || []);
+      const itemsSummary = (Array.isArray(enforcedItems) && enforcedItems.length > 0)
+        ? enforcedItems.map(i => `${i.quantity || 1}x ${i.name}`).join(', ')
+        : (orderData.items_summary || orderData.itemsSummary || '');
       return res.status(200).json({
         success: true,
         orderId: cleanId,
@@ -121,7 +135,9 @@ export default async function handler(req, res) {
         order: {
           ...orderData,
           id: cleanId,
-          total: decoded?.total || orderData.total || '₹0',
+          total: enforcedTotal,
+          items: enforcedItems,
+          items_summary: itemsSummary,
           tracking_token: trackingToken
         }
       });
@@ -362,10 +378,23 @@ export default async function handler(req, res) {
             });
           }
 
-          enforcedTotal = decoded.total;
+          const rawNum = typeof decoded.numericTotal === 'number'
+            ? decoded.numericTotal
+            : (typeof decoded.total === 'number'
+                ? decoded.total
+                : parseFloat(String(decoded.total || 0).replace(/[^0-9.]/g, '')));
+          enforcedTotal = (Number.isFinite(rawNum) && rawNum >= 0)
+            ? `\u20B9${Math.round(rawNum)}`
+            : (decoded.total || orderData.total || '₹0');
+
           enforcedDiscount = typeof decoded.discount === 'number' ? decoded.discount : 0;
           enforcedDeliveryFee = typeof decoded.deliveryFee === 'number' ? decoded.deliveryFee : 0;
           enforcedPlatformFee = typeof decoded.platformFee === 'number' ? decoded.platformFee : 0;
+
+          // Enforce signed items: Cart items strictly sourced from verified checkout token
+          if (Array.isArray(decoded.items) && decoded.items.length > 0) {
+            enforcedItems = decoded.items;
+          }
         }
 
         const allowedStatuses = ['accepted', 'pending'];
@@ -387,6 +416,11 @@ export default async function handler(req, res) {
         const pickupCode = orderData.pickup_code || orderData.pickupCode || (digits.length >= 4 ? digits.slice(-4) : '1001');
         const trackingToken = orderData.tracking_token || orderData.trackingToken || crypto.randomUUID();
 
+        // Authoritative items summary computed from verified items
+        const itemsSummary = (Array.isArray(enforcedItems) && enforcedItems.length > 0)
+          ? enforcedItems.map(i => `${i.quantity || 1}x ${i.name}`).join(', ')
+          : (orderData.items_summary || orderData.itemsSummary || '');
+
         const insertPayload = {
           id: cleanId,
           created_at: Number(orderData.created_at || orderData.createdAt) || Date.now(),
@@ -403,8 +437,8 @@ export default async function handler(req, res) {
           status: targetStatus,
           status_label: orderData.status_label || orderData.statusLabel || targetStatusLabel,
           eta: orderData.eta || '25 - 35 Minutes',
-          items_summary: orderData.items_summary || orderData.itemsSummary || '',
-          items: orderData.items || [],
+          items_summary: itemsSummary,
+          items: enforcedItems,
           total: enforcedTotal || '₹0',
           lat: (orderData.lat !== undefined && !isNaN(Number(orderData.lat))) ? Number(orderData.lat) : (orderData.address_details?.lat ? Number(orderData.address_details.lat) : (orderData.addressDetails?.lat ? Number(orderData.addressDetails.lat) : null)),
           lng: (orderData.lng !== undefined && !isNaN(Number(orderData.lng))) ? Number(orderData.lng) : (orderData.address_details?.lng ? Number(orderData.address_details.lng) : (orderData.addressDetails?.lng ? Number(orderData.addressDetails.lng) : null)),

@@ -42,6 +42,11 @@ export async function verifyTurnstileToken(token, clientIp = '', customSecret = 
 
   // If secret is not configured in production, log a warning and gracefully allow flow (non-blocking onboarding)
   if (!secret) {
+    const isProd = typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production');
+    if (isProd) {
+      console.error('[Turnstile] CRITICAL: CLOUDFLARE_TURNSTILE_SECRET_KEY not set in production. Blocking unverified request.');
+      return { success: false, error: 'Security bot verification is not configured in production.', unconfigured: true };
+    }
     console.warn('[Turnstile] CLOUDFLARE_TURNSTILE_SECRET_KEY not set. Bypassing check in unconfigured state.');
     return { success: true, bypassed: true };
   }
