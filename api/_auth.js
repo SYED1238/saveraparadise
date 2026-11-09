@@ -95,10 +95,19 @@ export function verifySignedPayload(signedString) {
  * Creates a signed admin, owner, or rider session token.
  * Token format: <base64Payload>.<signatureHex>
  */
-export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'admin') {
+export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'admin', envOrExtra = null, extraPayload = {}) {
   if (typeof customExpiresInMs === 'string') {
     role = customExpiresInMs;
     customExpiresInMs = TOKEN_MAX_AGE_MS;
+  }
+  let extra = extraPayload;
+  let env = null;
+  if (envOrExtra && typeof envOrExtra === 'object') {
+    if ('riderPin' in envOrExtra || !('SESSION_SECRET' in envOrExtra || 'NODE_ENV' in envOrExtra)) {
+      extra = { ...envOrExtra, ...extraPayload };
+    } else {
+      env = envOrExtra;
+    }
   }
   const now = Date.now();
   const validRole = (role === 'owner') ? 'owner' : ((role === 'rider') ? 'rider' : 'admin');
@@ -106,10 +115,11 @@ export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'a
     role: validRole,
     iat: now,
     exp: now + customExpiresInMs,
-    nonce: crypto.randomBytes(16).toString('hex')
+    nonce: crypto.randomBytes(16).toString('hex'),
+    ...(extra && typeof extra === 'object' ? extra : {})
   };
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = signData(payloadB64);
+  const signature = signData(payloadB64, env);
   return `${payloadB64}.${signature}`;
 }
 

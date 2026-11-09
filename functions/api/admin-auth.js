@@ -98,11 +98,13 @@ export async function onRequest(context) {
           try {
             const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
             if (payload && (payload.role === 'admin' || payload.role === 'owner' || payload.role === 'rider')) {
-              const refreshedToken = createAdminToken(undefined, payload.role, env);
+              const extraPayload = (payload.role === 'rider' && payload.riderPin) ? { riderPin: payload.riderPin } : {};
+              const refreshedToken = createAdminToken(undefined, payload.role, env, extraPayload);
               return jsonResponse({
                 success: true,
                 token: refreshedToken,
                 role: payload.role,
+                ...(payload.riderPin ? { riderPin: payload.riderPin } : {}),
                 expiresIn: 43200
               }, 200, Object.fromEntries(corsHeaders.entries()));
             }
@@ -145,11 +147,13 @@ export async function onRequest(context) {
   FAILED_ATTEMPTS.delete(clientIp);
   corsHeaders.set('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Secure; Path=/api/admin-auth; Max-Age=0`);
 
-  const token = createAdminToken(undefined, role, env);
+  const extraPayload = role === 'rider' ? { riderPin: String(inputPin).trim() } : {};
+  const token = createAdminToken(undefined, role, env, extraPayload);
   return jsonResponse({
     success: true,
     token,
     role,
+    ...(role === 'rider' ? { riderPin: String(inputPin).trim() } : {}),
     expiresIn: 43200
   }, 200, Object.fromEntries(corsHeaders.entries()));
 }

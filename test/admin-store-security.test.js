@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAdminToken, signPayload } from '../api/_auth.js';
-import { signPayload as signCloudflarePayload } from '../functions/api/_auth.js';
+import { signPayload as signCloudflarePayload, createAdminToken as createCloudflareAdminToken } from '../functions/api/_auth.js';
 import { verifyTurnstileToken as verifyCloudflareTurnstile } from '../functions/api/_turnstile.js';
 import { getTurnstileSecretKey as getNodeTurnstileSecretKey } from '../api/_turnstile.js';
 import adminStoreHandler from '../api/admin-store.js';
@@ -685,5 +685,138 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.notEqual(cfAttackData.trackingToken, 'victim-secret-token-12345');
     assert.ok(cfAttackData.orderId.startsWith('#QB-9999-'));
     assert.equal(cfAttackData.resolvedCollision, true);
+  });
+
+  await t.test('26. Rider role access control isolates order data, updates, and claims per rider', async () => {
+    // 1. Rider login embeds riderPin into signed token payload
+    const riderAToken = createAdminToken(undefined, 'rider', { riderPin: '2233' });
+    const riderBToken = createAdminToken(undefined, 'rider', { riderPin: '4422' });
+    const adminToken = createAdminToken(undefined, 'admin');
+
+    const sampleOrders = [
+      { id: '#QB-101', status: 'ready_for_pickup', assigned_rider_pin: null, tracking_token: 'cust-secret-101', total: '₹500' },
+      { id: '#QB-102', status: 'on_the_way', assigned_rider_pin: '2233', tracking_token: 'cust-secret-102', total: '₹350' },
+      { id: '#QB-103', status: 'on_the_way', assigned_rider_pin: '4422', tracking_token: 'cust-secret-103', total: '₹400' },
+      { id: '#QB-104', status: 'delivered', assigned_rider_pin: '4422', tracking_token: 'cust-secret-104', total: '₹600' }
+    ];
+
+    // 2. Rider A calls sync_orders:
+    // MUST receive only Rider A's assigned order (#QB-102) and unassigned pickup order (#QB-101)
+    // MUST NOT receive Rider B's orders (#QB-103, #QB-104)
+    // MUST NOT receive any customer tracking_tokens
+    const { req: syncReqA, res: syncResA } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderAToken}` },
+      body: { action: 'sync_orders', simulateOrders: sampleOrders }
+    });
+    await orderActionHandler(syncReqA, syncResA);
+    assert.equal(syncResA.statusCode, 200);
+    const ordersA = syncResA.responseData?.orders || [];
+    assert.equal(ordersA.length, 2, 'Rider A must only see their own order and unassigned pickup order');
+    assert.deepEqual(ordersA.map(o => o.id).sort(), ['#QB-101', '#QB-102']);
+    assert.equal(ordersA.some(o => o.id === '#QB-103' || o.id === '#QB-104'), false, 'Rider A must never see Rider B orders');
+    assert.equal(ordersA.some(o => Boolean(o.tracking_token || o.trackingToken)), false, 'Customer tracking tokens must be stripped');
+
+    // 3. Admin calls sync_orders:
+    // Admin receives all orders without scoping
+    const { req: syncReqAdmin, res: syncResAdmin } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminToken}` },
+      body: { action: 'sync_orders', simulateOrders: sampleOrders }
+    });
+    await orderActionHandler(syncReqAdmin, syncResAdmin);
+    assert.equal(syncResAdmin.statusCode, 200);
+    assert.equal(syncResAdmin.responseData?.orders?.length, 4, 'Admin must see all orders');
+
+    // 4. Rider A attempts to modify Rider B's order status:
+    // MUST be rejected with 403 Forbidden
+    const { req: updateAttackReq, res: updateAttackRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderAToken}` },
+      body: { action: 'update_status', orderId: '#QB-103', status: 'delivered', simulateOrders: sampleOrders }
+    });
+    await orderActionHandler(updateAttackReq, updateAttackRes);
+    assert.equal(updateAttackRes.statusCode, 403, 'Rider A cannot modify Rider B order');
+    assert.match(updateAttackRes.responseData?.error, /cannot modify an order assigned to another rider/i);
+
+    // 5. Rider A modifies their own order status:
+    // MUST succeed with 200
+    const { req: updateOwnReq, res: updateOwnRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderAToken}` },
+      body: { action: 'update_status', orderId: '#QB-102', status: 'delivered', simulateOrders: sampleOrders }
+    });
+    await orderActionHandler(updateOwnReq, updateOwnRes);
+    assert.equal(updateOwnRes.statusCode, 200);
+    assert.equal(updateOwnRes.responseData?.order?.status, 'delivered');
+
+    // 6. Rider A attempts to claim an order already claimed by Rider B:
+    // MUST be rejected with 409 Conflict
+    const { req: claimConflictReq, res: claimConflictRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderAToken}` },
+      body: { action: 'claim_order', orderId: '#QB-103', simulateOrders: sampleOrders }
+    });
+    await orderActionHandler(claimConflictReq, claimConflictRes);
+    assert.equal(claimConflictRes.statusCode, 409, 'Rider cannot take over order claimed by another rider');
+    assert.match(claimConflictRes.responseData?.error, /already claimed by another rider/i);
+
+    // 7. Rider A claims unassigned order:
+    // MUST succeed and be bound to Rider A's PIN
+    const { req: claimOkReq, res: claimOkRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderAToken}` },
+      body: { action: 'claim_order', orderId: '#QB-101', simulateOrders: sampleOrders }
+    });
+    await orderActionHandler(claimOkReq, claimOkRes);
+    assert.equal(claimOkRes.statusCode, 200);
+    assert.equal(claimOkRes.responseData?.order?.assigned_rider_pin, '2233');
+
+    // 8. Cloudflare Pages Function parity check
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const cfRiderAToken = createCloudflareAdminToken(undefined, 'rider', mockCfEnv, { riderPin: '2233' });
+
+    const cfSyncReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cfRiderAToken}`
+      },
+      body: JSON.stringify({ action: 'sync_orders', simulateOrders: sampleOrders })
+    });
+    const cfSyncRes = await cloudflareOrderActionHandler({ request: cfSyncReq, env: mockCfEnv });
+    assert.equal(cfSyncRes.status, 200);
+    const cfSyncData = await cfSyncRes.json();
+    assert.equal(cfSyncData.orders.length, 2);
+    assert.equal(cfSyncData.orders.some(o => o.id === '#QB-103'), false);
+    assert.equal(cfSyncData.orders.some(o => Boolean(o.tracking_token || o.trackingToken)), false);
+
+    // CF update attack rejected with 403
+    const cfUpdateReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cfRiderAToken}`
+      },
+      body: JSON.stringify({ action: 'update_status', orderId: '#QB-103', status: 'delivered', simulateOrders: sampleOrders })
+    });
+    const cfUpdateRes = await cloudflareOrderActionHandler({ request: cfUpdateReq, env: mockCfEnv });
+    assert.equal(cfUpdateRes.status, 403);
+    const cfUpdateData = await cfUpdateRes.json();
+    assert.match(cfUpdateData.error, /cannot modify an order assigned to another rider/i);
+
+    // CF claim conflict rejected with 409
+    const cfClaimReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cfRiderAToken}`
+      },
+      body: JSON.stringify({ action: 'claim_order', orderId: '#QB-103', simulateOrders: sampleOrders })
+    });
+    const cfClaimRes = await cloudflareOrderActionHandler({ request: cfClaimReq, env: mockCfEnv });
+    assert.equal(cfClaimRes.status, 409);
+    const cfClaimData = await cfClaimRes.json();
+    assert.match(cfClaimData.error, /already claimed by another rider/i);
   });
 });

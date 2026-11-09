@@ -144,11 +144,13 @@ export default async function handler(req, res) {
             if (payload && (payload.role === 'admin' || payload.role === 'owner' || payload.role === 'rider')) {
               const maxRefreshAge = 24 * 60 * 60 * 1000;
               if (Date.now() - (payload.iat || 0) < maxRefreshAge) {
-                const refreshedToken = createAdminToken(undefined, payload.role);
+                const extraPayload = (payload.role === 'rider' && payload.riderPin) ? { riderPin: payload.riderPin } : {};
+                const refreshedToken = createAdminToken(undefined, payload.role, extraPayload);
                 return res.status(200).json({
                   success: true,
                   token: refreshedToken,
                   role: payload.role,
+                  ...(payload.riderPin ? { riderPin: payload.riderPin } : {}),
                   expiresIn: 43200
                 });
               }
@@ -180,12 +182,14 @@ export default async function handler(req, res) {
 
   FAILED_ATTEMPTS.delete(clientIp);
   clearRateLimitCookie(res);
-  const token = createAdminToken(undefined, role);
+  const extraPayload = role === 'rider' ? { riderPin: String(pin).trim() } : {};
+  const token = createAdminToken(undefined, role, extraPayload);
 
   return res.status(200).json({
     success: true,
     token,
     role,
+    ...(role === 'rider' ? { riderPin: String(pin).trim() } : {}),
     expiresIn: 43200 // 12 hours in seconds
   });
 }

@@ -159,6 +159,85 @@ export async function onRequest(context) {
         }
       }, 200, Object.fromEntries(corsHeaders.entries()));
     }
+    if (isTestEnv && ['sync_orders', 'update_status', 'claim_order'].includes(action)) {
+      const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+      if (!auth || !auth.valid) {
+        return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      let testOrders = body.simulateOrders || [
+        { id: '#QB-101', status: 'ready_for_pickup', assigned_rider_pin: null, tracking_token: 'secret-tok-101', total: '₹500' },
+        { id: '#QB-102', status: 'on_the_way', assigned_rider_pin: '2233', tracking_token: 'secret-tok-102', total: '₹350' },
+        { id: '#QB-103', status: 'on_the_way', assigned_rider_pin: '4422', tracking_token: 'secret-tok-103', total: '₹400' },
+        { id: '#QB-104', status: 'delivered', assigned_rider_pin: '4422', tracking_token: 'secret-tok-104', total: '₹600' }
+      ];
+
+      if (action === 'sync_orders') {
+        if (auth.payload?.role === 'rider') {
+          const riderPin = String(auth.payload.riderPin || '').trim();
+          const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending'];
+          const filtered = testOrders
+            .filter(o => {
+              const assigned = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+              if (assigned) return Boolean(riderPin && assigned === riderPin);
+              return claimableStatuses.includes(o.status);
+            })
+            .map(o => {
+              const copy = { ...o };
+              delete copy.tracking_token;
+              delete copy.trackingToken;
+              return copy;
+            });
+          return jsonResponse({ success: true, orders: filtered }, 200, Object.fromEntries(corsHeaders.entries()));
+        }
+        return jsonResponse({ success: true, orders: testOrders }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      if (action === 'update_status') {
+        const { orderId, status } = body;
+        if (!orderId || !status) {
+          return jsonResponse({ error: 'orderId and status are required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const cleanId = String(orderId).replace(/^#/, '');
+        const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
+        if (!existing) {
+          return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (auth.payload?.role === 'rider') {
+          const riderPin = String(auth.payload.riderPin || '').trim();
+          const existingRiderPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
+          if (existingRiderPin && existingRiderPin !== riderPin) {
+            return jsonResponse({ error: 'Forbidden: You cannot modify an order assigned to another rider' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+          if (!existingRiderPin && status !== 'on_the_way') {
+            return jsonResponse({ error: 'Forbidden: Order must be claimed before updating delivery status' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
+        const updated = { ...existing, status, ...(body.statusLabel ? { status_label: body.statusLabel } : {}) };
+        return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      if (action === 'claim_order') {
+        const { orderId, riderPin } = body;
+        if (!orderId) {
+          return jsonResponse({ error: 'orderId is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const cleanId = String(orderId).replace(/^#/, '');
+        const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
+        if (!existing) {
+          return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+        const effectivePin = (auth.payload?.role === 'rider' && auth.payload?.riderPin)
+          ? String(auth.payload.riderPin).trim()
+          : (riderPin ? String(riderPin).trim() : null);
+        const existingPin = String(existing.assigned_rider_pin || '').trim();
+        if (existingPin && effectivePin && existingPin !== effectivePin) {
+          return jsonResponse({ error: 'Order is already claimed by another rider' }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+        const updated = { ...existing, assigned_rider_pin: effectivePin };
+        return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+    }
     console.warn('[OrderAction] Supabase service credentials missing');
     return jsonResponse({ error: 'Database service credentials not configured on server' }, 503, Object.fromEntries(corsHeaders.entries()));
   }
@@ -175,6 +254,40 @@ export async function onRequest(context) {
           return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
         }
         const limit = Math.min(Number(body.limit) || 250, 500);
+
+        if (auth.payload?.role === 'rider') {
+          const riderPin = String(auth.payload.riderPin || '').trim();
+          let query = sb.from('orders').select('*');
+          if (riderPin) {
+            query = query.or(`assigned_rider_pin.eq.${riderPin},assigned_rider_pin.is.null,assigned_rider_pin.eq.''`);
+          } else {
+            query = query.or('assigned_rider_pin.is.null,assigned_rider_pin.eq.\'\'');
+          }
+          const { data, error } = await query
+            .order('created_at', { ascending: false })
+            .limit(limit);
+          if (error) throw error;
+
+          const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending'];
+          const filteredOrders = (data || [])
+            .filter(o => {
+              if (!o) return false;
+              const assigned = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+              if (assigned) {
+                return Boolean(riderPin && assigned === riderPin);
+              }
+              return claimableStatuses.includes(o.status);
+            })
+            .map(o => {
+              const copy = { ...o };
+              delete copy.tracking_token;
+              delete copy.trackingToken;
+              return copy;
+            });
+
+          return jsonResponse({ success: true, orders: filteredOrders }, 200, Object.fromEntries(corsHeaders.entries()));
+        }
+
         const { data, error } = await sb
           .from('orders')
           .select('*')
@@ -244,12 +357,30 @@ export async function onRequest(context) {
           return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
         }
 
+        if (auth.payload?.role === 'rider') {
+          const riderPin = String(auth.payload.riderPin || '').trim();
+          const existingRiderPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
+          if (existingRiderPin && existingRiderPin !== riderPin) {
+            return jsonResponse({ error: 'Forbidden: You cannot modify an order assigned to another rider' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+          if (!existingRiderPin && status !== 'on_the_way') {
+            return jsonResponse({ error: 'Forbidden: Order must be claimed before updating delivery status' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
+
         const updatePayload = {
           status,
           step_index: typeof stepIndex === 'number' ? stepIndex : existing.step_index,
           status_label: statusLabel || existing.status_label,
           eta: eta !== undefined ? eta : existing.eta
         };
+
+        if (auth.payload?.role === 'rider') {
+          const riderPin = String(auth.payload.riderPin || '').trim();
+          if (riderPin && !existing.assigned_rider_pin) {
+            updatePayload.assigned_rider_pin = riderPin;
+          }
+        }
 
         if (deliveredAt) updatePayload.delivered_at = Number(deliveredAt);
         if (cancellationReason) updatePayload.cancellation_reason = cancellationReason;
@@ -293,12 +424,37 @@ export async function onRequest(context) {
         }
 
         const cleanId = String(orderId).replace(/^#/, '');
+
+        const { data: existing, error: fetchErr } = await sb
+          .from('orders')
+          .select('id, status, assigned_rider_pin')
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+          .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+        if (!existing) {
+          return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const effectivePin = (auth.payload?.role === 'rider' && auth.payload?.riderPin)
+          ? String(auth.payload.riderPin).trim()
+          : (riderPin ? String(riderPin).trim() : null);
+
+        const existingPin = String(existing.assigned_rider_pin || '').trim();
+        if (existingPin && effectivePin && existingPin !== effectivePin) {
+          return jsonResponse({ error: 'Order is already claimed by another rider' }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+
         const updatePayload = {
-          assigned_rider_pin: riderPin ? String(riderPin).trim() : null,
+          assigned_rider_pin: effectivePin || null,
           assigned_rider_name: riderName ? String(riderName).trim() : null,
           assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
           assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike'
         };
+
+        if (body.status) updatePayload.status = body.status;
+        if (body.stepIndex !== undefined) updatePayload.step_index = body.stepIndex;
+        if (body.statusLabel) updatePayload.status_label = body.statusLabel;
 
         const { data: updated, error } = await sb
           .from('orders')

@@ -85,10 +85,16 @@ export function verifySignedPayload(signedString, env = null) {
   }
 }
 
-export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'admin', env = null) {
+export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'admin', env = null, extraPayload = {}) {
   if (typeof customExpiresInMs === 'string') {
     role = customExpiresInMs;
     customExpiresInMs = TOKEN_MAX_AGE_MS;
+  }
+  let actualEnv = env;
+  let extra = extraPayload;
+  if (env && typeof env === 'object' && ('riderPin' in env && !('SESSION_SECRET' in env || 'ENVIRONMENT' in env))) {
+    extra = { ...env, ...extraPayload };
+    actualEnv = null;
   }
   const now = Date.now();
   const validRole = (role === 'owner') ? 'owner' : ((role === 'rider') ? 'rider' : 'admin');
@@ -96,10 +102,11 @@ export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'a
     role: validRole,
     iat: now,
     exp: now + customExpiresInMs,
-    nonce: crypto.randomBytes(16).toString('hex')
+    nonce: crypto.randomBytes(16).toString('hex'),
+    ...(extra && typeof extra === 'object' ? extra : {})
   };
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = signData(payloadB64, env);
+  const signature = signData(payloadB64, actualEnv);
   return `${payloadB64}.${signature}`;
 }
 
