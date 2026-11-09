@@ -15,15 +15,19 @@ import { onRequest as r2ImageHandler } from './functions/api/r2-image.js';
 import { onRequest as r2ListHandler } from './functions/api/r2-list.js';
 import { onRequest as r2DeleteHandler } from './functions/api/r2-delete.js';
 import { onRequest as r2VideoHandler } from './functions/api/r2-video.js';
+import { onRequest as adminStoreHandler } from './functions/api/admin-store.js';
+import { onRequest as orderActionHandler } from './functions/api/order-action.js';
 
 const ROUTES = {
   '/api/admin-auth': adminAuthHandler,
+  '/api/admin-store': adminStoreHandler,
   '/api/checkout': checkoutHandler,
   '/api/cashfree-create-order': cashfreeCreateOrderHandler,
   '/api/cashfree-generate-qr': cashfreeGenerateQrHandler,
   '/api/cashfree-payout': cashfreePayoutHandler,
   '/api/cashfree-webhook': cashfreeWebhookHandler,
   '/api/ola-maps': olaMapsHandler,
+  '/api/order-action': orderActionHandler,
   '/api/r2-upload': r2UploadHandler,
   '/api/r2-image': r2ImageHandler,
   '/api/r2-list': r2ListHandler,

@@ -3694,14 +3694,24 @@ class QuickBiteDataService {
           };
 
           try {
-            const { data, error } = await supabase.from('orders').insert([cleanPayload]).select('tracking_token');
-            const isDuplicate = error && (error.code === '23505' || String(error.message || '').includes('duplicate key') || String(error.message || '').includes('unique constraint'));
+            let syncRes = null;
+            let syncErr = null;
+            try {
+              syncRes = await this._orderAction('create_order', {
+                order: cleanPayload,
+                checkoutToken: orderData.checkoutSignature || orderData.checkoutToken || ''
+              });
+            } catch (err) {
+              syncErr = err;
+            }
 
-            if (!error || isDuplicate) {
+            const isDuplicate = syncRes?.idempotent;
+
+            if ((syncRes && syncRes.success) || isDuplicate) {
               console.log(`[DataService] Offline order ${orderData.id} successfully synced to Supabase.`);
               delete orderData.pendingRemoteSync;
-              if (data && data[0]?.tracking_token) {
-                orderData.trackingToken = data[0].tracking_token;
+              if (syncRes && syncRes.trackingToken) {
+                orderData.trackingToken = syncRes.trackingToken;
               }
               anySynced = true;
 
@@ -3715,8 +3725,8 @@ class QuickBiteDataService {
                 }
               } catch {}
             } else {
-              console.warn(`[DataService] Failed to sync offline order ${orderData.id}:`, error);
-              if (String(error?.message || '').toLowerCase().includes('fetch failed') || String(error?.message || '').toLowerCase().includes('networkerror')) {
+              console.warn(`[DataService] Failed to sync offline order ${orderData.id}:`, syncErr || syncRes);
+              if (String(syncErr?.message || '').toLowerCase().includes('fetch failed') || String(syncErr?.message || '').toLowerCase().includes('networkerror')) {
                 break;
               }
             }
@@ -5445,9 +5455,30 @@ class QuickBiteDataService {
     }
 
     try {
-      const { data, error } = await supabase.from('orders').insert([cleanPayload]).select('tracking_token');
-      if (error) {
-        console.warn('[Supabase] addOrder insert error:', error.message);
+      let actionRes = null;
+      let actionErr = null;
+      try {
+        actionRes = await this._orderAction('create_order', {
+          order: cleanPayload,
+          checkoutToken: orderData.checkoutSignature || orderData.checkoutToken || ''
+        });
+      } catch (err) {
+        actionErr = err;
+      }
+
+      if (actionRes && (actionRes.success || actionRes.idempotent)) {
+        if (actionRes.trackingToken) {
+          orderData.trackingToken = actionRes.trackingToken;
+          try {
+            const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
+            tokens[orderData.id] = actionRes.trackingToken;
+            localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
+          } catch {}
+        }
+        console.log('[Supabase] addOrder saved to cloud database via secure order gateway:', orderData.id);
+      } else {
+        const error = actionErr || new Error(actionRes?.error || 'Order creation rejected by security gateway');
+        console.warn('[Supabase] addOrder gateway error:', error.message);
 
         // Offline-first PWA resilience: If error is due to network drop or offline status, preserve order locally
         const isNetworkError = (
@@ -5465,21 +5496,7 @@ class QuickBiteDataService {
           return { success: true, pendingRemoteSync: true, ...orderData };
         }
 
-        if (error.code === '23505' || String(error.message || '').includes('duplicate key')) {
-          const freshSuffix = Math.floor(1000 + Math.random() * 9000);
-          const freshTime = Date.now().toString(36).toUpperCase().slice(-4);
-          orderData.id = `#QB-${freshTime}-${freshSuffix}`;
-          orderData.pickupCode = String(freshSuffix);
-          cleanPayload.id = orderData.id;
-          cleanPayload.pickup_code = orderData.pickupCode;
-          const retryRes = await supabase.from('orders').insert([cleanPayload]).select('tracking_token');
-          if (!retryRes.error) {
-            orderData.trackingToken = retryRes.data?.[0]?.tracking_token || null;
-            return { success: true, trackingToken: orderData.trackingToken, ...orderData };
-          }
-        }
-
-        // Roll back optimistic local mutation on authoritative database rejection (e.g. RLS or constraint error)
+        // Roll back optimistic local mutation on authoritative security/database rejection
         const rollbackList = this.getOrders().filter(o => o.id !== orderData.id);
         this.saveOrders(rollbackList, { action: 'order_rollback', orderId: orderData.id });
         try {
@@ -5498,16 +5515,6 @@ class QuickBiteDataService {
           }
         } catch {}
         return { success: false, error };
-      } else {
-        if (data && data[0]?.tracking_token) {
-          orderData.trackingToken = data[0].tracking_token;
-          try {
-            const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
-            tokens[orderData.id] = data[0].tracking_token;
-            localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
-          } catch {}
-        }
-        console.log('[Supabase] addOrder saved to cloud database:', orderData.id);
       }
     } catch (err) {
       console.warn('[Supabase] addOrder exception:', err);

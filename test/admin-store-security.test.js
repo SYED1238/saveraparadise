@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAdminToken } from '../api/_auth.js';
+import { createAdminToken, signPayload } from '../api/_auth.js';
 import adminStoreHandler from '../api/admin-store.js';
 import orderActionHandler from '../api/order-action.js';
 
@@ -230,5 +230,108 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     });
     await orderActionHandler(req2, res2);
     assert.equal(res2.responseHeaders['Access-Control-Allow-Origin'], undefined);
+  });
+
+  await t.test('14. POST /api/order-action create_order rejects unverified request lacking checkoutToken with 400', async () => {
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        order: { id: '#QB-123', total: '₹10', items: [] }
+      }
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 400);
+    assert.match(res.responseData?.message || res.responseData?.error, /checkout token/i);
+  });
+
+  await t.test('15. POST /api/order-action create_order rejects forged or tampered checkoutToken with 400', async () => {
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        checkoutToken: 'forged.signature.token',
+        order: { id: '#QB-123', total: '₹10', items: [] }
+      }
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 400);
+    assert.match(res.responseData?.message || res.responseData?.error, /verification failed/i);
+  });
+
+  await t.test('16. POST /api/order-action create_order enforces signed total from genuine checkout token', async () => {
+    const validToken = signPayload({
+      numericTotal: 450,
+      total: '₹450',
+      discount: 50,
+      deliveryFee: 0,
+      platformFee: 5,
+      timestamp: Date.now()
+    });
+
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        checkoutToken: validToken,
+        order: {
+          id: '#QB-TEST-450',
+          total: '₹10', // Tampered client price attempted
+          items: [{ name: 'Biryani', price: 10, quantity: 1 }]
+        }
+      }
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.responseData?.success, true);
+    // Verified authoritative total must override manipulated total
+    assert.equal(res.responseData?.order?.total, '₹450');
+  });
+
+  await t.test('17. POST /api/order-action create_order permits authenticated staff session', async () => {
+    const staffToken = createAdminToken();
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${staffToken}` },
+      body: {
+        action: 'create_order',
+        order: {
+          id: '#QB-POS-100',
+          total: '₹200',
+          items: [{ name: 'Parotta', price: 50, quantity: 4 }]
+        }
+      }
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.responseData?.success, true);
+    assert.equal(res.responseData?.orderId, '#QB-POS-100');
+  });
+
+  await t.test('18. Migration 08 & 09 strictly exclude anon and public from INSERT policies on public.orders', () => {
+    const mig08Content = fs.readFileSync(
+      path.resolve(rootDir, 'supabase_migration_08_secure_orders_rls.sql'),
+      'utf8'
+    );
+    const mig09Content = fs.readFileSync(
+      path.resolve(rootDir, 'supabase_migration_09_secure_order_gateways.sql'),
+      'utf8'
+    );
+
+    // Verify public_create_orders policy is dropped in both migrations
+    assert.match(mig08Content, /DROP\s+POLICY\s+IF\s+EXISTS\s+"public_create_orders"/i);
+    assert.match(mig09Content, /DROP\s+POLICY\s+IF\s+EXISTS\s+"public_create_orders"/i);
+
+    // Verify zero CREATE POLICY statements grant INSERT to anon or public on public.orders
+    assert.doesNotMatch(
+      mig08Content,
+      /CREATE\s+POLICY\s+"[^"]+"\s+ON\s+public\.orders[^;]*?FOR\s+INSERT[^;]*?TO\s+[^;]*\b(?:anon|public)\b/i,
+      'Migration 08 must not grant INSERT to anon or public'
+    );
+    assert.doesNotMatch(
+      mig09Content,
+      /CREATE\s+POLICY\s+"[^"]+"\s+ON\s+public\.orders[^;]*?FOR\s+INSERT[^;]*?TO\s+[^;]*\b(?:anon|public)\b/i,
+      'Migration 09 must not grant INSERT to anon or public'
+    );
   });
 });

@@ -40,15 +40,9 @@ BEGIN
     DROP POLICY IF EXISTS "authenticated_update_orders" ON public.orders;
     DROP POLICY IF EXISTS "authenticated_select_orders" ON public.orders;
 
-    -- Ensure secure guest checkout insertion exists
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_policies 
-      WHERE tablename = 'orders' AND policyname = 'public_create_orders'
-    ) THEN
-      CREATE POLICY "public_create_orders" ON public.orders
-        FOR INSERT TO public
-        WITH CHECK ((status IS NULL) OR (status = ANY (ARRAY['accepted'::text, 'pending'::text])));
-    END IF;
+    -- Clean up legacy, wide-open or public insert policies
+    DROP POLICY IF EXISTS "public_create_orders" ON public.orders;
+    DROP POLICY IF EXISTS "customer_create_orders" ON public.orders;
 
     -- 1.1 Full management access strictly to service_role
     -- (Serverless backend /api/order-action, /api/checkout, /api/cashfree-webhook)
@@ -77,8 +71,9 @@ BEGIN
         OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
       );
 
-    -- NOTICE: Zero SELECT, UPDATE, or DELETE policies granted to 'anon'.
-    -- Direct anonymous table mutations and bulk stranger PII queries are strictly blocked.
+    -- NOTICE: Zero INSERT, SELECT, UPDATE, or DELETE policies granted to 'anon' or 'public'.
+    -- Direct anonymous table mutations and client price tampering are strictly blocked.
+    -- Order creation is strictly mediated via authoritative serverless gateway (/api/order-action via service_role).
   END IF;
 END $$;
 
