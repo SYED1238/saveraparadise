@@ -8,6 +8,7 @@ import { signPayload as signCloudflarePayload, createAdminToken as createCloudfl
 import { verifyTurnstileToken as verifyCloudflareTurnstile } from '../functions/api/_turnstile.js';
 import { getTurnstileSecretKey as getNodeTurnstileSecretKey } from '../api/_turnstile.js';
 import adminStoreHandler from '../api/admin-store.js';
+import { onRequest as cloudflareAdminStoreHandler } from '../functions/api/admin-store.js';
 import orderActionHandler from '../api/order-action.js';
 import { onRequest as cloudflareOrderActionHandler } from '../functions/api/order-action.js';
 import nodeAdminAuthHandler from '../api/admin-auth.js';
@@ -746,7 +747,7 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     const { req: updateOwnReq, res: updateOwnRes } = createMockReqRes({
       method: 'POST',
       headers: { authorization: `Bearer ${riderAToken}` },
-      body: { action: 'update_status', orderId: '#QB-102', status: 'delivered', simulateOrders: sampleOrders }
+      body: { action: 'update_status', orderId: '#QB-102', status: 'delivered', cashCollected: 350, simulateOrders: sampleOrders }
     });
     await orderActionHandler(updateOwnReq, updateOwnRes);
     assert.equal(updateOwnRes.statusCode, 200);
@@ -866,7 +867,7 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
       { id: '#QB-COOK-1', status: 'cooking', assigned_rider_pin: null, tracking_token: 'tok-c1' },
       { id: '#QB-PEND-1', status: 'pending', assigned_rider_pin: null, tracking_token: 'tok-p1' },
       { id: '#QB-READY-1', status: 'ready_for_pickup', assigned_rider_pin: null, tracking_token: 'tok-r1' },
-      { id: '#QB-OTW-1', status: 'on_the_way', assigned_rider_pin: '7788', tracking_token: 'tok-o1' },
+      { id: '#QB-OTW-1', status: 'on_the_way', assigned_rider_pin: '7788', tracking_token: 'tok-o1', total: '₹350', numeric_total: 350 },
       { id: '#QB-DELIV-1', status: 'delivered', assigned_rider_pin: '7788', tracking_token: 'tok-d1' }
     ];
 
@@ -1099,7 +1100,7 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     });
     await orderActionHandler(excessCashReq, excessCashRes);
     assert.equal(excessCashRes.statusCode, 400, 'Excessive cash must be rejected');
-    assert.match(excessCashRes.responseData?.error, /exceeds reasonable total/i);
+    assert.match(excessCashRes.responseData?.error, /exceeds payable order total/i);
 
     // Cloudflare Pages excess cash check
     const cfExcessReq = new Request('https://saveraparadise.com/api/order-action', {
@@ -1152,5 +1153,245 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(codValidRes.statusCode, 200);
     assert.equal(codValidRes.responseData?.order?.cash_collected, 400);
     assert.equal(codValidRes.responseData?.order?.payment_status, 'Paid');
+  });
+
+  await t.test('29. Owner Rider Management API in admin-store (list_riders, save_rider, delete_rider, toggle_rider_status)', async () => {
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const ownerToken = createAdminToken('owner');
+    const riderToken = createAdminToken(undefined, 'rider', { riderPin: '2233' });
+
+    // 1. Rider token cannot call rider management APIs (strictly requires admin or owner)
+    const { req: unauthReq, res: unauthRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: { action: 'list_riders' }
+    });
+    await adminStoreHandler(unauthReq, unauthRes);
+    assert.equal(unauthRes.statusCode, 401, 'Rider role must be rejected from admin-store');
+
+    // 2. Owner can list riders
+    const { req: listReq, res: listRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      body: { action: 'list_riders' }
+    });
+    await adminStoreHandler(listReq, listRes);
+    assert.equal(listRes.statusCode, 200);
+    assert.ok(Array.isArray(listRes.responseData?.riders), 'list_riders must return an array of riders');
+
+    // Cloudflare Pages parity for list_riders
+    const cfListReq = new Request('https://saveraparadise.com/api/admin-store', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ownerToken}`
+      },
+      body: JSON.stringify({ action: 'list_riders' })
+    });
+    const cfListRes = await cloudflareAdminStoreHandler({ request: cfListReq, env: mockCfEnv });
+    assert.equal(cfListRes.status, 200);
+    const cfListData = await cfListRes.json();
+    assert.ok(Array.isArray(cfListData.riders));
+
+    // 3. save_rider validates PIN format (must be 4 to 6 digits)
+    const { req: invalidPinReq, res: invalidPinRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      body: {
+        action: 'save_rider',
+        rider: { pin: 'abc', name: 'Faulty Rider' }
+      }
+    });
+    await adminStoreHandler(invalidPinReq, invalidPinRes);
+    assert.equal(invalidPinRes.statusCode, 400);
+    assert.match(invalidPinRes.responseData?.error, /4 to 6 digits/i);
+
+    // 4. save_rider saves valid rider with owner session
+    const newRider = {
+      pin: '9988',
+      name: 'Test Delivery Boy',
+      phone: '+91 99887 76655',
+      vehicle: '🏍️ Pulsar',
+      status: 'online'
+    };
+    const { req: saveReq, res: saveRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      body: { action: 'save_rider', rider: newRider }
+    });
+    await adminStoreHandler(saveReq, saveRes);
+    assert.equal(saveRes.statusCode, 200);
+    assert.equal(saveRes.responseData?.rider?.pin, '9988');
+    assert.equal(saveRes.responseData?.rider?.name, 'Test Delivery Boy');
+
+    // 5. delete_rider with owner session
+    const { req: delReq, res: delRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      body: { action: 'delete_rider', pin: '9988' }
+    });
+    await adminStoreHandler(delReq, delRes);
+    assert.equal(delRes.statusCode, 200);
+    assert.equal(delRes.responseData?.pin, '9988');
+
+    // 6. toggle_rider_status
+    const { req: toggleReq, res: toggleRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      body: { action: 'toggle_rider_status', pin: '2233', status: 'inactive' }
+    });
+    await adminStoreHandler(toggleReq, toggleRes);
+    assert.equal(toggleRes.statusCode, 200);
+  });
+
+  await t.test('30. Rider authentication rejects inactive riders and returns minimal sanitized profile', async () => {
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const simulatedRiders = [
+      { pin: '3344', name: 'Active Hero', phone: '+91 91111 22222', vehicle: '🏍️ Honda', status: 'online' },
+      { pin: '6655', name: 'Banned Rider', phone: '+91 93333 44444', vehicle: '🛵 TVS', status: 'inactive' }
+    ];
+
+    // 1. Inactive rider is rejected with 401
+    const { req: inactReq, res: inactRes } = createMockReqRes({
+      method: 'POST',
+      body: { pin: '6655', simulateDynamicRiders: simulatedRiders }
+    });
+    await nodeAdminAuthHandler(inactReq, inactRes);
+    assert.equal(inactRes.statusCode, 401, 'Inactive rider must be rejected with 401');
+    assert.match(inactRes.responseData?.error, /deactivated/i);
+
+    // Cloudflare Pages parity for inactive rider
+    const cfInactReq = new Request('https://saveraparadise.com/api/admin-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: '6655', simulateDynamicRiders: simulatedRiders })
+    });
+    const cfInactRes = await cloudflareAdminAuthHandler({ request: cfInactReq, env: mockCfEnv });
+    assert.equal(cfInactRes.status, 401);
+    const cfInactData = await cfInactRes.json();
+    assert.match(cfInactData.error, /deactivated/i);
+
+    // 2. Active rider receives token and minimal safe profile
+    const { req: actReq, res: actRes } = createMockReqRes({
+      method: 'POST',
+      body: { pin: '3344', simulateDynamicRiders: simulatedRiders }
+    });
+    await nodeAdminAuthHandler(actReq, actRes);
+    assert.equal(actRes.statusCode, 200);
+    assert.equal(actRes.responseData?.role, 'rider');
+    assert.equal(actRes.responseData?.riderPin, '3344');
+    assert.ok(actRes.responseData?.token);
+    assert.deepEqual(actRes.responseData?.rider, {
+      pin: '3344',
+      name: 'Active Hero',
+      phone: '+91 91111 22222',
+      vehicle: '🏍️ Honda',
+      status: 'online'
+    });
+  });
+
+  await t.test('31. Strict Cash on Delivery (COD) payment validation in update_status', async () => {
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const riderToken = createAdminToken(undefined, 'rider', { riderPin: '6677' });
+    const codOrder = [
+      { id: '#QB-COD-1', status: 'on_the_way', assigned_rider_pin: '6677', total: '₹500', numeric_total: 500, payment_status: 'Pending', is_paid_online: false }
+    ];
+
+    // 1. Missing cashCollected on COD delivered order is rejected with 400
+    const { req: noCashReq, res: noCashRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-COD-1',
+        status: 'delivered',
+        simulateOrders: codOrder
+      }
+    });
+    await orderActionHandler(noCashReq, noCashRes);
+    assert.equal(noCashRes.statusCode, 400);
+    assert.match(noCashRes.responseData?.error, /cashCollected amount is required/i);
+
+    // 2. Falsified paymentStatus: 'Paid' without cashCollected is rejected
+    const { req: fakePaidReq, res: fakePaidRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-COD-1',
+        status: 'delivered',
+        paymentStatus: 'Paid',
+        simulateOrders: codOrder
+      }
+    });
+    await orderActionHandler(fakePaidReq, fakePaidRes);
+    assert.equal(fakePaidRes.statusCode, 400, 'Cannot mark COD paid without cash collected');
+
+    // 3. Excess cash beyond total + 200 tip threshold is rejected
+    const { req: overCashReq, res: overCashRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-COD-1',
+        status: 'delivered',
+        cashCollected: 800, // 500 total + 300 tip (> 200 tip allowance)
+        simulateOrders: codOrder
+      }
+    });
+    await orderActionHandler(overCashReq, overCashRes);
+    assert.equal(overCashRes.statusCode, 400);
+    assert.match(overCashRes.responseData?.error, /exceeds payable order total/i);
+
+    // 4. Cash collected less than total keeps payment_status = 'Pending'
+    const { req: partialCashReq, res: partialCashRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-COD-1',
+        status: 'delivered',
+        cashCollected: 300,
+        simulateOrders: codOrder
+      }
+    });
+    await orderActionHandler(partialCashReq, partialCashRes);
+    assert.equal(partialCashRes.statusCode, 200);
+    assert.equal(partialCashRes.responseData?.order?.payment_status, 'Pending');
+    assert.equal(partialCashRes.responseData?.order?.cash_collected, 300);
+
+    // 5. Valid COD collection with legitimate tip marks Paid
+    const { req: exactCashReq, res: exactCashRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-COD-1',
+        status: 'delivered',
+        cashCollected: 550, // 500 total + 50 tip
+        simulateOrders: codOrder
+      }
+    });
+    await orderActionHandler(exactCashReq, exactCashRes);
+    assert.equal(exactCashRes.statusCode, 200);
+    assert.equal(exactCashRes.responseData?.order?.payment_status, 'Paid');
+    assert.equal(exactCashRes.responseData?.order?.cash_collected, 550);
+  });
+
+  await t.test('32. Verification of verify_rider_pin RPC deprecation and dataService security', () => {
+    // 1. Migration 10 drops verify_rider_pin
+    const mig10Content = fs.readFileSync(path.resolve(rootDir, 'supabase_migration_10_secure_riders_rls.sql'), 'utf8');
+    assert.match(mig10Content, /DROP FUNCTION IF EXISTS public.verify_rider_pin/i, 'Migration 10 must drop verify_rider_pin RPC');
+    assert.match(mig10Content, /REVOKE EXECUTE ON FUNCTION public\.verify_rider_pin/i);
+
+    // 2. supabase_setup.sql does not grant execute on verify_rider_pin to anon
+    const setupContent = fs.readFileSync(path.resolve(rootDir, 'supabase_setup.sql'), 'utf8');
+    assert.ok(!setupContent.includes('GRANT EXECUTE ON FUNCTION public.verify_rider_pin(TEXT) TO anon'), 'setup.sql must not grant execute to anon');
+
+    // 3. dataService.js does not call supabase.rpc('verify_rider_pin')
+    const dsContent = fs.readFileSync(path.resolve(rootDir, 'dataService.js'), 'utf8');
+    assert.ok(!dsContent.includes("supabase.rpc('verify_rider_pin'"), 'dataService must not invoke verify_rider_pin RPC');
+    assert.ok(!dsContent.includes(".from('riders').upsert("), 'dataService must not directly upsert to riders table');
+    assert.ok(!dsContent.includes(".from('riders').delete("), 'dataService must not directly delete from riders table');
   });
 });

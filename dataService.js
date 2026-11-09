@@ -4409,6 +4409,28 @@ class QuickBiteDataService {
     } catch {}
   }
 
+  async _adminStoreAction(action, payload = {}) {
+    if (typeof window === 'undefined') return null;
+    const token = (typeof sessionStorage !== 'undefined')
+      ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
+      : null;
+    if (!token) throw new Error('Unauthorized: Staff or Owner session required');
+
+    const res = await fetch('/api/admin-store', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ action, ...payload })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to execute ${action}`);
+    }
+    return await res.json();
+  }
+
   async _orderAction(action, payload = {}) {
     if (typeof window === 'undefined') return null;
     try {
@@ -6806,40 +6828,74 @@ class QuickBiteDataService {
 
   async syncRidersFromSupabase() {
     try {
-      if (!supabase) return this.getRiders();
-      const { data, error } = await supabase
-        .from('riders')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        const localList = this.getRiders();
-        const localMap = new Map(localList.map(r => [r.pin, r]));
-        const mapped = data.map(r => {
-          const pin = String(r.pin).trim();
-          const existing = localMap.get(pin);
-          return {
-            ...(existing || {}),
-            pin,
-            id: r.id || `rider-${pin}`,
-            name: r.name || existing?.name || `Rider ${pin}`,
-            phone: r.phone || existing?.phone || '',
-            vehicle: r.vehicle || existing?.vehicle || '🏍️ Bike',
-            status: r.status || existing?.status || 'online',
-            avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
-            avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
-            cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null
-          };
-        });
-        this.ridersCache = mapped;
-        localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
-        this.notifyChange('riders', { action: 'sync_riders', source: 'supabase' });
-        return mapped;
+      if (this.isStaffAuthorized()) {
+        try {
+          const res = await this._adminStoreAction('list_riders');
+          if (res && res.success && Array.isArray(res.riders)) {
+            const localList = this.getRiders();
+            const localMap = new Map(localList.map(r => [r.pin, r]));
+            const mapped = res.riders.map(r => {
+              const pin = String(r.pin).trim();
+              const existing = localMap.get(pin);
+              return {
+                ...(existing || {}),
+                pin,
+                id: r.id || `rider-${pin}`,
+                name: r.name || existing?.name || `Rider ${pin}`,
+                phone: r.phone || existing?.phone || '',
+                vehicle: r.vehicle || existing?.vehicle || '🏍️ Bike',
+                status: r.status || existing?.status || 'online',
+                avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
+                avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
+                cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null
+              };
+            });
+            this.ridersCache = mapped;
+            localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
+            this.notifyChange('riders', { action: 'sync_riders', source: 'server' });
+            return mapped;
+          }
+        } catch (apiErr) {
+          console.warn('[DataService] syncRidersFromSupabase API error:', apiErr?.message);
+        }
       }
     } catch (err) {
       console.warn('[DataService] syncRidersFromSupabase error:', err);
     }
     return this.getRiders();
+  }
+
+  async saveOrUpdateRiderAsync(riderData, originalPin) {
+    if (!riderData || !riderData.pin) throw new Error('Invalid rider data: PIN is required');
+    const cleanPin = String(riderData.pin).trim();
+    const cleanOrigPin = originalPin ? String(originalPin).trim() : null;
+
+    const res = await this._adminStoreAction('save_rider', {
+      rider: riderData,
+      originalPin: cleanOrigPin
+    });
+
+    if (!res || !res.success) {
+      throw new Error(res?.error || 'Failed to save delivery partner to database');
+    }
+
+    if (cleanOrigPin && cleanOrigPin !== cleanPin) {
+      const riders = this.getRiders().filter(r => r.pin !== cleanOrigPin);
+      this.saveRiders(riders);
+    }
+    const updated = res.rider || riderData;
+    return this.saveOrUpdateRider(updated);
+  }
+
+  async deleteRiderAsync(pin) {
+    if (!pin) throw new Error('PIN is required');
+    const cleanPin = String(pin).trim();
+
+    const res = await this._adminStoreAction('delete_rider', { pin: cleanPin });
+    if (!res || !res.success) {
+      throw new Error(res?.error || 'Failed to delete delivery partner from database');
+    }
+    return this.deleteRider(cleanPin);
   }
 
   saveRiders(riders) {
@@ -6860,22 +6916,7 @@ class QuickBiteDataService {
     const cleanPin = String(pin).trim();
     if (!cleanPin) return null;
 
-    // 1. Try server-side RPC first (prevents downloading plaintext PINs of all fleet riders)
-    try {
-      if (supabase && typeof supabase.rpc === 'function') {
-        const { data, error } = await supabase.rpc('verify_rider_pin', { p_pin: cleanPin });
-        const rpcRider = (!error && data)
-          ? ((data.success || data.valid) && data.rider ? data.rider : (data.id && data.name ? data : null))
-          : null;
-        if (rpcRider) {
-          const verifiedRider = { ...rpcRider, pin: cleanPin };
-          this.saveOrUpdateRider(verifiedRider);
-          return verifiedRider;
-        }
-      }
-    } catch (rpcErr) {
-      console.warn('[DataService] verify_rider_pin RPC error, falling back to local roster:', rpcErr);
-    }
+// Note: Public verify_rider_pin RPC has been deprecated and revoked for security. Authentication goes through /api/admin-auth
 
     // 2. Local fallback if offline or RPC unconfigured
     let rider = this.getRiderByPin(cleanPin);
@@ -6936,31 +6977,7 @@ class QuickBiteDataService {
     this.saveRiders(riders);
     this.notifyChange('rider_session', { pin: updatedRider.pin, rider: updatedRider, timestamp: Date.now() });
 
-    // Sync to Supabase Cloud (browser context only, guard against test pollution)
-    if (supabase && typeof window !== 'undefined') {
-      const parseBigintTs = (val) => {
-        if (!val) return null;
-        if (typeof val === 'number') return Math.round(val);
-        const parsed = Date.parse(val);
-        return !isNaN(parsed) ? parsed : (parseInt(val, 10) || null);
-      };
-
-      supabase.from('riders').upsert([{
-        pin: updatedRider.pin,
-        id: updatedRider.id,
-        name: updatedRider.name,
-        phone: updatedRider.phone,
-        vehicle: updatedRider.vehicle,
-        status: updatedRider.status,
-        avatar: updatedRider.avatar,
-        avatar_img: updatedRider.avatarImg,
-        cash_settled_at: parseBigintTs(updatedRider.cashSettledAt)
-      }], { onConflict: 'pin' }).then(({ error }) => {
-        if (error) console.warn('[DataService] saveOrUpdateRider supabase error:', error.message);
-      }, (err) => {
-        console.warn('[DataService] saveOrUpdateRider supabase exception:', err);
-      });
-    }
+// Note: Supabase persistence for riders is handled securely by saveOrUpdateRiderAsync via /api/admin-store
 
     return updatedRider;
   }
@@ -6986,14 +7003,7 @@ class QuickBiteDataService {
 
     this.notifyChange('riders', { action: 'delete_rider', pin: cleanPin, timestamp: Date.now() });
 
-    // Sync deletion to Supabase Cloud (browser context only, guard against test pollution)
-    if (supabase && typeof window !== 'undefined') {
-      supabase.from('riders').delete().eq('pin', cleanPin).then(({ error }) => {
-        if (error) console.warn('[DataService] deleteRider supabase error:', error.message);
-      }, (err) => {
-        console.warn('[DataService] deleteRider supabase exception:', err);
-      });
-    }
+// Note: Supabase deletion for riders is handled securely by deleteRiderAsync via /api/admin-store
 
     return true;
   }

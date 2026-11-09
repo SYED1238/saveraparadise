@@ -264,42 +264,50 @@ const initDeliveryApp = () => {
     defaultCode: '',
     onVerify: async (pin) => {
       const cleanPin = String(pin).trim();
-      const rider = await dataService.verifyRiderPin(cleanPin);
-      return !!(rider && rider.name);
+      try {
+        const res = await fetch('/api/admin-auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: cleanPin })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          if (errData?.error && typeof showToast === 'function') {
+            showToast(errData.error, 'error');
+          }
+          return false;
+        }
+        const data = await res.json();
+        if (data && data.success && data.role === 'rider' && data.token) {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('quickbite_rider_token', data.token);
+          }
+          if (data.rider) {
+            dataService.saveOrUpdateRider({ ...data.rider, pin: cleanPin });
+          }
+          window.__lastVerifiedRider = data.rider || { pin: cleanPin, name: 'Delivery Partner' };
+          return true;
+        }
+        return false;
+      } catch (err) {
+        console.warn('[Delivery] Passcode verification network error:', err);
+        return false;
+      }
     },
     onSuccess: async (pin) => {
       const cleanPin = String(pin).trim();
-      let rider = dataService.getRiderByPin(cleanPin);
-      if (!rider) {
-        rider = await dataService.verifyRiderPin(cleanPin);
-      }
+      const rider = window.__lastVerifiedRider || dataService.getRiderByPin(cleanPin) || { pin: cleanPin, name: 'Delivery Partner' };
 
-      if (rider && rider.name) {
-        setStaffSessionActive('rider');
-        dataService.setActiveRiderPin(cleanPin);
-        if (typeof fetch !== 'undefined') {
-          fetch('/api/admin-auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pin: cleanPin })
-          }).then(r => r.ok ? r.json() : null).then(data => {
-            if (data && data.token && typeof sessionStorage !== 'undefined') {
-              sessionStorage.setItem('quickbite_rider_token', data.token);
-            }
-          }).catch(() => {});
-        }
-        updateRiderProfileHeader();
-        requestWakeLock();
-        showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
-        dataService.syncOrdersFromSupabase(true).then(() => {
-          renderPortal();
-        }).catch(() => {
-          renderPortal();
-        });
-      } else {
-        showToast('❌ Rider account not found. Please contact Admin.', 'error');
-        if (riderPasscodeLock) riderPasscodeLock.reset();
-      }
+      setStaffSessionActive('rider');
+      dataService.setActiveRiderPin(cleanPin);
+      updateRiderProfileHeader();
+      requestWakeLock();
+      showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
+      dataService.syncOrdersFromSupabase(true).then(() => {
+        renderPortal();
+      }).catch(() => {
+        renderPortal();
+      });
     }
   });
 

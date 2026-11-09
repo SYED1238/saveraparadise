@@ -2058,18 +2058,23 @@ function closeOwnerRiderModal() {
   if (modal) modal.style.display = 'none';
 }
 
-function deleteOwnerRider(pin) {
+async function deleteOwnerRider(pin) {
   if (!pin) return;
   const rider = dataService.getRiderByPin(pin);
   const riderName = rider ? rider.name : `PIN ${pin}`;
   if (confirm(`Are you sure you want to delete delivery boy "${riderName}" (PIN: ${pin})? This will permanently revoke their access to the Rider Portal.`)) {
-    dataService.deleteRider(pin);
-    renderDashboard();
-    showToast(`🗑️ Delivery boy "${riderName}" deleted.`, 'info');
+    try {
+      showToast(`Deleting "${riderName}"...`, 'info');
+      await dataService.deleteRiderAsync(pin);
+      renderDashboard();
+      showToast(`🗑️ Delivery boy "${riderName}" deleted.`, 'info');
+    } catch (err) {
+      showToast(`❌ Failed to delete rider: ${err.message}`, 'error');
+    }
   }
 }
 
-function handleOwnerRiderSubmit(e) {
+async function handleOwnerRiderSubmit(e) {
   if (e) e.preventDefault();
   const origPinInput = document.getElementById('owner-rider-original-pin');
   const pinInput = document.getElementById('owner-rider-pin');
@@ -2110,42 +2115,45 @@ function handleOwnerRiderSubmit(e) {
   let saved;
   const formattedPhone = phone.startsWith('+') ? phone : (cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : phone);
 
-  if (originalPin && originalPin !== pin) {
-    const existingRider = dataService.getRiderByPin(originalPin) || {};
-    const updatedRider = {
-      ...existingRider,
-      pin,
-      name,
-      phone: formattedPhone,
-      vehicle,
-      vehicleType,
-      vehicleName
-    };
+  try {
+    showToast('Saving delivery partner to server...', 'info');
+    let saved;
+    if (originalPin && originalPin !== pin) {
+      const existingRider = dataService.getRiderByPin(originalPin) || {};
+      const updatedRider = {
+        ...existingRider,
+        pin,
+        name,
+        phone: formattedPhone,
+        vehicle,
+        vehicleType,
+        vehicleName
+      };
 
-    // Reassign existing orders pointing to originalPin so deliveries and cash records are preserved
-    const allOrders = dataService.getOrders();
-    let ordersChanged = false;
-    allOrders.forEach(o => {
-      if (o && String(o.assignedRiderPin) === String(originalPin)) {
-        o.assignedRiderPin = pin;
-        o.assignedRiderName = name;
-        ordersChanged = true;
+      const allOrders = dataService.getOrders();
+      let ordersChanged = false;
+      allOrders.forEach(o => {
+        if (o && String(o.assignedRiderPin) === String(originalPin)) {
+          o.assignedRiderPin = pin;
+          o.assignedRiderName = name;
+          ordersChanged = true;
+        }
+      });
+      if (ordersChanged) {
+        dataService.saveOrders(allOrders);
       }
-    });
-    if (ordersChanged) {
-      dataService.saveOrders(allOrders);
+
+      saved = await dataService.saveOrUpdateRiderAsync(updatedRider, originalPin);
+    } else {
+      saved = await dataService.saveOrUpdateRiderAsync({ pin, name, phone: formattedPhone, vehicle, vehicleType, vehicleName });
     }
 
-    // Delete old PIN entry and save updated rider
-    dataService.deleteRider(originalPin);
-    saved = dataService.saveOrUpdateRider(updatedRider);
-  } else {
-    saved = dataService.saveOrUpdateRider({ pin, name, phone: formattedPhone, vehicle, vehicleType, vehicleName });
+    closeOwnerRiderModal();
+    renderDashboard();
+    showToast(`✅ Delivery boy "${saved.name}" saved! Secret Login PIN: ${saved.pin}`, 'success');
+  } catch (err) {
+    showToast(`❌ Failed to save delivery partner: ${err.message}`, 'error');
   }
-
-  closeOwnerRiderModal();
-  renderDashboard();
-  showToast(`✅ Delivery boy "${saved.name}" saved! Secret Login PIN: ${saved.pin}`, 'success');
 }
 
 // ==============================================================

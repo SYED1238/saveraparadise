@@ -168,6 +168,7 @@ export default async function handler(req, res) {
   }
 
   let role = getPinRole(pin);
+  let dynamicRiderRecord = null;
 
   // If not matched by static/env PINs, authenticate dynamic fleet riders from the database
   if (!role) {
@@ -181,20 +182,36 @@ export default async function handler(req, res) {
         const sb = createClient(supabaseUrl, serviceKey);
         const { data: dbRider, error } = await sb
           .from('riders')
-          .select('pin, name, status')
+          .select('pin, name, phone, vehicle, status')
           .eq('pin', String(pin).trim())
           .maybeSingle();
 
+        if (dbRider && dbRider.status === 'inactive') {
+          return res.status(401).json({
+            error: 'Account is deactivated. Please contact restaurant management.',
+            inactive: true
+          });
+        }
+
         if (!error && dbRider && (!dbRider.status || dbRider.status === 'online' || dbRider.status === 'active')) {
           role = 'rider';
+          dynamicRiderRecord = dbRider;
         }
       } catch (err) {
         console.warn('[AdminAuth] Error checking dynamic riders table:', err?.message);
       }
     } else if (isTestEnv && body?.simulateDynamicRiders) {
       const dynamicList = body.simulateDynamicRiders;
-      if (Array.isArray(dynamicList) && dynamicList.some(r => String(r.pin).trim() === String(pin).trim() && r.status !== 'inactive')) {
+      const matched = Array.isArray(dynamicList) ? dynamicList.find(r => String(r.pin).trim() === String(pin).trim()) : null;
+      if (matched) {
+        if (matched.status === 'inactive') {
+          return res.status(401).json({
+            error: 'Account is deactivated. Please contact restaurant management.',
+            inactive: true
+          });
+        }
         role = 'rider';
+        dynamicRiderRecord = matched;
       }
     }
   }
@@ -215,12 +232,22 @@ export default async function handler(req, res) {
   clearRateLimitCookie(res);
   const extraPayload = role === 'rider' ? { riderPin: String(pin).trim() } : {};
   const token = createAdminToken(undefined, role, extraPayload);
+  let safeRiderProfile = null;
+  if (role === 'rider') {
+    safeRiderProfile = {
+      pin: String(pin).trim(),
+      name: dynamicRiderRecord?.name || 'Delivery Partner',
+      phone: dynamicRiderRecord?.phone || '',
+      vehicle: dynamicRiderRecord?.vehicle || 'Bike',
+      status: dynamicRiderRecord?.status || 'online'
+    };
+  }
 
   return res.status(200).json({
     success: true,
     token,
     role,
-    ...(role === 'rider' ? { riderPin: String(pin).trim() } : {}),
+    ...(role === 'rider' ? { riderPin: String(pin).trim(), rider: safeRiderProfile } : {}),
     expiresIn: 43200 // 12 hours in seconds
   });
 }

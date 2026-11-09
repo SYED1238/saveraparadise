@@ -229,35 +229,9 @@ CREATE POLICY "service_role_manage_riders" ON public.riders
   USING (true)
   WITH CHECK (true);
 
--- Secure Single-Rider PIN Verification RPC
-CREATE OR REPLACE FUNCTION public.verify_rider_pin(p_pin TEXT)
-RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-  r RECORD;
-BEGIN
-  IF p_pin IS NULL OR length(trim(p_pin)) != 4 THEN
-    RETURN NULL;
-  END IF;
-
-  SELECT id, name, phone, vehicle, status, avatar, avatar_img, cash_settled_at
-  INTO r
-  FROM public.riders
-  WHERE pin = trim(p_pin)
-  LIMIT 1;
-
-  IF r.id IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  RETURN to_jsonb(r);
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION public.verify_rider_pin(TEXT) TO anon, authenticated;
+-- Security Hardening: Public verify_rider_pin RPC deprecated and dropped.
+-- Fleet riders authenticate exclusively through the rate-limited, private-key backend endpoint /api/admin-auth.
+DROP FUNCTION IF EXISTS public.verify_rider_pin(TEXT);
 
 -- Secure Guest Order Tracking RPC
 CREATE OR REPLACE FUNCTION public.track_guest_order(p_order_id TEXT, p_tracking_token UUID)

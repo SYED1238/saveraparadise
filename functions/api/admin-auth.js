@@ -121,6 +121,7 @@ export async function onRequest(context) {
   }
 
   let role = getPinRole(inputPin, env);
+  let dynamicRiderRecord = null;
 
   // If not matched by static/env PINs, authenticate dynamic fleet riders from the database
   if (!role) {
@@ -140,20 +141,36 @@ export async function onRequest(context) {
         const sb = createClient(supabaseUrl, serviceKey);
         const { data: dbRider, error } = await sb
           .from('riders')
-          .select('pin, name, status')
+          .select('pin, name, phone, vehicle, status')
           .eq('pin', String(inputPin).trim())
           .maybeSingle();
 
+        if (dbRider && dbRider.status === 'inactive') {
+          return jsonResponse({
+            error: 'Account is deactivated. Please contact restaurant management.',
+            inactive: true
+          }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+
         if (!error && dbRider && (!dbRider.status || dbRider.status === 'online' || dbRider.status === 'active')) {
           role = 'rider';
+          dynamicRiderRecord = dbRider;
         }
       } catch (err) {
         console.warn('[AdminAuth] Error checking dynamic riders table:', err?.message);
       }
     } else if (isTestEnv && body?.simulateDynamicRiders) {
       const dynamicList = body.simulateDynamicRiders;
-      if (Array.isArray(dynamicList) && dynamicList.some(r => String(r.pin).trim() === String(inputPin).trim() && r.status !== 'inactive')) {
+      const matched = Array.isArray(dynamicList) ? dynamicList.find(r => String(r.pin).trim() === String(inputPin).trim()) : null;
+      if (matched) {
+        if (matched.status === 'inactive') {
+          return jsonResponse({
+            error: 'Account is deactivated. Please contact restaurant management.',
+            inactive: true
+          }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
         role = 'rider';
+        dynamicRiderRecord = matched;
       }
     }
   }
@@ -186,11 +203,22 @@ export async function onRequest(context) {
 
   const extraPayload = role === 'rider' ? { riderPin: String(inputPin).trim() } : {};
   const token = createAdminToken(undefined, role, env, extraPayload);
+  let safeRiderProfile = null;
+  if (role === 'rider') {
+    safeRiderProfile = {
+      pin: String(inputPin).trim(),
+      name: dynamicRiderRecord?.name || 'Delivery Partner',
+      phone: dynamicRiderRecord?.phone || '',
+      vehicle: dynamicRiderRecord?.vehicle || 'Bike',
+      status: dynamicRiderRecord?.status || 'online'
+    };
+  }
+
   return jsonResponse({
     success: true,
     token,
     role,
-    ...(role === 'rider' ? { riderPin: String(inputPin).trim() } : {}),
+    ...(role === 'rider' ? { riderPin: String(inputPin).trim(), rider: safeRiderProfile } : {}),
     expiresIn: 43200
   }, 200, Object.fromEntries(corsHeaders.entries()));
 }

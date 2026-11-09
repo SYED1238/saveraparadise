@@ -230,28 +230,35 @@ export async function onRequest(context) {
 
         let enforcedCash = 0;
         let enforcedPaymentStatus = existing.payment_status || 'Pending';
+        let enforcedIsPaidOnline = existing.is_paid_online;
         if (status === 'delivered') {
-          const isPrepaid = existing.is_paid_online || existing.payment_status === 'Paid';
+          const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
           if (isPrepaid) {
             enforcedPaymentStatus = 'Paid';
             enforcedCash = 0;
+            enforcedIsPaidOnline = true;
           } else {
+            enforcedIsPaidOnline = false;
             const orderTotal = Math.round(
               typeof existing.numeric_total === 'number'
                 ? existing.numeric_total
                 : (parseFloat(String(existing.total || 0).replace(/[^0-9.]/g, '')) || 0)
             );
-            if (typeof body.cashCollected === 'number' && Number.isFinite(body.cashCollected)) {
-              if (body.cashCollected < 0) {
-                return jsonResponse({ error: 'Cash collected cannot be negative' }, 400, Object.fromEntries(corsHeaders.entries()));
-              }
-              if (orderTotal > 0 && body.cashCollected > orderTotal * 2) {
-                return jsonResponse({ error: `Cash collected (₹${body.cashCollected}) exceeds reasonable total for order (₹${orderTotal})` }, 400, Object.fromEntries(corsHeaders.entries()));
-              }
-              enforcedCash = body.cashCollected;
-              if (body.cashCollected >= orderTotal && orderTotal > 0) {
-                enforcedPaymentStatus = 'Paid';
-              }
+            if (typeof body.cashCollected !== 'number' || !Number.isFinite(body.cashCollected)) {
+              return jsonResponse({ error: 'For Cash on Delivery orders, cashCollected amount is required upon delivery' }, 400, Object.fromEntries(corsHeaders.entries()));
+            }
+            if (body.cashCollected < 0) {
+              return jsonResponse({ error: 'Cash collected cannot be negative' }, 400, Object.fromEntries(corsHeaders.entries()));
+            }
+            const maxAllowed = orderTotal + 200;
+            if (orderTotal > 0 && body.cashCollected > maxAllowed) {
+              return jsonResponse({ error: `Cash collected (₹${body.cashCollected}) exceeds payable order total (₹${orderTotal}). Maximum allowed with tip is ₹${maxAllowed}.` }, 400, Object.fromEntries(corsHeaders.entries()));
+            }
+            enforcedCash = body.cashCollected;
+            if (body.cashCollected >= orderTotal && orderTotal > 0) {
+              enforcedPaymentStatus = 'Paid';
+            } else {
+              enforcedPaymentStatus = 'Pending';
             }
           }
         }
@@ -475,29 +482,36 @@ export async function onRequest(context) {
 
         // Payment status & Cash collection handling
         if (status === 'delivered') {
-          const isPrepaid = existing.is_paid_online || existing.payment_status === 'Paid';
+          const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
           if (isPrepaid) {
             updatePayload.payment_status = 'Paid';
             updatePayload.cash_collected = 0;
+            updatePayload.is_paid_online = true;
           } else {
+            updatePayload.is_paid_online = false;
             const orderTotal = Math.round(
               typeof existing.numeric_total === 'number'
                 ? existing.numeric_total
                 : (parseFloat(String(existing.total || 0).replace(/[^0-9.]/g, '')) || 0)
             );
-            if (typeof cashCollected === 'number' && Number.isFinite(cashCollected)) {
-              if (cashCollected < 0) {
-                return jsonResponse({ error: 'Cash collected cannot be negative' }, 400, Object.fromEntries(corsHeaders.entries()));
-              }
-              if (orderTotal > 0 && cashCollected > orderTotal * 2) {
-                return jsonResponse({ error: `Cash collected (₹${cashCollected}) exceeds reasonable total for order (₹${orderTotal})` }, 400, Object.fromEntries(corsHeaders.entries()));
-              }
-              updatePayload.cash_collected = cashCollected;
-              if (cashCollected >= orderTotal && orderTotal > 0) {
-                updatePayload.payment_status = 'Paid';
-              }
-            } else if (paymentStatus === 'Paid') {
+            if (typeof cashCollected !== 'number' || !Number.isFinite(cashCollected)) {
+              return jsonResponse({ error: 'For Cash on Delivery orders, cashCollected amount is required upon delivery' }, 400, Object.fromEntries(corsHeaders.entries()));
+            }
+            if (cashCollected < 0) {
+              return jsonResponse({ error: 'Cash collected cannot be negative' }, 400, Object.fromEntries(corsHeaders.entries()));
+            }
+            const maxAllowed = orderTotal + 200;
+            if (orderTotal > 0 && cashCollected > maxAllowed) {
+              return jsonResponse({ error: `Cash collected (₹${cashCollected}) exceeds payable order total (₹${orderTotal}). Maximum allowed with tip is ₹${maxAllowed}.` }, 400, Object.fromEntries(corsHeaders.entries()));
+            }
+            updatePayload.cash_collected = cashCollected;
+            if (cashCollected >= orderTotal && orderTotal > 0) {
               updatePayload.payment_status = 'Paid';
+              if (cashCollected > orderTotal) {
+                updatePayload.tip_amount = cashCollected - orderTotal;
+              }
+            } else {
+              updatePayload.payment_status = 'Pending';
             }
           }
         }
