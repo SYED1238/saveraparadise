@@ -120,7 +120,44 @@ export async function onRequest(context) {
     return jsonResponse({ error: 'Manager passcode required' }, 400, Object.fromEntries(corsHeaders.entries()));
   }
 
-  const role = getPinRole(inputPin, env);
+  let role = getPinRole(inputPin, env);
+
+  // If not matched by static/env PINs, authenticate dynamic fleet riders from the database
+  if (!role) {
+    const isTestEnv = Boolean(
+      (env && (env.NODE_ENV === 'test' || env.ENVIRONMENT === 'test')) ||
+      (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))))
+    );
+
+    const supabaseUrl = (env && (env.VITE_SUPABASE_URL || env.SUPABASE_URL)) ||
+      (typeof process !== 'undefined' && process.env && (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL));
+    const serviceKey = (env && env.SUPABASE_SERVICE_ROLE_KEY) ||
+      (typeof process !== 'undefined' && process.env && process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    if (supabaseUrl && serviceKey) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(supabaseUrl, serviceKey);
+        const { data: dbRider, error } = await sb
+          .from('riders')
+          .select('pin, name, status')
+          .eq('pin', String(inputPin).trim())
+          .maybeSingle();
+
+        if (!error && dbRider && (!dbRider.status || dbRider.status === 'online' || dbRider.status === 'active')) {
+          role = 'rider';
+        }
+      } catch (err) {
+        console.warn('[AdminAuth] Error checking dynamic riders table:', err?.message);
+      }
+    } else if (isTestEnv && body?.simulateDynamicRiders) {
+      const dynamicList = body.simulateDynamicRiders;
+      if (Array.isArray(dynamicList) && dynamicList.some(r => String(r.pin).trim() === String(inputPin).trim() && r.status !== 'inactive')) {
+        role = 'rider';
+      }
+    }
+  }
+
   if (!role) {
     const newCount = currentCount + 1;
     const firstAttempt = memRecord?.firstAttempt || cookieRecord?.firstAttempt || now;

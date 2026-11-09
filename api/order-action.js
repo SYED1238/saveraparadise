@@ -218,19 +218,35 @@ export default async function handler(req, res) {
         if (auth.payload?.role === 'rider') {
           const riderPin = String(auth.payload.riderPin || '').trim();
           const existingRiderPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
-          if (existingRiderPin && existingRiderPin !== riderPin) {
+          if (!existingRiderPin) {
+            return res.status(403).json({ error: 'Forbidden: Order must be claimed via claim_order before updating delivery status' });
+          }
+          if (existingRiderPin !== riderPin) {
             return res.status(403).json({ error: 'Forbidden: You cannot modify an order assigned to another rider' });
           }
-          if (!existingRiderPin && status !== 'on_the_way') {
-            return res.status(403).json({ error: 'Forbidden: Order must be claimed before updating delivery status' });
+          if (existing.status === 'ready_for_pickup') {
+            return res.status(400).json({ error: 'Forbidden: Use claim_order to pick up orders from the kitchen' });
+          }
+          if (['delivered', 'undelivered', 'cancelled'].includes(existing.status)) {
+            return res.status(400).json({ error: `Order is in terminal state (${existing.status}) and cannot be modified` });
+          }
+          if (existing.status !== 'on_the_way' || !['delivered', 'undelivered'].includes(status)) {
+            return res.status(400).json({ error: `Invalid status transition from "${existing.status}" to "${status}" for rider` });
           }
         }
-        const updated = { ...existing, status, ...(body.statusLabel ? { status_label: body.statusLabel } : {}) };
+        const updated = {
+          ...existing,
+          status,
+          step_index: status === 'delivered' ? 4 : (typeof body.stepIndex === 'number' ? body.stepIndex : existing.step_index),
+          status_label: status === 'delivered' ? 'Delivered' : (status === 'undelivered' ? 'Undelivered' : (body.statusLabel || existing.status_label)),
+          ...(status === 'delivered' ? { delivered_at: Date.now() } : {}),
+          ...(status === 'undelivered' ? { undelivered_at: Date.now() } : {})
+        };
         return res.status(200).json({ success: true, order: updated });
       }
 
       if (action === 'claim_order') {
-        const { orderId, riderPin } = body;
+        const { orderId } = body;
         if (!orderId) {
           return res.status(400).json({ error: 'orderId is required' });
         }
@@ -239,14 +255,46 @@ export default async function handler(req, res) {
         if (!existing) {
           return res.status(404).json({ error: 'Order not found' });
         }
-        const effectivePin = (auth.payload?.role === 'rider' && auth.payload?.riderPin)
-          ? String(auth.payload.riderPin).trim()
-          : (riderPin ? String(riderPin).trim() : null);
-        const existingPin = String(existing.assigned_rider_pin || '').trim();
-        if (existingPin && effectivePin && existingPin !== effectivePin) {
-          return res.status(409).json({ error: 'Order is already claimed by another rider' });
+
+        const isRider = auth.payload?.role === 'rider';
+        const effectivePin = isRider
+          ? String(auth.payload?.riderPin || '').trim()
+          : (body.riderPin ? String(body.riderPin).trim() : null);
+
+        if (isRider && !effectivePin) {
+          return res.status(401).json({ error: 'Unauthorized: Rider session missing authenticated identity' });
         }
-        const updated = { ...existing, assigned_rider_pin: effectivePin };
+
+        const existingPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
+        const isRetryBySameRider = Boolean(effectivePin && existingPin === effectivePin);
+
+        if (isRider) {
+          if (existingPin && existingPin !== effectivePin) {
+            return res.status(409).json({ error: 'Order is already claimed by another rider' });
+          }
+          if (!isRetryBySameRider && existing.status !== 'ready_for_pickup') {
+            return res.status(400).json({
+              error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
+            });
+          }
+        }
+
+        if (body.simulateConcurrentClaim) {
+          return res.status(409).json({
+            error: 'Order is already claimed by another rider or is no longer available for pickup'
+          });
+        }
+
+        const updated = {
+          ...existing,
+          status: 'on_the_way',
+          step_index: 3,
+          status_label: 'Dispatched for Delivery',
+          assigned_rider_pin: effectivePin || null,
+          assigned_rider_name: body.riderName ? String(body.riderName).trim() : null,
+          assigned_rider_phone: body.riderPhone ? String(body.riderPhone).trim() : null,
+          assigned_rider_vehicle: body.riderVehicle ? String(body.riderVehicle).trim() : 'Bike'
+        };
         return res.status(200).json({ success: true, order: updated });
       }
     }
@@ -370,30 +418,32 @@ export default async function handler(req, res) {
         if (auth.payload?.role === 'rider') {
           const riderPin = String(auth.payload.riderPin || '').trim();
           const existingRiderPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
-          if (existingRiderPin && existingRiderPin !== riderPin) {
+          if (!existingRiderPin) {
+            return res.status(403).json({ error: 'Forbidden: Order must be claimed via claim_order before updating delivery status' });
+          }
+          if (existingRiderPin !== riderPin) {
             return res.status(403).json({ error: 'Forbidden: You cannot modify an order assigned to another rider' });
           }
-          if (!existingRiderPin && status !== 'on_the_way') {
-            return res.status(403).json({ error: 'Forbidden: Order must be claimed before updating delivery status' });
+          if (existing.status === 'ready_for_pickup') {
+            return res.status(400).json({ error: 'Forbidden: Use claim_order to pick up orders from the kitchen' });
+          }
+          if (['delivered', 'undelivered', 'cancelled'].includes(existing.status)) {
+            return res.status(400).json({ error: `Order is in terminal state (${existing.status}) and cannot be modified` });
+          }
+          if (existing.status !== 'on_the_way' || !['delivered', 'undelivered'].includes(status)) {
+            return res.status(400).json({ error: `Invalid status transition from "${existing.status}" to "${status}" for rider` });
           }
         }
 
         const updatePayload = {
           status,
-          step_index: typeof stepIndex === 'number' ? stepIndex : existing.step_index,
-          status_label: statusLabel || existing.status_label,
+          step_index: status === 'delivered' ? 4 : (typeof stepIndex === 'number' ? stepIndex : existing.step_index),
+          status_label: status === 'delivered' ? 'Delivered' : (status === 'undelivered' ? 'Undelivered' : (statusLabel || existing.status_label)),
           eta: eta !== undefined ? eta : existing.eta
         };
 
-        if (auth.payload?.role === 'rider') {
-          const riderPin = String(auth.payload.riderPin || '').trim();
-          if (riderPin && !existing.assigned_rider_pin) {
-            updatePayload.assigned_rider_pin = riderPin;
-          }
-        }
-
-        if (deliveredAt) updatePayload.delivered_at = Number(deliveredAt);
-        if (cancellationReason) updatePayload.cancellation_reason = cancellationReason;
+        if (deliveredAt || status === 'delivered') updatePayload.delivered_at = Number(deliveredAt) || Date.now();
+        if (cancellationReason || status === 'undelivered') updatePayload.cancellation_reason = cancellationReason || (status === 'undelivered' ? 'Marked undelivered by rider' : existing.cancellation_reason);
         if (typeof doorstepUpi === 'boolean') updatePayload.doorstep_upi = doorstepUpi;
         if (typeof isPaidOnline === 'boolean') updatePayload.is_paid_online = isPaidOnline;
 
@@ -402,7 +452,7 @@ export default async function handler(req, res) {
           if (paymentStatus === 'Paid') {
             updatePayload.payment_status = 'Paid';
           }
-          if (typeof cashCollected === 'number') {
+          if (typeof cashCollected === 'number' && Number.isFinite(cashCollected) && cashCollected >= 0) {
             updatePayload.cash_collected = cashCollected;
             if (cashCollected > 0) {
               updatePayload.payment_status = 'Paid';
@@ -421,20 +471,30 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, order: updated });
       }
 
-      // 4. Delivery Rider Claim Order
+      // 4. Delivery Rider Claim Order (Atomic & Enforced)
       case 'claim_order': {
         const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
         if (!auth || !auth.valid) {
           return res.status(401).json({ error: auth?.error || 'Unauthorized: Rider or Staff session required' });
         }
 
-        const { orderId, riderPin, riderName, riderPhone, riderVehicle } = body;
+        const isRider = auth.payload?.role === 'rider';
+        const effectivePin = isRider
+          ? String(auth.payload?.riderPin || '').trim()
+          : (body.riderPin ? String(body.riderPin).trim() : null);
+
+        if (isRider && !effectivePin) {
+          return res.status(401).json({ error: 'Unauthorized: Rider session missing authenticated identity' });
+        }
+
+        const { orderId, riderName, riderPhone, riderVehicle } = body;
         if (!orderId) {
           return res.status(400).json({ error: 'orderId is required' });
         }
 
         const cleanId = String(orderId).replace(/^#/, '');
 
+        // 1. Fetch current order state to verify readiness
         const { data: existing, error: fetchErr } = await sb
           .from('orders')
           .select('id, status, assigned_rider_pin')
@@ -446,35 +506,56 @@ export default async function handler(req, res) {
           return res.status(404).json({ error: 'Order not found' });
         }
 
-        const effectivePin = (auth.payload?.role === 'rider' && auth.payload?.riderPin)
-          ? String(auth.payload.riderPin).trim()
-          : (riderPin ? String(riderPin).trim() : null);
-
         const existingPin = String(existing.assigned_rider_pin || '').trim();
-        if (existingPin && effectivePin && existingPin !== effectivePin) {
-          return res.status(409).json({ error: 'Order is already claimed by another rider' });
+        const isRetryBySameRider = Boolean(effectivePin && existingPin === effectivePin);
+
+        if (isRider) {
+          if (existingPin && existingPin !== effectivePin) {
+            return res.status(409).json({ error: 'Order is already claimed by another rider' });
+          }
+
+          // Strictly require ready_for_pickup for initial claim
+          if (!isRetryBySameRider && existing.status !== 'ready_for_pickup') {
+            return res.status(400).json({
+              error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
+            });
+          }
         }
 
+        // 2. Server strictly enforces order lifecycle fields
         const updatePayload = {
+          status: 'on_the_way',
+          step_index: 3,
+          status_label: 'Dispatched for Delivery',
           assigned_rider_pin: effectivePin || null,
           assigned_rider_name: riderName ? String(riderName).trim() : null,
           assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
           assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike'
         };
 
-        if (body.status) updatePayload.status = body.status;
-        if (body.stepIndex !== undefined) updatePayload.step_index = body.stepIndex;
-        if (body.statusLabel) updatePayload.status_label = body.statusLabel;
-
-        const { data: updated, error } = await sb
+        // 3. ATOMIC CONDITIONAL UPDATE:
+        let query = sb
           .from('orders')
           .update(updatePayload)
-          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
-          .select()
-          .maybeSingle();
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`);
 
-        if (error) throw error;
-        return res.status(200).json({ success: true, order: updated });
+        if (isRider) {
+          query = query
+            .in('status', ['ready_for_pickup', 'on_the_way'])
+            .or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${effectivePin}`);
+        }
+
+        const { data: updatedList, error: updateErr } = await query.select();
+
+        if (updateErr) throw updateErr;
+
+        if (!updatedList || updatedList.length === 0) {
+          return res.status(409).json({
+            error: 'Order is already claimed by another rider or is no longer available for pickup'
+          });
+        }
+
+        return res.status(200).json({ success: true, order: updatedList[0] });
       }
 
       // 5. Order Cancellation (Customer or Staff)

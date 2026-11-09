@@ -10,6 +10,8 @@ import { getTurnstileSecretKey as getNodeTurnstileSecretKey } from '../api/_turn
 import adminStoreHandler from '../api/admin-store.js';
 import orderActionHandler from '../api/order-action.js';
 import { onRequest as cloudflareOrderActionHandler } from '../functions/api/order-action.js';
+import nodeAdminAuthHandler from '../api/admin-auth.js';
+import { onRequest as cloudflareAdminAuthHandler } from '../functions/api/admin-auth.js';
 import nodeCheckoutHandler from '../api/checkout.js';
 import { onRequest as cloudflareCheckoutHandler } from '../functions/api/checkout.js';
 
@@ -818,5 +820,185 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(cfClaimRes.status, 409);
     const cfClaimData = await cfClaimRes.json();
     assert.match(cfClaimData.error, /already claimed by another rider/i);
+  });
+
+  await t.test('27. Complete Rider Lifecycle, Atomic Claim Concurrency & Dynamic Authentication Security', async () => {
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const simulatedDbRiders = [
+      { pin: '7788', name: 'Dynamic Rider A', status: 'online' },
+      { pin: '1122', name: 'Inactive Rider B', status: 'inactive' }
+    ];
+
+    // 1. Dynamic Rider Database Authentication in Node & Cloudflare
+    const { req: dynReq, res: dynRes } = createMockReqRes({
+      method: 'POST',
+      body: { pin: '7788', simulateDynamicRiders: simulatedDbRiders }
+    });
+    await nodeAdminAuthHandler(dynReq, dynRes);
+    assert.equal(dynRes.statusCode, 200, 'Dynamic active database rider must authenticate');
+    assert.equal(dynRes.responseData?.role, 'rider');
+    assert.equal(dynRes.responseData?.riderPin, '7788');
+    const dynamicRiderToken = dynRes.responseData?.token;
+    assert.ok(dynamicRiderToken);
+
+    // Inactive dynamic rider rejected with 401
+    const { req: inactReq, res: inactRes } = createMockReqRes({
+      method: 'POST',
+      body: { pin: '1122', simulateDynamicRiders: simulatedDbRiders }
+    });
+    await nodeAdminAuthHandler(inactReq, inactRes);
+    assert.equal(inactRes.statusCode, 401, 'Inactive database rider must be rejected');
+
+    // Cloudflare Pages parity for dynamic rider auth
+    const cfDynReq = new Request('https://saveraparadise.com/api/admin-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: '7788', simulateDynamicRiders: simulatedDbRiders })
+    });
+    const cfDynRes = await cloudflareAdminAuthHandler({ request: cfDynReq, env: mockCfEnv });
+    assert.equal(cfDynRes.status, 200);
+    const cfDynData = await cfDynRes.json();
+    assert.equal(cfDynData.role, 'rider');
+    assert.equal(cfDynData.riderPin, '7788');
+
+    // 2. Lifecycle orders setup
+    const testOrders = [
+      { id: '#QB-COOK-1', status: 'cooking', assigned_rider_pin: null, tracking_token: 'tok-c1' },
+      { id: '#QB-PEND-1', status: 'pending', assigned_rider_pin: null, tracking_token: 'tok-p1' },
+      { id: '#QB-READY-1', status: 'ready_for_pickup', assigned_rider_pin: null, tracking_token: 'tok-r1' },
+      { id: '#QB-OTW-1', status: 'on_the_way', assigned_rider_pin: '7788', tracking_token: 'tok-o1' },
+      { id: '#QB-DELIV-1', status: 'delivered', assigned_rider_pin: '7788', tracking_token: 'tok-d1' }
+    ];
+
+    // 3. Claiming orders in 'cooking' or 'pending' is rejected with 400
+    const { req: claimCookReq, res: claimCookRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${dynamicRiderToken}` },
+      body: { action: 'claim_order', orderId: '#QB-COOK-1', simulateOrders: testOrders }
+    });
+    await orderActionHandler(claimCookReq, claimCookRes);
+    assert.equal(claimCookRes.statusCode, 400, 'Cannot claim food that is still cooking in kitchen');
+    assert.match(claimCookRes.responseData?.error, /not ready for pickup/i);
+
+    const { req: claimPendReq, res: claimPendRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${dynamicRiderToken}` },
+      body: { action: 'claim_order', orderId: '#QB-PEND-1', simulateOrders: testOrders }
+    });
+    await orderActionHandler(claimPendReq, claimPendRes);
+    assert.equal(claimPendRes.statusCode, 400, 'Cannot claim pending order');
+
+    // 4. Rider sending status: 'delivered' on claim is ignored; server enforces on_the_way & step 3
+    const { req: claimTamperReq, res: claimTamperRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${dynamicRiderToken}` },
+      body: {
+        action: 'claim_order',
+        orderId: '#QB-READY-1',
+        status: 'delivered', // Tampered status injection
+        stepIndex: 4,
+        simulateOrders: testOrders
+      }
+    });
+    await orderActionHandler(claimTamperReq, claimTamperRes);
+    assert.equal(claimTamperRes.statusCode, 200);
+    assert.equal(claimTamperRes.responseData?.order?.status, 'on_the_way', 'Server must enforce on_the_way on claim');
+    assert.equal(claimTamperRes.responseData?.order?.step_index, 3, 'Server must enforce step 3 on claim');
+    assert.equal(claimTamperRes.responseData?.order?.assigned_rider_pin, '7788');
+
+    // 5. Concurrent Claim Atomicity Simulation
+    // When a second rider races to claim an already claimed order in the interim
+    const riderBToken = createAdminToken(undefined, 'rider', { riderPin: '4422' });
+    const { req: concurrentReq, res: concurrentRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderBToken}` },
+      body: {
+        action: 'claim_order',
+        orderId: '#QB-READY-1',
+        simulateOrders: testOrders,
+        simulateConcurrentClaim: true // Simulates database returning 0 rows due to race condition
+      }
+    });
+    await orderActionHandler(concurrentReq, concurrentRes);
+    assert.equal(concurrentRes.statusCode, 409, 'Concurrent claim collision must return 409 Conflict');
+    assert.match(concurrentRes.responseData?.error, /already claimed by another rider or is no longer available/i);
+
+    // 6. Strict Rider Status State Machine on update_status
+    // 6a. Unassigned order cannot be updated via update_status
+    const { req: unassignedUpReq, res: unassignedUpRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${dynamicRiderToken}` },
+      body: { action: 'update_status', orderId: '#QB-READY-1', status: 'on_the_way', simulateOrders: testOrders }
+    });
+    await orderActionHandler(unassignedUpReq, unassignedUpRes);
+    assert.equal(unassignedUpRes.statusCode, 403, 'Unassigned order cannot be updated via update_status');
+    assert.match(unassignedUpRes.responseData?.error, /must be claimed via claim_order/i);
+
+    // 6b. Rider cannot skip from on_the_way back to cooking or pending
+    const { req: skipBackReq, res: skipBackRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${dynamicRiderToken}` },
+      body: { action: 'update_status', orderId: '#QB-OTW-1', status: 'cooking', simulateOrders: testOrders }
+    });
+    await orderActionHandler(skipBackReq, skipBackRes);
+    assert.equal(skipBackRes.statusCode, 400, 'Rider cannot regress delivery to cooking');
+    assert.match(skipBackRes.responseData?.error, /invalid status transition/i);
+
+    // 6c. Rider cannot modify delivered order (terminal state)
+    const { req: terminalReq, res: terminalRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${dynamicRiderToken}` },
+      body: { action: 'update_status', orderId: '#QB-DELIV-1', status: 'on_the_way', simulateOrders: testOrders }
+    });
+    await orderActionHandler(terminalReq, terminalRes);
+    assert.equal(terminalRes.statusCode, 400, 'Delivered order is terminal');
+    assert.match(terminalRes.responseData?.error, /terminal state/i);
+
+    // 6d. Valid transition from on_the_way to delivered with cash collected
+    const { req: validDelivReq, res: validDelivRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${dynamicRiderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-OTW-1',
+        status: 'delivered',
+        cashCollected: 350,
+        simulateOrders: testOrders
+      }
+    });
+    await orderActionHandler(validDelivReq, validDelivRes);
+    assert.equal(validDelivRes.statusCode, 200);
+    assert.equal(validDelivRes.responseData?.order?.status, 'delivered');
+    assert.equal(validDelivRes.responseData?.order?.step_index, 4);
+
+    // 7. Cloudflare Pages Functions parity for complete lifecycle
+    const cfClaimCookReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${dynamicRiderToken}`
+      },
+      body: JSON.stringify({ action: 'claim_order', orderId: '#QB-COOK-1', simulateOrders: testOrders })
+    });
+    const cfClaimCookRes = await cloudflareOrderActionHandler({ request: cfClaimCookReq, env: mockCfEnv });
+    assert.equal(cfClaimCookRes.status, 400);
+
+    const cfConcurrentReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${riderBToken}`
+      },
+      body: JSON.stringify({
+        action: 'claim_order',
+        orderId: '#QB-READY-1',
+        simulateOrders: testOrders,
+        simulateConcurrentClaim: true
+      })
+    });
+    const cfConcurrentRes = await cloudflareOrderActionHandler({ request: cfConcurrentReq, env: mockCfEnv });
+    assert.equal(cfConcurrentRes.status, 409);
+    const cfConcurrentData = await cfConcurrentRes.json();
+    assert.match(cfConcurrentData.error, /already claimed by another rider or is no longer available/i);
   });
 });

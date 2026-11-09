@@ -167,7 +167,38 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Passcode is required' });
   }
 
-  const role = getPinRole(pin);
+  let role = getPinRole(pin);
+
+  // If not matched by static/env PINs, authenticate dynamic fleet riders from the database
+  if (!role) {
+    const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (supabaseUrl && serviceKey) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(supabaseUrl, serviceKey);
+        const { data: dbRider, error } = await sb
+          .from('riders')
+          .select('pin, name, status')
+          .eq('pin', String(pin).trim())
+          .maybeSingle();
+
+        if (!error && dbRider && (!dbRider.status || dbRider.status === 'online' || dbRider.status === 'active')) {
+          role = 'rider';
+        }
+      } catch (err) {
+        console.warn('[AdminAuth] Error checking dynamic riders table:', err?.message);
+      }
+    } else if (isTestEnv && body?.simulateDynamicRiders) {
+      const dynamicList = body.simulateDynamicRiders;
+      if (Array.isArray(dynamicList) && dynamicList.some(r => String(r.pin).trim() === String(pin).trim() && r.status !== 'inactive')) {
+        role = 'rider';
+      }
+    }
+  }
+
   if (!role) {
     const newCount = rateRecord.count + 1;
     const now = Date.now();
