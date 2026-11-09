@@ -10,6 +10,8 @@ import { getTurnstileSecretKey as getNodeTurnstileSecretKey } from '../api/_turn
 import adminStoreHandler from '../api/admin-store.js';
 import orderActionHandler from '../api/order-action.js';
 import { onRequest as cloudflareOrderActionHandler } from '../functions/api/order-action.js';
+import nodeCheckoutHandler from '../api/checkout.js';
+import { onRequest as cloudflareCheckoutHandler } from '../functions/api/checkout.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -511,5 +513,95 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(cfData.order.items.length, 1);
     assert.equal(cfData.order.items[0].name, 'Chicken Biryani');
     assert.equal(cfData.order.items_summary, '1x Chicken Biryani');
+  });
+
+  await t.test('23. /api/checkout strictly clamps negative platformFee to 0 and blocks price reduction', async () => {
+    const testItems = [
+      { id: '1', name: 'Biryani', price: 200, quantity: 1 }
+    ];
+
+    // Node handler check
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: {
+        items: testItems,
+        catalogDishes: [{ id: '1', name: 'Biryani', price: 200 }],
+        storeSettings: {
+          platformFee: -500,
+          deliveryFeeStandard: 40,
+          freeDeliveryEnabled: false
+        }
+      }
+    });
+    await nodeCheckoutHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.responseData?.platformFee, 0, 'Platform fee must be clamped >= 0');
+    assert.ok(res.responseData?.numericTotal >= 200, 'Total must never be reduced by negative platformFee');
+
+    // Cloudflare Pages handler check
+    const cfReq = new Request('https://saveraparadise.com/api/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: testItems,
+        catalogDishes: [{ id: '1', name: 'Biryani', price: 200 }],
+        storeSettings: {
+          platformFee: -500,
+          deliveryFeeStandard: 40,
+          freeDeliveryEnabled: false
+        }
+      })
+    });
+    const cfRes = await cloudflareCheckoutHandler({
+      request: cfReq,
+      env: { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' }
+    });
+    assert.equal(cfRes.status, 200);
+    const cfData = await cfRes.json();
+    assert.equal(cfData.platformFee, 0, 'Cloudflare platform fee must be clamped >= 0');
+    assert.ok(cfData.numericTotal >= 200, 'Total must never be reduced by negative platformFee');
+  });
+
+  await t.test('24. In production mode, checkout completely strips client-supplied storeSettings when server settings unavailable', async () => {
+    const origEnv = process.env.ENVIRONMENT;
+    const origNodeEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.ENVIRONMENT = 'production';
+
+      const cfReq = new Request('https://saveraparadise.com/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [{ id: '1', name: 'Biryani', price: 200, quantity: 1 }],
+          catalogDishes: [{ id: '1', name: 'Biryani', price: 200 }],
+          storeSettings: {
+            platformFee: -300,
+            offerPromoCode: 'FREEBIE',
+            offerDiscountAmount: 200,
+            offerDiscountType: 'fixed'
+          },
+          promoCode: 'FREEBIE'
+        })
+      });
+      const cfRes = await cloudflareCheckoutHandler({
+        request: cfReq,
+        env: {
+          NODE_ENV: 'production',
+          ENVIRONMENT: 'production',
+          SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!'
+        }
+      });
+      if (cfRes.status === 200) {
+        const cfData = await cfRes.json();
+        assert.equal(cfData.platformFee, 0);
+        assert.notEqual(cfData.appliedPromo, 'FREEBIE', 'In production, fake client-supplied promo must not apply');
+      } else {
+        assert.equal(cfRes.status, 503, 'In production, unverified catalog returns 503 safely');
+      }
+    } finally {
+      if (origEnv !== undefined) process.env.ENVIRONMENT = origEnv; else delete process.env.ENVIRONMENT;
+      if (origNodeEnv !== undefined) process.env.NODE_ENV = origNodeEnv; else delete process.env.NODE_ENV;
+    }
   });
 });

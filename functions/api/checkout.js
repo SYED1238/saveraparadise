@@ -209,6 +209,10 @@ export async function onRequest(context) {
       fetchAuthoritativeSettings(env)
     ]);
 
+
+
+    const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+
     const DEFAULT_SETTINGS_FALLBACK = {
       freeDeliveryEnabled: true,
       freeDeliveryThreshold: 250,
@@ -218,16 +222,24 @@ export async function onRequest(context) {
       unlockedDealsMinOrder: 299,
       unlockedDealsDiscountPct: 15,
       minOrderValue: 0
+
     };
 
     const storeSettings = (authoritativeSettings && typeof authoritativeSettings === 'object' && Object.keys(authoritativeSettings).length > 0)
-      ? { ...DEFAULT_SETTINGS_FALLBACK, ...(body?.storeSettings || {}), ...authoritativeSettings }
-      : { ...DEFAULT_SETTINGS_FALLBACK, ...((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {})) };
+      ? { ...DEFAULT_SETTINGS_FALLBACK, ...(!isProd ? (body?.storeSettings || {}) : {}), ...authoritativeSettings }
+      : (isProd
+          ? { ...DEFAULT_SETTINGS_FALLBACK }
+          : { ...DEFAULT_SETTINGS_FALLBACK, ...((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {})) });
 
-    const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+
 
     if (isProd && (!authoritativeSettings || Object.keys(authoritativeSettings).length === 0)) {
       // In production, never trust unverified client-supplied settings if server settings are unavailable
+      for (const key of Object.keys(storeSettings)) {
+        if (!(key in DEFAULT_SETTINGS_FALLBACK)) {
+          delete storeSettings[key];
+        }
+      }
       Object.assign(storeSettings, DEFAULT_SETTINGS_FALLBACK);
     }
 
@@ -441,18 +453,20 @@ export async function onRequest(context) {
     const freeThreshold = (typeof storeSettings?.freeDeliveryThreshold === 'number' || (storeSettings?.freeDeliveryThreshold !== undefined && !Number.isNaN(Number(storeSettings?.freeDeliveryThreshold))))
       ? Number(storeSettings.freeDeliveryThreshold)
       : 250;
-    const standardFee = (typeof storeSettings?.deliveryFeeStandard === 'number' || (storeSettings?.deliveryFeeStandard !== undefined && !Number.isNaN(Number(storeSettings?.deliveryFeeStandard))))
+    const rawStandardFee = (typeof storeSettings?.deliveryFeeStandard === 'number' || (storeSettings?.deliveryFeeStandard !== undefined && !Number.isNaN(Number(storeSettings?.deliveryFeeStandard))))
       ? Number(storeSettings.deliveryFeeStandard)
       : (typeof storeSettings?.deliveryFee === 'number' || (storeSettings?.deliveryFee !== undefined && !Number.isNaN(Number(storeSettings?.deliveryFee))))
         ? Number(storeSettings.deliveryFee)
         : 40;
+    const standardFee = Number.isFinite(rawStandardFee) ? Math.max(0, Math.round(rawStandardFee)) : 40;
     const deliveryFee = (promoFreeDelivery || (isFreeDeliveryEnabled && freeThreshold > 0 && subtotal >= freeThreshold))
       ? 0
       : standardFee;
     // Platform fee: configurable via storeSettings or environment; defaults to 0 to prevent hidden charges
-    const platformFee = typeof storeSettings?.platformFee === 'number'
+    const rawPlatformFee = typeof storeSettings?.platformFee === 'number'
       ? storeSettings.platformFee
       : ((env && env.PLATFORM_FEE !== undefined) ? Number(env.PLATFORM_FEE) : 0);
+    const platformFee = Number.isFinite(rawPlatformFee) ? Math.max(0, Math.round(rawPlatformFee)) : 0;
     const total = Math.max(0, subtotal - effectiveDiscount + deliveryFee + platformFee);
 
     const checkoutPayload = {

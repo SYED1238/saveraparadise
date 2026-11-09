@@ -316,9 +316,18 @@ export default async function handler(req, res) {
     minOrderValue: 0
   };
   const serverSettings = await fetchAuthoritativeSettings();
-  const settings = { ...DEFAULT_SETTINGS_FALLBACK, ...(storeSettings && typeof storeSettings === 'object' ? storeSettings : {}), ...(serverSettings && typeof serverSettings === 'object' ? serverSettings : {}) };
+  const settings = (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0)
+    ? { ...DEFAULT_SETTINGS_FALLBACK, ...(!isProd ? (storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) : {}), ...serverSettings }
+    : (isProd
+        ? { ...DEFAULT_SETTINGS_FALLBACK }
+        : { ...DEFAULT_SETTINGS_FALLBACK, ...(storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) });
   if (isProd && (!serverSettings || Object.keys(serverSettings).length === 0)) {
     // In production, never trust unverified client-supplied settings if server settings are unavailable
+    for (const key of Object.keys(settings)) {
+      if (!(key in DEFAULT_SETTINGS_FALLBACK)) {
+        delete settings[key];
+      }
+    }
     Object.assign(settings, DEFAULT_SETTINGS_FALLBACK);
   }
 
@@ -372,7 +381,7 @@ export default async function handler(req, res) {
   const standardFee = (typeof settings.deliveryFeeStandard === 'number' || (settings.deliveryFeeStandard !== undefined && !Number.isNaN(Number(settings.deliveryFeeStandard))))
     ? Number(settings.deliveryFeeStandard)
     : 40;
-  let deliveryFee = (isFreeDeliveryEnabled && threshold > 0 && computedSubtotal >= threshold) ? 0 : standardFee;
+  let deliveryFee = (isFreeDeliveryEnabled && threshold > 0 && computedSubtotal >= threshold) ? 0 : Math.max(0, standardFee);
 
   // Unlocked Deals (Threshold Pricing) validation with tamper defense clamping
   let unlockedDealDiscount = 0;
@@ -427,9 +436,10 @@ export default async function handler(req, res) {
   discount = Math.min(discount, computedSubtotal);
 
   // Platform fee: configurable via storeSettings or environment; defaults to 0 to prevent hidden charges
-  const platformFee = typeof settings.platformFee === 'number'
+  const rawPlatformFee = typeof settings.platformFee === 'number'
     ? settings.platformFee
     : ((process.env.PLATFORM_FEE !== undefined) ? Number(process.env.PLATFORM_FEE) : 0);
+  const platformFee = Number.isFinite(rawPlatformFee) ? Math.max(0, Math.round(rawPlatformFee)) : 0;
 
   const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee + platformFee);
   const authoritativeTotal = `₹${Math.round(calculatedTotal)}`;
