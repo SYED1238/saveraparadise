@@ -604,4 +604,86 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
       if (origNodeEnv !== undefined) process.env.NODE_ENV = origNodeEnv; else delete process.env.NODE_ENV;
     }
   });
+
+  await t.test('25. POST /api/order-action create_order defends against order takeover on duplicate order ID collision', async () => {
+    const validToken = signPayload({
+      numericTotal: 200,
+      total: '₹200',
+      items: [{ name: 'Biryani', price: 200, quantity: 1 }],
+      timestamp: Date.now()
+    });
+
+    // 1. Attacker attempts to take over existing order #QB-8888 by submitting duplicate ID without trackingToken
+    const { req: attackReq, res: attackRes } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        checkoutToken: validToken,
+        simulateDuplicateKey: true,
+        order: {
+          id: '#QB-8888',
+          total: '₹200',
+          items: [{ name: 'Biryani', price: 200, quantity: 1 }]
+        }
+      }
+    });
+    await orderActionHandler(attackReq, attackRes);
+    assert.equal(attackRes.statusCode, 200);
+    assert.equal(attackRes.responseData?.success, true);
+    // Attacker must NEVER receive victim's token
+    assert.notEqual(attackRes.responseData?.trackingToken, 'victim-secret-token-12345');
+    // Order must be assigned a collision-free safe ID
+    assert.ok(attackRes.responseData?.orderId.startsWith('#QB-8888-'), 'Must assign unique suffix on collision');
+    assert.equal(attackRes.responseData?.resolvedCollision, true);
+
+    // 2. Legitimate creator retrying with matching tracking token is allowed idempotent response
+    const { req: retryReq, res: retryRes } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        checkoutToken: validToken,
+        simulateDuplicateKey: true,
+        trackingToken: 'victim-secret-token-12345',
+        order: {
+          id: '#QB-8888',
+          total: '₹200',
+          items: [{ name: 'Biryani', price: 200, quantity: 1 }]
+        }
+      }
+    });
+    await orderActionHandler(retryReq, retryRes);
+    assert.equal(retryRes.statusCode, 200);
+    assert.equal(retryRes.responseData?.idempotent, true);
+    assert.equal(retryRes.responseData?.trackingToken, 'victim-secret-token-12345');
+
+    // 3. Test Cloudflare Pages handler for identical anti-takeover collision defense
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const validCfToken = signCloudflarePayload({
+      numericTotal: 200,
+      total: '₹200',
+      items: [{ name: 'Biryani', price: 200, quantity: 1 }],
+      timestamp: Date.now()
+    }, mockCfEnv);
+
+    const cfAttackReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_order',
+        checkoutToken: validCfToken,
+        simulateDuplicateKey: true,
+        order: {
+          id: '#QB-9999',
+          total: '₹200',
+          items: [{ name: 'Biryani', price: 200, quantity: 1 }]
+        }
+      })
+    });
+    const cfAttackRes = await cloudflareOrderActionHandler({ request: cfAttackReq, env: mockCfEnv });
+    assert.equal(cfAttackRes.status, 200);
+    const cfAttackData = await cfAttackRes.json();
+    assert.notEqual(cfAttackData.trackingToken, 'victim-secret-token-12345');
+    assert.ok(cfAttackData.orderId.startsWith('#QB-9999-'));
+    assert.equal(cfAttackData.resolvedCollision, true);
+  });
 });

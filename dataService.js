@@ -5467,6 +5467,16 @@ class QuickBiteDataService {
       }
 
       if (actionRes && (actionRes.success || actionRes.idempotent)) {
+        if (actionRes.orderId && actionRes.orderId !== orderData.id) {
+          const oldId = orderData.id;
+          orderData.id = actionRes.orderId;
+          try {
+            const myIds = JSON.parse(localStorage.getItem('quickbite_my_order_ids') || '[]');
+            const updatedIds = myIds.map(id => id === oldId ? actionRes.orderId : id);
+            if (!updatedIds.includes(actionRes.orderId)) updatedIds.push(actionRes.orderId);
+            localStorage.setItem('quickbite_my_order_ids', JSON.stringify(updatedIds));
+          } catch {}
+        }
         if (actionRes.trackingToken) {
           orderData.trackingToken = actionRes.trackingToken;
           try {

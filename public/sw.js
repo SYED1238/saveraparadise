@@ -7,7 +7,7 @@
  * 4. Background Supabase Order Polling & Sync Channel
  */
 
-const CACHE_NAME = 'crispy-pwa-v25';
+const CACHE_NAME = 'crispy-pwa-v26';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -41,7 +41,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME && key !== 'savera-map-tiles-v1') {
+          if ((self.location && (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1')) || (key !== CACHE_NAME && key !== 'savera-map-tiles-v1')) {
             console.log('[SW] Deleting stale cache:', key);
             return caches.delete(key);
           }
@@ -55,6 +55,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
+
+  // Bypass SW caching on localhost/127.0.0.1 to avoid stale dev files
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    return;
+  }
 
   // Map Tiles Caching (Strict Google Maps) with Cache-First Strategy
   const isMapTile = (url.hostname.includes('google.com') && url.pathname.includes('/vt/')) ||

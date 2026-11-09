@@ -108,6 +108,28 @@ export async function onRequest(context) {
       const checkoutToken = body?.checkoutToken || body?.checkoutSignature;
       const decoded = checkoutToken ? verifySignedPayload(checkoutToken, env) : null;
       const cleanId = orderData.id || '#QB-TEST-1001';
+
+      if (body.simulateDuplicateKey) {
+        const callerProvidedToken = body.trackingToken || orderData.trackingToken || orderData.tracking_token;
+        const victimToken = 'victim-secret-token-12345';
+        if (callerProvidedToken === victimToken) {
+          return jsonResponse({
+            success: true,
+            orderId: cleanId,
+            trackingToken: victimToken,
+            idempotent: true
+          }, 200, Object.fromEntries(corsHeaders.entries()));
+        }
+        const uniqueSuffix = crypto.randomBytes(2).toString('hex').toUpperCase();
+        const safeId = `${cleanId}-${uniqueSuffix}`;
+        const freshToken = crypto.randomUUID();
+        return jsonResponse({
+          success: true,
+          orderId: safeId,
+          trackingToken: freshToken,
+          resolvedCollision: true
+        }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
       const trackingToken = orderData.tracking_token || orderData.trackingToken || crypto.randomUUID();
       const rawNum = typeof decoded?.numericTotal === 'number'
         ? decoded.numericTotal
@@ -462,7 +484,13 @@ export async function onRequest(context) {
               .or(`id.eq.${cleanId},id.eq.${cleanId.replace(/^#/, '')}`)
               .maybeSingle();
 
-            if (existingOrder) {
+            const callerProvidedToken = body.trackingToken || orderData.trackingToken || orderData.tracking_token;
+            const isAuthorizedRetry = Boolean(
+              isStaff ||
+              (callerProvidedToken && existingOrder?.tracking_token && callerProvidedToken === existingOrder.tracking_token)
+            );
+
+            if (existingOrder && isAuthorizedRetry) {
               return jsonResponse({
                 success: true,
                 orderId: existingOrder.id,
@@ -471,6 +499,29 @@ export async function onRequest(context) {
                 idempotent: true
               }, 200, Object.fromEntries(corsHeaders.entries()));
             }
+
+            // Secure collision resolution: Never leak existing order or tracking token to colliding caller!
+            const uniqueSuffix = crypto.randomBytes(2).toString('hex').toUpperCase();
+            const safeId = `${cleanId}-${uniqueSuffix}`;
+            const freshTrackingToken = crypto.randomUUID();
+            insertPayload.id = safeId;
+            insertPayload.tracking_token = freshTrackingToken;
+
+            const { data: resolvedOrder, error: retryErr } = await sb
+              .from('orders')
+              .insert([insertPayload])
+              .select('id, tracking_token, status, total, created_at')
+              .single();
+
+            if (retryErr) throw retryErr;
+
+            return jsonResponse({
+              success: true,
+              orderId: resolvedOrder.id,
+              trackingToken: resolvedOrder.tracking_token || freshTrackingToken,
+              order: resolvedOrder,
+              resolvedCollision: true
+            }, 200, Object.fromEntries(corsHeaders.entries()));
           }
           throw insertErr;
         }

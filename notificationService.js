@@ -345,6 +345,14 @@ export async function requestSystemNotificationPermission() {
 
 export function registerServiceWorker() {
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    // In local dev, clear existing SW & cache storage to avoid stale dev views
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      try {
+        navigator.serviceWorker.getRegistrations().then((regs) => { for (const r of regs) r.unregister(); });
+        if ('caches' in window) caches.keys().then((keys) => { for (const k of keys) caches.delete(k); });
+      } catch (e) {}
+    }
+
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then((reg) => {
         // Force check for newest service worker build on server
