@@ -87,6 +87,12 @@ export async function onRequest(context) {
           message: 'Checkout token has expired (15m limit). Please review your cart.'
         }, 400, Object.fromEntries(corsHeaders.entries()));
       }
+      if (!Array.isArray(decoded.items) || decoded.items.length === 0) {
+        return jsonResponse({
+          error: 'Invalid Token Items',
+          message: 'Checkout token does not contain verified items. Order creation rejected.'
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
     }
   }
 
@@ -344,6 +350,7 @@ export async function onRequest(context) {
         let enforcedDiscount = orderData.discount || 0;
         let enforcedDeliveryFee = orderData.deliveryFee || 0;
         let enforcedPlatformFee = orderData.platformFee || 0;
+        let enforcedItems = orderData.items || [];
 
         if (!isStaff) {
           if (!checkoutToken) {
@@ -383,9 +390,13 @@ export async function onRequest(context) {
           enforcedPlatformFee = typeof decoded.platformFee === 'number' ? decoded.platformFee : 0;
 
           // Enforce signed items: Cart items strictly sourced from verified checkout token
-          if (Array.isArray(decoded.items) && decoded.items.length > 0) {
-            enforcedItems = decoded.items;
+          if (!Array.isArray(decoded.items) || decoded.items.length === 0) {
+            return jsonResponse({
+              error: 'Invalid Token Items',
+              message: 'Checkout token does not contain verified items. Order creation rejected.'
+            }, 400, Object.fromEntries(corsHeaders.entries()));
           }
+          enforcedItems = decoded.items;
         }
 
         const allowedStatuses = ['accepted', 'pending'];

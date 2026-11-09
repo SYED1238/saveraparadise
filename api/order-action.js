@@ -100,6 +100,12 @@ export default async function handler(req, res) {
           message: 'Checkout token has expired (15m limit). Please review your cart.'
         });
       }
+      if (!Array.isArray(decoded.items) || decoded.items.length === 0) {
+        return res.status(400).json({
+          error: 'Invalid Token Items',
+          message: 'Checkout token does not contain verified items. Order creation rejected.'
+        });
+      }
     }
   }
 
@@ -353,6 +359,7 @@ export default async function handler(req, res) {
         let enforcedDiscount = orderData.discount || 0;
         let enforcedDeliveryFee = orderData.deliveryFee || 0;
         let enforcedPlatformFee = orderData.platformFee || 0;
+        let enforcedItems = orderData.items || [];
 
         if (!isStaff) {
           if (!checkoutToken) {
@@ -392,9 +399,13 @@ export default async function handler(req, res) {
           enforcedPlatformFee = typeof decoded.platformFee === 'number' ? decoded.platformFee : 0;
 
           // Enforce signed items: Cart items strictly sourced from verified checkout token
-          if (Array.isArray(decoded.items) && decoded.items.length > 0) {
-            enforcedItems = decoded.items;
+          if (!Array.isArray(decoded.items) || decoded.items.length === 0) {
+            return res.status(400).json({
+              error: 'Invalid Token Items',
+              message: 'Checkout token does not contain verified items. Order creation rejected.'
+            });
           }
+          enforcedItems = decoded.items;
         }
 
         const allowedStatuses = ['accepted', 'pending'];

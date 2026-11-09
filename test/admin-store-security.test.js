@@ -4,9 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAdminToken, signPayload } from '../api/_auth.js';
+import { signPayload as signCloudflarePayload } from '../functions/api/_auth.js';
 import { verifyTurnstileToken as verifyCloudflareTurnstile } from '../functions/api/_turnstile.js';
+import { getTurnstileSecretKey as getNodeTurnstileSecretKey } from '../api/_turnstile.js';
 import adminStoreHandler from '../api/admin-store.js';
 import orderActionHandler from '../api/order-action.js';
+import { onRequest as cloudflareOrderActionHandler } from '../functions/api/order-action.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -264,6 +267,7 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     const validToken = signPayload({
       numericTotal: 450,
       total: '₹450',
+      items: [{ name: 'Biryani Special', price: 450, quantity: 1 }],
       discount: 50,
       deliveryFee: 0,
       platformFee: 5,
@@ -404,5 +408,108 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     const res = await verifyCloudflareTurnstile('some-token', '127.0.0.1', null, prodEnv);
     assert.equal(res.success, false, 'Must fail closed when secret is missing in production');
     assert.equal(res.unconfigured, true);
+  });
+
+  await t.test('20. Node api/_turnstile getTurnstileSecretKey fails closed when ENVIRONMENT=production', () => {
+    const origEnv = process.env.ENVIRONMENT;
+    const origNodeEnv = process.env.NODE_ENV;
+    const origSecret = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY;
+    try {
+      delete process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY;
+      delete process.env.TURNSTILE_SECRET_KEY;
+      process.env.ENVIRONMENT = 'production';
+      delete process.env.NODE_ENV;
+      const key = getNodeTurnstileSecretKey();
+      assert.equal(key, '', 'Must not return test key when ENVIRONMENT=production');
+    } finally {
+      if (origEnv !== undefined) process.env.ENVIRONMENT = origEnv; else delete process.env.ENVIRONMENT;
+      if (origNodeEnv !== undefined) process.env.NODE_ENV = origNodeEnv; else delete process.env.NODE_ENV;
+      if (origSecret !== undefined) process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY = origSecret; else delete process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY;
+    }
+  });
+
+  await t.test('21. Order creation rejects checkout token with missing or empty items', async () => {
+    const emptyItemsToken = signPayload({
+      numericTotal: 100,
+      total: '₹100',
+      items: [],
+      timestamp: Date.now()
+    });
+
+    // Test Node handler
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        checkoutToken: emptyItemsToken,
+        order: {
+          id: '#QB-TEST-EMPTY',
+          total: '₹100',
+          items: [{ name: 'Biryani', price: 100, quantity: 1 }]
+        }
+      }
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.responseData?.error, 'Invalid Token Items');
+
+    // Test Cloudflare Pages handler
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const emptyItemsCfToken = signCloudflarePayload({
+      numericTotal: 100,
+      total: '₹100',
+      items: [],
+      timestamp: Date.now()
+    }, mockCfEnv);
+
+    const cfReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_order',
+        checkoutToken: emptyItemsCfToken,
+        order: {
+          id: '#QB-TEST-EMPTY-CF',
+          total: '₹100',
+          items: [{ name: 'Biryani', price: 100, quantity: 1 }]
+        }
+      })
+    });
+    const cfRes = await cloudflareOrderActionHandler({ request: cfReq, env: mockCfEnv });
+    assert.equal(cfRes.status, 400);
+    const cfData = await cfRes.json();
+    assert.equal(cfData.error, 'Invalid Token Items');
+  });
+
+  await t.test('22. Cloudflare Pages onRequest executes create_order without ReferenceError and enforces signed items', async () => {
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const validToken = signCloudflarePayload({
+      numericTotal: 280,
+      total: '₹280',
+      items: [{ name: 'Chicken Biryani', price: 280, quantity: 1 }],
+      timestamp: Date.now()
+    }, mockCfEnv);
+
+    const cfReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_order',
+        checkoutToken: validToken,
+        order: {
+          id: '#QB-TEST-CF-OK',
+          total: '₹20',
+          items: [{ name: 'Free Biryani Fake', price: 20, quantity: 1 }]
+        }
+      })
+    });
+    const cfRes = await cloudflareOrderActionHandler({ request: cfReq, env: mockCfEnv });
+    assert.equal(cfRes.status, 200);
+    const cfData = await cfRes.json();
+    assert.equal(cfData.success, true);
+    assert.equal(cfData.order.total, '₹280');
+    assert.equal(cfData.order.items.length, 1);
+    assert.equal(cfData.order.items[0].name, 'Chicken Biryani');
+    assert.equal(cfData.order.items_summary, '1x Chicken Biryani');
   });
 });

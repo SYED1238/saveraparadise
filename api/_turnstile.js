@@ -16,7 +16,8 @@ export function getTurnstileSecretKey() {
     return String(envSecret).trim();
   }
   // In development/test mode, fall back to official Cloudflare test pass key
-  if (process.env.NODE_ENV !== 'production') {
+  const isProd = typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production');
+  if (!isProd) {
     return CLOUDFLARE_TEST_SECRET_KEY_PASS;
   }
   return '';
