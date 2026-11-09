@@ -229,6 +229,25 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       const res = await checkoutHandler({ request: req, env: mockEnv });
       assert.equal(res.status, 403);
     });
+
+    it('returns 503 in production environment when authoritative prices cannot be verified (rejects client catalog injection)', async () => {
+      const prodEnv = { ...mockEnv, NODE_ENV: 'production', ENVIRONMENT: 'production' };
+      const req = new Request('https://saveraparadise.com/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'cf-turnstile-response': '1x00000000000000000000AA'
+        },
+        body: JSON.stringify({
+          items: [{ id: 'fake-id', name: 'Fake Biryani', price: 10, qty: 1 }],
+          catalogDishes: [{ id: 'fake-id', name: 'Fake Biryani', price: 10 }]
+        })
+      });
+      const res = await checkoutHandler({ request: req, env: prodEnv });
+      assert.equal(res.status, 503);
+      const data = await res.json();
+      assert.ok(data.error.includes('price cannot be verified'));
+    });
   });
 
   describe('4. Cashfree Payments Suite', () => {

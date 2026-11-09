@@ -277,6 +277,17 @@ const initDeliveryApp = () => {
       if (rider && rider.name) {
         setStaffSessionActive('rider');
         dataService.setActiveRiderPin(cleanPin);
+        if (typeof fetch !== 'undefined') {
+          fetch('/api/admin-auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: cleanPin })
+          }).then(r => r.ok ? r.json() : null).then(data => {
+            if (data && data.token && typeof sessionStorage !== 'undefined') {
+              sessionStorage.setItem('quickbite_rider_token', data.token);
+            }
+          }).catch(() => {});
+        }
         updateRiderProfileHeader();
         requestWakeLock();
         showToast(`🛵 Welcome back, ${rider.name}!`, 'success');

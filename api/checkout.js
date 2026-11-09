@@ -225,23 +225,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Exceeded maximum order item limit (50)' });
   }
 
+  const isProd = (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+
   const catalogMap = new Map();
-  if (Array.isArray(catalogDishes)) {
+  let serverDishes = null;
+  try {
+    serverDishes = await fetchAuthoritativeDishes();
+  } catch {}
+
+  const hasAuthoritativeCatalog = Array.isArray(serverDishes) && serverDishes.length > 0;
+  if (hasAuthoritativeCatalog) {
+    // Authoritative database catalogue: strictly only load server-side dishes.
+    // Client-supplied catalogDishes MUST NEVER be merged into the authoritative catalogue.
+    serverDishes.forEach(d => {
+      if (d && d.id) catalogMap.set(String(d.id), d);
+      if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
+    });
+  } else if (!isProd && Array.isArray(catalogDishes)) {
+    // In local non-production/test environments only, fallback to test fixture catalog if server catalog is offline
     catalogDishes.forEach(d => {
       if (d && d.id) catalogMap.set(String(d.id), d);
       if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
     });
   }
-
-  try {
-    const serverDishes = await fetchAuthoritativeDishes();
-    if (serverDishes && serverDishes.length > 0) {
-      serverDishes.forEach(d => {
-        if (d && d.id) catalogMap.set(String(d.id), d);
-        if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
-      });
-    }
-  } catch {}
 
   let computedSubtotal = 0;
   const verifiedItems = [];
@@ -267,7 +273,6 @@ export default async function handler(req, res) {
     }
     let unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : null;
     if (unitPrice === null) {
-      const isProd = process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production';
       if (isProd) {
         return res.status(503).json({ error: `Item '${item.name || 'dish'}' price cannot be verified. Please retry in a moment.` });
       }
@@ -293,8 +298,8 @@ export default async function handler(req, res) {
 
     computedSubtotal += unitPrice * rawQty;
     verifiedItems.push({
-      id: item.id || dish?.id,
-      name: String(item.name || dish?.name || 'Special Dish').slice(0, 100),
+      id: dish?.id || item.id,
+      name: String(dish?.name || item.name || 'Special Dish').slice(0, 100),
       quantity: rawQty,
       price: unitPrice
     });
@@ -312,6 +317,10 @@ export default async function handler(req, res) {
   };
   const serverSettings = await fetchAuthoritativeSettings();
   const settings = { ...DEFAULT_SETTINGS_FALLBACK, ...(storeSettings && typeof storeSettings === 'object' ? storeSettings : {}), ...(serverSettings && typeof serverSettings === 'object' ? serverSettings : {}) };
+  if (isProd && (!serverSettings || Object.keys(serverSettings).length === 0)) {
+    // In production, never trust unverified client-supplied settings if server settings are unavailable
+    Object.assign(settings, DEFAULT_SETTINGS_FALLBACK);
+  }
 
 
 

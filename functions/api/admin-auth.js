@@ -97,7 +97,7 @@ export async function onRequest(context) {
         if (safeEqual(signature, expectedSignature)) {
           try {
             const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-            if (payload && (payload.role === 'admin' || payload.role === 'owner')) {
+            if (payload && (payload.role === 'admin' || payload.role === 'owner' || payload.role === 'rider')) {
               const refreshedToken = createAdminToken(undefined, payload.role, env);
               return jsonResponse({
                 success: true,

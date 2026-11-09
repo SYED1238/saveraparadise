@@ -3005,11 +3005,24 @@ class QuickBiteDataService {
         // Drain pending offline orders to Supabase first so remote query reflects them
         await this.syncOfflinePendingOrders();
 
-        const { data, error } = await supabase
-          .from('orders')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(250);
+        let data = null;
+        let error = null;
+        try {
+          const actionRes = await this._orderAction('sync_orders', { limit: 250 });
+          if (actionRes && Array.isArray(actionRes.orders)) {
+            data = actionRes.orders;
+          }
+        } catch {}
+
+        if (!data && supabase) {
+          const sbRes = await supabase
+            .from('orders')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(250);
+          data = sbRes.data;
+          error = sbRes.error;
+        }
 
         if (!error && Array.isArray(data)) {
           this._lastOrdersSyncTime = Date.now();
@@ -3958,7 +3971,25 @@ class QuickBiteDataService {
           query = query.or(filterParts.join(','));
         }
 
-        const { data, error } = await query.limit(30);
+        let data = null;
+        let error = null;
+        try {
+          const tokens = (typeof localStorage !== 'undefined')
+            ? JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}')
+            : {};
+          if (sessionIds && sessionIds.length > 0) {
+            const trackRes = await this._orderAction('track_orders', { orderIds: sessionIds, trackingTokens: tokens });
+            if (trackRes && Array.isArray(trackRes.orders) && trackRes.orders.length > 0) {
+              data = trackRes.orders;
+            }
+          }
+        } catch {}
+
+        if (!data && supabase) {
+          const sbRes = await query.limit(30);
+          data = sbRes.data;
+          error = sbRes.error;
+        }
 
         if (!error && Array.isArray(data)) {
           this._lastCustomerOrdersSyncTime = Date.now();
@@ -4347,6 +4378,52 @@ class QuickBiteDataService {
     return null;
   }
 
+  async _adminStoreSync(action, payload = {}) {
+    if (typeof window === 'undefined') return;
+    try {
+      const token = (typeof sessionStorage !== 'undefined')
+        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
+        : null;
+      if (!token) return;
+
+      fetch('/api/admin-store', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ action, ...payload })
+      }).catch(err => {
+        console.warn(`[DataService] _adminStoreSync (${action}) network error:`, err?.message);
+      });
+    } catch {}
+  }
+
+  async _orderAction(action, payload = {}) {
+    if (typeof window === 'undefined') return null;
+    try {
+      const token = (typeof sessionStorage !== 'undefined')
+        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_rider_token'))
+        : null;
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/order-action', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action, ...payload })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to execute ${action}`);
+      }
+      return await res.json();
+    } catch (err) {
+      console.warn(`[DataService] _orderAction (${action}) error:`, err?.message);
+      throw err;
+    }
+  }
+
   async syncSettingsFromSupabase(force = false) {
     if (!force && Date.now() - this._lastSettingsSyncTime < 120000) {
       return this.getSettings();
@@ -4402,21 +4479,16 @@ class QuickBiteDataService {
         restaurantPhone: phone,
         helpline: phone
       };
-      // Upsert both 'restaurant_config' and 'main_settings' to keep all views and database rows synchronized
-      await supabase
-        .from('store_settings')
-        .upsert([
-          {
-            id: 'restaurant_config',
-            settings: payloadSettings,
-            updated_at: new Date().toISOString()
-          },
-          {
-            id: 'main_settings',
-            settings: payloadSettings,
-            updated_at: new Date().toISOString()
-          }
-        ], { onConflict: 'id' });
+      // Authoritative sync via authenticated Admin API
+      this._adminStoreSync('save_settings', { settings: payloadSettings });
+      if (supabase) {
+        supabase
+          .from('store_settings')
+          .upsert([
+            { id: 'restaurant_config', settings: payloadSettings, updated_at: new Date().toISOString() },
+            { id: 'main_settings', settings: payloadSettings, updated_at: new Date().toISOString() }
+          ], { onConflict: 'id' }).catch(() => {});
+      }
     } catch (err) {
       console.warn('[DataService] syncSettingsToSupabase error:', err);
     }
@@ -4509,15 +4581,14 @@ class QuickBiteDataService {
         localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(map));
       }
 
-      // Asynchronously push to Supabase store_settings row 'category_images'
+      // Asynchronously push to Supabase store_settings row 'category_images' via authenticated Admin API
+      this._adminStoreSync('save_category_images', { images: map });
       if (supabase) {
         supabase.from('store_settings').upsert([{
           id: 'category_images',
           settings: map,
           updated_at: new Date().toISOString()
-        }]).then(({ error }) => {
-          if (error) console.warn('[Supabase] Persist category_images error:', error.message);
-        }).catch(() => {});
+        }]).catch(() => {});
       }
     } catch (e) {
       console.warn('[DataService] saveCategoryImage error:', e);
@@ -4533,14 +4604,13 @@ class QuickBiteDataService {
         localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(map));
       }
 
+      this._adminStoreSync('save_category_images', { images: map });
       if (supabase) {
         supabase.from('store_settings').upsert([{
           id: 'category_images',
           settings: map,
           updated_at: new Date().toISOString()
-        }]).then(({ error }) => {
-          if (error) console.warn('[Supabase] Remove category_images error:', error.message);
-        }).catch(() => {});
+        }]).catch(() => {});
       }
     } catch {}
   }
@@ -4635,19 +4705,10 @@ class QuickBiteDataService {
     };
     if (newCat.image) payload.image = newCat.image;
 
-    supabase.from('categories').insert([payload]).then(({ error }) => {
-      if (error) {
-        if (error.message && error.message.includes("'image'")) {
-          // Schema does not have image column: retry insert cleanly without image column
-          delete payload.image;
-          supabase.from('categories').insert([payload]).then(({ error: retryErr }) => {
-            if (retryErr) console.warn('[Supabase] addCategory fallback error:', retryErr.message);
-          });
-        } else {
-          console.warn('[Supabase] addCategory error:', error.message);
-        }
-      }
-    });
+    this._adminStoreSync('add_category', { category: payload });
+    if (supabase) {
+      supabase.from('categories').insert([payload]).catch(() => {});
+    }
 
     return newCat;
   }
@@ -4673,19 +4734,10 @@ class QuickBiteDataService {
       };
       if (list[idx].image !== undefined) updatePayload.image = list[idx].image;
 
-      supabase.from('categories').update(updatePayload).eq('id', list[idx].id).then(({ error }) => {
-        if (error) {
-          if (error.message && error.message.includes("'image'")) {
-            // Supabase schema cache has no image column: retry without it so name/emoji/slug update
-            delete updatePayload.image;
-            supabase.from('categories').update(updatePayload).eq('id', list[idx].id).then(({ error: retryErr }) => {
-              if (retryErr) console.warn('[Supabase] updateCategory fallback error:', retryErr.message);
-            });
-          } else {
-            console.warn('[Supabase] updateCategory error:', error.message);
-          }
-        }
-      });
+      this._adminStoreSync('update_category', { id: list[idx].id, updates: updatePayload });
+      if (supabase) {
+        supabase.from('categories').update(updatePayload).eq('id', list[idx].id).catch(() => {});
+      }
 
       return list[idx];
     }
@@ -4713,10 +4765,12 @@ class QuickBiteDataService {
       }
     }
 
-    // Asynchronously delete from Supabase
-    supabase.from('categories').delete().eq('id', cat ? cat.id : id).then(({ error }) => {
-      if (error) console.warn('[Supabase] deleteCategory error:', error.message);
-    });
+    // Asynchronously delete via authenticated Admin API
+    const catKey = cat ? (cat.slug || cat.id) : id;
+    this._adminStoreSync('delete_category', { id: cat ? cat.id : id, catKey });
+    if (supabase) {
+      supabase.from('categories').delete().eq('id', cat ? cat.id : id).catch(() => {});
+    }
 
     return true;
   }
@@ -4896,7 +4950,7 @@ class QuickBiteDataService {
       ? sanitizeDishImageUrl(newDish.image)
       : '/api/r2-image?key=dishes/crispy-chicken.jpg';
 
-    supabase.from('dishes').insert([{
+    const dishPayload = {
       id: newDish.id,
       name: newDish.name,
       category: newDish.category,
@@ -4910,13 +4964,15 @@ class QuickBiteDataService {
       diet: newDish.diet,
       description: newDish.desc,
       in_stock: newDish.inStock,
-        available_days: newDish.availableDays,
-        time_restricted: newDish.timeRestricted,
-        available_from: newDish.availableFrom,
-        available_to: newDish.availableTo
-    }]).then(({ error }) => {
-      if (error) console.warn('[Supabase] addDish error:', error.message);
-    });
+      available_days: newDish.availableDays,
+      time_restricted: newDish.timeRestricted,
+      available_from: newDish.availableFrom,
+      available_to: newDish.availableTo
+    };
+    this._adminStoreSync('add_dish', { dish: dishPayload });
+    if (supabase) {
+      supabase.from('dishes').insert([dishPayload]).catch(() => {});
+    }
 
     return newDish;
   }
@@ -4953,29 +5009,10 @@ class QuickBiteDataService {
         updatePayload.image = sanitizeDishImageUrl(d.image);
       }
 
-      supabase.from('dishes').update(updatePayload).eq('id', id).then(({ error }) => {
-        if (error) {
-          console.warn('[Supabase] updateDish error:', error.message);
-          if (error.message?.includes('available_days') || error.message?.includes('time_restricted')) {
-            const fallbackPayload = {
-              name: d.name,
-              category: d.category,
-              category_name: d.categoryName,
-              price: d.price,
-              badge: d.badge,
-              time: d.time,
-              calories: d.calories,
-              diet: d.diet,
-              description: d.desc,
-              in_stock: d.inStock
-            };
-            if (d.image && !d.image.startsWith('data:')) {
-              fallbackPayload.image = sanitizeDishImageUrl(d.image);
-            }
-            supabase.from('dishes').update(fallbackPayload).eq('id', id);
-          }
-        }
-      });
+      this._adminStoreSync('update_dish', { id, updates: updatePayload });
+      if (supabase) {
+        supabase.from('dishes').update(updatePayload).eq('id', id).catch(() => {});
+      }
 
       return list[idx];
     }
@@ -4989,9 +5026,10 @@ class QuickBiteDataService {
       dish.inStock = !dish.inStock;
       this.saveDishes(list);
 
-      supabase.from('dishes').update({ in_stock: dish.inStock }).eq('id', id).then(({ error }) => {
-        if (error) console.warn('[Supabase] toggleDishStock error:', error.message);
-      });
+      this._adminStoreSync('toggle_stock', { id, in_stock: dish.inStock });
+      if (supabase) {
+        supabase.from('dishes').update({ in_stock: dish.inStock }).eq('id', id).catch(() => {});
+      }
 
       return dish;
     }
@@ -5003,9 +5041,10 @@ class QuickBiteDataService {
     const filtered = list.filter(d => d.id !== id);
     this.saveDishes(filtered);
 
-    supabase.from('dishes').delete().eq('id', id).then(({ error }) => {
-      if (error) console.warn('[Supabase] deleteDish error:', error.message);
-    });
+    this._adminStoreSync('delete_dish', { id });
+    if (supabase) {
+      supabase.from('dishes').delete().eq('id', id).catch(() => {});
+    }
 
     return true;
   }
@@ -5781,17 +5820,47 @@ class QuickBiteDataService {
 
       const doUpdate = async (targetId) => {
         try {
-          const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId).neq('status', 'cancelled');
-          if (error) {
-            const { error: baseErr } = await supabase.from('orders').update(basePayload).eq('id', targetId).neq('status', 'cancelled');
-            if (baseErr) {
-              order.pendingStatusSync = true;
-              this.saveOrders(list);
-            }
+          const tokens = (typeof localStorage !== 'undefined')
+            ? JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}')
+            : {};
+          const cleanId = String(targetId).replace(/^#/, '');
+          const trackingToken = order.trackingToken || tokens[targetId] || tokens[cleanId] || tokens[`#${cleanId}`];
+
+          if (order.status === 'cancelled') {
+            await this._orderAction('cancel_order', {
+              orderId: targetId,
+              trackingToken,
+              reason: order.cancellationReason || 'Cancelled'
+            });
+          } else {
+            await this._orderAction('update_status', {
+              orderId: targetId,
+              status: order.status,
+              stepIndex: order.stepIndex,
+              statusLabel: order.statusLabel,
+              eta: order.eta,
+              deliveredAt: order.deliveredAt,
+              cancellationReason: order.cancellationReason || order.undeliveredReason,
+              paymentStatus: order.paymentStatus,
+              cashCollected: extraData?.cashCollected ?? order.cashCollected,
+              isPaidOnline: order.isPaidOnline,
+              doorstepUpi: order.doorstepUpi
+            });
           }
-        } catch (updateErr) {
-          order.pendingStatusSync = true;
-          this.saveOrders(list);
+        } catch {
+          try {
+            const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId).neq('status', 'cancelled');
+            if (error) {
+              const { error: baseErr } = await supabase.from('orders').update(basePayload).eq('id', targetId).neq('status', 'cancelled');
+              if (baseErr) {
+                order.pendingStatusSync = true;
+                this.saveOrders(list);
+              }
+            }
+          } catch (updateErr) {
+            order.pendingStatusSync = true;
+            this.saveOrders(list);
+          }
         }
       };
 
@@ -5898,21 +5967,24 @@ class QuickBiteDataService {
       }));
     } catch {}
 
-    // Asynchronously update in Supabase
+    // Asynchronously update in Supabase (send mutable operational status only)
     try {
       const o = list[idx];
-      supabase.from('orders').update({
+      const updatePayload = {
         status: o.status,
         step_index: o.stepIndex,
         status_label: o.statusLabel,
-        eta: o.eta,
-        customer_name: o.customerName,
-        delivery_address: o.deliveryAddress,
-        items_summary: o.itemsSummary,
-        items: o.items,
-        total: o.total
-      }).eq('id', orderId).then(({ error }) => {
-        if (error) console.warn('[Supabase] updateOrder error:', error.message);
+        eta: o.eta
+      };
+      if (o.cancellationReason) updatePayload.cancellation_reason = o.cancellationReason;
+      if (o.deliveredAt) updatePayload.delivered_at = Number(o.deliveredAt);
+      this._orderAction('update_status', {
+        orderId,
+        ...updatePayload
+      }).catch(() => {
+        if (supabase) {
+          supabase.from('orders').update(updatePayload).eq('id', orderId).catch(() => {});
+        }
       });
     } catch (e) {}
 
@@ -7149,23 +7221,33 @@ class QuickBiteDataService {
 
       const doUpdate = async (targetId) => {
         try {
-          const { error } = await supabase.from('orders')
-            .update(fullPayload)
-            .eq('id', targetId)
-            .eq('status', 'ready_for_pickup');
-          if (error) {
-            const { error: baseErr } = await supabase.from('orders')
-              .update(basePayload)
+          await this._orderAction('claim_order', {
+            orderId: targetId,
+            riderPin: rider.pin,
+            riderName: rider.name,
+            riderPhone: rider.phone,
+            riderVehicle: rider.vehicle
+          });
+        } catch {
+          try {
+            const { error } = await supabase.from('orders')
+              .update(fullPayload)
               .eq('id', targetId)
               .eq('status', 'ready_for_pickup');
-            if (baseErr) {
-              order.pendingStatusSync = true;
-              this.saveOrders(this.getOrders());
+            if (error) {
+              const { error: baseErr } = await supabase.from('orders')
+                .update(basePayload)
+                .eq('id', targetId)
+                .eq('status', 'ready_for_pickup');
+              if (baseErr) {
+                order.pendingStatusSync = true;
+                this.saveOrders(this.getOrders());
+              }
             }
+          } catch (updateErr) {
+            order.pendingStatusSync = true;
+            this.saveOrders(this.getOrders());
           }
-        } catch (updateErr) {
-          order.pendingStatusSync = true;
-          this.saveOrders(this.getOrders());
         }
       };
 

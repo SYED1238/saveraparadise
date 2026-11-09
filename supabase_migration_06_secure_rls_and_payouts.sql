@@ -31,40 +31,67 @@ BEGIN
   END IF;
 END $$;
 
--- 2. HARDEN DISHES & CATEGORIES (PUBLIC READ, AUTHENTICATED WRITE)
-DO $$
+-- 2. HARDEN DISHES & CATEGORIES (PUBLIC READ, SERVICE_ROLE & VERIFIED STAFF WRITE ONLY)
+DO $
 BEGIN
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'dishes') THEN
     DROP POLICY IF EXISTS "app_manage_dishes" ON public.dishes;
+    DROP POLICY IF EXISTS "staff_manage_dishes" ON public.dishes;
+    DROP POLICY IF EXISTS "public_read_dishes" ON public.dishes;
+    DROP POLICY IF EXISTS "service_manage_dishes" ON public.dishes;
+
+    -- Public visitors (customers) can only read the menu
     CREATE POLICY "public_read_dishes" ON public.dishes
       FOR SELECT USING (true);
+
+    -- Service role retains full management access (serverless backend endpoints /api/admin-store)
     CREATE POLICY "service_manage_dishes" ON public.dishes
       FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+    -- Verified authenticated staff only (strictly excludes unauthenticated anon role)
     CREATE POLICY "staff_manage_dishes" ON public.dishes
-      FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
+      FOR ALL TO authenticated
+      USING ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'))
+      WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'));
   END IF;
 
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'categories') THEN
     DROP POLICY IF EXISTS "app_manage_categories" ON public.categories;
+    DROP POLICY IF EXISTS "staff_manage_categories" ON public.categories;
+    DROP POLICY IF EXISTS "public_read_categories" ON public.categories;
+    DROP POLICY IF EXISTS "service_manage_categories" ON public.categories;
+
     CREATE POLICY "public_read_categories" ON public.categories
       FOR SELECT USING (true);
+
     CREATE POLICY "service_manage_categories" ON public.categories
       FOR ALL TO service_role USING (true) WITH CHECK (true);
-    CREATE POLICY "staff_manage_categories" ON public.categories
-      FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
-  END IF;
-END $$;
 
--- 3. HARDEN STORE SETTINGS
-DO $$
+    CREATE POLICY "staff_manage_categories" ON public.categories
+      FOR ALL TO authenticated
+      USING ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'))
+      WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'));
+  END IF;
+END $;
+
+-- 3. HARDEN STORE SETTINGS (PUBLIC READ, SERVICE_ROLE & VERIFIED STAFF WRITE ONLY)
+DO $
 BEGIN
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'store_settings') THEN
     DROP POLICY IF EXISTS "app_manage_store_settings" ON public.store_settings;
+    DROP POLICY IF EXISTS "staff_manage_store_settings" ON public.store_settings;
+    DROP POLICY IF EXISTS "public_read_store_settings" ON public.store_settings;
+    DROP POLICY IF EXISTS "service_manage_store_settings" ON public.store_settings;
+
     CREATE POLICY "public_read_store_settings" ON public.store_settings
       FOR SELECT USING (true);
+
     CREATE POLICY "service_manage_store_settings" ON public.store_settings
       FOR ALL TO service_role USING (true) WITH CHECK (true);
+
     CREATE POLICY "staff_manage_store_settings" ON public.store_settings
-      FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
+      FOR ALL TO authenticated
+      USING ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'))
+      WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'owner'));
   END IF;
-END $$;
+END $;

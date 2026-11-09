@@ -98,12 +98,35 @@ DROP POLICY IF EXISTS "orders_select_owner_or_staff" ON public.orders;
 DROP POLICY IF EXISTS "orders_update_staff_only" ON public.orders;
 DROP POLICY IF EXISTS "app_read_orders" ON public.orders;
 DROP POLICY IF EXISTS "app_update_orders" ON public.orders;
+DROP POLICY IF EXISTS "service_manage_orders" ON public.orders;
+DROP POLICY IF EXISTS "authenticated_update_orders" ON public.orders;
+DROP POLICY IF EXISTS "authenticated_select_orders" ON public.orders;
 
-CREATE POLICY "app_read_orders" ON public.orders 
-  FOR SELECT USING (true);
+-- 1. Full management access strictly to service_role (backend functions & webhooks)
+CREATE POLICY "service_manage_orders" ON public.orders
+  FOR ALL TO service_role
+  USING (true)
+  WITH CHECK (true);
 
-CREATE POLICY "app_update_orders" ON public.orders 
-  FOR UPDATE USING (true) WITH CHECK (true);
+-- 2. Authenticated staff and customer owner reads
+CREATE POLICY "authenticated_select_orders" ON public.orders
+  FOR SELECT TO authenticated
+  USING (
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
+    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
+  );
+
+-- 3. Authenticated staff and customer owner updates
+CREATE POLICY "authenticated_update_orders" ON public.orders
+  FOR UPDATE TO authenticated
+  USING (
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
+    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
+  )
+  WITH CHECK (
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
+    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
+  );
 
 -- 4.2 Dishes & Categories: Allow admin dish updates & category photo saves
 DO $$

@@ -224,6 +224,13 @@ export async function onRequest(context) {
       ? { ...DEFAULT_SETTINGS_FALLBACK, ...(body?.storeSettings || {}), ...authoritativeSettings }
       : { ...DEFAULT_SETTINGS_FALLBACK, ...((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {})) };
 
+    const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+
+    if (isProd && (!authoritativeSettings || Object.keys(authoritativeSettings).length === 0)) {
+      // In production, never trust unverified client-supplied settings if server settings are unavailable
+      Object.assign(storeSettings, DEFAULT_SETTINGS_FALLBACK);
+    }
+
 
 
 
@@ -258,14 +265,18 @@ export async function onRequest(context) {
     }
 
     const catalogMap = new Map();
-    if (Array.isArray(body?.catalogDishes)) {
-      body.catalogDishes.forEach(d => {
+    const hasAuthoritativeCatalog = Array.isArray(catalogDishes) && catalogDishes.length > 0;
+
+    if (hasAuthoritativeCatalog) {
+      // Authoritative database catalogue: strictly only load server-side dishes.
+      // Client-supplied body.catalogDishes MUST NEVER be merged into the authoritative catalogue.
+      catalogDishes.forEach(d => {
         if (d && d.id) catalogMap.set(String(d.id), d);
         if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
       });
-    }
-    if (Array.isArray(catalogDishes)) {
-      catalogDishes.forEach(d => {
+    } else if (!isProd && Array.isArray(body?.catalogDishes)) {
+      // In local non-production/test environments only, fallback to test fixture catalog if server catalog is offline
+      body.catalogDishes.forEach(d => {
         if (d && d.id) catalogMap.set(String(d.id), d);
         if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
       });
@@ -311,7 +322,6 @@ export async function onRequest(context) {
       }
 
       if (authoritativePrice === null || isNaN(authoritativePrice)) {
-        const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
         if (isProd) {
           return jsonResponse({ error: `Item "${item.name || 'dish'}" price cannot be verified. Please retry in a moment.` }, 503, Object.fromEntries(corsHeaders.entries()));
         }
@@ -334,8 +344,8 @@ export async function onRequest(context) {
       subtotal += itemTotal;
 
       verifiedItems.push({
-        id: item.id || null,
-        name: String(item.name || matchedDish?.name || 'Dish').slice(0, 100),
+        id: matchedDish?.id || item.id || null,
+        name: String(matchedDish?.name || item.name || 'Dish').slice(0, 100),
         price: authoritativePrice,
         quantity,
         total: itemTotal

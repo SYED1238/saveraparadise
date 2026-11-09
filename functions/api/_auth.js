@@ -86,9 +86,14 @@ export function verifySignedPayload(signedString, env = null) {
 }
 
 export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'admin', env = null) {
+  if (typeof customExpiresInMs === 'string') {
+    role = customExpiresInMs;
+    customExpiresInMs = TOKEN_MAX_AGE_MS;
+  }
   const now = Date.now();
+  const validRole = (role === 'owner') ? 'owner' : ((role === 'rider') ? 'rider' : 'admin');
   const payload = {
-    role: (role === 'owner' ? 'owner' : 'admin'),
+    role: validRole,
     iat: now,
     exp: now + customExpiresInMs,
     nonce: crypto.randomBytes(16).toString('hex')
@@ -98,7 +103,7 @@ export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'a
   return `${payloadB64}.${signature}`;
 }
 
-export function verifyAdminToken(reqOrHeaders, env = null) {
+export function verifyAdminToken(reqOrHeaders, env = null, allowedRoles = ['admin', 'owner']) {
   let authHeader = null;
   if (reqOrHeaders) {
     if (typeof reqOrHeaders.headers?.get === 'function') {
@@ -136,7 +141,8 @@ export function verifyAdminToken(reqOrHeaders, env = null) {
 
   try {
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    if (payload.role !== 'admin' && payload.role !== 'owner') {
+    const roles = Array.isArray(allowedRoles) ? allowedRoles : ['admin', 'owner'];
+    if (!roles.includes(payload.role)) {
       return { valid: false, error: 'Insufficient permissions' };
     }
     if (typeof payload.exp !== 'number' || Date.now() > payload.exp) {
@@ -147,6 +153,8 @@ export function verifyAdminToken(reqOrHeaders, env = null) {
     return { valid: false, error: 'Invalid token payload' };
   }
 }
+
+const DEFAULT_RIDER_PINS = ['2233', '4422', '4455', '8811'];
 
 export function getPinRole(inputPin, env = null) {
   if (!inputPin) return null;
@@ -164,6 +172,20 @@ export function getPinRole(inputPin, env = null) {
   if (!isProd && safeEqual(cleanPin, '8899')) return 'admin';
   if (expectedAdminPin && safeEqual(cleanPin, expectedAdminPin)) {
     return 'admin';
+  }
+
+  // Check Fleet Delivery Rider PIN
+  if (!isProd && DEFAULT_RIDER_PINS.some(p => safeEqual(cleanPin, p))) {
+    return 'rider';
+  }
+  const envRiderPin = (env && env.RIDER_PIN) || (typeof process !== 'undefined' && process.env && process.env.RIDER_PIN);
+  if (envRiderPin && safeEqual(cleanPin, String(envRiderPin).trim())) {
+    return 'rider';
+  }
+  const envRiderPins = (env && env.RIDER_PINS) || (typeof process !== 'undefined' && process.env && process.env.RIDER_PINS);
+  if (envRiderPins) {
+    const pins = String(envRiderPins).split(',').map(p => p.trim());
+    if (pins.some(p => safeEqual(cleanPin, p))) return 'rider';
   }
 
   return null;

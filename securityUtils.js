@@ -212,8 +212,8 @@ export function getAdminAuthHeaders() {
  */
 export async function ensureAdminToken(requiredRole = 'admin') {
   if (typeof sessionStorage !== 'undefined') {
-    const tokenKey = requiredRole === 'owner' ? 'quickbite_owner_token' : 'quickbite_admin_token';
-    let token = sessionStorage.getItem(tokenKey) || sessionStorage.getItem('quickbite_admin_token');
+    const tokenKey = requiredRole === 'owner' ? 'quickbite_owner_token' : (requiredRole === 'rider' ? 'quickbite_rider_token' : 'quickbite_admin_token');
+    let token = sessionStorage.getItem(tokenKey) || (requiredRole !== 'rider' ? sessionStorage.getItem('quickbite_admin_token') : null);
     if (token && token.includes('.')) {
       try {
         const parts = token.split('.');
@@ -230,7 +230,7 @@ export async function ensureAdminToken(requiredRole = 'admin') {
     }
 
     // Token is missing or expired. Attempt to refresh token via /api/admin-auth if staff session is active
-    const isTargetStaffActive = requiredRole === 'owner' ? isStaffSessionActive('owner') : (isStaffSessionActive('admin') || isStaffSessionActive('owner'));
+    const isTargetStaffActive = requiredRole === 'owner' ? isStaffSessionActive('owner') : (requiredRole === 'rider' ? isStaffSessionActive('rider') : (isStaffSessionActive('admin') || isStaffSessionActive('owner')));
     if (isTargetStaffActive && typeof fetch !== 'undefined') {
       try {
         let res = null;
@@ -247,9 +247,12 @@ export async function ensureAdminToken(requiredRole = 'admin') {
         if (res && res.ok) {
           const data = await res.json();
           if (data && data.token) {
-            sessionStorage.setItem('quickbite_admin_token', data.token);
             if (data.role === 'owner') {
               sessionStorage.setItem('quickbite_owner_token', data.token);
+            } else if (data.role === 'rider') {
+              sessionStorage.setItem('quickbite_rider_token', data.token);
+            } else {
+              sessionStorage.setItem('quickbite_admin_token', data.token);
             }
             return data.token;
           }
@@ -298,6 +301,8 @@ export function clearStaffSession(role) {
     } else if (role === 'owner') {
       sessionStorage.removeItem('quickbite_owner_token');
       sessionStorage.removeItem('quickbite_admin_token');
+    } else if (role === 'rider') {
+      sessionStorage.removeItem('quickbite_rider_token');
     }
   } catch {}
 }
@@ -347,21 +352,43 @@ export async function verifyStaffPin(role, inputPin) {
       return false; // Safely fail in non-browser Node.js environments
     }
 
+    let isMatch = false;
     // Check if cleanPin matches any default fleet rider PIN hashes
     if (DEFAULT_RIDER_PIN_HASHES.includes(inputHash)) {
-      return true;
+      isMatch = true;
+    } else {
+      // Check Admin-registered rider fleet in localStorage
+      try {
+        const rawRiders = localStorage.getItem('quickbite_riders');
+        if (rawRiders) {
+          const riders = JSON.parse(rawRiders);
+          if (Array.isArray(riders) && riders.some(r => r && String(r.pin).trim() === cleanPin)) {
+            isMatch = true;
+          }
+        }
+      } catch {}
     }
 
-    // Check Admin-registered rider fleet in localStorage
-    try {
-      const rawRiders = localStorage.getItem('quickbite_riders');
-      if (rawRiders) {
-        const riders = JSON.parse(rawRiders);
-        if (Array.isArray(riders) && riders.some(r => r && String(r.pin).trim() === cleanPin)) {
-          return true;
+    if (isMatch) {
+      if (typeof fetch !== 'undefined') {
+        try {
+          const res = await fetch('/api/admin-auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: cleanPin })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.token && typeof sessionStorage !== 'undefined') {
+              sessionStorage.setItem('quickbite_rider_token', data.token);
+            }
+          }
+        } catch (e) {
+          console.warn('[Security] Rider server auth request failed:', e);
         }
       }
-    } catch {}
+      return true;
+    }
 
     return false;
   }

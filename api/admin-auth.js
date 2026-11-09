@@ -1,7 +1,7 @@
 /**
  * Serverless Admin Authentication Endpoint
  * POST /api/admin-auth
- * Validates the manager PIN against server-side configuration and issues
+ * Validates the manager/staff PIN against server-side configuration and issues
  * a cryptographically signed HMAC bearer token for privileged operations.
  * Implements persistent serverless rate limiting using both in-memory caching
  * and signed cryptographic state cookies to withstand container cold starts.
@@ -141,7 +141,7 @@ export default async function handler(req, res) {
         if (safeEqual(signature, expectedSignature)) {
           try {
             const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-            if (payload && (payload.role === 'admin' || payload.role === 'owner')) {
+            if (payload && (payload.role === 'admin' || payload.role === 'owner' || payload.role === 'rider')) {
               const maxRefreshAge = 24 * 60 * 60 * 1000;
               if (Date.now() - (payload.iat || 0) < maxRefreshAge) {
                 const refreshedToken = createAdminToken(undefined, payload.role);

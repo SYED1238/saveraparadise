@@ -699,7 +699,9 @@ function r2DevMiddlewarePlugin() {
           '/api/checkout': './api/checkout.js',
           '/api/cashfree-generate-qr': './api/cashfree-generate-qr.js',
           '/api/cashfree-create-order': './api/cashfree-create-order.js',
-          '/api/cashfree-payout': './api/cashfree-payout.js'
+          '/api/cashfree-payout': './api/cashfree-payout.js',
+          '/api/admin-store': './api/admin-store.js',
+          '/api/order-action': './api/order-action.js'
         };
 
         if (devServerlessRoutes[url]) {

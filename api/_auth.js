@@ -1,6 +1,6 @@
 /**
  * Server-Side Authentication & Session Verification Helper
- * Used by serverless API endpoints (/api/r2-*) and Vite local dev server.
+ * Used by serverless API endpoints (/api/r2-*, /api/admin-*, /api/order-*) and Vite local dev server.
  * Ensures privileged storage and admin operations require cryptographically signed tokens.
  */
 import crypto from 'crypto';
@@ -92,13 +92,18 @@ export function verifySignedPayload(signedString) {
 }
 
 /**
- * Creates a signed admin or owner session token.
+ * Creates a signed admin, owner, or rider session token.
  * Token format: <base64Payload>.<signatureHex>
  */
 export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'admin') {
+  if (typeof customExpiresInMs === 'string') {
+    role = customExpiresInMs;
+    customExpiresInMs = TOKEN_MAX_AGE_MS;
+  }
   const now = Date.now();
+  const validRole = (role === 'owner') ? 'owner' : ((role === 'rider') ? 'rider' : 'admin');
   const payload = {
-    role: (role === 'owner' ? 'owner' : 'admin'),
+    role: validRole,
     iat: now,
     exp: now + customExpiresInMs,
     nonce: crypto.randomBytes(16).toString('hex')
@@ -109,12 +114,13 @@ export function createAdminToken(customExpiresInMs = TOKEN_MAX_AGE_MS, role = 'a
 }
 
 /**
- * Validates a request's admin session token from Authorization or x-admin-token header.
- * Accepts privileged tokens from both Kitchen Admin and Restaurant Owner roles.
+ * Validates a request's staff session token from Authorization or x-admin-token header.
+ * Accepts privileged tokens according to allowedRoles.
  * @param {object} req Incoming HTTP request
+ * @param {string[]} allowedRoles Array of allowed roles (defaults to ['admin', 'owner'])
  * @returns {{ valid: boolean, error?: string, payload?: object }}
  */
-export function verifyAdminToken(req) {
+export function verifyAdminToken(req, allowedRoles = ['admin', 'owner']) {
   const authHeader = req.headers['authorization'] || req.headers['x-admin-token'];
   if (!authHeader || typeof authHeader !== 'string') {
     return { valid: false, error: 'Missing authorization header' };
@@ -146,7 +152,8 @@ export function verifyAdminToken(req) {
   try {
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
 
-    if (payload.role !== 'admin' && payload.role !== 'owner') {
+    const roles = Array.isArray(allowedRoles) ? allowedRoles : ['admin', 'owner'];
+    if (!roles.includes(payload.role)) {
       return { valid: false, error: 'Insufficient permissions' };
     }
 
@@ -160,10 +167,12 @@ export function verifyAdminToken(req) {
   }
 }
 
+const DEFAULT_RIDER_PINS = ['2233', '4422', '4455', '8811'];
+
 /**
- * Identifies the role ('owner', 'admin') for a submitted PIN.
+ * Identifies the role ('owner', 'admin', 'rider') for a submitted PIN.
  * @param {string} inputPin 4-digit passcode
- * @returns {'owner' | 'admin' | null}
+ * @returns {'owner' | 'admin' | 'rider' | null}
  */
 export function getPinRole(inputPin) {
   if (!inputPin) return null;
@@ -197,11 +206,23 @@ export function getPinRole(inputPin) {
     }
   }
 
+  // 3. Check Fleet Delivery Rider PIN
+  if (!isProd && DEFAULT_RIDER_PINS.some(p => safeEqual(cleanPin, p))) {
+    return 'rider';
+  }
+  if (process.env.RIDER_PIN && safeEqual(cleanPin, String(process.env.RIDER_PIN).trim())) {
+    return 'rider';
+  }
+  if (process.env.RIDER_PINS) {
+    const pins = String(process.env.RIDER_PINS).split(',').map(p => p.trim());
+    if (pins.some(p => safeEqual(cleanPin, p))) return 'rider';
+  }
+
   return null;
 }
 
 /**
- * Verifies a submitted admin or owner PIN against server-side configuration.
+ * Verifies a submitted admin, owner, or rider PIN against server-side configuration.
  */
 export function verifyAdminPin(inputPin) {
   return getPinRole(inputPin) !== null;

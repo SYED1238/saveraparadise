@@ -197,13 +197,20 @@ CREATE POLICY "orders_select_owner_or_staff" ON public.orders
     OR auth.role() = 'service_role'
   );
 
-CREATE POLICY "orders_update_staff_only" ON public.orders
-  FOR UPDATE USING (
+CREATE POLICY "service_manage_orders" ON public.orders
+  FOR ALL TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "authenticated_update_orders" ON public.orders
+  FOR UPDATE TO authenticated
+  USING (
     (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider')
-    OR auth.role() = 'service_role'
-  ) WITH CHECK (
+    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
+  )
+  WITH CHECK (
     (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider')
-    OR auth.role() = 'service_role'
+    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
   );
 
 -- 2.3B Riders: Public read; staff/service role manage
@@ -428,6 +435,99 @@ CREATE TRIGGER trg_prevent_order_status_reversal
   BEFORE UPDATE OF status ON public.orders
   FOR EACH ROW
   EXECUTE FUNCTION public.prevent_order_status_reversal();
+
+-- 2.5B Comprehensive Order Mutation & Financial Security Trigger
+CREATE OR REPLACE FUNCTION public.prevent_order_financial_tampering()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_role TEXT := auth.role();
+  v_is_service_role BOOLEAN := (v_role = 'service_role');
+  v_old_rank INT := 0;
+  v_new_rank INT := 0;
+BEGIN
+  IF v_is_service_role THEN
+    RETURN NEW;
+  END IF;
+
+  -- Terminal State Immutability
+  IF OLD.status IN ('delivered', 'undelivered', 'cancelled') THEN
+    RAISE EXCEPTION 'Order % is in terminal status (%) and cannot be modified.', OLD.id, OLD.status;
+  END IF;
+
+  -- Financial Immutability
+  IF (OLD.total IS NOT NULL AND NEW.total IS DISTINCT FROM OLD.total)
+     OR (OLD.items IS NOT NULL AND NEW.items IS DISTINCT FROM OLD.items)
+     OR (OLD.user_id IS NOT NULL AND NEW.user_id IS DISTINCT FROM OLD.user_id) THEN
+    RAISE EXCEPTION 'Order financial totals and items are immutable after creation.';
+  END IF;
+
+  -- Customer PII and Delivery Address Immutability
+  IF (OLD.customer_phone IS NOT NULL AND NEW.customer_phone IS DISTINCT FROM OLD.customer_phone)
+     OR (OLD.customer_name IS NOT NULL AND NEW.customer_name IS DISTINCT FROM OLD.customer_name)
+     OR (OLD.customer_email IS NOT NULL AND NEW.customer_email IS DISTINCT FROM OLD.customer_email)
+     OR (OLD.delivery_address IS NOT NULL AND NEW.delivery_address IS DISTINCT FROM OLD.delivery_address)
+     OR (OLD.pickup_code IS NOT NULL AND NEW.pickup_code IS DISTINCT FROM OLD.pickup_code) THEN
+    RAISE EXCEPTION 'Customer delivery information and pickup code are immutable after order placement.';
+  END IF;
+
+  -- Payment Integrity Guard
+  IF (NEW.is_paid_online IS DISTINCT FROM OLD.is_paid_online)
+     OR (NEW.cf_payment_status IS DISTINCT FROM OLD.cf_payment_status)
+     OR (NEW.payment_status IS DISTINCT FROM OLD.payment_status) THEN
+    RAISE EXCEPTION 'Unauthorized payment modification: Payment status can only be updated via verified server gateway.';
+  END IF;
+
+  -- Status lifecycle forward progression
+  IF NEW.status = 'cancelled' AND (OLD.status IS DISTINCT FROM 'cancelled') THEN
+    IF OLD.status NOT IN ('pending', 'accepted') THEN
+      RAISE EXCEPTION 'Cannot cancel order once kitchen preparation has begun (% to %).', OLD.status, NEW.status;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  CASE OLD.status
+    WHEN 'pending' THEN v_old_rank := 0;
+    WHEN 'accepted' THEN v_old_rank := 1;
+    WHEN 'cooking' THEN v_old_rank := 2;
+    WHEN 'ready_for_pickup' THEN v_old_rank := 3;
+    WHEN 'on_the_way' THEN v_old_rank := 4;
+    WHEN 'delivered' THEN v_old_rank := 5;
+    WHEN 'undelivered' THEN v_old_rank := 5;
+    ELSE v_old_rank := 0;
+  END CASE;
+
+  CASE NEW.status
+    WHEN 'pending' THEN v_new_rank := 0;
+    WHEN 'accepted' THEN v_new_rank := 1;
+    WHEN 'cooking' THEN v_new_rank := 2;
+    WHEN 'ready_for_pickup' THEN v_new_rank := 3;
+    WHEN 'on_the_way' THEN v_new_rank := 4;
+    WHEN 'delivered' THEN v_new_rank := 5;
+    WHEN 'undelivered' THEN v_new_rank := 5;
+    ELSE v_new_rank := 0;
+  END CASE;
+
+  IF v_new_rank < v_old_rank THEN
+    RAISE EXCEPTION 'Order status cannot regress backwards (% to %).', OLD.status, NEW.status;
+  END IF;
+
+  IF v_old_rank < 3 AND NEW.status = 'delivered' THEN
+    RAISE EXCEPTION 'Illegal order transition: Order cannot be marked delivered directly from % status.', OLD.status;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prevent_order_financial_tampering ON public.orders;
+CREATE TRIGGER trg_prevent_order_financial_tampering
+  BEFORE UPDATE ON public.orders
+  FOR EACH ROW
+  EXECUTE FUNCTION public.prevent_order_financial_tampering();
 
 CREATE OR REPLACE FUNCTION public.prevent_order_deletion()
 RETURNS TRIGGER AS $$
