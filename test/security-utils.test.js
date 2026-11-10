@@ -605,6 +605,49 @@ test('verifyStaffPin: unknown role returns false', async (t) => {
   });
 });
 
+test('verifyStaffPin: role verification defense (blocks rider PINs from admin portal)', async (t) => {
+  const origFetch = globalThis.fetch;
+  const mockStorage = {};
+  const origSessionStorage = globalThis.sessionStorage;
+  globalThis.sessionStorage = {
+    setItem: (k, v) => { mockStorage[k] = v; },
+    getItem: (k) => mockStorage[k] || null,
+    removeItem: (k) => { delete mockStorage[k]; }
+  };
+
+  try {
+    // 1. Rider PIN must be rejected by admin verifyStaffPin
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ success: true, token: 'signed.rider.token', role: 'rider', riderPin: '2233' })
+    });
+    const riderResult = await verifyStaffPin('admin', '2233');
+    assert.strictEqual(riderResult, false, 'Rider PIN must not unlock admin portal');
+    assert.strictEqual(mockStorage['quickbite_admin_token'], undefined, 'Admin token must not be stored for rider');
+
+    // 2. Admin PIN succeeds
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ success: true, token: 'signed.admin.token', role: 'admin' })
+    });
+    const adminResult = await verifyStaffPin('admin', '8899');
+    assert.strictEqual(adminResult, true, 'Admin PIN must unlock admin portal');
+    assert.strictEqual(mockStorage['quickbite_admin_token'], 'signed.admin.token');
+
+    // 3. Owner PIN succeeds
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ success: true, token: 'signed.owner.token', role: 'owner' })
+    });
+    const ownerResult = await verifyStaffPin('admin', '9900');
+    assert.strictEqual(ownerResult, true, 'Owner PIN must unlock admin portal');
+    assert.strictEqual(mockStorage['quickbite_owner_token'], 'signed.owner.token');
+  } finally {
+    globalThis.fetch = origFetch;
+    globalThis.sessionStorage = origSessionStorage;
+  }
+});
+
 // ============================================================
 // Exported constants validation
 // ============================================================

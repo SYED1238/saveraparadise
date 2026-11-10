@@ -3068,11 +3068,20 @@ class QuickBiteDataService {
             const remoteRank = remote.status && ORDER_STATUS_RANKS[remote.status] !== undefined ? ORDER_STATUS_RANKS[remote.status] : -1;
             const localRank = local?.status && ORDER_STATUS_RANKS[local.status] !== undefined ? ORDER_STATUS_RANKS[local.status] : -1;
 
-            if (hasPendingStatus && remoteRank >= localRank) {
-              delete local.pendingStatusSync;
+            if (hasPendingStatus) {
+              if (local?.status === 'cancelled') {
+                if (remote.status === 'cancelled') {
+                  delete local.pendingStatusSync;
+                } else if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered'].includes(remote.status)) {
+                  delete local.pendingStatusSync;
+                }
+              } else if (remoteRank >= localRank) {
+                delete local.pendingStatusSync;
+              }
             }
 
-            const canOverride = (localRank > remoteRank || (local?.status === 'cancelled' && remote.status !== 'cancelled'));
+            const isStaleAcceptedRemote = local?.status === 'cancelled' && (remote.status === 'accepted' || remote.status === 'pending');
+            const canOverride = (localRank > remoteRank || isStaleAcceptedRemote);
             const preserveLocalStatus = ((hasPendingStatus || isOptimistic) && canOverride) && remote.status !== 'cancelled';
             let effectiveStatus = preserveLocalStatus
               ? local.status
@@ -3559,11 +3568,20 @@ class QuickBiteDataService {
       const isOptimistic = Boolean(local?._optimisticTimestamp && (Date.now() - local._optimisticTimestamp < 15000));
       const hasPendingStatus = Boolean(local?.pendingStatusSync);
 
-      if (hasPendingStatus && remoteRank >= localRank) {
-        if (local) delete local.pendingStatusSync;
+      if (hasPendingStatus) {
+        if (local?.status === 'cancelled') {
+          if (remote.status === 'cancelled') {
+            if (local) delete local.pendingStatusSync;
+          } else if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered'].includes(remote.status)) {
+            if (local) delete local.pendingStatusSync;
+          }
+        } else if (remoteRank >= localRank) {
+          if (local) delete local.pendingStatusSync;
+        }
       }
 
-      const canOverride = (localRank > remoteRank || (local?.status === 'cancelled' && remote.status !== 'cancelled'));
+      const isStaleAcceptedRemote = local?.status === 'cancelled' && (remote.status === 'accepted' || remote.status === 'pending');
+      const canOverride = (localRank > remoteRank || isStaleAcceptedRemote);
       const preserveLocalStatus = ((hasPendingStatus || isOptimistic) && canOverride) && remote.status !== 'cancelled';
 
       const effectiveStatus = preserveLocalStatus ? local.status : (remote.status || local?.status || 'accepted');
@@ -3738,48 +3756,125 @@ class QuickBiteDataService {
         }
 
         if (pendingStatusOrders.length > 0) {
-          console.log(`[DataService] Draining ${pendingStatusOrders.length} pending offline status updates to Supabase...`);
+          console.log(`[DataService] Draining ${pendingStatusOrders.length} pending offline status updates...`);
           for (const orderData of pendingStatusOrders) {
             try {
-              const fullPayload = {
-                status: orderData.status,
-                step_index: typeof orderData.stepIndex === 'number' ? orderData.stepIndex : 0,
-                status_label: orderData.statusLabel || 'Accepted',
-                eta: orderData.eta || '20 - 30 Minutes'
-              };
-              if (orderData.cancellationReason) fullPayload.cancellation_reason = orderData.cancellationReason;
-              if (orderData.deliveredAt) fullPayload.delivered_at = Number(orderData.deliveredAt);
-              if (orderData.assignedRiderPin) fullPayload.assigned_rider_pin = orderData.assignedRiderPin;
-              if (orderData.assignedRiderName) fullPayload.assigned_rider_name = orderData.assignedRiderName;
-              if (orderData.assignedRiderPhone) fullPayload.assigned_rider_phone = orderData.assignedRiderPhone;
-              if (orderData.paymentMethod) fullPayload.payment_method = orderData.paymentMethod;
-              if (typeof orderData.isPaidOnline === 'boolean') fullPayload.is_paid_online = orderData.isPaidOnline;
-              if (typeof orderData.doorstepUpi === 'boolean') fullPayload.doorstep_upi = orderData.doorstepUpi;
-              if (typeof orderData.cashCollected === 'number' || typeof orderData.cash_collected === 'number') {
-                fullPayload.cash_collected = typeof orderData.cashCollected === 'number' ? orderData.cashCollected : orderData.cash_collected;
-              }
-              if (orderData.pickupCode) fullPayload.pickup_code = orderData.pickupCode;
+              if (orderData.status === 'cancelled') {
+                const tokens = (typeof localStorage !== 'undefined')
+                  ? JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}')
+                  : {};
+                const cleanId = String(orderData.id || '').replace(/^#/, '');
+                const trackingToken = orderData.trackingToken || tokens[orderData.id] || tokens[cleanId] || tokens[`#${cleanId}`];
 
-              const cleanId = String(orderData.id || '').replace(/^#/, '');
-              const hashId = `#${cleanId}`;
+                if (trackingToken && !orderData.trackingToken) {
+                  orderData.trackingToken = trackingToken;
+                }
+                if (trackingToken && typeof localStorage !== 'undefined') {
+                  try {
+                    tokens[orderData.id] = trackingToken;
+                    tokens[cleanId] = trackingToken;
+                    localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
+                  } catch {}
+                }
 
-              const { error } = await supabase.from('orders')
-                .update(fullPayload)
-                .or(`id.eq.${cleanId},id.eq.${hashId}`)
-                .neq('status', 'cancelled');
+                try {
+                  const cancelRes = await this._orderAction('cancel_order', {
+                    orderId: orderData.id,
+                    trackingToken,
+                    reason: orderData.cancellationReason || 'Cancelled by customer'
+                  });
 
-              if (!error) {
-                delete orderData.pendingStatusSync;
-                anySynced = true;
+                  if (cancelRes && (cancelRes.success || cancelRes.order || cancelRes.idempotent)) {
+                    delete orderData.pendingStatusSync;
+                    anySynced = true;
+                    console.log(`[DataService] Successfully synced offline cancellation for order ${orderData.id}`);
+                  } else {
+                    const errStr = String(cancelRes?.error || '').toLowerCase();
+                    if (errStr.includes('cooking') || errStr.includes('preparation') || errStr.includes('cannot cancel')) {
+                      console.warn(`[DataService] Offline cancellation rejected for ${orderData.id} because cooking started:`, cancelRes?.error);
+                      delete orderData.pendingStatusSync;
+                      orderData.status = 'cooking';
+                      orderData.statusLabel = 'Cooking in Kitchen';
+                      orderData.stepIndex = 1;
+                      anySynced = true;
+                    } else if (errStr.includes('forbidden') || errStr.includes('token')) {
+                      console.warn(`[DataService] Offline cancellation rejected for ${orderData.id} due to invalid token:`, cancelRes?.error);
+                      delete orderData.pendingStatusSync;
+                      anySynced = true;
+                    }
+                  }
+                } catch (actionErr) {
+                  const errMsg = String(actionErr?.message || '').toLowerCase();
+                  if (errMsg.includes('fetch failed') || errMsg.includes('networkerror') || errMsg.includes('network') || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+                    console.warn(`[DataService] Network unavailable while retrying cancellation for ${orderData.id}. Retaining pendingStatusSync.`);
+                    break;
+                  } else if (errMsg.includes('cooking') || errMsg.includes('preparation') || errMsg.includes('cannot cancel')) {
+                    console.warn(`[DataService] Offline cancellation rejected for ${orderData.id} because cooking started:`, actionErr?.message);
+                    delete orderData.pendingStatusSync;
+                    orderData.status = 'cooking';
+                    orderData.statusLabel = 'Cooking in Kitchen';
+                    orderData.stepIndex = 1;
+                    anySynced = true;
+                  } else if (errMsg.includes('forbidden') || errMsg.includes('token')) {
+                    delete orderData.pendingStatusSync;
+                    anySynced = true;
+                  } else {
+                    console.warn(`[DataService] Error draining cancellation for ${orderData.id}:`, actionErr);
+                  }
+                }
               } else {
-                const errMsg = String(error?.message || '').toLowerCase();
-                const isTerminalOrReversal = errMsg.includes('reversal') || errMsg.includes('cannot reverse') || errMsg.includes('terminal') || errMsg.includes('cancelled');
-                if (isTerminalOrReversal || error?.code === 'P0001' || error?.code === '23514') {
-                  console.warn('[DataService] Status update rejected by server rule for ' + orderData.id + '. Dropping stale pending status sync:', error?.message);
-                  delete orderData.pendingStatusSync;
-                  anySynced = true;
-                } else if (errMsg.includes('fetch failed') || errMsg.includes('networkerror')) {
-                  break;
+                const fullPayload = {
+                  status: orderData.status,
+                  step_index: typeof orderData.stepIndex === 'number' ? orderData.stepIndex : 0,
+                  status_label: orderData.statusLabel || 'Accepted',
+                  eta: orderData.eta || '20 - 30 Minutes'
+                };
+                if (orderData.cancellationReason) fullPayload.cancellation_reason = orderData.cancellationReason;
+                if (orderData.deliveredAt) fullPayload.delivered_at = Number(orderData.deliveredAt);
+                if (orderData.assignedRiderPin) fullPayload.assigned_rider_pin = orderData.assignedRiderPin;
+                if (orderData.assignedRiderName) fullPayload.assigned_rider_name = orderData.assignedRiderName;
+                if (orderData.assignedRiderPhone) fullPayload.assigned_rider_phone = orderData.assignedRiderPhone;
+                if (orderData.paymentMethod) fullPayload.payment_method = orderData.paymentMethod;
+                if (typeof orderData.isPaidOnline === 'boolean') fullPayload.is_paid_online = orderData.isPaidOnline;
+                if (typeof orderData.doorstepUpi === 'boolean') fullPayload.doorstep_upi = orderData.doorstepUpi;
+                if (typeof orderData.cashCollected === 'number' || typeof orderData.cash_collected === 'number') {
+                  fullPayload.cash_collected = typeof orderData.cashCollected === 'number' ? orderData.cashCollected : orderData.cash_collected;
+                }
+                if (orderData.pickupCode) fullPayload.pickup_code = orderData.pickupCode;
+
+                const cleanId = String(orderData.id || '').replace(/^#/, '');
+                const hashId = `#${cleanId}`;
+
+                if (supabase) {
+                  const query = supabase.from('orders')
+                    .update(fullPayload)
+                    .or(`id.eq.${cleanId},id.eq.${hashId}`)
+                    .neq('status', 'cancelled');
+
+                  const res = (query && typeof query.select === 'function')
+                    ? await query.select('id')
+                    : await query;
+
+                  const { data: updatedRows, error } = res || {};
+
+                  if (!error) {
+                    if (Array.isArray(updatedRows) && updatedRows.length === 0) {
+                      console.warn(`[DataService] Supabase update affected 0 rows for ${orderData.id} (RLS block or non-matching row). Retaining pendingStatusSync.`);
+                    } else {
+                      delete orderData.pendingStatusSync;
+                      anySynced = true;
+                    }
+                  } else {
+                    const errMsg = String(error?.message || '').toLowerCase();
+                    const isTerminalOrReversal = errMsg.includes('reversal') || errMsg.includes('cannot reverse') || errMsg.includes('terminal') || errMsg.includes('cancelled');
+                    if (isTerminalOrReversal || error?.code === 'P0001' || error?.code === '23514') {
+                      console.warn('[DataService] Status update rejected by server rule for ' + orderData.id + '. Dropping stale pending status sync:', error?.message);
+                      delete orderData.pendingStatusSync;
+                      anySynced = true;
+                    } else if (errMsg.includes('fetch failed') || errMsg.includes('networkerror')) {
+                      break;
+                    }
+                  }
                 }
               }
             } catch (statusErr) {
@@ -4029,11 +4124,20 @@ class QuickBiteDataService {
             const loLocalRank = lo?.status && ORDER_STATUS_RANKS[lo.status] !== undefined ? ORDER_STATUS_RANKS[lo.status] : -1;
             const hasPendingStatusLo = Boolean(lo?.pendingStatusSync);
 
-            if (hasPendingStatusLo && loRemoteRank >= loLocalRank) {
-              delete lo.pendingStatusSync;
+            if (hasPendingStatusLo) {
+              if (lo?.status === 'cancelled') {
+                if (remote.status === 'cancelled') {
+                  delete lo.pendingStatusSync;
+                } else if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered'].includes(remote.status)) {
+                  delete lo.pendingStatusSync;
+                }
+              } else if (loRemoteRank >= loLocalRank) {
+                delete lo.pendingStatusSync;
+              }
             }
 
-            const canOverrideLo = (loLocalRank > loRemoteRank || (lo?.status === 'cancelled' && remote.status !== 'cancelled'));
+            const isStaleAcceptedRemoteLo = lo?.status === 'cancelled' && (remote.status === 'accepted' || remote.status === 'pending');
+            const canOverrideLo = (loLocalRank > loRemoteRank || isStaleAcceptedRemoteLo);
             const preserveLo = ((hasPendingStatusLo || isOptimisticLo) && canOverrideLo) && remote.status !== 'cancelled';
             const effectiveStatus = preserveLo ? lo.status : (remote.status || lo.status);
             const effectiveStepIndex = (isOptimisticLo && loLocalRank > loRemoteRank && typeof lo.stepIndex === 'number')
@@ -5749,6 +5853,116 @@ class QuickBiteDataService {
     };
   }
 
+  async cancelCustomerOrder(orderId, reason = 'Cancelled by customer') {
+    if (!orderId) {
+      return { success: false, error: 'Order ID is required' };
+    }
+    const order = this.getOrderById(orderId);
+    if (!order) {
+      return { success: false, error: 'Order not found' };
+    }
+
+    const elapsedMs = Date.now() - Number(order.createdAt || 0);
+    if (elapsedMs > 2 * 60 * 1000) {
+      return {
+        success: false,
+        error: 'cancellation_window_expired',
+        message: 'The 2-minute cancellation window has expired'
+      };
+    }
+
+    if (order.status !== 'accepted' && order.status !== 'pending') {
+      return {
+        success: false,
+        error: 'invalid_status',
+        currentStatus: order.status,
+        message: `Order cannot be cancelled in "${order.status}" status`
+      };
+    }
+
+    const tokens = (typeof localStorage !== 'undefined')
+      ? JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}')
+      : {};
+    const cleanId = String(order.id).replace(/^#/, '');
+    const trackingToken = order.trackingToken || tokens[order.id] || tokens[cleanId] || tokens[`#${cleanId}`];
+
+    if (!trackingToken) {
+      return {
+        success: false,
+        error: 'missing_tracking_token',
+        message: 'Tracking token required for customer cancellation'
+      };
+    }
+
+    // Preserve tracking token across retries
+    order.trackingToken = trackingToken;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        tokens[order.id] = trackingToken;
+        tokens[cleanId] = trackingToken;
+        localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
+      } catch {}
+    }
+
+    // Apply local state with pendingStatusSync = true
+    const list = this.getOrders();
+    const idx = list.findIndex(o => String(o.id).replace(/^#/, '') === cleanId);
+    const targetOrder = idx !== -1 ? list[idx] : order;
+
+    targetOrder.status = 'cancelled';
+    targetOrder.statusLabel = 'Order Cancelled';
+    targetOrder.stepIndex = -1;
+    targetOrder.cancellationReason = reason;
+    targetOrder.pendingStatusSync = true;
+    targetOrder._optimisticTimestamp = Date.now();
+    targetOrder.trackingToken = trackingToken;
+    this.saveOrders(list, { action: 'order_status_updated', orderId: targetOrder.id, status: 'cancelled' });
+    this.notifyChange('orders', { action: 'order_status_updated', orderId: targetOrder.id, status: 'cancelled' });
+
+    try {
+      const res = await this._orderAction('cancel_order', {
+        orderId: targetOrder.id,
+        trackingToken,
+        reason
+      });
+
+      if (res && (res.success || res.order || res.idempotent)) {
+        delete targetOrder.pendingStatusSync;
+        if (res.order?.status) targetOrder.status = res.order.status;
+        this.saveOrders(list, { action: 'order_cancelled_confirmed', orderId: targetOrder.id });
+        this.notifyChange('orders', { action: 'order_cancelled_confirmed', orderId: targetOrder.id });
+        return { success: true, confirmed: true, order: targetOrder, idempotent: Boolean(res.idempotent) };
+      }
+      throw new Error(res?.error || 'Server rejected cancellation');
+    } catch (err) {
+      const errMsg = String(err?.message || '').toLowerCase();
+      const isNetwork = errMsg.includes('fetch') || errMsg.includes('network') || (typeof navigator !== 'undefined' && !navigator.onLine);
+      if (isNetwork) {
+        // Network unavailable: retain pendingStatusSync = true for offline retry on reconnect
+        targetOrder.pendingStatusSync = true;
+        this.saveOrders(list);
+        return { success: true, confirmed: false, pendingOffline: true, order: targetOrder };
+      }
+
+      // Authoritative server rejection: clear pendingStatusSync so background retry does not loop
+      delete targetOrder.pendingStatusSync;
+      if (errMsg.includes('cooking') || errMsg.includes('preparation') || errMsg.includes('cannot cancel')) {
+        targetOrder.status = 'cooking';
+        targetOrder.statusLabel = 'Cooking in Kitchen';
+        targetOrder.stepIndex = 1;
+        this.saveOrders(list);
+        this.notifyChange('orders', { action: 'order_status_updated', orderId: targetOrder.id, status: 'cooking' });
+        return { success: false, error: 'cooking_started', message: err.message };
+      }
+      if (errMsg.includes('forbidden') || errMsg.includes('token')) {
+        this.saveOrders(list);
+        return { success: false, error: 'invalid_token', message: err.message };
+      }
+      this.saveOrders(list);
+      return { success: false, error: err.message || 'cancellation_failed', message: err.message };
+    }
+  }
+
   updateOrderStatus(orderId, newStatus, source = 'admin', extraData = {}) {
     if (typeof source === 'object' && source !== null) {
       extraData = source;
@@ -5790,6 +6004,7 @@ class QuickBiteDataService {
       order.eta = 'Order Cancelled';
       order.cancelledAt = Date.now();
       order._optimisticTimestamp = Date.now();
+      order.pendingStatusSync = true;
       if (extraData?.cancellationReason) {
         order.cancellationReason = extraData.cancellationReason;
       }
@@ -5815,16 +6030,6 @@ class QuickBiteDataService {
 
       const cleanId = String(orderId || '').replace(/^#/, '');
       const hashId = `#${cleanId}`;
-      const basePayload = {
-        status: 'cancelled',
-        step_index: -1,
-        status_label: 'Cancelled',
-        eta: 'Cancelled'
-      };
-      const fullPayload = {
-        ...basePayload,
-        cancellation_reason: order.cancellationReason || null
-      };
 
       const doCancelUpdate = async (targetId) => {
         if (!targetId) return;
@@ -5835,7 +6040,18 @@ class QuickBiteDataService {
           const cleanTargetId = String(targetId).replace(/^#/, '');
           const trackingToken = order.trackingToken || tokens[targetId] || tokens[cleanTargetId] || tokens[`#${cleanTargetId}`];
 
-          // 1. Authoritative Gateway Call: Cancel order via serverless function
+          if (trackingToken && !order.trackingToken) {
+            order.trackingToken = trackingToken;
+          }
+          if (trackingToken && typeof localStorage !== 'undefined') {
+            try {
+              tokens[targetId] = trackingToken;
+              tokens[cleanTargetId] = trackingToken;
+              localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
+            } catch {}
+          }
+
+          // Authoritative Gateway Call: Cancel order via serverless function
           const res = await this._orderAction('cancel_order', {
             orderId: targetId,
             trackingToken,
@@ -5849,23 +6065,22 @@ class QuickBiteDataService {
           }
           throw new Error(res?.error || 'Server rejected cancellation');
         } catch (gatewayErr) {
-          // 2. Direct Supabase Fallback (if client has authenticated permissions or in dev)
-          if (supabase) {
-            try {
-              const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId);
-              if (error) {
-                const { error: baseErr } = await supabase.from('orders').update(basePayload).eq('id', targetId);
-                if (baseErr) {
-                  order.pendingStatusSync = true;
-                  this.saveOrders(list);
-                }
-              }
-            } catch {
-              order.pendingStatusSync = true;
-              this.saveOrders(list);
-            }
-          } else {
+          const errMsg = String(gatewayErr?.message || '').toLowerCase();
+          const isNetwork = errMsg.includes('fetch') || errMsg.includes('network') || (typeof navigator !== 'undefined' && !navigator.onLine);
+          if (isNetwork) {
+            // Keep pendingStatusSync = true for background retry on reconnect
             order.pendingStatusSync = true;
+            this.saveOrders(list);
+          } else if (errMsg.includes('cooking') || errMsg.includes('preparation') || errMsg.includes('cannot cancel')) {
+            // Server rejected because cooking started concurrently
+            delete order.pendingStatusSync;
+            order.status = 'cooking';
+            order.statusLabel = 'Cooking in Kitchen';
+            order.stepIndex = 1;
+            this.saveOrders(list);
+          } else {
+            // Other server rejection (e.g. invalid token)
+            delete order.pendingStatusSync;
             this.saveOrders(list);
           }
         }

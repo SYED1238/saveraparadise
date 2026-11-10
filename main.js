@@ -4571,7 +4571,7 @@ function initStorefrontApp() {
     }
   }
 
-  function handleCustomerCancelOrder(orderId) {
+  async function handleCustomerCancelOrder(orderId) {
     if (!orderId) return;
     const order = dataService.getOrderById(orderId);
     if (!order) return;
@@ -4602,15 +4602,49 @@ function initStorefrontApp() {
     const confirmCancel = window.confirm(`Are you sure you want to cancel Order ${order.id}?\n\nNote: Cancellation is only available while in "Accepted" status before kitchen preparation begins.`);
     if (!confirmCancel) return;
 
-    const updated = dataService.updateOrderStatus(order.id, 'cancelled', 'customer', {
-      cancellationReason: 'Cancelled by customer'
-    });
+    // Provide visual loading indicator and disable cancellation button during gateway request
+    const btnCancel = document.getElementById('btn-customer-cancel-order') ||
+                      document.querySelector(`[data-cancel-id="${order.id}"]`);
+    let originalBtnHtml = '';
+    if (btnCancel) {
+      originalBtnHtml = btnCancel.innerHTML;
+      btnCancel.disabled = true;
+      btnCancel.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Cancelling...';
+    }
 
-    if (updated) {
-      showToast(`❌ Order ${order.id} has been cancelled.`, 'info');
+    try {
+      const res = await dataService.cancelCustomerOrder(order.id, 'Cancelled by customer');
+      if (res && res.success) {
+        if (res.confirmed) {
+          showToast(`❌ Order ${order.id} has been cancelled.`, 'info');
+        } else if (res.pendingOffline) {
+          showToast(`📡 Network offline. Order ${order.id} cancellation is queued and will sync once connected.`, 'warning');
+        }
+        renderOrderTracker(order.id);
+        renderMyOrdersList();
+        renderCartOrderLimitUI();
+      } else {
+        if (res?.error === 'cooking_started' || (res?.message && res.message.toLowerCase().includes('cooking'))) {
+          showToast('🍳 Food Preparation Alert: Chefs have already started cooking your order fresh! Orders in preparation cannot be cancelled online.', 'warning');
+        } else if (res?.error === 'cancellation_window_expired') {
+          showToast('⏱️ The 2-minute cancellation window has expired. Please call the kitchen for changes.', 'warning');
+        } else if (res?.error === 'invalid_token') {
+          showToast('Authentication error: Unable to verify order cancellation token.', 'error');
+        } else {
+          showToast(res?.message || res?.error || 'Failed to cancel order. Please contact support.', 'error');
+        }
+        renderOrderTracker(order.id);
+        renderMyOrdersList();
+      }
+    } catch (err) {
+      showToast('An unexpected error occurred while cancelling order.', 'error');
       renderOrderTracker(order.id);
       renderMyOrdersList();
-      renderCartOrderLimitUI();
+    } finally {
+      if (btnCancel) {
+        btnCancel.disabled = false;
+        btnCancel.innerHTML = originalBtnHtml || 'Cancel Order';
+      }
     }
   }
 

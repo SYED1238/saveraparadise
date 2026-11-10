@@ -171,6 +171,55 @@ export default async function handler(req, res) {
       });
     }
 
+    if (isTestEnv && action === 'cancel_order') {
+      const { orderId, trackingToken, reason } = body;
+      if (!orderId) {
+        return res.status(400).json({ error: 'orderId is required' });
+      }
+
+      const cleanId = String(orderId).replace(/^#/, '');
+      const auth = verifyAdminToken(req, ['admin', 'owner']);
+      const isStaff = auth && auth.valid;
+
+      const defaultSimulateOrders = [
+        { id: cleanId, status: 'accepted', tracking_token: 'secret-tok-' + cleanId }
+      ];
+      const ordersList = body.simulateOrders || defaultSimulateOrders;
+      const existing = ordersList.find(o => String(o.id).replace(/^#/, '') === cleanId);
+      if (!existing) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      const effectiveExpectedToken = existing.tracking_token || existing.trackingToken || ('secret-tok-' + cleanId);
+      const isCustomerWithToken = Boolean(trackingToken && effectiveExpectedToken && trackingToken === effectiveExpectedToken);
+
+      if (!isStaff && !isCustomerWithToken) {
+        return res.status(403).json({ error: 'Forbidden: Valid cancellation token or staff session required' });
+      }
+
+      // Idempotency: If already cancelled, return success
+      if (existing.status === 'cancelled') {
+        return res.status(200).json({ success: true, order: existing, idempotent: true });
+      }
+
+      // Customer cancellation rule: Cannot cancel once cooking starts
+      if (!isStaff && !['pending', 'accepted'].includes(existing.status)) {
+        return res.status(400).json({ error: `Cannot cancel order once kitchen preparation has begun (${existing.status})` });
+      }
+
+      const updated = {
+        ...existing,
+        status: 'cancelled',
+        status_label: 'Order Cancelled',
+        cancellation_reason: reason || (isStaff ? 'Cancelled by restaurant management' : 'Cancelled by customer')
+      };
+      if (body.simulateOrders) {
+        const idx = ordersList.findIndex(o => String(o.id).replace(/^#/, '') === cleanId);
+        if (idx !== -1) ordersList[idx] = updated;
+      }
+      return res.status(200).json({ success: true, order: updated });
+    }
+
     if (isTestEnv && ['sync_orders', 'update_status', 'claim_order'].includes(action)) {
       const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
@@ -243,12 +292,21 @@ export default async function handler(req, res) {
         let enforcedCash = 0;
         let enforcedPaymentStatus = existing.payment_status || 'Pending';
         let enforcedIsPaidOnline = existing.is_paid_online;
+        let enforcedDoorstepUpi = typeof body.doorstepUpi === 'boolean' ? body.doorstepUpi : existing.doorstep_upi;
+        let enforcedPaymentMethod = existing.payment_method;
+
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
-          if (isPrepaid) {
+          const isDoorstep = Boolean(body.doorstepUpi === true || existing.doorstep_upi === true);
+
+          if (isPrepaid || isDoorstep) {
             enforcedPaymentStatus = 'Paid';
             enforcedCash = 0;
             enforcedIsPaidOnline = true;
+            if (isDoorstep) {
+              enforcedDoorstepUpi = true;
+              enforcedPaymentMethod = 'doorstep_upi';
+            }
           } else {
             enforcedIsPaidOnline = false;
             const orderTotal = Math.round(
@@ -262,16 +320,15 @@ export default async function handler(req, res) {
             if (body.cashCollected < 0) {
               return res.status(400).json({ error: 'Cash collected cannot be negative' });
             }
+            if (body.cashCollected < orderTotal) {
+              return res.status(400).json({ error: `Cash collected (₹${body.cashCollected}) is less than payable order total (₹${orderTotal}). Full payment is required for COD delivery.` });
+            }
             const maxAllowed = orderTotal + 200;
             if (orderTotal > 0 && body.cashCollected > maxAllowed) {
               return res.status(400).json({ error: `Cash collected (₹${body.cashCollected}) exceeds payable order total (₹${orderTotal}). Maximum allowed with tip is ₹${maxAllowed}.` });
             }
             enforcedCash = body.cashCollected;
-            if (body.cashCollected >= orderTotal && orderTotal > 0) {
-              enforcedPaymentStatus = 'Paid';
-            } else {
-              enforcedPaymentStatus = 'Pending';
-            }
+            enforcedPaymentStatus = 'Paid';
           }
         }
 
@@ -282,6 +339,9 @@ export default async function handler(req, res) {
           status_label: status === 'delivered' ? 'Delivered' : (status === 'undelivered' ? 'Undelivered' : (body.statusLabel || existing.status_label)),
           cash_collected: enforcedCash,
           payment_status: enforcedPaymentStatus,
+          is_paid_online: enforcedIsPaidOnline,
+          doorstep_upi: enforcedDoorstepUpi,
+          payment_method: enforcedPaymentMethod,
           ...(status === 'delivered' ? { delivered_at: Date.now() } : {}),
           ...(status === 'undelivered' ? { undelivered_at: Date.now() } : {})
         };
@@ -493,10 +553,16 @@ export default async function handler(req, res) {
         // Payment status & Cash collection handling
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
-          if (isPrepaid) {
+          const isDoorstep = Boolean(doorstepUpi === true || updatePayload.doorstep_upi === true || existing.doorstep_upi === true);
+
+          if (isPrepaid || isDoorstep) {
             updatePayload.payment_status = 'Paid';
             updatePayload.cash_collected = 0;
             updatePayload.is_paid_online = true;
+            if (isDoorstep) {
+              updatePayload.doorstep_upi = true;
+              updatePayload.payment_method = 'doorstep_upi';
+            }
           } else {
             updatePayload.is_paid_online = false;
             const orderTotal = Math.round(
@@ -510,18 +576,17 @@ export default async function handler(req, res) {
             if (cashCollected < 0) {
               return res.status(400).json({ error: 'Cash collected cannot be negative' });
             }
+            if (cashCollected < orderTotal) {
+              return res.status(400).json({ error: `Cash collected (₹${cashCollected}) is less than payable order total (₹${orderTotal}). Full payment is required for COD delivery.` });
+            }
             const maxAllowed = orderTotal + 200;
             if (orderTotal > 0 && cashCollected > maxAllowed) {
               return res.status(400).json({ error: `Cash collected (₹${cashCollected}) exceeds payable order total (₹${orderTotal}). Maximum allowed with tip is ₹${maxAllowed}.` });
             }
             updatePayload.cash_collected = cashCollected;
-            if (cashCollected >= orderTotal && orderTotal > 0) {
-              updatePayload.payment_status = 'Paid';
-              if (cashCollected > orderTotal) {
-                updatePayload.tip_amount = cashCollected - orderTotal;
-              }
-            } else {
-              updatePayload.payment_status = 'Pending';
+            updatePayload.payment_status = 'Paid';
+            if (cashCollected > orderTotal) {
+              updatePayload.tip_amount = cashCollected - orderTotal;
             }
           }
         }

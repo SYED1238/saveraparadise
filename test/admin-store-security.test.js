@@ -1153,6 +1153,79 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(codValidRes.statusCode, 200);
     assert.equal(codValidRes.responseData?.order?.cash_collected, 400);
     assert.equal(codValidRes.responseData?.order?.payment_status, 'Paid');
+
+    // 3e. Zero-cash physical COD collection loophole rejected with 400
+    const zeroCashOrders = [
+      { id: '#QB-COD-ZERO', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹400', numeric_total: 400, payment_status: 'Pending', is_paid_online: false }
+    ];
+    const { req: zeroCashReq, res: zeroCashRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-COD-ZERO',
+        status: 'delivered',
+        cashCollected: 0,
+        doorstepUpi: false,
+        simulateOrders: zeroCashOrders
+      }
+    });
+    await orderActionHandler(zeroCashReq, zeroCashRes);
+    assert.equal(zeroCashRes.statusCode, 400, 'Zero cash on physical COD delivery must be rejected');
+    assert.match(zeroCashRes.responseData?.error, /less than payable order total/i);
+
+    // 3f. Doorstep UPI on COD order sets payment_status = 'Paid', is_paid_online = true, and cash_collected = 0
+    const doorstepCodOrders = [
+      { id: '#QB-COD-UPI', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹400', numeric_total: 400, payment_status: 'Pending', is_paid_online: false }
+    ];
+    const { req: doorstepReq, res: doorstepRes } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: {
+        action: 'update_status',
+        orderId: '#QB-COD-UPI',
+        status: 'delivered',
+        cashCollected: 0,
+        doorstepUpi: true,
+        isPaidOnline: true,
+        simulateOrders: doorstepCodOrders
+      }
+    });
+    await orderActionHandler(doorstepReq, doorstepRes);
+    assert.equal(doorstepRes.statusCode, 200);
+    assert.equal(doorstepRes.responseData?.order?.status, 'delivered');
+    assert.equal(doorstepRes.responseData?.order?.payment_status, 'Paid');
+    assert.equal(doorstepRes.responseData?.order?.is_paid_online, true);
+    assert.equal(doorstepRes.responseData?.order?.doorstep_upi, true);
+    assert.equal(doorstepRes.responseData?.order?.cash_collected, 0);
+
+    // 3g. Cloudflare Pages Functions: Doorstep UPI on COD order
+    const cfDoorstepCodOrders = [
+      { id: '#QB-CF-UPI', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹400', numeric_total: 400, payment_status: 'Pending', is_paid_online: false }
+    ];
+    const cfDoorstepReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${riderToken}`
+      },
+      body: JSON.stringify({
+        action: 'update_status',
+        orderId: '#QB-CF-UPI',
+        status: 'delivered',
+        cashCollected: 0,
+        doorstepUpi: true,
+        isPaidOnline: true,
+        simulateOrders: cfDoorstepCodOrders
+      })
+    });
+    const cfDoorstepRes = await cloudflareOrderActionHandler({ request: cfDoorstepReq, env: mockCfEnv });
+    assert.equal(cfDoorstepRes.status, 200);
+    const cfDoorstepData = await cfDoorstepRes.json();
+    assert.equal(cfDoorstepData?.order?.payment_status, 'Paid');
+    assert.equal(cfDoorstepData?.order?.is_paid_online, true);
+    assert.equal(cfDoorstepData?.order?.doorstep_upi, true);
+    assert.equal(cfDoorstepData?.order?.cash_collected, 0);
   });
 
   await t.test('29. Owner Rider Management API in admin-store (list_riders, save_rider, delete_rider, toggle_rider_status)', async () => {
@@ -1343,7 +1416,7 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(overCashRes.statusCode, 400);
     assert.match(overCashRes.responseData?.error, /exceeds payable order total/i);
 
-    // 4. Cash collected less than total keeps payment_status = 'Pending'
+    // 4. Cash collected less than total is rejected with 400 (loophole defense)
     const { req: partialCashReq, res: partialCashRes } = createMockReqRes({
       method: 'POST',
       headers: { authorization: `Bearer ${riderToken}` },
@@ -1356,9 +1429,8 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
       }
     });
     await orderActionHandler(partialCashReq, partialCashRes);
-    assert.equal(partialCashRes.statusCode, 200);
-    assert.equal(partialCashRes.responseData?.order?.payment_status, 'Pending');
-    assert.equal(partialCashRes.responseData?.order?.cash_collected, 300);
+    assert.equal(partialCashRes.statusCode, 400);
+    assert.match(partialCashRes.responseData?.error, /less than payable order total/i);
 
     // 5. Valid COD collection with legitimate tip marks Paid
     const { req: exactCashReq, res: exactCashRes } = createMockReqRes({

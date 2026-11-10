@@ -247,6 +247,12 @@ export async function ensureAdminToken(requiredRole = 'admin') {
         if (res && res.ok) {
           const data = await res.json();
           if (data && data.token) {
+            const matchesRole = !requiredRole || requiredRole === 'admin'
+              ? (data.role === 'admin' || data.role === 'owner')
+              : (data.role === requiredRole);
+            if (!matchesRole) {
+              return null;
+            }
             if (data.role === 'owner') {
               sessionStorage.setItem('quickbite_owner_token', data.token);
             } else if (data.role === 'rider') {
@@ -330,7 +336,7 @@ export async function verifyStaffPin(role, inputPin) {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data && data.token) {
+        if (data && data.token && (data.role === 'admin' || data.role === 'owner')) {
           if (typeof sessionStorage !== 'undefined') {
             sessionStorage.setItem('quickbite_admin_token', data.token);
             if (data.role === 'owner') {
