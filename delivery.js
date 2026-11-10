@@ -325,9 +325,10 @@ const initDeliveryApp = () => {
       updateRiderProfileHeader();
       requestWakeLock();
       renderPortal();
-      dataService.syncOrdersFromSupabase().then(() => {
-        renderPortal();
-      }).catch(() => {
+      Promise.allSettled([
+        dataService.syncOrdersFromSupabase(true),
+        dataService.syncSettingsFromSupabase(true)
+      ]).finally(() => {
         renderPortal();
       });
     } else {
@@ -2697,7 +2698,15 @@ const initDeliveryApp = () => {
 
     isClaimingBag = true;
     try {
-      // 1. Check if order exists in local orders
+      // 1. Proactively ensure latest payout configuration & orders are synchronized from Supabase
+      try {
+        await Promise.allSettled([
+          dataService.syncSettingsFromSupabase(true),
+          dataService.syncOrdersFromSupabase(true)
+        ]);
+      } catch {}
+
+      // 2. Check if order exists in local orders
       let order = existingOrderWithCode || dataService.findOrderByBagCode(code);
 
       // Resilient check directly from localStorage in case of cross-tab sync latency
@@ -2803,16 +2812,23 @@ const initDeliveryApp = () => {
       const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
       return !ts || ts >= shiftStart;
     }).length;
-    const payout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);
 
     const dropCoords = getOrderDropCoordinates(order);
-    const tripDistanceKm = Number(payout.distanceKm);
+    const existingDistanceKm = parseFloat(order?.addressDetails?.distanceKm || order?.distance_km || order?.distanceKm || 0);
     const riderOriginLat = riderLiveLocation.lat || RESTAURANT_COORDINATES.lat;
     const riderOriginLng = riderLiveLocation.lng || RESTAURANT_COORDINATES.lng;
-    const rawDistanceKm = (tripDistanceKm && !isNaN(tripDistanceKm) && tripDistanceKm > 0)
-      ? tripDistanceKm
+    const rawDistanceKm = (existingDistanceKm && !isNaN(existingDistanceKm) && existingDistanceKm > 0)
+      ? existingDistanceKm
       : calculateDistanceKm(riderOriginLat, riderOriginLng, dropCoords.lat, dropCoords.lng);
-    const distanceKm = (!rawDistanceKm || isNaN(rawDistanceKm) || rawDistanceKm <= 0) ? 1.8 : rawDistanceKm;
+    const distanceKm = (!rawDistanceKm || isNaN(rawDistanceKm) || rawDistanceKm <= 0) ? 1.8 : Math.round(rawDistanceKm * 100) / 100;
+
+    // Ensure order.addressDetails has the authoritative distance before payout calculation
+    if (!order.addressDetails) order.addressDetails = {};
+    if (!order.addressDetails.distanceKm || isNaN(order.addressDetails.distanceKm)) {
+      order.addressDetails.distanceKm = distanceKm;
+    }
+
+    const payout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);
     const estimatedMins = Math.max(5, Math.round(distanceKm * 3.5));
 
     const rawAddrs = dataService.getAllAddressesRaw();

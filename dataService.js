@@ -4675,20 +4675,12 @@ class QuickBiteDataService {
         helpline: phone
       };
 
-      const token = (typeof sessionStorage !== 'undefined')
-        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
-        : null;
-
-      // Authoritative sync via authenticated Admin API if privileged session exists
-      if (token) {
-        const res = await this._adminStoreAction('save_settings', { settings: payloadSettings });
-        return { ...(res?.data || payloadSettings), _syncedToCloud: true, _localOnly: false };
-      }
-      console.warn('[DataService] syncSettingsToSupabase: Staff/Owner token missing. Saved to localStorage only.');
-      return { ...payloadSettings, _syncedToCloud: false, _localOnly: true };
+      // Always execute authoritative cloud sync via _adminStoreAction (which automatically checks & ensures owner/admin tokens)
+      const res = await this._adminStoreAction('save_settings', { settings: payloadSettings });
+      return { ...(res?.data || payloadSettings), _syncedToCloud: true, _localOnly: false };
     } catch (err) {
       console.warn('[DataService] syncSettingsToSupabase error:', err?.message || err);
-      throw err;
+      return { ...settings, _syncedToCloud: false, _localOnly: true };
     }
   }
 
@@ -7993,6 +7985,7 @@ class QuickBiteDataService {
       }
     };
 
+    let syncPromise = null;
     try {
       localStorage.setItem('quickbite_payout_config', JSON.stringify(cleanConfig));
       localStorage.setItem('quickbite_owner_km_rate', String(cleanConfig.flatLinear.ratePerKm));
@@ -8002,11 +7995,10 @@ class QuickBiteDataService {
         payoutConfig: cleanConfig,
         kmPayoutRate: cleanConfig.flatLinear.ratePerKm
       };
-      const p = this.saveSettings(updated);
-      if (p && typeof p.catch === 'function') {
-        p.catch(() => {});
-      }
-    } catch {}
+      syncPromise = this.saveSettings(updated);
+    } catch (err) {
+      console.warn('[DataService] savePayoutConfig persistence error:', err);
+    }
 
     try {
       if (this.sharedBroadcastChannel) {
@@ -8024,7 +8016,11 @@ class QuickBiteDataService {
 
     this.notifyChange('payout_config_updated', cleanConfig);
     this.notifyChange('km_rate_updated', { rate: cleanConfig.flatLinear.ratePerKm });
-    return cleanConfig;
+
+    const result = { ...cleanConfig };
+    result.then = (onF, onR) => Promise.resolve(syncPromise).then(() => cleanConfig).then(onF, onR);
+    result.catch = (onR) => Promise.resolve(syncPromise).catch(onR);
+    return result;
   }
 
   calculateStandardTripPayout(order, orderIndex, cfg, distanceKm) {

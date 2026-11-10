@@ -2210,13 +2210,13 @@ function initNavigation() {
 
   // 3 Payout Compensation Method Buttons Selection (Opens Settings Directly or Toggles)
   document.querySelectorAll('.payout-method-card').forEach(card => {
-    card.addEventListener('click', () => {
+    card.addEventListener('click', async () => {
       const method = card.getAttribute('data-method');
       if (!method) return;
       const cfg = dataService.getPayoutConfig();
       const prevMethod = cfg.activeMethod;
       cfg.activeMethod = method;
-      dataService.savePayoutConfig(cfg);
+      await dataService.savePayoutConfig(cfg);
       syncPayoutConfigUI(true);
       renderDashboard();
       const methodNames = {
@@ -2313,9 +2313,9 @@ function initNavigation() {
   // Save Payout Settings Button (Saves and Automatically Closes Settings)
   const btnSavePayout = document.getElementById('btn-save-payout-config');
   if (btnSavePayout) {
-    btnSavePayout.addEventListener('click', () => {
+    btnSavePayout.addEventListener('click', async () => {
       const newCfg = readCurrentPayoutConfigFromUI();
-      const saved = dataService.savePayoutConfig(newCfg);
+      const saved = await dataService.savePayoutConfig(newCfg);
       closePayoutSettingsPanel();
       syncPayoutConfigUI(true);
       renderDashboard();
