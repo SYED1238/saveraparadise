@@ -4615,11 +4615,12 @@ class QuickBiteDataService {
         ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
         : null;
       if (!token) {
-        return map;
+        console.warn('[DataService] setAllCategoryImage: Staff token missing. Saved to localStorage only.');
+        return { ...map, _syncedToCloud: false, _localOnly: true };
       }
       try {
         await this._adminStoreAction('save_category_images', { images: map });
-        return map;
+        return { ...map, _syncedToCloud: true, _localOnly: false };
       } catch (err) {
         console.warn('[DataService] setAllCategoryImage server persistence failed, rolling back:', err?.message || err);
         if (typeof localStorage !== 'undefined') {
@@ -4661,11 +4662,12 @@ class QuickBiteDataService {
         ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
         : null;
       if (!token) {
-        return map;
+        console.warn('[DataService] saveCategoryImage: Staff token missing. Saved to localStorage only.');
+        return { ...map, _syncedToCloud: false, _localOnly: true };
       }
       try {
         await this._adminStoreAction('save_category_images', { images: map });
-        return map;
+        return { ...map, _syncedToCloud: true, _localOnly: false };
       } catch (err) {
         console.warn('[DataService] saveCategoryImage server persistence failed, rolling back:', err?.message || err);
         if (typeof localStorage !== 'undefined') {

@@ -169,6 +169,9 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
     // Asserts setAllCategoryImage updates both keys in one map and uses _adminStoreAction
     assert.match(dataServiceContent, /map\['all'\]\s*=\s*sanitized;[\s\S]*map\['cat-all'\]\s*=\s*sanitized;/, 'setAllCategoryImage must set both keys in single map');
 
+    // Asserts missing token is explicitly flagged as local-only
+    assert.match(dataServiceContent, /_syncedToCloud:\s*false,\s*_localOnly:\s*true/, 'Must mark missing token save as local-only');
+
     // Asserts no direct store_settings.upsert(...).catch
     assert.doesNotMatch(dataServiceContent, /store_settings'\)\.upsert[^;\n]+\.catch\(/, 'store_settings upsert must not directly invoke .catch');
   });
@@ -206,6 +209,12 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
       // delete_category must attempt delete_category_cascade RPC
       assert.match(content, /delete_category_cascade/, 'delete_category must call delete_category_cascade RPC');
       assert.match(content, /isMissingRpc/, 'delete_category must strictly detect if RPC is missing');
+      assert.doesNotMatch(content, /errMsg\.includes\('delete_category_cascade'\)/, 'Must not use overly loose RPC error detection');
+
+      // Sequential fallback must verify category existence before deleting dishes
+      const checkExistingCatIdx = content.indexOf('existingCat');
+      const deleteDishCascadeIdx = content.indexOf(`sb.from('dishes').delete().or(`);
+      assert.ok(checkExistingCatIdx !== -1 && checkExistingCatIdx < deleteDishCascadeIdx, 'Fallback must verify category existence before deleting dishes');
       assert.match(content, /Category '.*' not found in database to delete/, 'delete_category fallback must return 404 if zero rows affected');
     }
   });

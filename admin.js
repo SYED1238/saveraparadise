@@ -796,15 +796,16 @@ const initAdminApp = () => {
                 // If editing an existing category, persist immediately so image is saved right away
                 const activeEditId = catEditId ? catEditId.value : null;
                 if (activeEditId === 'all' || activeEditId === 'cat-all') {
-                  if (typeof dataService.setAllCategoryImage === 'function') {
-                    await dataService.setAllCategoryImage(finalImg);
+                  const saveRes = (typeof dataService.setAllCategoryImage === 'function')
+                    ? await dataService.setAllCategoryImage(finalImg)
+                    : await dataService.saveCategoryImage('all', finalImg);
+                  if (saveRes?._localOnly) {
+                    showToast('⚠️ "All" category photo saved locally (Cloud sync requires active Staff session).', 'warning');
                   } else {
-                    await dataService.saveCategoryImage('all', finalImg);
-                    await dataService.saveCategoryImage('cat-all', finalImg);
+                    showToast('✓ "All" category photo uploaded and saved!', 'success');
                   }
-                  showToast('✓ "All" category photo uploaded and saved!', 'success');
                 } else if (activeEditId) {
-                  await dataService.saveCategoryImage(activeEditId, finalImg);
+                  const saveRes = await dataService.saveCategoryImage(activeEditId, finalImg);
                   const cats = dataService.getCategories();
                   const matchedCat = cats.find(c => c.id === activeEditId || c.slug === activeEditId);
                   if (matchedCat) {
@@ -812,7 +813,11 @@ const initAdminApp = () => {
                     if (matchedCat.slug) await dataService.saveCategoryImage(matchedCat.slug, finalImg);
                     await dataService.updateCategory(activeEditId, { image: finalImg });
                   }
-                  showToast('✓ Category photo uploaded and saved!', 'success');
+                  if (saveRes?._localOnly) {
+                    showToast('⚠️ Category photo saved locally (Cloud sync requires active Staff session).', 'warning');
+                  } else {
+                    showToast('✓ Category photo uploaded and saved!', 'success');
+                  }
                 } else {
                   showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
                 }
@@ -888,13 +893,14 @@ const initAdminApp = () => {
       }
 
       if (editId === 'all' || editId === 'cat-all') {
-        if (typeof dataService.setAllCategoryImage === 'function') {
-          await dataService.setAllCategoryImage(image);
+        const saveRes = (typeof dataService.setAllCategoryImage === 'function')
+          ? await dataService.setAllCategoryImage(image)
+          : await dataService.saveCategoryImage('all', image);
+        if (saveRes?._localOnly) {
+          showToast('⚠️ "All" category photo saved locally (Cloud sync requires Staff session).', 'warning');
         } else {
-          await dataService.saveCategoryImage('all', image);
-          await dataService.saveCategoryImage('cat-all', image);
+          showToast('"All" category photo updated successfully!', 'success');
         }
-        showToast('"All" category photo updated successfully!', 'success');
       } else if (editId) {
         await dataService.updateCategory(editId, { name, emoji, image });
         if (image) {
