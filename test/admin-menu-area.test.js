@@ -195,7 +195,7 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
     );
   });
 
-  it('13. api/admin-store.js and functions/api/admin-store.js delete operations return 404 when 0 rows affected and only fall back for missing RPC', () => {
+  it('13. api/admin-store.js and functions/api/admin-store.js delete operations return 404 when 0 rows affected and require atomic cascade RPC', () => {
     const nodeApiPath = path.resolve(process.cwd(), 'api/admin-store.js');
     const cfApiPath = path.resolve(process.cwd(), 'functions/api/admin-store.js');
     const nodeApiContent = fs.readFileSync(nodeApiPath, 'utf8');
@@ -206,16 +206,13 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
       assert.match(content, /sb\.from\('dishes'\)\.delete\(\)\.eq\('id',\s*id\)\.select\(\)/, 'delete_dish must select deleted rows');
       assert.match(content, /Dish '.*' not found in database to delete/, 'delete_dish must return 404 if zero rows affected');
 
-      // delete_category must attempt delete_category_cascade RPC
+      // delete_category must require atomic delete_category_cascade RPC
       assert.match(content, /delete_category_cascade/, 'delete_category must call delete_category_cascade RPC');
-      assert.match(content, /isMissingRpc/, 'delete_category must strictly detect if RPC is missing');
-      assert.doesNotMatch(content, /errMsg\.includes\('delete_category_cascade'\)/, 'Must not use overly loose RPC error detection');
+      assert.match(content, /503/, 'delete_category must return 503 if Migration 11 RPC is missing');
 
-      // Sequential fallback must verify category existence before deleting dishes
-      const checkExistingCatIdx = content.indexOf('existingCat');
-      const deleteDishCascadeIdx = content.indexOf(`sb.from('dishes').delete().or(`);
-      assert.ok(checkExistingCatIdx !== -1 && checkExistingCatIdx < deleteDishCascadeIdx, 'Fallback must verify category existence before deleting dishes');
-      assert.match(content, /Category '.*' not found in database to delete/, 'delete_category fallback must return 404 if zero rows affected');
+      // Non-atomic sequential fallback must be completely removed
+      assert.doesNotMatch(content, /sequential_fallback/, 'Must not use non-atomic sequential fallback');
+      assert.doesNotMatch(content, /sb\.from\('dishes'\)\.delete\(\)\.or/, 'Must not execute direct dish deletion fallback');
     }
   });
 
