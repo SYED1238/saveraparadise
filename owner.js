@@ -549,7 +549,11 @@ function getPeriodDateBounds(period) {
   const now = new Date();
 
   if (period === 'today') {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const midnightMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+    const shiftStartMs = (typeof dataService !== 'undefined' && typeof dataService.getShiftStartTimeMs === 'function')
+      ? dataService.getShiftStartTimeMs(now.getTime())
+      : midnightMs;
+    const start = new Date(Math.min(midnightMs, shiftStartMs));
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     return { start, end, label: `Today, ${start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} (Live)` };
   }
@@ -1202,27 +1206,6 @@ function renderRiderFleetTable(orders) {
       if (pin) deleteOwnerRider(pin);
     };
   });
-
-  // Update Cash Drawer Reconciliation Summary Card (Plain English)
-  const drawerCodEl = document.getElementById('drawer-cod-total');
-  const drawerPayoutEl = document.getElementById('drawer-payout-total');
-  const drawerNetEl = document.getElementById('drawer-net-total');
-  const drawerNetSubEl = document.getElementById('drawer-net-sub-total');
-  const drawerRateEl = document.getElementById('drawer-note-rate');
-
-  if (drawerCodEl) drawerCodEl.textContent = `₹${grandCash.toLocaleString('en-IN')}`;
-  if (drawerPayoutEl) drawerPayoutEl.textContent = `₹${grandPayouts.toLocaleString('en-IN')}`;
-  if (drawerNetEl) {
-    if (grandNetDeposit >= 0) {
-      drawerNetEl.textContent = `₹${grandNetDeposit.toLocaleString('en-IN')}`;
-      drawerNetEl.className = 'drawer-headline-amount num-emerald';
-    } else {
-      drawerNetEl.textContent = `−₹${Math.abs(grandNetDeposit).toLocaleString('en-IN')}`;
-      drawerNetEl.className = 'drawer-headline-amount num-amber';
-    }
-  }
-  if (drawerNetSubEl) drawerNetSubEl.textContent = `₹${grandNetDeposit.toLocaleString('en-IN')}`;
-  if (drawerRateEl) drawerRateEl.textContent = `₹${riderPayoutRate}`;
 }
 
 // ==============================================================
@@ -2996,14 +2979,35 @@ function renderKmPayoutsView(orders) {
         console.warn('[Owner] Payout summary warning for rider:', riderPinStr, sumErr);
       }
 
+      const isLiveShift = (currentPeriod === 'today');
       const payoutBalance = payoutSummary ? safeNumber(payoutSummary.payoutBalance) : calculatedPayout;
       const paidDate = r.payoutPaidAt ? new Date(r.payoutPaidAt) : null;
-      const isPaidToday = Boolean(paidDate && !isNaN(paidDate.getTime()) && paidDate.toDateString() === new Date().toDateString());
-      const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
-      const paidAmount = safeNumber(r.payoutAmountPaid) || (payoutSummary ? safeNumber(payoutSummary.paidAmount) : calculatedPayout);
+      const paidTs = paidDate && !isNaN(paidDate.getTime()) ? paidDate.getTime() : 0;
 
-      const hasUnpaidBalance = (payoutBalance !== undefined) ? payoutBalance > 0 : (!isPaidToday && calculatedPayout > 0);
-      const currentPayable = (payoutBalance !== undefined && payoutBalance > 0) ? payoutBalance : calculatedPayout;
+      let isPaid = false;
+      let paidTime = '';
+      let paidAmount = 0;
+      let currentPayable = 0;
+      let hasUnpaidBalance = false;
+
+      if (isLiveShift) {
+        const shiftStartMs = (typeof dataService !== 'undefined' && typeof dataService.getShiftStartTimeMs === 'function')
+          ? dataService.getShiftStartTimeMs()
+          : new Date(new Date().setHours(1, 0, 0, 0)).getTime();
+        isPaid = Boolean(paidTs && (paidTs >= shiftStartMs || paidDate.toDateString() === new Date().toDateString()));
+        paidTime = paidTs ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+        paidAmount = safeNumber(r.payoutAmountPaid) || (payoutSummary ? safeNumber(payoutSummary.paidAmount) : calculatedPayout);
+        currentPayable = (payoutBalance !== undefined && payoutBalance > 0) ? payoutBalance : (isPaid ? 0 : calculatedPayout);
+        hasUnpaidBalance = currentPayable > 0;
+      } else {
+        const periodBounds = getPeriodDateBounds(currentPeriod);
+        const paidInPeriod = Boolean(paidTs && paidTs >= periodBounds.start.getTime() && paidTs <= periodBounds.end.getTime());
+        isPaid = paidInPeriod || (calculatedPayout === 0);
+        paidTime = paidTs ? paidDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+        paidAmount = safeNumber(r.payoutAmountPaid) || calculatedPayout;
+        currentPayable = isPaid ? 0 : calculatedPayout;
+        hasUnpaidBalance = currentPayable > 0;
+      }
 
       return {
         pin: riderPinStr,
@@ -3020,7 +3024,8 @@ function renderKmPayoutsView(orders) {
         hasUnpaidBalance,
         currentPayable,
         cashInHand,
-        isPaidToday,
+        isPaid,
+        isPaidToday: isPaid,
         paidTime,
         paidAmount
       };
@@ -3029,9 +3034,11 @@ function renderKmPayoutsView(orders) {
     // Render Table
     if (tbody) {
       tbody.innerHTML = payoutList.map(st => {
-        const statusBadge = st.isPaidToday
+        const statusBadge = st.isPaid
           ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
-          : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`;
+          : (st.calculatedPayout === 0
+            ? `<span class="badge-payout-paid" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`
+            : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`);
 
         let actionBtn = '';
         if (activeInFlightPayoutPins && activeInFlightPayoutPins.has(st.pin)) {
@@ -3078,12 +3085,14 @@ function renderKmPayoutsView(orders) {
     // Render Mobile Cards
     if (cardsContainer) {
       cardsContainer.innerHTML = payoutList.map(st => {
-        const statusBadge = st.isPaidToday
+        const statusBadge = st.isPaid
           ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
-          : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`;
+          : (st.calculatedPayout === 0
+            ? `<span class="badge-payout-paid" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`
+            : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`);
 
         return `
-          <div class="rider-card-mobile" style="${st.isPaidToday ? 'border-left: 4px solid #10B981;' : 'border-left: 4px solid #8B5CF6;'}">
+          <div class="rider-card-mobile" style="${st.isPaid ? 'border-left: 4px solid #10B981;' : 'border-left: 4px solid #8B5CF6;'}">
             <div class="rc-header">
               <div class="rc-profile">
                 <div class="rider-avatar-bubble">${escapeHtml(st.initial)}</div>
@@ -3272,6 +3281,38 @@ function printExecutiveReport() {
     }
   });
 
+  // Sanitize Delivery Boys table for paper print: strip secret login PINs and interactive buttons
+  let printRiderTableHtml = '';
+  const originalTable = document.getElementById('owner-rider-table');
+  if (originalTable) {
+    const tableClone = originalTable.cloneNode(true);
+    tableClone.querySelectorAll('tr').forEach(row => {
+      const ths = Array.from(row.querySelectorAll('th'));
+      const tds = Array.from(row.querySelectorAll('td'));
+      if (ths.length >= 11) {
+        ths[10]?.remove(); // Remove Actions column
+        ths[2]?.remove();  // Remove Login PIN column
+      } else if (ths.length > 0) {
+        ths.forEach(th => {
+          const txt = th.textContent.toLowerCase();
+          if (txt.includes('pin') || txt.includes('action')) th.remove();
+        });
+      }
+      if (tds.length >= 11) {
+        tds[10]?.remove(); // Remove Action buttons
+        tds[2]?.remove();  // Remove Secret Login PIN
+      } else if (tds.length > 0) {
+        tds.forEach(td => {
+          if (td.querySelector('.badge-rider-pin-table, .badge-rider-pin, .rc-action-btn-group, button')) {
+            td.remove();
+          }
+        });
+      }
+    });
+    tableClone.querySelectorAll('button, .rc-action-btn-group').forEach(el => el.remove());
+    printRiderTableHtml = tableClone.outerHTML;
+  }
+
   printContainer.innerHTML = `
     <div style="padding: 24px; font-family: sans-serif; color: #000; background: #FFF;">
       <div style="border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 16px;">
@@ -3305,7 +3346,7 @@ function printExecutiveReport() {
 
       <div style="margin-top: 24px;">
         <h4 style="margin: 0 0 8px 0;">Delivery Boys Settlement Summary</h4>
-        ${document.getElementById('owner-rider-table')?.outerHTML || ''}
+        ${printRiderTableHtml}
       </div>
 
       <div style="margin-top: 40px; display: flex; justify-content: space-between; font-size: 0.85rem; color: #555;">
@@ -4310,8 +4351,8 @@ function renderReportDishesTable(deliveredOrders, totalRevenue) {
 
     return `
       <tr>
-        <td><strong>${dish.name}</strong></td>
-        <td><span class="report-meta-chip" style="font-size: 0.7rem;">${dish.category}</span></td>
+        <td><strong>${escapeHtml(dish.name)}</strong></td>
+        <td><span class="report-meta-chip" style="font-size: 0.7rem;">${escapeHtml(dish.category)}</span></td>
         <td class="text-center font-bold">${dish.quantity}</td>
         <td class="text-right">₹${dish.price.toLocaleString('en-IN')}</td>
         <td class="text-right font-bold num-gold">₹${Math.round(dish.revenue).toLocaleString('en-IN')}</td>
@@ -4388,24 +4429,24 @@ function renderReportOrdersTable() {
 
     return `
       <tr>
-        <td><strong>${cleanId}</strong></td>
-        <td style="font-size: 0.78rem; color: #64748B;">${timeStr}</td>
+        <td><strong>${escapeHtml(cleanId)}</strong></td>
+        <td style="font-size: 0.78rem; color: #64748B;">${escapeHtml(timeStr)}</td>
         <td>
-          <div style="font-weight: 600;">${o.customerName || 'Online Guest'}</div>
-          <div style="font-size: 0.72rem; color: #94A3B8;">${extractPhoneFromOrder(o) || 'No phone'}</div>
+          <div style="font-weight: 600;">${escapeHtml(o.customerName || 'Online Guest')}</div>
+          <div style="font-size: 0.72rem; color: #94A3B8;">${escapeHtml(extractPhoneFromOrder(o) || 'No phone')}</div>
         </td>
-        <td style="max-width: 220px; font-size: 0.78rem; color: #475569;" title="${itemsSummary}">${itemsSummary}</td>
+        <td style="max-width: 220px; font-size: 0.78rem; color: #475569;" title="${escapeHtml(itemsSummary)}">${escapeHtml(itemsSummary)}</td>
         <td>
           <span class="report-meta-chip ${isOnline ? 'num-teal' : 'num-amber'}" style="font-size: 0.7rem;">
             <i class="fa-solid ${isOnline ? 'fa-credit-card' : 'fa-money-bill-wave'}"></i>
             ${isOnline ? 'Online/UPI' : 'COD Cash'}
           </span>
         </td>
-        <td style="font-size: 0.8rem;">${o.assignedRiderName ? `<i class="fa-solid fa-motorcycle" style="color: #7C3AED;"></i> ${o.assignedRiderName}` : '<span style="color: #94A3B8;">Unassigned</span>'}</td>
+        <td style="font-size: 0.8rem;">${o.assignedRiderName ? `<i class="fa-solid fa-motorcycle" style="color: #7C3AED;"></i> ${escapeHtml(o.assignedRiderName)}` : '<span style="color: #94A3B8;">Unassigned</span>'}</td>
         <td class="text-right font-bold" style="font-size: 0.92rem;">₹${rawTotal.toLocaleString('en-IN')}</td>
-        <td class="text-center"><span class="status-chip ${status === 'delivered' ? 'success' : (status === 'cancelled' ? 'cancelled' : 'pending')}">${status}</span></td>
+        <td class="text-center"><span class="status-chip ${status === 'delivered' ? 'success' : (status === 'cancelled' ? 'cancelled' : 'pending')}">${escapeHtml(status)}</span></td>
         <td class="text-center">
-          <button type="button" class="btn-cal-order-receipt" data-order-id="${o.id}" style="background: #F1F5F9; border: 1px solid #CBD5E1; color: #0F172A; border-radius: 6px; padding: 4px 8px; font-size: 0.74rem; font-weight: 700; cursor: pointer;">
+          <button type="button" class="btn-cal-order-receipt" data-order-id="${escapeHtml(o.id)}" style="background: #F1F5F9; border: 1px solid #CBD5E1; color: #0F172A; border-radius: 6px; padding: 4px 8px; font-size: 0.74rem; font-weight: 700; cursor: pointer;">
             <i class="fa-solid fa-receipt"></i> Invoice
           </button>
         </td>

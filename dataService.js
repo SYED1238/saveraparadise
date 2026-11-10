@@ -7295,7 +7295,9 @@ class QuickBiteDataService {
                 status: r.status || existing?.status || 'online',
                 avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
                 avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
-                cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null
+                cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null,
+                payoutPaidAt: r.payout_paid_at || existing?.payoutPaidAt || null,
+                payoutAmountPaid: Number(r.payout_amount_paid || existing?.payoutAmountPaid || 0)
               };
             });
             this.ridersCache = mapped;
@@ -7414,7 +7416,9 @@ class QuickBiteDataService {
       status: riderData.status || existing?.status || 'online',
       avatar: riderData.avatar && !riderData.avatar.startsWith('http') ? riderData.avatar : avatarEmoji,
       avatarImg: riderData.avatarImg || existing?.avatarImg || '/avatars/rider-1.svg',
-      cashSettledAt: riderData.cashSettledAt !== undefined ? riderData.cashSettledAt : (existing?.cashSettledAt || null)
+      cashSettledAt: riderData.cashSettledAt !== undefined ? riderData.cashSettledAt : (riderData.cash_settled_at !== undefined ? riderData.cash_settled_at : (existing?.cashSettledAt || null)),
+      payoutPaidAt: riderData.payoutPaidAt !== undefined ? riderData.payoutPaidAt : (riderData.payout_paid_at !== undefined ? riderData.payout_paid_at : (existing?.payoutPaidAt || null)),
+      payoutAmountPaid: riderData.payoutAmountPaid !== undefined ? Number(riderData.payoutAmountPaid) : (riderData.payout_amount_paid !== undefined ? Number(riderData.payout_amount_paid) : (existing?.payoutAmountPaid || 0))
     };
 
     if (idx >= 0) {

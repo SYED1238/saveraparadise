@@ -2045,7 +2045,16 @@ body.owner-body .lock-footer-info {
   .btn-view-receipt,
   .btn-close-modal,
   .owner-modal-footer,
-  .owner-floating-bar {
+  .owner-floating-bar,
+  .badge-rider-pin,
+  .badge-rider-pin-table,
+  .rc-action-btn-group,
+  .btn-owner-edit-rider,
+  .btn-owner-delete-rider,
+  #owner-rider-table th:nth-child(3),
+  #owner-rider-table td:nth-child(3),
+  #owner-rider-table th:nth-child(11),
+  #owner-rider-table td:nth-child(11) {
     display: none !important;
   }
 
