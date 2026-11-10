@@ -193,7 +193,7 @@ export default async function handler(req, res) {
           });
         }
 
-        if (!error && dbRider && (!dbRider.status || dbRider.status === 'online' || dbRider.status === 'active')) {
+        if (!error && dbRider && dbRider.status !== 'inactive') {
           role = 'rider';
           dynamicRiderRecord = dbRider;
         }

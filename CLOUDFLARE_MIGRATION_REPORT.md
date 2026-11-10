@@ -60,7 +60,9 @@ All changes relative to `origin/main` are **strictly new additions (23 files, +3
 | `functions/api/r2-list.js` | **Added** | Pages Function handler for AWS SigV4 GET object listing with prefix sanitization. |
 | `functions/api/r2-delete.js` | **Added** | Pages Function handler for AWS SigV4 DELETE object removal with admin authorization. |
 | `functions/api/r2-video.js` | **Added** | Pages Function handler for AWS SigV4 video streaming with HTTP 206 Partial Content range requests. |
-| `test/cloudflare-pages-functions.test.js` | **Added** | Automated test suite verifying all 12 Pages Functions, CORS preflights, bot rejection, and security boundaries. |
+| `functions/api/admin-store.js` | **Added** | Pages Function handler for staff menu management, category cascades, and dynamic rider persistence. |
+| `functions/api/order-action.js` | **Added** | Pages Function handler for authoritative order creation, atomic claims, cancellations, and status progression. |
+| `test/cloudflare-pages-functions.test.js` | **Added** | Automated test suite verifying all 14 Pages Functions, CORS preflights, bot rejection, and security boundaries. |
 | `CLOUDFLARE_MIGRATION_REPORT.md` | **Added** | Comprehensive architectural, security, and pre-push audit report. |
 
 ### 2.4 Preservation of Original Configuration
@@ -184,7 +186,7 @@ Once Cashfree merchant verification is formally approved by Cashfree:
 3. [x] Vite multi-page build verified (`dist/` contains 11 HTML entry points and assets).
 4. [x] Wrangler Pages Functions compiler verified (`✨ Compiled Worker successfully`).
 5. [x] `_routes.json`, `_redirects`, `_headers`, and `wrangler.toml` verified in `dist/`.
-6. [x] All 12 Pages Functions tested against standard Web `Request`/`Response`.
+6. [x] All 14 Pages Functions tested against standard Web `Request`/`Response`.
 7. [x] Zero production credentials committed to Git.
 8. [ ] **Pending User Approval:** Push branch `cloudflare-migration` to GitHub.
 9. [ ] Connect GitHub repository branch `cloudflare-migration` to Cloudflare Pages.

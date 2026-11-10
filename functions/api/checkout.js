@@ -18,7 +18,7 @@ let authoritativeSettingsCachedAt = 0;
 
 async function fetchAuthoritativeSettings(env = null) {
   const now = Date.now();
-  if (authoritativeSettingsCache && (now - authoritativeSettingsCachedAt < 60000)) {
+  if (authoritativeSettingsCache && (now - authoritativeSettingsCachedAt < 5000)) {
     return authoritativeSettingsCache;
   }
   const supabaseUrl = (env && (env.VITE_SUPABASE_URL || env.SUPABASE_URL)) ||
@@ -100,7 +100,7 @@ function isDishAvailableNow(dish, now = new Date()) {
 
 async function fetchAuthoritativeDishes(env = null) {
   const now = Date.now();
-  if (authoritativeDishesCache && (now - authoritativeDishesCachedAt < 60000)) {
+  if (authoritativeDishesCache && (now - authoritativeDishesCachedAt < 5000)) {
     return authoritativeDishesCache;
   }
   const supabaseUrl = (env && (env.VITE_SUPABASE_URL || env.SUPABASE_URL)) ||
@@ -239,6 +239,30 @@ export async function onRequest(context) {
         }
       }
       Object.assign(storeSettings, DEFAULT_SETTINGS_FALLBACK);
+    }
+
+    // Authoritative Kitchen Availability Verification
+    if (!allowTestOverrides) {
+      if (storeSettings.storeOpen === false) {
+        const reason = storeSettings.storeClosedReason || 'The restaurant is currently closed for orders.';
+        return jsonResponse({
+          error: 'Store Closed',
+          message: reason,
+          storeClosed: true
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      const pauseUntil = Number(storeSettings.pauseUntil || 0);
+      if (storeSettings.isRushPaused && pauseUntil > Date.now()) {
+        const remainingMins = Math.max(1, Math.ceil((pauseUntil - Date.now()) / 60000));
+        const reason = storeSettings.pauseReason || `Orders temporarily paused due to high kitchen rush. Please try again in ${remainingMins} minute${remainingMins > 1 ? 's' : ''}.`;
+        return jsonResponse({
+          error: 'Kitchen Rush Pause',
+          message: reason,
+          rushPaused: true,
+          remainingMinutes: remainingMins
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
     }
 
 

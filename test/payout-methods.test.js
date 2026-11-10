@@ -198,4 +198,34 @@ test.describe('OWNER 3 PAYOUT COMPENSATION MODELS SUITE', () => {
     assert.ok(js.includes('syncPayoutConfigUI(); // Revert modified stepper inputs back to persisted config') && js.includes('closePayoutSettingsPanel();'), 'Close button must revert unsaved inputs via syncPayoutConfigUI');
     assert.ok(js.includes('updateLiveSimulatorPreview();') && js.includes('updatePayoutButtonHints();'), 'syncPayoutConfigUI must call updatePayoutButtonHints');
   });
+
+  test('9. Guard open payout settings panel: background refresh does not overwrite in-progress edits', () => {
+    const js = fs.readFileSync(path.join(rootDir, 'owner.js'), 'utf-8');
+    assert.ok(js.includes('if (force || !isPayoutSettingsOpen)'), 'syncPayoutConfigUI must only populate stepper/inputs when forced or when panel is not open');
+  });
+
+  test('10. Cross-device Realtime payout sync: broadcasts and notifications', () => {
+    const dsJs = fs.readFileSync(path.join(rootDir, 'dataService.js'), 'utf-8');
+    const delivJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf-8');
+
+    // dataService broadcasts payout_config_updated
+    assert.ok(dsJs.includes("event: 'payout_config_updated'"), 'dataService must broadcast and listen to payout_config_updated');
+    // delivery.js listens to payout_config_updated and settings
+    assert.ok(delivJs.includes("dataService.subscribeToChanges('payout_config_updated'"), 'delivery.js must subscribe to payout_config_updated');
+    assert.ok(delivJs.includes("dataService.subscribeToChanges('settings'"), 'delivery.js must subscribe to settings for payout updates');
+  });
+
+  test('11. Owner portal includes undelivered orders in payout calculations and drawer summaries', () => {
+    const js = fs.readFileSync(path.join(rootDir, 'owner.js'), 'utf-8');
+    // Drawer summary includes undelivered
+    assert.ok(js.includes("String(o.status || '').toLowerCase() === 'delivered' || String(o.status || '').toLowerCase() === 'undelivered'"), 'owner.js must include undelivered orders for payouts');
+  });
+
+  test('12. Distance preservation & auto-healing: does not override valid distance with straight-line heuristic', () => {
+    const customTrip = { addressDetails: { distanceKm: 4.2 } };
+    const res = dataService.calculateOrderPayout(customTrip, 1);
+    assert.equal(res.distanceKm, 4.2);
+    // Tiered standard: ₹25 + (4.2 - 1.0) * 10 = ₹25 + 32 = ₹57.00
+    assert.equal(res.amount, 57.00);
+  });
 });

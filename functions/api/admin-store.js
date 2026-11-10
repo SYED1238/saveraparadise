@@ -72,9 +72,12 @@ export async function onRequest(context) {
     return jsonResponse({ error: 'Action parameter is required' }, 400, Object.fromEntries(corsHeaders.entries()));
   }
 
-  // Role Gate: Modifying store settings or clearing orders requires Executive Owner session
-  if ((action === 'save_settings' || action === 'clear_orders') && auth.payload?.role !== 'owner') {
+  // Role Gate: Clearing orders requires Executive Owner session; saving store settings requires Staff or Owner session
+  if (action === 'clear_orders' && auth.payload?.role !== 'owner') {
     return jsonResponse({ error: `Forbidden: Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
+  }
+  if (action === 'save_settings' && auth.payload?.role !== 'owner' && auth.payload?.role !== 'admin') {
+    return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
 
   // 3. Initialize authoritative Supabase service client
@@ -174,8 +177,17 @@ export async function onRequest(context) {
         if (!id || typeof in_stock !== 'boolean') {
           return jsonResponse({ error: 'Dish ID and in_stock boolean are required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        const { data, error } = await sb.from('dishes').update({ in_stock }).eq('id', id).select();
+        let { data, error } = await sb.from('dishes').update({ in_stock }).eq('id', id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          const rawDish = body.dish;
+          if (rawDish && rawDish.name) {
+            const upsertPayload = sanitizeDishFields({ ...rawDish, id, in_stock });
+            const upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+            if (upsertRes.error) throw upsertRes.error;
+            data = upsertRes.data;
+          }
+        }
         if (!data || data.length === 0) {
           return jsonResponse({ error: `Dish '${id}' not found in database to toggle stock` }, 404, Object.fromEntries(corsHeaders.entries()));
         }
@@ -331,7 +343,9 @@ export async function onRequest(context) {
           bank_account_no: rawRider.bank_account_no || null,
           bank_ifsc: rawRider.bank_ifsc || null,
           payout_method_pref: rawRider.payout_method_pref || 'cash',
-          cash_settled_at: rawRider.cash_settled_at || null
+          cash_settled_at: rawRider.cash_settled_at || rawRider.cashSettledAt || null,
+          payout_paid_at: rawRider.payout_paid_at || rawRider.payoutPaidAt || null,
+          payout_amount_paid: Number(rawRider.payout_amount_paid || rawRider.payoutAmountPaid || 0)
         };
 
         const { data, error } = await sb

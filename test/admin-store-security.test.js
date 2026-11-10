@@ -138,28 +138,39 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     );
   });
 
-  await t.test('6. POST /api/admin-store rejects save_settings with 403 Forbidden for kitchen admin role', async () => {
+  await t.test('6. POST /api/admin-store rejects clear_orders with 403 Forbidden for kitchen admin role', async () => {
+    // clear_orders strictly requires executive owner role (kitchen admin role rejected with 403)
     const adminToken = createAdminToken('admin');
-    const { req, res } = createMockReqRes({
+    const { req: reqClear, res: resClear } = createMockReqRes({
       method: 'POST',
       headers: { authorization: `Bearer ${adminToken}` },
-      body: { action: 'save_settings', settings: { restaurant_name: 'Hacked' } }
+      body: { action: 'clear_orders' }
     });
-    await adminStoreHandler(req, res);
-    assert.equal(res.statusCode, 403);
-    assert.match(res.responseData?.error, /Owner role required/i);
+    await adminStoreHandler(reqClear, resClear);
+    assert.equal(resClear.statusCode, 403);
+    assert.match(resClear.responseData?.error, /Owner role required/i);
   });
 
-  await t.test('7. POST /api/admin-store permits save_settings for executive owner role (bypasses 403 role gate)', async () => {
+  await t.test('7. POST /api/admin-store permits save_settings for kitchen admin and executive owner roles', async () => {
+    // 7a. Kitchen Admin token permits operational store settings
+    const adminToken = createAdminToken('admin');
+    const { req: reqAdmin, res: resAdmin } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminToken}` },
+      body: { action: 'save_settings', settings: { storeOpen: true, isRushPaused: false } }
+    });
+    await adminStoreHandler(reqAdmin, resAdmin);
+    assert.notEqual(resAdmin.statusCode, 403, 'Kitchen admin token must bypass 403 on store settings');
+
+    // 7b. Executive Owner token permits save_settings
     const ownerToken = createAdminToken('owner');
-    const { req, res } = createMockReqRes({
+    const { req: reqOwner, res: resOwner } = createMockReqRes({
       method: 'POST',
       headers: { authorization: `Bearer ${ownerToken}` },
       body: { action: 'save_settings', settings: { restaurant_name: 'Savera Paradise' } }
     });
-    await adminStoreHandler(req, res);
-    // Role gate passes: it must NOT return 403 Forbidden
-    assert.notEqual(res.statusCode, 403, 'Owner token must bypass the 403 role gate');
+    await adminStoreHandler(reqOwner, resOwner);
+    assert.notEqual(resOwner.statusCode, 403, 'Owner token must bypass the 403 role gate');
   });
 
   await t.test('8. Migration 08 strictly excludes anon from SELECT, UPDATE, and DELETE policies on public.orders', () => {

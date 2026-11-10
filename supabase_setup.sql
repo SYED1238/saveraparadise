@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.dishes (
   category TEXT NOT NULL,
   category_name TEXT,
   price NUMERIC NOT NULL,
+  original_price NUMERIC,
   rating TEXT,
   image TEXT NOT NULL,
   badge TEXT,
@@ -27,8 +28,19 @@ CREATE TABLE IF NOT EXISTS public.dishes (
   diet TEXT,
   description TEXT,
   in_stock BOOLEAN DEFAULT TRUE NOT NULL,
+  available_days TEXT[] DEFAULT '{mon,tue,wed,thu,fri,sat,sun}',
+  time_restricted BOOLEAN DEFAULT FALSE,
+  available_from TEXT DEFAULT '',
+  available_to TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Idempotent column migrations for public.dishes
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS original_price NUMERIC;
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS available_days TEXT[] DEFAULT '{mon,tue,wed,thu,fri,sat,sun}';
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS time_restricted BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS available_from TEXT DEFAULT '';
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS available_to TEXT DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS public.orders (
   id TEXT PRIMARY KEY,
@@ -81,6 +93,7 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS rider_notes TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cash_collected NUMERIC;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS dispatch_time TIMESTAMPTZ;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tip_amount NUMERIC DEFAULT 0;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tracking_token UUID DEFAULT gen_random_uuid();
 CREATE INDEX IF NOT EXISTS idx_orders_tracking_token ON public.orders(tracking_token);
 
@@ -118,8 +131,27 @@ CREATE TABLE IF NOT EXISTS public.riders (
   avatar TEXT DEFAULT '🏍️',
   avatar_img TEXT,
   cash_settled_at BIGINT,
+  upi_vpa VARCHAR(64) DEFAULT NULL,
+  bank_account_no VARCHAR(32) DEFAULT NULL,
+  bank_ifsc VARCHAR(16) DEFAULT NULL,
+  payout_method_pref VARCHAR(16) DEFAULT 'cash',
+  earnings NUMERIC DEFAULT 0,
+  trips INTEGER DEFAULT 0,
+  payout_paid_at BIGINT,
+  payout_amount_paid NUMERIC DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Idempotent column migrations for public.riders
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS upi_vpa VARCHAR(64) DEFAULT NULL;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(32) DEFAULT NULL;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(16) DEFAULT NULL;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_method_pref VARCHAR(16) DEFAULT 'cash';
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS earnings NUMERIC DEFAULT 0;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS trips INTEGER DEFAULT 0;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_settled_at BIGINT;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_paid_at BIGINT;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_amount_paid NUMERIC DEFAULT 0;
 
 -- 2. Enable Row Level Security (RLS) & Hardened Security Policies
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;

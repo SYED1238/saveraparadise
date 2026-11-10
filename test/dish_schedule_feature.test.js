@@ -41,7 +41,7 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
 
   await t.test('3. getDishScheduleStatus evaluates day-of-week restrictions', () => {
     // Simulated Wednesday: 2026-11-04 is Wednesday (getDay() = 3)
-    const wednesday = new Date('2026-11-04T12:00:00');
+    const wednesday = new Date('2026-11-04T12:00:00+05:30');
     assert.equal(wednesday.getDay(), 3); // wed
 
     // Dish available only on Fri, Sat, Sun
@@ -60,7 +60,7 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
     assert.ok(res.badgeText);
 
     // Simulated Friday: 2026-11-06 (getDay() = 5)
-    const friday = new Date('2026-11-06T12:00:00');
+    const friday = new Date('2026-11-06T12:00:00+05:30');
     assert.equal(friday.getDay(), 5); // fri
     const friRes = getDishScheduleStatus(weekendSpecial, friday);
     assert.equal(friRes.isAvailable, true);
@@ -69,7 +69,7 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
 
   await t.test('4. getDishScheduleStatus computes live countdown when before serving hours', () => {
     // Current time: 10:00 AM on Wednesday
-    const morning = new Date('2026-11-04T10:00:00');
+    const morning = new Date('2026-11-04T10:00:00+05:30');
 
     // Serving hours: 12:00 PM to 4:00 PM
     const lunchDish = {
@@ -93,7 +93,7 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
 
   await t.test('5. getDishScheduleStatus flags active_window during serving hours', () => {
     // Current time: 1:30 PM (13:30) on Wednesday
-    const lunchTime = new Date('2026-11-04T13:30:00');
+    const lunchTime = new Date('2026-11-04T13:30:00+05:30');
 
     const lunchDish = {
       id: 'dish-lunch-biryani',
@@ -113,7 +113,7 @@ test('▶ DISH SCHEDULE & 7-DAY AVAILABILITY SUITE', async (t) => {
 
   await t.test('6. getDishScheduleStatus flags ended_today after serving hours', () => {
     // Current time: 5:00 PM (17:00) on Wednesday
-    const eveningTime = new Date('2026-11-04T17:00:00');
+    const eveningTime = new Date('2026-11-04T17:00:00+05:30');
 
     const lunchDish = {
       id: 'dish-lunch-biryani',

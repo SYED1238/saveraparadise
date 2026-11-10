@@ -74,9 +74,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Action parameter is required' });
   }
 
-  // Role Gate: Modifying store settings or clearing orders requires Executive Owner session
-  if ((action === 'save_settings' || action === 'clear_orders') && auth.payload?.role !== 'owner') {
+  // Role Gate: Clearing orders requires Executive Owner session; saving store settings requires Staff or Owner session
+  if (action === 'clear_orders' && auth.payload?.role !== 'owner') {
     return res.status(403).json({ error: `Forbidden: Owner role required for ${action}` });
+  }
+  if (action === 'save_settings' && auth.payload?.role !== 'owner' && auth.payload?.role !== 'admin') {
+    return res.status(403).json({ error: `Forbidden: Staff or Owner role required for ${action}` });
   }
 
   const isTestEnv = Boolean(
@@ -171,8 +174,17 @@ export default async function handler(req, res) {
         if (!id || typeof in_stock !== 'boolean') {
           return res.status(400).json({ error: 'Dish ID and in_stock boolean are required' });
         }
-        const { data, error } = await sb.from('dishes').update({ in_stock }).eq('id', id).select();
+        let { data, error } = await sb.from('dishes').update({ in_stock }).eq('id', id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          const rawDish = body.dish;
+          if (rawDish && rawDish.name) {
+            const upsertPayload = sanitizeDishFields({ ...rawDish, id, in_stock });
+            const upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+            if (upsertRes.error) throw upsertRes.error;
+            data = upsertRes.data;
+          }
+        }
         if (!data || data.length === 0) {
           return res.status(404).json({ error: `Dish '${id}' not found in database to toggle stock` });
         }
@@ -323,7 +335,9 @@ export default async function handler(req, res) {
           bank_account_no: rawRider.bank_account_no || null,
           bank_ifsc: rawRider.bank_ifsc || null,
           payout_method_pref: rawRider.payout_method_pref || 'cash',
-          cash_settled_at: rawRider.cash_settled_at || null
+          cash_settled_at: rawRider.cash_settled_at || rawRider.cashSettledAt || null,
+          payout_paid_at: rawRider.payout_paid_at || rawRider.payoutPaidAt || null,
+          payout_amount_paid: Number(rawRider.payout_amount_paid || rawRider.payoutAmountPaid || 0)
         };
 
         const { data, error } = await sb

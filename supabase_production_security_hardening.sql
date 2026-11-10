@@ -171,7 +171,7 @@ BEGIN
 
   clean_id := regexp_replace(trim(p_order_id), '^#+', '');
 
-  SELECT id, status, status_label, step_index, eta, total, numeric_total,
+  SELECT id, status, status_label, step_index, eta, total,
          items, created_at, delivered_at, assigned_rider_name, assigned_rider_phone,
          assigned_rider_vehicle, cancellation_reason
   INTO o
@@ -269,5 +269,100 @@ CREATE TRIGGER trg_order_status_monotonicity
   BEFORE UPDATE OF status ON public.orders
   FOR EACH ROW
   EXECUTE FUNCTION public.enforce_order_status_monotonicity();
+
+
+-- ------------------------------------------------------------------------------
+-- 7. SCHEMA ALIGNMENT: COLUMN INTEGRITY (DISHES, ORDERS, RIDERS)
+-- ------------------------------------------------------------------------------
+-- 7.1 Dish Scheduling & Original Price Columns
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS original_price NUMERIC;
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS available_days TEXT[] DEFAULT '{mon,tue,wed,thu,fri,sat,sun}';
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS time_restricted BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS available_from TEXT DEFAULT '';
+ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS available_to TEXT DEFAULT '';
+
+-- 7.2 Orders Tip Amount Column
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tip_amount NUMERIC DEFAULT 0;
+
+-- 7.3 Fleet Riders Payout & Settlement Columns
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS upi_vpa VARCHAR(64) DEFAULT NULL;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(32) DEFAULT NULL;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(16) DEFAULT NULL;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_method_pref VARCHAR(16) DEFAULT 'cash';
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS earnings NUMERIC DEFAULT 0;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS trips INTEGER DEFAULT 0;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_settled_at BIGINT;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_paid_at BIGINT;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_amount_paid NUMERIC DEFAULT 0;
+
+
+-- ------------------------------------------------------------------------------
+-- 8. ATOMIC CATEGORY & DISHES CASCADE DELETION RPC
+-- ------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.delete_category_cascade(
+    p_category_id TEXT,
+    p_category_key TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_target_key TEXT;
+    v_matched_id TEXT;
+    v_dishes_deleted INT := 0;
+    v_categories_deleted INT := 0;
+BEGIN
+    IF p_category_id IS NULL OR TRIM(p_category_id) = '' THEN
+        RAISE EXCEPTION 'Category ID is required';
+    END IF;
+
+    v_target_key := COALESCE(NULLIF(TRIM(p_category_key), ''), p_category_id);
+
+    -- 1. Check and lock target category row FIRST before touching any dishes
+    SELECT id INTO v_matched_id
+    FROM public.categories
+    WHERE id = p_category_id OR id = v_target_key
+    LIMIT 1
+    FOR UPDATE;
+
+    -- If category does not exist, abort immediately with 0 changes
+    IF v_matched_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'not_found', true,
+            'error', 'Category not found in database',
+            'dishes_deleted', 0,
+            'categories_deleted', 0
+        );
+    END IF;
+
+    -- 2. Delete all dishes matching either the category id or slug key
+    WITH deleted_dishes AS (
+        DELETE FROM public.dishes
+        WHERE category = v_target_key OR category = p_category_id OR category = v_matched_id
+        RETURNING id
+    )
+    SELECT COUNT(*) INTO v_dishes_deleted FROM deleted_dishes;
+
+    -- 3. Delete the category record
+    DELETE FROM public.categories
+    WHERE id = v_matched_id;
+    v_categories_deleted := 1;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'category_id', v_matched_id,
+        'dishes_deleted', v_dishes_deleted,
+        'categories_deleted', v_categories_deleted
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.delete_category_cascade(TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.delete_category_cascade(TEXT, TEXT) FROM anon;
+REVOKE ALL ON FUNCTION public.delete_category_cascade(TEXT, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_category_cascade(TEXT, TEXT) TO service_role;
 
 COMMIT;

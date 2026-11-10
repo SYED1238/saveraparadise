@@ -615,6 +615,7 @@ function updateCounterCashDrawerSummary(orders, codRevenue) {
   const drawerNetSubEl = document.getElementById('drawer-net-sub-total');
 
   const deliveredOrders = (orders || []).filter(o => o && String(o.status || '').toLowerCase() === 'delivered');
+  const payoutOrders = (orders || []).filter(o => o && (String(o.status || '').toLowerCase() === 'delivered' || String(o.status || '').toLowerCase() === 'undelivered'));
   const codOrders = deliveredOrders.filter(o => !isOnlineOrderPayment(o));
   const periodCodTotal = (typeof codRevenue === 'number')
     ? codRevenue
@@ -625,12 +626,12 @@ function updateCounterCashDrawerSummary(orders, codRevenue) {
         return Math.round((sum + cash) * 100) / 100;
       }, 0);
 
-  // Group delivered orders by rider to calculate period payouts accurately
+  // Group delivered and undelivered orders by rider to calculate period payouts accurately
   const payoutConfig = dataService.getPayoutConfig();
   let periodPayoutTotal = 0;
 
   const ordersByRider = new Map();
-  deliveredOrders.forEach(o => {
+  payoutOrders.forEach(o => {
     const rPin = String(o.assignedRiderPin || '').trim();
     const rName = (o.assignedRiderName || '').trim().toLowerCase();
     const key = rPin || rName || 'unassigned';
@@ -890,7 +891,7 @@ function renderRiderFleetTable(orders) {
   if (!tbody) return;
 
   const riders = dataService.getRiders();
-  const deliveredOrders = orders.filter(o => o && String(o.status).toLowerCase() === 'delivered');
+  const deliveredOrders = orders.filter(o => o && (String(o.status).toLowerCase() === 'delivered' || String(o.status).toLowerCase() === 'undelivered'));
 
   // Map delivered orders to riders
   const riderStatsMap = new Map();
@@ -977,15 +978,16 @@ function renderRiderFleetTable(orders) {
   let grandNetDeposit = 0;
 
   tbody.innerHTML = statsList.map(st => {
-    const deliveryCount = st.deliveredOrders.length;
+    const deliveryCount = st.deliveredOrders.filter(o => String(o.status).toLowerCase() === 'delivered').length;
     const kms = Math.round(st.totalKms * 10) / 10;
     const avgKmPerOrder = deliveryCount > 0 ? (kms / deliveryCount).toFixed(1) : '0.0';
     const cash = st.cashInHand;
     const online = st.onlineOrdersCount;
 
     // Payout Calculation: Based on owner active compensation model
-    const payoutObj = dataService.calculateRiderPayout(st.deliveredOrders);
-    const riderPayout = payoutObj.totalPayout;
+    const payoutConfig = dataService.getPayoutConfig();
+    const payoutObj = dataService.calculateRiderPayout(st.deliveredOrders, payoutConfig);
+    const riderPayout = payoutObj.exactPayout || payoutObj.totalPayout || 0;
 
     // Net Settlement Balance:
     // If Rider collected Cash, they must deposit (Cash - Payout) into the drawer.
@@ -2231,7 +2233,7 @@ function initNavigation() {
       const prevMethod = cfg.activeMethod;
       cfg.activeMethod = method;
       dataService.savePayoutConfig(cfg);
-      syncPayoutConfigUI();
+      syncPayoutConfigUI(true);
       renderDashboard();
       const methodNames = {
         'tiered_standard': 'Tiered Standard Base Pay',
@@ -2330,11 +2332,9 @@ function initNavigation() {
     btnSavePayout.addEventListener('click', () => {
       const newCfg = readCurrentPayoutConfigFromUI();
       const saved = dataService.savePayoutConfig(newCfg);
-      syncPayoutConfigUI();
-      renderDashboard();
-
-      // Automatically close settings panel after saving
       closePayoutSettingsPanel();
+      syncPayoutConfigUI(true);
+      renderDashboard();
 
       showToast('✓ Payout settings saved & closed!', 'success');
     });
@@ -2344,6 +2344,7 @@ function initNavigation() {
   const btnClosePayout = document.getElementById('btn-close-payout-config');
   if (btnClosePayout) {
     btnClosePayout.addEventListener('click', () => {
+      isPayoutSettingsOpen = false;
       syncPayoutConfigUI(); // Revert modified stepper inputs back to persisted config
       closePayoutSettingsPanel();
       showToast('Payout settings closed (unsaved changes discarded)', 'info');
@@ -2670,7 +2671,7 @@ function updatePayoutButtonHints() {
   });
 }
 
-function syncPayoutConfigUI() {
+function syncPayoutConfigUI(force = false) {
   try {
     const cfg = dataService.getPayoutConfig() || DEFAULT_PAYOUT_CONFIG;
     const method = cfg?.activeMethod || 'tiered_standard';
@@ -2716,38 +2717,40 @@ function syncPayoutConfigUI() {
   if (grpTM) grpTM.style.display = method === 'tiered_milestone' ? 'block' : 'none';
   if (grpFL) grpFL.style.display = method === 'flat_linear' ? 'block' : 'none';
 
-  // 4. Populate input values if user is not actively typing in them
-  const activeEl = document.activeElement;
-  const setVal = (id, val) => {
-    const el = document.getElementById(id);
-    if (el && el !== activeEl) el.value = val;
-  };
+  // 4. Populate input values if forced or if settings panel is not currently open
+  if (force || !isPayoutSettingsOpen) {
+    const activeEl = document.activeElement;
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && (force || el !== activeEl)) el.value = val;
+    };
 
-  setVal('cfg-ts-base-pay', cfg.tieredStandard.basePay);
-  setVal('cfg-ts-base-km', cfg.tieredStandard.baseKm);
-  setVal('cfg-ts-extra-km', cfg.tieredStandard.extraKmRate);
+    setVal('cfg-ts-base-pay', cfg.tieredStandard.basePay);
+    setVal('cfg-ts-base-km', cfg.tieredStandard.baseKm);
+    setVal('cfg-ts-extra-km', cfg.tieredStandard.extraKmRate);
 
-  setVal('cfg-tm-base-pay', cfg.tieredMilestone.basePay);
-  setVal('cfg-tm-base-km', cfg.tieredMilestone.baseKm);
-  setVal('cfg-tm-extra-km', cfg.tieredMilestone.extraKmRate);
-  setVal('cfg-tm-milestone', cfg.tieredMilestone.milestoneOrders);
-  setVal('cfg-tm-surge-km', cfg.tieredMilestone.surgeExtraKmRate);
+    setVal('cfg-tm-base-pay', cfg.tieredMilestone.basePay);
+    setVal('cfg-tm-base-km', cfg.tieredMilestone.baseKm);
+    setVal('cfg-tm-extra-km', cfg.tieredMilestone.extraKmRate);
+    setVal('cfg-tm-milestone', cfg.tieredMilestone.milestoneOrders);
+    setVal('cfg-tm-surge-km', cfg.tieredMilestone.surgeExtraKmRate);
 
-  setVal('cfg-fl-rate', cfg.flatLinear.ratePerKm);
+    setVal('cfg-fl-rate', cfg.flatLinear.ratePerKm);
 
-  // Sync Customer Unreachable Compensation controls
-  const uModeEl = document.getElementById('payout-undelivered-mode');
-  const uAmtEl = document.getElementById('payout-undelivered-amount');
-  const uWrap = document.getElementById('wrap-undelivered-custom');
-  const uCfg = cfg.undeliveredCompensation || { mode: 'zero', customAmount: 20 };
-  if (uModeEl && uModeEl !== activeEl) {
-    uModeEl.value = uCfg.mode || 'zero';
-  }
-  if (uAmtEl && uAmtEl !== activeEl) {
-    uAmtEl.value = uCfg.customAmount || 20;
-  }
-  if (uWrap) {
-    uWrap.style.display = (uModeEl && uModeEl.value === 'custom') ? 'inline-flex' : 'none';
+    // Sync Customer Unreachable Compensation controls
+    const uModeEl = document.getElementById('payout-undelivered-mode');
+    const uAmtEl = document.getElementById('payout-undelivered-amount');
+    const uWrap = document.getElementById('wrap-undelivered-custom');
+    const uCfg = cfg.undeliveredCompensation || { mode: 'zero', customAmount: 20 };
+    if (uModeEl && (force || uModeEl !== activeEl)) {
+      uModeEl.value = uCfg.mode || 'zero';
+    }
+    if (uAmtEl && (force || uAmtEl !== activeEl)) {
+      uAmtEl.value = uCfg.customAmount || 20;
+    }
+    if (uWrap) {
+      uWrap.style.display = (uModeEl && uModeEl.value === 'custom') ? 'inline-flex' : 'none';
+    }
   }
 
   // Update card formula tags
@@ -2915,7 +2918,7 @@ function renderKmPayoutsView(orders) {
     }
 
     const safeOrders = Array.isArray(orders) ? orders : [];
-    const deliveredOrders = safeOrders.filter(o => o && String(o.status || '').toLowerCase() === 'delivered');
+    const deliveredOrders = safeOrders.filter(o => o && (String(o.status || '').toLowerCase() === 'delivered' || String(o.status || '').toLowerCase() === 'undelivered'));
 
     // Pre-index delivered orders by rider PIN and name for high-performance O(1) matching with 100+ riders
     const ordersByPin = new Map();
@@ -3008,7 +3011,7 @@ function renderKmPayoutsView(orders) {
         initial: riderInitial,
         phone: riderPhone,
         vehicle: riderVehicle,
-        deliveredCount: riderOrders.length,
+        deliveredCount: riderOrders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length,
         kms: roundedKms,
         modelBadge,
         calculatedPayout,
@@ -4042,12 +4045,13 @@ function renderReportsView() {
     const codPercent = totalRevenue > 0 ? Math.round((codRevenue / totalRevenue) * 100) : 0;
     const onlinePercent = totalRevenue > 0 ? (100 - codPercent) : 0;
 
-    // 3. Rider Payouts Calculation for this period
+    // 3. Rider Payouts Calculation for this period (delivered + undelivered)
     const payoutConfig = dataService.getPayoutConfig();
     let totalRiderPayouts = 0;
     const ordersByRider = new Map();
 
-    deliveredOrders.forEach(o => {
+    const payoutOrders = (orders || []).filter(o => o && (String(o.status || '').toLowerCase() === 'delivered' || String(o.status || '').toLowerCase() === 'undelivered'));
+    payoutOrders.forEach(o => {
       const rPin = String(o.assignedRiderPin || '').trim();
       const rName = (o.assignedRiderName || '').trim().toLowerCase();
       const key = rPin || rName || 'unassigned';
@@ -4124,7 +4128,7 @@ function renderReportsView() {
     if (legOnline) legOnline.textContent = `₹${formatInr(onlineRevenue)} (${onlinePercent}%)`;
 
     // 6. Sub-Tables
-    renderReportRiderTable(deliveredOrders, payoutConfig);
+    renderReportRiderTable(payoutOrders, payoutConfig);
     renderReportDishesTable(deliveredOrders, totalRevenue);
     renderReportOrdersTable();
   } catch (err) {
@@ -4187,7 +4191,7 @@ function renderReportRiderTable(deliveredOrders, payoutConfig) {
     let totalNet = 0;
 
     tbody.innerHTML = activeRidersList.map(({ rider, orders }) => {
-      const delivCount = orders.length;
+      const delivCount = orders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length;
       totalDeliveries += delivCount;
 
       let riderKms = 0;

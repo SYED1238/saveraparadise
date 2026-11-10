@@ -1139,7 +1139,7 @@ const initDeliveryApp = () => {
           formattedTimer = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
         }
 
-        const orderPayout = dataService.calculateOrderPayout(order, deliveredOrders.length + 1, payoutCfg);
+        const orderPayout = dataService.calculateOrderPayout(order, deliveredOrders.length + 1 + orderIdx, payoutCfg);
 
         return `
           <article class="rider-order-row row-active" data-order-id="${safeId}" data-droplat="${dropLat}" data-droplng="${dropLng}" data-hascustomercoords="${dropCoords.hasCustomerCoords}" data-dropaddr="${safeDropAddress}" data-cleanid="${cleanId}">
@@ -2244,6 +2244,11 @@ const initDeliveryApp = () => {
   // Realtime notification when Owner updates payout model, rates, or marks payout paid
   dataService.subscribeToChanges('payout_config_updated', () => renderPortal());
   dataService.subscribeToChanges('km_rate_updated', () => renderPortal());
+  dataService.subscribeToChanges('settings', (detail) => {
+    if (detail?.settings?.payoutConfig || detail?.settings?.kmPayoutRate) {
+      renderPortal();
+    }
+  });
   dataService.subscribeToChanges('payout_paid', (detail) => {
     const activeRider = dataService.getActiveRider();
     if (!detail?.riderPin || (activeRider && String(activeRider.pin) === String(detail.riderPin))) {

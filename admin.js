@@ -186,12 +186,22 @@ const initAdminApp = () => {
   const btnClearAllOrders = document.getElementById('btn-clear-all-orders');
   if (btnClearAllOrders) {
     btnClearAllOrders.addEventListener('click', async () => {
-      const confirmed = confirm('⚠️ Are you sure you want to clear all test orders?');
+      const ownerToken = (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('quickbite_owner_token') : null;
+      if (!ownerToken) {
+        showToast('⚠️ Clearing all orders requires Executive Owner authentication (PIN: 9900).', 'error');
+        return;
+      }
+      const confirmed = confirm('⚠️ Are you sure you want to permanently clear all test orders?');
       if (!confirmed) return;
-      await dataService.clearAllOrders();
-      renderOrders();
-      calculateOrderKPIs([]);
-      showToast('✓ All test orders cleared successfully!', 'success');
+      try {
+        await dataService.clearAllOrders();
+        renderOrders();
+        calculateOrderKPIs([]);
+        showToast('✓ All test orders cleared successfully!', 'success');
+      } catch (err) {
+        console.error('[Admin] Failed to clear orders:', err);
+        showToast(`⚠️ Failed to clear orders: ${err?.message || 'Owner permission required'}`, 'error');
+      }
     });
   }
 
@@ -4633,31 +4643,49 @@ const initAdminApp = () => {
 
   // Trigger rush pause
   if (btnTriggerRush) {
-    btnTriggerRush.addEventListener('click', () => {
+    btnTriggerRush.addEventListener('click', async () => {
       const mins = Number(rushRangeSlider?.value || 20);
       const reason = rushReasonInput?.value?.trim() || 'High kitchen rush — orders temporarily paused';
 
-      dataService.setRushPause(mins, reason);
-      updateRushUI();
-      showToast(`⚡ Orders paused for ${mins} minutes! Homepage customer notice is now live.`, 'warning');
+      try {
+        await dataService.setRushPause(mins, reason);
+        updateRushUI();
+        showToast(`⚡ Orders paused for ${mins} minutes! Homepage customer notice is now live.`, 'warning');
+      } catch (err) {
+        console.error('[Admin] setRushPause error:', err);
+        updateRushUI();
+        showToast(`⚠️ Rush pause error: ${err?.message || 'Failed to sync to cloud'}`, 'error');
+      }
     });
   }
 
   // Extend rush by 10 mins
   if (btnExtendRush10) {
-    btnExtendRush10.addEventListener('click', () => {
-      dataService.extendRushPause(10);
-      updateRushUI();
-      showToast('➕ Rush extended by 10 minutes!', 'info');
+    btnExtendRush10.addEventListener('click', async () => {
+      try {
+        await dataService.extendRushPause(10);
+        updateRushUI();
+        showToast('➕ Rush extended by 10 minutes!', 'info');
+      } catch (err) {
+        console.error('[Admin] extendRushPause error:', err);
+        updateRushUI();
+        showToast(`⚠️ Rush extend error: ${err?.message || 'Failed to sync to cloud'}`, 'error');
+      }
     });
   }
 
   // Resume orders now
   if (btnResumeOrders) {
-    btnResumeOrders.addEventListener('click', () => {
-      dataService.resumeOrders();
-      updateRushUI();
-      showToast('🟢 Kitchen reopened! Customers can now place orders on the homepage.', 'success');
+    btnResumeOrders.addEventListener('click', async () => {
+      try {
+        await dataService.resumeOrders();
+        updateRushUI();
+        showToast('🟢 Kitchen reopened! Customers can now place orders on the homepage.', 'success');
+      } catch (err) {
+        console.error('[Admin] resumeOrders error:', err);
+        updateRushUI();
+        showToast(`⚠️ Resume orders error: ${err?.message || 'Failed to sync to cloud'}`, 'error');
+      }
     });
   }
 
@@ -4799,15 +4827,20 @@ const initAdminApp = () => {
 
   // Save Delivery Radius Button
   if (btnSaveRadius) {
-    btnSaveRadius.addEventListener('click', () => {
+    btnSaveRadius.addEventListener('click', async () => {
       const km = Number(deliveryRadiusSlider?.value || 7);
-      dataService.setDeliveryRadius(km);
-      if (typeof syncDeliverySummaryChips === 'function') {
-        syncDeliverySummaryChips();
+      try {
+        await dataService.setDeliveryRadius(km);
+        if (typeof syncDeliverySummaryChips === 'function') {
+          syncDeliverySummaryChips();
+        }
+        // Auto-close delivery radius panel on save
+        document.querySelector('.btn-close-delivery-panel[data-target="delivery-card-radius"]')?.click();
+        showToast(`🛵 Maximum delivery radius saved: Delivering within ${km} km!`, 'success');
+      } catch (err) {
+        console.error('[Admin] setDeliveryRadius error:', err);
+        showToast(`⚠️ Delivery radius error: ${err?.message || 'Failed to sync to cloud'}`, 'error');
       }
-      // Auto-close delivery radius panel on save
-      document.querySelector('.btn-close-delivery-panel[data-target="delivery-card-radius"]')?.click();
-      showToast(`🛵 Maximum delivery radius saved: Delivering within ${km} km!`, 'success');
     });
   }
 

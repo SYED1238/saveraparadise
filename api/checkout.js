@@ -42,7 +42,7 @@ let authoritativeSettingsCachedAt = 0;
 
 async function fetchAuthoritativeSettings() {
   const now = Date.now();
-  if (authoritativeSettingsCache && (now - authoritativeSettingsCachedAt < 60000)) {
+  if (authoritativeSettingsCache && (now - authoritativeSettingsCachedAt < 5000)) {
     return authoritativeSettingsCache;
   }
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || FALLBACK_SUPABASE_URL;
@@ -122,7 +122,7 @@ function isDishAvailableNow(dish, now = new Date()) {
 
 async function fetchAuthoritativeDishes() {
   const now = Date.now();
-  if (authoritativeDishesCache && (now - authoritativeDishesCachedAt < 60000)) {
+  if (authoritativeDishesCache && (now - authoritativeDishesCachedAt < 5000)) {
     return authoritativeDishesCache;
   }
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || FALLBACK_SUPABASE_URL;
@@ -330,6 +330,30 @@ export default async function handler(req, res) {
       }
     }
     Object.assign(settings, DEFAULT_SETTINGS_FALLBACK);
+  }
+
+  // Authoritative Kitchen Availability Verification
+  if (!allowTestOverrides) {
+    if (settings.storeOpen === false) {
+      const reason = settings.storeClosedReason || 'The restaurant is currently closed for orders.';
+      return res.status(400).json({
+        error: 'Store Closed',
+        message: reason,
+        storeClosed: true
+      });
+    }
+
+    const pauseUntil = Number(settings.pauseUntil || 0);
+    if (settings.isRushPaused && pauseUntil > Date.now()) {
+      const remainingMins = Math.max(1, Math.ceil((pauseUntil - Date.now()) / 60000));
+      const reason = settings.pauseReason || `Orders temporarily paused due to high kitchen rush. Please try again in ${remainingMins} minute${remainingMins > 1 ? 's' : ''}.`;
+      return res.status(400).json({
+        error: 'Kitchen Rush Pause',
+        message: reason,
+        rushPaused: true,
+        remainingMinutes: remainingMins
+      });
+    }
   }
 
 

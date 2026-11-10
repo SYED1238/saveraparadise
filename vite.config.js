@@ -124,10 +124,17 @@ function r2DevMiddlewarePlugin() {
               const pin = body.pin;
               const role = getPinRole(pin);
               if (role) {
-                const token = createAdminToken(undefined, role);
+                const extraPayload = role === 'rider' ? { riderPin: String(pin).trim() } : {};
+                const token = createAdminToken(undefined, role, undefined, extraPayload);
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
-                return res.end(JSON.stringify({ success: true, token, role, expiresIn: 43200 }));
+                return res.end(JSON.stringify({
+                  success: true,
+                  token,
+                  role,
+                  ...(role === 'rider' ? { riderPin: String(pin).trim() } : {}),
+                  expiresIn: 43200
+                }));
               }
               res.statusCode = 401;
               res.setHeader('Content-Type', 'application/json');

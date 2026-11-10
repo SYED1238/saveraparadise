@@ -3131,6 +3131,8 @@ class QuickBiteDataService {
               trackingToken: remote.tracking_token || local?.trackingToken || null,
               alarmAcknowledged: local?.alarmAcknowledged || false,
               alarmStoppedAt: local?.alarmStoppedAt || null,
+              distanceKm: Number(remote.distance_km || remote.address_details?.distanceKm || local?.distanceKm || local?.addressDetails?.distanceKm || 0) || undefined,
+              distance_km: Number(remote.distance_km || remote.address_details?.distanceKm || local?.distanceKm || local?.addressDetails?.distanceKm || 0) || undefined,
               riderPayoutAmount: local?.riderPayoutAmount || null,
               riderPayoutFormula: local?.riderPayoutFormula || null
             };
@@ -3394,6 +3396,14 @@ class QuickBiteDataService {
               const current = this.getSettings();
               const merged = { ...current, ...payload.settings };
               localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+              if (payload.settings.payoutConfig && typeof payload.settings.payoutConfig === 'object') {
+                localStorage.setItem('quickbite_payout_config', JSON.stringify(payload.settings.payoutConfig));
+                if (payload.settings.kmPayoutRate) {
+                  localStorage.setItem('quickbite_owner_km_rate', String(payload.settings.kmPayoutRate));
+                }
+                this.notifyChange('payout_config_updated', payload.settings.payoutConfig);
+                this.notifyChange('km_rate_updated', { rate: payload.settings.kmPayoutRate || payload.settings.payoutConfig?.flatLinear?.ratePerKm });
+              }
               this.notifyChange('settings', { settings: merged, source: 'supabase_broadcast' });
             } catch (err) {
               console.warn('[DataService] Error applying remote settings broadcast:', err);
@@ -3527,6 +3537,26 @@ class QuickBiteDataService {
               this.saveRiders(riders);
             }
             this.notifyChange('cash_settled', payload);
+          }
+        })
+        .on('broadcast', { event: 'payout_config_updated' }, (event) => {
+          const payload = event?.payload || {};
+          if (payload.payoutConfig && typeof payload.payoutConfig === 'object') {
+            try {
+              localStorage.setItem('quickbite_payout_config', JSON.stringify(payload.payoutConfig));
+              if (payload.kmPayoutRate) {
+                localStorage.setItem('quickbite_owner_km_rate', String(payload.kmPayoutRate));
+              }
+              const current = this.getSettings();
+              const updated = {
+                ...current,
+                payoutConfig: payload.payoutConfig,
+                kmPayoutRate: payload.kmPayoutRate || payload.payoutConfig?.flatLinear?.ratePerKm || current.kmPayoutRate
+              };
+              localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+            } catch {}
+            this.notifyChange('payout_config_updated', payload.payoutConfig);
+            this.notifyChange('km_rate_updated', { rate: payload.kmPayoutRate || payload.payoutConfig?.flatLinear?.ratePerKm });
           }
         })
         .subscribe((status) => {
@@ -4590,6 +4620,16 @@ class QuickBiteDataService {
               merged.offerTitle = merged.offerTitle.replace(/SMM Taj|SMM/gi, 'Savera');
             }
             localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+            if (raw.payoutConfig && typeof raw.payoutConfig === 'object') {
+              try {
+                localStorage.setItem('quickbite_payout_config', JSON.stringify(raw.payoutConfig));
+                if (raw.kmPayoutRate) {
+                  localStorage.setItem('quickbite_owner_km_rate', String(raw.kmPayoutRate));
+                }
+              } catch {}
+              this.notifyChange('payout_config_updated', raw.payoutConfig);
+              this.notifyChange('km_rate_updated', { rate: raw.kmPayoutRate || raw.payoutConfig?.flatLinear?.ratePerKm });
+            }
             this.notifyChange('settings', { settings: merged, source: 'supabase' });
             this._lastSettingsSyncTime = Date.now();
             return merged;
@@ -5293,7 +5333,7 @@ class QuickBiteDataService {
       const serverPromise = (async () => {
         try {
           if (this.isStaffAuthorized() && typeof window !== 'undefined') {
-            await this._adminStoreAction('toggle_stock', { id, in_stock: dish.inStock });
+            await this._adminStoreAction('toggle_stock', { id, in_stock: dish.inStock, dish });
           } else if (supabase) {
             const { error } = await supabase.from('dishes').update({ in_stock: dish.inStock }).eq('id', id);
             if (error) console.warn('[DataService] Direct supabase toggleStock error:', error.message);
@@ -6472,6 +6512,7 @@ class QuickBiteDataService {
         await this._adminStoreAction('clear_orders');
       } catch (e) {
         console.warn('[DataService] clearOrders server sync error:', e?.message);
+        throw e;
       }
     }
 
@@ -6531,6 +6572,13 @@ class QuickBiteDataService {
     return this.syncSettingsToSupabase(toSave);
   }
 
+  _wrapWithSettingsPromise(updated, syncPromise) {
+    const result = { ...updated };
+    result.then = (onF, onR) => Promise.resolve(syncPromise).then(onF, onR);
+    result.catch = (onR) => Promise.resolve(syncPromise).catch(onR);
+    return result;
+  }
+
   setRushPause(minutes, reason = 'High kitchen rush — orders temporarily paused') {
     const current = this.getSettings();
     const pauseUntil = Date.now() + minutes * 60 * 1000;
@@ -6541,8 +6589,8 @@ class QuickBiteDataService {
       pauseUntil: pauseUntil,
       pauseReason: reason
     };
-    this.saveSettings(updated);
-    return updated;
+    const syncPromise = this.saveSettings(updated);
+    return this._wrapWithSettingsPromise(updated, syncPromise);
   }
 
   extendRushPause(additionalMinutes = 10) {
@@ -6558,8 +6606,8 @@ class QuickBiteDataService {
       pauseMinutes: remainingMins,
       pauseUntil: newPauseUntil
     };
-    this.saveSettings(updated);
-    return updated;
+    const syncPromise = this.saveSettings(updated);
+    return this._wrapWithSettingsPromise(updated, syncPromise);
   }
 
   isStoreOpen() {
@@ -6574,8 +6622,8 @@ class QuickBiteDataService {
       storeOpen: Boolean(isOpen),
       ...(closedReason ? { storeClosedReason: String(closedReason).trim() } : {})
     };
-    this.saveSettings(updated);
-    return updated;
+    const syncPromise = this.saveSettings(updated);
+    return this._wrapWithSettingsPromise(updated, syncPromise);
   }
 
   resumeOrders() {
@@ -6585,8 +6633,8 @@ class QuickBiteDataService {
       isRushPaused: false,
       pauseUntil: null
     };
-    this.saveSettings(updated);
-    return updated;
+    const syncPromise = this.saveSettings(updated);
+    return this._wrapWithSettingsPromise(updated, syncPromise);
   }
 
   setDeliveryRadius(km) {
@@ -6597,8 +6645,8 @@ class QuickBiteDataService {
       restaurantLng: RESTAURANT_COORDINATES.lng,
       deliveryRadiusKm: Math.max(1, Math.min(100, Number(km) || 7))
     };
-    this.saveSettings(updated);
-    return updated;
+    const syncPromise = this.saveSettings(updated);
+    return this._wrapWithSettingsPromise(updated, syncPromise);
   }
 
   // --- RESTAURANT BACKEND COORDINATES & ROAD ROUTING ENGINE ---
@@ -6786,8 +6834,8 @@ class QuickBiteDataService {
         }
       ]
     };
-    this.saveSettings(updated);
-    return updated;
+    const syncPromise = this.saveSettings(updated);
+    return this._wrapWithSettingsPromise(updated, syncPromise);
   }
 
   setOffer(offerData) {
@@ -6807,8 +6855,8 @@ class QuickBiteDataService {
       ...(offerData.freeDeliveryEnabled !== undefined && { freeDeliveryEnabled: Boolean(offerData.freeDeliveryEnabled) }),
       ...(offerData.freeDeliveryThreshold !== undefined && { freeDeliveryThreshold: Math.max(0, Number(offerData.freeDeliveryThreshold)) })
     };
-    this.saveSettings(updated);
-    return updated;
+    const syncPromise = this.saveSettings(updated);
+    return this._wrapWithSettingsPromise(updated, syncPromise);
   }
 
   setDeliverySettings(delivData) {
@@ -6829,8 +6877,8 @@ class QuickBiteDataService {
         maxActiveOrdersPerCustomer: Math.max(1, Math.min(10, Number(delivData.maxActiveOrdersPerCustomer)))
       })
     };
-    this.saveSettings(updated);
-    return updated;
+    const syncPromise = this.saveSettings(updated);
+    return this._wrapWithSettingsPromise(updated, syncPromise);
   }
 
   // --- USER ADDRESSES & LOCATION ENGINE ---
@@ -7765,6 +7813,11 @@ class QuickBiteDataService {
       riders[idx].cashHandoverRequestedAt = requestedAt;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
+      if (this.isStaffAuthorized()) {
+        this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
+          console.warn('[DataService] Background sync rider error:', err?.message || err);
+        });
+      }
       try {
         if (this.sharedBroadcastChannel) {
           this.sharedBroadcastChannel.send({
@@ -7809,6 +7862,11 @@ class QuickBiteDataService {
       riders[idx].lastCashCollectedAmount = amount;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
+      if (this.isStaffAuthorized()) {
+        this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
+          console.warn('[DataService] Background sync rider error:', err?.message || err);
+        });
+      }
 
       // Audit log into drawer transaction records
       try {
@@ -7824,6 +7882,16 @@ class QuickBiteDataService {
         localStorage.setItem('quickbite_drawer_audit', JSON.stringify(auditLog.slice(0, 100)));
       } catch {}
 
+      try {
+        if (this.sharedBroadcastChannel) {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'cash_settled',
+            payload: { riderPin: cleanPin, settledAt: settledTime, amount }
+          }).catch(() => {});
+        }
+      } catch {}
+
       this.notifyChange('cash_settled', { riderPin: cleanPin, settledAt: settledTime, amount });
       return { success: true, settledAt: settledTime, amount, rider: riders[idx] };
     }
@@ -7832,6 +7900,16 @@ class QuickBiteDataService {
 
   getPayoutConfig() {
     try {
+      const s = this.getSettings();
+      if (s && s.payoutConfig && typeof s.payoutConfig === 'object') {
+        return {
+          activeMethod: s.payoutConfig.activeMethod || 'tiered_standard',
+          tieredStandard: { ...DEFAULT_PAYOUT_CONFIG.tieredStandard, ...(s.payoutConfig.tieredStandard || {}) },
+          tieredMilestone: { ...DEFAULT_PAYOUT_CONFIG.tieredMilestone, ...(s.payoutConfig.tieredMilestone || {}) },
+          flatLinear: { ...DEFAULT_PAYOUT_CONFIG.flatLinear, ...(s.payoutConfig.flatLinear || {}) },
+          undeliveredCompensation: { ...DEFAULT_PAYOUT_CONFIG.undeliveredCompensation, ...(s.payoutConfig.undeliveredCompensation || {}) }
+        };
+      }
       const raw = localStorage.getItem('quickbite_payout_config');
       if (raw) {
         const parsed = JSON.parse(raw);
@@ -7895,6 +7973,30 @@ class QuickBiteDataService {
     try {
       localStorage.setItem('quickbite_payout_config', JSON.stringify(cleanConfig));
       localStorage.setItem('quickbite_owner_km_rate', String(cleanConfig.flatLinear.ratePerKm));
+      const settings = this.getSettings();
+      const updated = {
+        ...settings,
+        payoutConfig: cleanConfig,
+        kmPayoutRate: cleanConfig.flatLinear.ratePerKm
+      };
+      const p = this.saveSettings(updated);
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {});
+      }
+    } catch {}
+
+    try {
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'payout_config_updated',
+          payload: {
+            payoutConfig: cleanConfig,
+            kmPayoutRate: cleanConfig.flatLinear.ratePerKm,
+            timestamp: Date.now()
+          }
+        }).catch(err => console.warn('[DataService] payout broadcast error:', err));
+      }
     } catch {}
 
     this.notifyChange('payout_config_updated', cleanConfig);
@@ -7929,14 +8031,32 @@ class QuickBiteDataService {
     const lat = Number(order?.addressDetails?.lat || order?.lat || 0);
     const lng = Number(order?.addressDetails?.lng || order?.lng || 0);
 
-    // If order has coordinates, dynamically refine with calibrated/cached street routing
+    // If order has coordinates and distanceKm is missing or 0, calculate road distance from restaurant
     if (lat && lng) {
-      const roadSync = this.calculateRoadDistanceSync(lat, lng);
-      if (roadSync && (!distanceKm || distanceKm <= 0.7 || Math.abs(roadSync - distanceKm) > 0.05)) {
-        distanceKm = roadSync;
+      if (!distanceKm || isNaN(distanceKm) || distanceKm <= 0) {
+        const roadSync = this.calculateRoadDistanceSync(lat, lng);
+        if (roadSync) distanceKm = roadSync;
       }
     } else if ((!distanceKm || isNaN(distanceKm) || distanceKm <= 0) && order) {
-      distanceKm = 1.0;
+      // Auto-heal distance from user address records if coordinates were not embedded
+      const rawAddrs = (typeof this.getAllAddressesRaw === 'function') ? this.getAllAddressesRaw() : [];
+      if (Array.isArray(rawAddrs) && rawAddrs.length > 0) {
+        const matched = rawAddrs.find(a => 
+          (order?.userId && a.userId && order.userId === a.userId) ||
+          (order?.customerPhone && a.phone && a.phone.replace(/\D/g, '').slice(-10) === String(order.customerPhone || '').replace(/\D/g, '').slice(-10)) ||
+          (order?.deliveryAddress && a.flatNo && order.deliveryAddress.includes(a.flatNo))
+        );
+        if (matched) {
+          if (matched.distanceKm) distanceKm = parseFloat(matched.distanceKm);
+          else if (matched.lat && matched.lng) {
+            const syncDist = this.calculateRoadDistanceSync(matched.lat, matched.lng);
+            if (syncDist) distanceKm = syncDist;
+          }
+        }
+      }
+      if (!distanceKm || isNaN(distanceKm) || distanceKm <= 0) {
+        distanceKm = 1.0;
+      }
     }
     distanceKm = Math.max(0, Math.round(distanceKm * 100) / 100);
 
@@ -8178,15 +8298,41 @@ class QuickBiteDataService {
   setKmPayoutRate(rate) {
     const parsed = parseFloat(rate);
     const num = (!isNaN(parsed) && parsed > 0) ? parsed : 15;
+    const cfg = this.getPayoutConfig();
     try {
       localStorage.setItem('quickbite_owner_km_rate', String(num));
-      const cfg = this.getPayoutConfig();
       if (cfg.activeMethod === 'flat_linear') {
         cfg.flatLinear.ratePerKm = num;
         localStorage.setItem('quickbite_payout_config', JSON.stringify(cfg));
       }
+      const settings = this.getSettings();
+      const updated = {
+        ...settings,
+        payoutConfig: cfg,
+        kmPayoutRate: num
+      };
+      const p = this.saveSettings(updated);
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {});
+      }
     } catch {}
+
+    try {
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'payout_config_updated',
+          payload: {
+            payoutConfig: cfg,
+            kmPayoutRate: num,
+            timestamp: Date.now()
+          }
+        }).catch(() => {});
+      }
+    } catch {}
+
     this.notifyChange('km_rate_updated', { rate: num });
+    this.notifyChange('payout_config_updated', cfg);
     return num;
   }
 
@@ -8200,6 +8346,11 @@ class QuickBiteDataService {
       riders[idx].payoutAmountPaid = Number(amount) || 0;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
+      if (this.isStaffAuthorized()) {
+        this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
+          console.warn('[DataService] Background sync rider error:', err?.message || err);
+        });
+      }
       try {
         localStorage.setItem(`quickbite_rider_payout_paid_${cleanPin}`, JSON.stringify({
           paidAt: paidTime,

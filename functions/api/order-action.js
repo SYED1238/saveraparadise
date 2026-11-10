@@ -592,10 +592,10 @@ export async function onRequest(context) {
             if (orderTotal > 0 && cashCollected > maxAllowed) {
               return jsonResponse({ error: `Cash collected (₹${cashCollected}) exceeds payable order total (₹${orderTotal}). Maximum allowed with tip is ₹${maxAllowed}.` }, 400, Object.fromEntries(corsHeaders.entries()));
             }
-            updatePayload.cash_collected = cashCollected;
+            updatePayload.cash_collected = Math.round(cashCollected);
             updatePayload.payment_status = 'Paid';
             if (cashCollected > orderTotal) {
-              updatePayload.tip_amount = cashCollected - orderTotal;
+              updatePayload.tip_amount = Math.round(cashCollected - orderTotal);
             }
           }
         }

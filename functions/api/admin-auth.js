@@ -152,7 +152,7 @@ export async function onRequest(context) {
           }, 401, Object.fromEntries(corsHeaders.entries()));
         }
 
-        if (!error && dbRider && (!dbRider.status || dbRider.status === 'online' || dbRider.status === 'active')) {
+        if (!error && dbRider && dbRider.status !== 'inactive') {
           role = 'rider';
           dynamicRiderRecord = dbRider;
         }

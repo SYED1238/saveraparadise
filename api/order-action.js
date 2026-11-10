@@ -601,10 +601,10 @@ export default async function handler(req, res) {
             if (orderTotal > 0 && cashCollected > maxAllowed) {
               return res.status(400).json({ error: `Cash collected (₹${cashCollected}) exceeds payable order total (₹${orderTotal}). Maximum allowed with tip is ₹${maxAllowed}.` });
             }
-            updatePayload.cash_collected = cashCollected;
+            updatePayload.cash_collected = Math.round(cashCollected);
             updatePayload.payment_status = 'Paid';
             if (cashCollected > orderTotal) {
-              updatePayload.tip_amount = cashCollected - orderTotal;
+              updatePayload.tip_amount = Math.round(cashCollected - orderTotal);
             }
           }
         }
