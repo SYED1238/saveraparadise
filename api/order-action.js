@@ -667,6 +667,11 @@ export default async function handler(req, res) {
           return res.status(403).json({ error: 'Forbidden: Valid cancellation token or staff session required' });
         }
 
+        // Idempotency: If already cancelled, return success
+        if (order.status === 'cancelled') {
+          return res.status(200).json({ success: true, order, idempotent: true });
+        }
+
         // Customer cancellation rule: Cannot cancel once cooking starts
         if (!isStaff && !['pending', 'accepted'].includes(order.status)) {
           return res.status(400).json({ error: `Cannot cancel order once kitchen preparation has begun (${order.status})` });

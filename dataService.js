@@ -5813,34 +5813,68 @@ class QuickBiteDataService {
         }));
       } catch {}
 
-      if (supabase) {
-        const cleanId = String(orderId || '').replace(/^#/, '');
-        const hashId = `#${cleanId}`;
-        const basePayload = {
-          status: 'cancelled',
-          step_index: -1,
-          status_label: 'Cancelled',
-          eta: 'Cancelled'
-        };
-        const fullPayload = {
-          ...basePayload,
-          cancellation_reason: order.cancellationReason || null
-        };
+      const cleanId = String(orderId || '').replace(/^#/, '');
+      const hashId = `#${cleanId}`;
+      const basePayload = {
+        status: 'cancelled',
+        step_index: -1,
+        status_label: 'Cancelled',
+        eta: 'Cancelled'
+      };
+      const fullPayload = {
+        ...basePayload,
+        cancellation_reason: order.cancellationReason || null
+      };
 
-        const doUpdate = async (targetId) => {
-          if (!targetId) return;
-          try {
-            const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId);
-            if (error) {
-              await supabase.from('orders').update(basePayload).eq('id', targetId);
+      const doCancelUpdate = async (targetId) => {
+        if (!targetId) return;
+        try {
+          const tokens = (typeof localStorage !== 'undefined')
+            ? JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}')
+            : {};
+          const cleanTargetId = String(targetId).replace(/^#/, '');
+          const trackingToken = order.trackingToken || tokens[targetId] || tokens[cleanTargetId] || tokens[`#${cleanTargetId}`];
+
+          // 1. Authoritative Gateway Call: Cancel order via serverless function
+          const res = await this._orderAction('cancel_order', {
+            orderId: targetId,
+            trackingToken,
+            reason: order.cancellationReason || 'Cancelled by customer'
+          });
+
+          if (res && (res.success || res.order || res.idempotent)) {
+            delete order.pendingStatusSync;
+            this.saveOrders(list);
+            return;
+          }
+          throw new Error(res?.error || 'Server rejected cancellation');
+        } catch (gatewayErr) {
+          // 2. Direct Supabase Fallback (if client has authenticated permissions or in dev)
+          if (supabase) {
+            try {
+              const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId);
+              if (error) {
+                const { error: baseErr } = await supabase.from('orders').update(basePayload).eq('id', targetId);
+                if (baseErr) {
+                  order.pendingStatusSync = true;
+                  this.saveOrders(list);
+                }
+              }
+            } catch {
+              order.pendingStatusSync = true;
+              this.saveOrders(list);
             }
-          } catch {}
-        };
+          } else {
+            order.pendingStatusSync = true;
+            this.saveOrders(list);
+          }
+        }
+      };
 
-        doUpdate(order.id);
-        if (order.id !== cleanId) doUpdate(cleanId);
-        if (order.id !== hashId) doUpdate(hashId);
-      }
+      doCancelUpdate(order.id).catch(() => {
+        order.pendingStatusSync = true;
+        this.saveOrders(list);
+      });
 
       // Broadcast cancellation across all connected devices via Supabase Realtime channel
       try {

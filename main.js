@@ -8321,6 +8321,44 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     }
   });
 
+  // Floating Marquee Handler for User Profile Name Pill
+  function triggerNameFloatEffect() {
+    const track = document.getElementById('user-name-track');
+    const textEl = document.getElementById('user-name-text');
+    if (!track || !textEl) return;
+
+    // Reset first to accurately measure unconstrained text width
+    track.classList.remove('floating');
+    textEl.style.transform = '';
+    track.style.removeProperty('--float-dist');
+    track.style.removeProperty('--float-duration');
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const trackWidth = track.clientWidth;
+        const textWidth = textEl.scrollWidth;
+        const overflow = textWidth - trackWidth;
+
+        if (overflow > 4) {
+          track.classList.add('floating');
+          const travelDist = overflow + 8;
+          track.style.setProperty('--float-dist', `-${travelDist}px`);
+          // Smooth travel speed (~18px/sec, clamped between 3.2s and 6.5s)
+          const duration = Math.min(6.5, Math.max(3.2, 2.4 + (overflow / 18)));
+          track.style.setProperty('--float-duration', `${duration.toFixed(1)}s`);
+        } else {
+          track.classList.remove('floating');
+        }
+      });
+    });
+  }
+
+  window.addEventListener('resize', () => {
+    if (currentUser) {
+      triggerNameFloatEffect();
+    }
+  }, { passive: true });
+
   // Handle User UI State (Display User Name or Hi Guest)
   function updateUserStateUI(user) {
     currentUser = user;
@@ -8333,8 +8371,28 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       const googleIdentity = identities.find(i => i.provider === 'google') || identities[0];
       const identityData = googleIdentity?.identity_data || {};
 
-      const fullName = (meta.full_name || meta.name || identityData.full_name || identityData.name || user.email?.split('@')[0] || 'Foodie').trim();
-      const firstName = fullName.split(' ')[0] || 'Foodie';
+      // Option 2: Smart Name Parser for email, OAuth, and custom profiles
+      let resolvedFullName = (meta.full_name || meta.name || identityData.full_name || identityData.name || '').trim();
+
+      if (!resolvedFullName && user.email) {
+        const emailPrefix = (user.email.split('@')[0] || '').trim();
+        // Remove numbers, clean punctuation separators like dots, underscores, hyphens
+        const rawSegments = emailPrefix.replace(/[0-9]/g, '').split(/[._\-+]/).filter(s => s.length >= 2);
+        if (rawSegments.length > 0) {
+          resolvedFullName = rawSegments.map(s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+        } else {
+          const rawLead = emailPrefix.split(/[._\-+]/)[0] || 'Foodie';
+          resolvedFullName = rawLead.charAt(0).toUpperCase() + rawLead.slice(1);
+        }
+      }
+
+      if (!resolvedFullName) resolvedFullName = 'Foodie';
+
+      const nameParts = resolvedFullName.split(' ').filter(Boolean);
+      const firstName = nameParts[0] || 'Foodie';
+      const fullName = resolvedFullName;
+      // In the fixed pill, display the full name (or first 2 parts if multi-word) so it floats smoothly
+      const pillName = nameParts.length > 1 ? nameParts.slice(0, 2).join(' ') : firstName;
       const userInitial = (firstName || fullName || 'F').charAt(0).toUpperCase();
       const phone = (meta.phone || user.phone || identityData.phone || '').trim();
 
@@ -8374,7 +8432,10 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         }
       }
 
-      if (userNameText) userNameText.textContent = firstName;
+      if (userNameText) {
+        userNameText.textContent = pillName;
+        triggerNameFloatEffect();
+      }
       if (userDropName) userDropName.textContent = fullName;
       if (userDropEmail) userDropEmail.textContent = user.email || 'Savera Paradise Member';
 
@@ -8474,6 +8535,12 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       if (userGreetingTitle) {
         userGreetingTitle.textContent = 'Hi Guest';
       }
+      const track = document.getElementById('user-name-track');
+      if (track) {
+        track.classList.remove('floating');
+        track.style.removeProperty('--float-dist');
+        track.style.removeProperty('--float-duration');
+      }
       if (userGreetingAvatarImg) {
         userGreetingAvatarImg.src = 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&auto=format&fit=crop&q=80';
       }
@@ -8533,8 +8600,8 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
           id: `google_local_${Date.now()}`,
           email: 'foodie.google@gmail.com',
           user_metadata: {
-            full_name: 'Local Test Customer',
-            name: 'Local Test Customer',
+            full_name: 'Local Customer',
+            name: 'Local Customer',
             email: 'foodie.google@gmail.com',
             avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
             provider: 'google'

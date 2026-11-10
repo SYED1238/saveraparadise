@@ -345,6 +345,7 @@ export async function requestSystemNotificationPermission() {
 
 export function registerServiceWorker() {
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '[::1]';
     // In local dev, clear existing SW & cache storage to avoid stale dev views
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       try {
@@ -367,6 +368,7 @@ export function registerServiceWorker() {
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (hadController && !refreshing) {
+        if (isDev) return;
         refreshing = true;
         window.location.reload();
       }

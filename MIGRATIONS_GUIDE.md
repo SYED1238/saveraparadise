@@ -41,4 +41,6 @@ For all live database environments, use the consolidated and idempotent master s
 | `08_secure_orders_rls.sql` | **Active / Merged** | Included in master consolidation script. |
 | `09_secure_order_gateways.sql` | **Active / Merged** | Included in master consolidation script. |
 | `10_secure_riders_rls.sql` | **Active / Merged** | Included in master consolidation script. |
+| `11_atomic_category_deletion.sql` | **Active / Merged** | Transactional delete_category_cascade RPC. |
+| `12_secure_orders_update_policy.sql` | **Active / Merged** | Eliminates customer self-update vulnerability on orders. |
 | `supabase_production_security_hardening.sql` | **AUTHORITATIVE MASTER** | **The single script to run on live database.** |

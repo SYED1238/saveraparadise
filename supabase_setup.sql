@@ -205,12 +205,10 @@ CREATE POLICY "service_manage_orders" ON public.orders
 CREATE POLICY "authenticated_update_orders" ON public.orders
   FOR UPDATE TO authenticated
   USING (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider')
-    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
   )
   WITH CHECK (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider')
-    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
+    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
   );
 
 -- 2.3B Riders: Restricted to service_role; anon access strictly revoked to protect PINs

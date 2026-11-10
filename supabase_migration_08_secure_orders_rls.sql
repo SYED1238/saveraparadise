@@ -59,16 +59,14 @@ BEGIN
         OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
       );
 
-    -- 1.3 Authenticated staff and customer owner updates
+    -- 1.3 Authenticated staff and rider operational updates
     CREATE POLICY "authenticated_update_orders" ON public.orders
       FOR UPDATE TO authenticated
       USING (
         (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
-        OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
       )
       WITH CHECK (
         (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
-        OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
       );
 
     -- NOTICE: Zero INSERT, SELECT, UPDATE, or DELETE policies granted to 'anon' or 'public'.

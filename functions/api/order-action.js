@@ -657,6 +657,11 @@ export async function onRequest(context) {
           return jsonResponse({ error: 'Forbidden: Valid cancellation token or staff session required' }, 403, Object.fromEntries(corsHeaders.entries()));
         }
 
+        // Idempotency: If already cancelled, return success
+        if (order.status === 'cancelled') {
+          return jsonResponse({ success: true, order, idempotent: true }, 200, Object.fromEntries(corsHeaders.entries()));
+        }
+
         // Customer cancellation rule: Cannot cancel once cooking starts
         if (!isStaff && !['pending', 'accepted'].includes(order.status)) {
           return jsonResponse({ error: `Cannot cancel order once kitchen preparation has begun (${order.status})` }, 400, Object.fromEntries(corsHeaders.entries()));

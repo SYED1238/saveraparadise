@@ -86,6 +86,7 @@ END $$;
 
 
 -- ------------------------------------------------------------------------------
+-- ------------------------------------------------------------------------------
 -- 3. LOCK DOWN ORDERS TABLE (public.orders)
 -- ------------------------------------------------------------------------------
 DO $$
@@ -106,7 +107,16 @@ BEGIN
     DROP POLICY IF EXISTS "public_read_orders" ON public.orders;
     DROP POLICY IF EXISTS "authenticated_insert_orders" ON public.orders;
     DROP POLICY IF EXISTS "authenticated_update_orders" ON public.orders;
+    DROP POLICY IF EXISTS "authenticated_select_orders" ON public.orders;
     DROP POLICY IF EXISTS "service_role_manage_orders" ON public.orders;
+    DROP POLICY IF EXISTS "service_manage_orders" ON public.orders;
+    DROP POLICY IF EXISTS "app_read_orders" ON public.orders;
+    DROP POLICY IF EXISTS "app_update_orders" ON public.orders;
+    DROP POLICY IF EXISTS "admin_rider_update_orders" ON public.orders;
+    DROP POLICY IF EXISTS "customer_read_orders" ON public.orders;
+    DROP POLICY IF EXISTS "allow_insert_orders" ON public.orders;
+    DROP POLICY IF EXISTS "orders_update_staff_only" ON public.orders;
+    DROP POLICY IF EXISTS "orders_select_owner_or_staff" ON public.orders;
 
     -- Revoke direct mutations and reads from anon and public
     REVOKE ALL ON TABLE public.orders FROM anon;
@@ -119,6 +129,25 @@ BEGIN
       FOR ALL TO service_role
       USING (true)
       WITH CHECK (true);
+
+    -- Authenticated staff and customer owner reads
+    CREATE POLICY "authenticated_select_orders" ON public.orders
+      FOR SELECT TO authenticated
+      USING (
+        (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
+        OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
+      );
+
+    -- Direct SQL updates strictly restricted to authorized staff/rider/owner roles
+    -- Customer self-updates (auth.uid() = user_id) are strictly removed.
+    CREATE POLICY "authenticated_update_orders" ON public.orders
+      FOR UPDATE TO authenticated
+      USING (
+        (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
+      )
+      WITH CHECK (
+        (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
+      );
   END IF;
 END $$;
 

@@ -116,16 +116,14 @@ CREATE POLICY "authenticated_select_orders" ON public.orders
     OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
   );
 
--- 3. Authenticated staff and customer owner updates
+-- 3. Authenticated staff updates
 CREATE POLICY "authenticated_update_orders" ON public.orders
   FOR UPDATE TO authenticated
   USING (
     (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
-    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
   )
   WITH CHECK (
     (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
-    OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
   );
 
 -- 4.2 Dishes & Categories: Allow admin dish updates & category photo saves
