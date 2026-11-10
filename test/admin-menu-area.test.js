@@ -236,4 +236,45 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
     const deleteDishIdx = mig11Content.indexOf('DELETE FROM public.dishes');
     assert.ok(selectLockIdx !== -1 && selectLockIdx < deleteDishIdx, 'Category row must be locked with FOR UPDATE BEFORE deleting dishes');
   });
+
+  it('15. admin.js and securityUtils.js strictly require signed server token to unlock admin portal and eliminate local-only PIN bypass', () => {
+    // 1. securityUtils.js must not contain DEFAULT_ADMIN_PIN_HASH bypass in verifyStaffPin
+    const securityUtilsPath = path.resolve(process.cwd(), 'securityUtils.js');
+    const securityUtilsContent = fs.readFileSync(securityUtilsPath, 'utf8');
+
+    assert.doesNotMatch(
+      securityUtilsContent,
+      /if\s*\(\s*inputHash\s*===\s*DEFAULT_ADMIN_PIN_HASH\s*\)\s*\{[\s\S]*?setStaffSessionActive\('admin'\)/,
+      'verifyStaffPin must NOT bypass server auth with client-side DEFAULT_ADMIN_PIN_HASH'
+    );
+    assert.match(
+      securityUtilsContent,
+      /sessionStorage\.setItem\('quickbite_admin_token',\s*data\.token\)/,
+      'verifyStaffPin must store quickbite_admin_token upon server verification'
+    );
+
+    // 2. admin.js checkAdminSession must be async and strictly await ensureAdminToken
+    assert.match(
+      adminJsContent,
+      /async\s+function\s+checkAdminSession\s*\(\s*\)/,
+      'checkAdminSession must be an async function'
+    );
+    assert.match(
+      adminJsContent,
+      /validToken\s*=\s*await\s+ensureAdminToken\('admin'\)/,
+      'checkAdminSession must verify server token with ensureAdminToken'
+    );
+    assert.match(
+      adminJsContent,
+      /clearStaffSession\('admin'\)/,
+      'checkAdminSession must clear session and lock overlay when valid server token is absent'
+    );
+
+    // 3. initIosPasscodeLock onSuccess must not blindly set local auth without verified token
+    assert.doesNotMatch(
+      adminJsContent,
+      /onSuccess\s*:\s*\(\s*\)\s*=>\s*\{[\s\S]*?setStaffSessionActive\('admin'\)/,
+      'initIosPasscodeLock onSuccess must not independently grant staff session without server token'
+    );
+  });
 });

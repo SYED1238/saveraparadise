@@ -331,17 +331,18 @@ export async function verifyStaffPin(role, inputPin) {
       if (res.ok) {
         const data = await res.json();
         if (data && data.token) {
-          sessionStorage.setItem('quickbite_admin_token', data.token);
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('quickbite_admin_token', data.token);
+            if (data.role === 'owner') {
+              sessionStorage.setItem('quickbite_owner_token', data.token);
+            }
+          }
           setStaffSessionActive('admin');
           return true;
         }
       }
     } catch (e) {
       console.warn('[Security] Admin server auth request failed:', e);
-    }
-    if (inputHash === DEFAULT_ADMIN_PIN_HASH) {
-      setStaffSessionActive('admin');
-      return true;
     }
     return false;
   }

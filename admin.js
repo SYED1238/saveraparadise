@@ -87,7 +87,6 @@ const initAdminApp = () => {
       return await verifyStaffPin('admin', pin);
     },
     onSuccess: () => {
-      setStaffSessionActive('admin');
       requestWakeLock();
       showToast('🔓 Manager Access Granted', 'success');
       dataService.syncOrdersFromSupabase(true).then(() => {
@@ -98,20 +97,28 @@ const initAdminApp = () => {
     }
   });
 
-  function checkAdminSession() {
-    if (isStaffSessionActive('admin')) {
+  async function checkAdminSession() {
+    const hasLocalAuth = isStaffSessionActive('admin') || isStaffSessionActive('owner');
+    let validToken = null;
+
+    if (hasLocalAuth) {
+      validToken = await ensureAdminToken('admin').catch(() => null);
+    }
+
+    if (hasLocalAuth && validToken) {
       if (adminLockOverlay) {
         adminLockOverlay.classList.add('unlocked');
         adminLockOverlay.style.display = 'none';
       }
       requestWakeLock();
-      ensureAdminToken().catch(() => {});
       dataService.syncOrdersFromSupabase().then(() => {
         renderOrders();
         updateOrderBadges();
       }).catch(() => {});
       dataService.syncRidersFromSupabase().catch(() => {});
     } else {
+      clearStaffSession('admin');
+      releaseWakeLock();
       if (adminLockOverlay) {
         adminLockOverlay.classList.remove('unlocked');
         adminLockOverlay.style.display = 'flex';

@@ -418,4 +418,56 @@ test('SIGN-IN & AUTHENTICATION AUDIT: Staff & Executive Owner Session Management
     assert.strictEqual(sessionStorage.getItem('quickbite_admin_token'), null);
     assert.strictEqual(sessionStorage.getItem('quickbite_owner_token'), 'keep_owner_token');
   });
+
+  await t.test('verifyStaffPin("admin") sets quickbite_admin_token and session ONLY when /api/admin-auth returns valid token', async () => {
+    sessionData.clear();
+    const origFetch = globalThis.fetch;
+
+    try {
+      // 1. Successful authentication from server
+      globalThis.fetch = async (url) => {
+        if (url === '/api/admin-auth') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, token: 'signed_admin_jwt_123', role: 'admin' })
+          };
+        }
+        return { ok: false, status: 404 };
+      };
+
+      const authSuccess = await verifyStaffPin('admin', '8899');
+      assert.strictEqual(authSuccess, true, 'verifyStaffPin should return true on 200 with token');
+      assert.strictEqual(sessionStorage.getItem('quickbite_admin_token'), 'signed_admin_jwt_123');
+      assert.strictEqual(isStaffSessionActive('admin'), true);
+
+      // 2. Server rejects PIN with 401
+      sessionData.clear();
+      globalThis.fetch = async () => {
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({ error: 'Invalid PIN' })
+        };
+      };
+
+      const authFail = await verifyStaffPin('admin', '0000');
+      assert.strictEqual(authFail, false, 'verifyStaffPin should return false on 401');
+      assert.strictEqual(sessionStorage.getItem('quickbite_admin_token'), null);
+      assert.strictEqual(isStaffSessionActive('admin'), false);
+
+      // 3. Network failure: must fail closed even if PIN matches default PIN
+      sessionData.clear();
+      globalThis.fetch = async () => {
+        throw new Error('Network failure or offline');
+      };
+
+      const authNetworkFail = await verifyStaffPin('admin', '2580');
+      assert.strictEqual(authNetworkFail, false, 'verifyStaffPin must fail closed on network error without local bypass');
+      assert.strictEqual(sessionStorage.getItem('quickbite_admin_token'), null);
+      assert.strictEqual(isStaffSessionActive('admin'), false);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
 });
