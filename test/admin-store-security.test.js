@@ -1558,4 +1558,97 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.match(masterContent, /^BEGIN;/m);
     assert.match(masterContent, /COMMIT;$/m);
   });
+
+  await t.test('36. Payment Integrity: create_order neutralizes forged payment fields for unauthenticated customer orders', async () => {
+    const validNodeToken = signPayload({
+      numericTotal: 300,
+      total: '₹300',
+      items: [{ name: 'Chicken Biryani', price: 300, quantity: 1 }],
+      timestamp: Date.now()
+    });
+
+    // 1. Node handler test: Attacker submits forged Paid/Online status
+    const { req: nodeReq, res: nodeRes } = createMockReqRes({
+      method: 'POST',
+      body: {
+        action: 'create_order',
+        checkoutToken: validNodeToken,
+        order: {
+          id: '#QB-FORGE-01',
+          payment_method: 'Online',
+          payment_status: 'Paid',
+          is_paid_online: true,
+          doorstep_upi: true,
+          total: '₹300',
+          items: [{ name: 'Chicken Biryani', price: 300, quantity: 1 }]
+        }
+      }
+    });
+    await orderActionHandler(nodeReq, nodeRes);
+    assert.equal(nodeRes.statusCode, 200);
+    assert.equal(nodeRes.responseData?.success, true);
+    // Verified payment fields must be forced to COD and unpaid
+    assert.equal(nodeRes.responseData?.order?.payment_method, 'Cash on Delivery (COD)');
+    assert.equal(nodeRes.responseData?.order?.payment_status, 'Cash on Delivery');
+    assert.equal(nodeRes.responseData?.order?.is_paid_online, false);
+
+    // 2. Cloudflare Pages Function test: Attacker submits forged Paid/Online status
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const validCfToken = signCloudflarePayload({
+      numericTotal: 300,
+      total: '₹300',
+      items: [{ name: 'Chicken Biryani', price: 300, quantity: 1 }],
+      timestamp: Date.now()
+    }, mockCfEnv);
+
+    const cfReq = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_order',
+        checkoutToken: validCfToken,
+        order: {
+          id: '#QB-FORGE-CF-01',
+          payment_method: 'Online',
+          payment_status: 'Paid',
+          is_paid_online: true,
+          doorstep_upi: true,
+          total: '₹300',
+          items: [{ name: 'Chicken Biryani', price: 300, quantity: 1 }]
+        }
+      })
+    });
+    const cfRes = await cloudflareOrderActionHandler({ request: cfReq, env: mockCfEnv });
+    assert.equal(cfRes.status, 200);
+    const cfData = await cfRes.json();
+    assert.equal(cfData.success, true);
+    assert.equal(cfData.order.payment_method, 'Cash on Delivery (COD)');
+    assert.equal(cfData.order.payment_status, 'Cash on Delivery');
+    assert.equal(cfData.order.is_paid_online, false);
+  });
+
+  await t.test('37. Authenticated staff retains permission to specify payment details for counter orders', async () => {
+    const staffToken = createAdminToken();
+    const { req, res } = createMockReqRes({
+      method: 'POST',
+      headers: { authorization: `Bearer ${staffToken}` },
+      body: {
+        action: 'create_order',
+        order: {
+          id: '#QB-POS-PAID',
+          total: '₹200',
+          payment_method: 'Counter UPI',
+          payment_status: 'Paid',
+          is_paid_online: true,
+          items: [{ name: 'Parotta', price: 50, quantity: 4 }]
+        }
+      }
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.responseData?.success, true);
+    assert.equal(res.responseData?.order?.payment_method, 'Counter UPI');
+    assert.equal(res.responseData?.order?.payment_status, 'Paid');
+    assert.equal(res.responseData?.order?.is_paid_online, true);
+  });
 });

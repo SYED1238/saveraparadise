@@ -130,6 +130,21 @@ export async function onRequest(context) {
           resolvedCollision: true
         }, 200, Object.fromEntries(corsHeaders.entries()));
       }
+      const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+      const isStaff = auth && auth.valid;
+
+      // Authoritative payment security: Public customer checkout is strictly Cash on Delivery.
+      // Unauthenticated customers must NEVER be able to declare or forge 'Paid' or 'is_paid_online'.
+      let paymentMethod = 'Cash on Delivery (COD)';
+      let paymentStatus = 'Cash on Delivery';
+      let isPaidOnline = false;
+
+      if (isStaff) {
+        paymentMethod = orderData.payment_method || orderData.paymentMethod || 'Cash on Delivery (COD)';
+        paymentStatus = orderData.payment_status || orderData.paymentStatus || 'Cash on Delivery';
+        isPaidOnline = Boolean(orderData.is_paid_online || orderData.isPaidOnline);
+      }
+
       const trackingToken = orderData.tracking_token || orderData.trackingToken || crypto.randomUUID();
       const rawNum = typeof decoded?.numericTotal === 'number'
         ? decoded.numericTotal
@@ -152,6 +167,9 @@ export async function onRequest(context) {
         order: {
           ...orderData,
           id: cleanId,
+          payment_method: paymentMethod,
+          payment_status: paymentStatus,
+          is_paid_online: isPaidOnline,
           total: enforcedTotal,
           items: enforcedItems,
           items_summary: itemsSummary,
@@ -814,11 +832,21 @@ export async function onRequest(context) {
         const targetStatus = (orderData.status && allowedStatuses.includes(orderData.status)) ? orderData.status : 'accepted';
         const targetStatusLabel = targetStatus === 'pending' ? 'Pending Confirmation' : 'Accepted';
 
-        const paymentMethod = orderData.payment_method || orderData.paymentMethod || 'Cash on Delivery (COD)';
-        let paymentStatus = orderData.payment_status || orderData.paymentStatus || 'Cash on Delivery';
-        let isPaidOnline = Boolean(orderData.is_paid_online || orderData.isPaidOnline);
+        // Authoritative payment security boundary:
+        // Unauthenticated customers must NEVER be able to declare or forge 'Paid' or 'is_paid_online'.
+        // Public customer checkout is strictly forced to Cash on Delivery and unpaid status.
+        // Online payments can only be confirmed via cryptographically verified server-side gateway webhooks.
+        let paymentMethod = 'Cash on Delivery (COD)';
+        let paymentStatus = 'Cash on Delivery';
+        let isPaidOnline = false;
 
-        if (!isStaff && (paymentMethod.includes('COD') || paymentMethod.includes('Cash on Delivery'))) {
+        if (isStaff) {
+          // Authenticated staff (admin/owner/rider) placing counter order
+          paymentMethod = orderData.payment_method || orderData.paymentMethod || 'Cash on Delivery (COD)';
+          paymentStatus = orderData.payment_status || orderData.paymentStatus || 'Cash on Delivery';
+          isPaidOnline = Boolean(orderData.is_paid_online || orderData.isPaidOnline);
+        } else {
+          paymentMethod = 'Cash on Delivery (COD)';
           paymentStatus = 'Cash on Delivery';
           isPaidOnline = false;
         }
@@ -846,6 +874,8 @@ export async function onRequest(context) {
           payment_method: paymentMethod,
           payment_status: paymentStatus,
           is_paid_online: isPaidOnline,
+          doorstep_upi: isStaff ? Boolean(orderData.doorstep_upi || orderData.doorstepUpi) : false,
+          cash_collected: 0,
           step_index: typeof orderData.step_index === 'number' ? orderData.step_index : (typeof orderData.stepIndex === 'number' ? orderData.stepIndex : 0),
           status: targetStatus,
           status_label: orderData.status_label || orderData.statusLabel || targetStatusLabel,
