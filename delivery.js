@@ -303,9 +303,10 @@ const initDeliveryApp = () => {
       updateRiderProfileHeader();
       requestWakeLock();
       showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
-      dataService.syncOrdersFromSupabase(true).then(() => {
-        renderPortal();
-      }).catch(() => {
+      Promise.allSettled([
+        dataService.syncOrdersFromSupabase(true),
+        dataService.syncSettingsFromSupabase(true)
+      ]).finally(() => {
         renderPortal();
       });
     }
@@ -914,6 +915,10 @@ const initDeliveryApp = () => {
       if (o.assignedRiderPin !== currentRider.pin) return false;
       const orderTs = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
       return !orderTs || orderTs >= shiftStartMs;
+    }).sort((a, b) => {
+      const tsA = Number(a.deliveredAt || a.undeliveredAt || a.updatedAt || a.claimedAt || a.createdAt || 0);
+      const tsB = Number(b.deliveredAt || b.undeliveredAt || b.updatedAt || b.claimedAt || b.createdAt || 0);
+      return tsB - tsA;
     });
 
     // Get rider-specific segregated COD cash in hand
@@ -1431,8 +1436,8 @@ const initDeliveryApp = () => {
     const payoutCfg = dataService.getPayoutConfig();
     const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
     const deliveredCount = orders.filter(o => {
-      if (o.status !== 'delivered' || o.assignedRiderPin !== currentRider.pin) return false;
-      const ts = Number(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+      if ((o.status !== 'delivered' && o.status !== 'undelivered') || o.assignedRiderPin !== currentRider.pin) return false;
+      const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
       return !ts || ts >= shiftStart;
     }).length;
     const orderPayout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);
@@ -1695,8 +1700,8 @@ const initDeliveryApp = () => {
       const payoutCfg = dataService.getPayoutConfig();
       const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
       const currentDelivered = dataService.getOrders().filter(o => {
-        if (o.status !== 'delivered' || o.assignedRiderPin !== currentRider.pin) return false;
-        const ts = Number(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+        if ((o.status !== 'delivered' && o.status !== 'undelivered') || o.assignedRiderPin !== currentRider.pin) return false;
+        const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
         return !ts || ts >= shiftStart;
       });
       const orderPayout = dataService.calculateOrderPayout(activeConfirmOrder, currentDelivered.length + 1, payoutCfg);
@@ -2049,8 +2054,8 @@ const initDeliveryApp = () => {
       const payoutCfg = dataService.getPayoutConfig();
       const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
       const currentDelivered = dataService.getOrders().filter(o => {
-        if (o.status !== 'delivered' || o.assignedRiderPin !== currentRider.pin) return false;
-        const ts = Number(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+        if ((o.status !== 'delivered' && o.status !== 'undelivered') || o.assignedRiderPin !== currentRider.pin) return false;
+        const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
         return !ts || ts >= shiftStart;
       });
       const orderPayout = dataService.calculateOrderPayout(activeCnrOrder, currentDelivered.length + 1, payoutCfg);
@@ -2378,7 +2383,10 @@ const initDeliveryApp = () => {
     btnRefreshEarnings.addEventListener('click', async () => {
       btnRefreshEarnings.classList.add('spinning');
       try {
-        await dataService.syncOrdersFromSupabase(true);
+        await Promise.allSettled([
+          dataService.syncOrdersFromSupabase(true),
+          dataService.syncSettingsFromSupabase(true)
+        ]);
       } catch {}
       renderPortal();
       showToast('🔄 Shift earnings refreshed!', 'info');
@@ -2424,7 +2432,10 @@ const initDeliveryApp = () => {
     btnManualRefresh.addEventListener('click', async () => {
       btnManualRefresh.classList.add('spinning');
       try {
-        await dataService.syncOrdersFromSupabase(true);
+        await Promise.allSettled([
+          dataService.syncOrdersFromSupabase(true),
+          dataService.syncSettingsFromSupabase(true)
+        ]);
       } catch {}
       renderPortal();
       showToast('🔄 Live orders updated!', 'info');
@@ -2730,7 +2741,10 @@ const initDeliveryApp = () => {
       // 3. Fallback sync from Supabase before rejecting unknown bag code
       if (!order) {
         try {
-          await dataService.syncOrdersFromSupabase(true);
+          await Promise.allSettled([
+          dataService.syncOrdersFromSupabase(true),
+          dataService.syncSettingsFromSupabase(true)
+        ]);
           order = dataService.findOrderByBagCode(code);
         } catch {}
       }
@@ -2785,8 +2799,8 @@ const initDeliveryApp = () => {
     const allOrders = dataService.getOrders();
     const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
     const deliveredCount = allOrders.filter(o => {
-      if (o.status !== 'delivered' || o.assignedRiderPin !== currentRider.pin) return false;
-      const ts = Number(o.deliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
+      if ((o.status !== 'delivered' && o.status !== 'undelivered') || o.assignedRiderPin !== currentRider.pin) return false;
+      const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
       return !ts || ts >= shiftStart;
     }).length;
     const payout = dataService.calculateOrderPayout(order, deliveredCount + 1, payoutCfg);

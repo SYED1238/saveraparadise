@@ -28,8 +28,8 @@ test('OWNER PORTAL AUDIT FIXES VERIFICATION SUITE', async (t) => {
     assert.match(dataServiceContent, /payoutAmountPaid:\s*riderData\.payoutAmountPaid\s*!==\s*undefined/, 'saveOrUpdateRider must preserve payoutAmountPaid');
 
     // Verify admin-store sanitizes payout fields
-    assert.match(adminStoreContent, /payout_paid_at:\s*rawRider\.payout_paid_at\s*\|\|\s*rawRider\.payoutPaidAt/, 'admin-store must sanitize payout_paid_at');
-    assert.match(adminStoreContent, /payout_amount_paid:\s*Number\(rawRider\.payout_amount_paid\s*\|\|\s*rawRider\.payoutAmountPaid/, 'admin-store must sanitize payout_amount_paid');
+    assert.match(adminStoreContent, /payout_paid_at:\s*rawRider\.payoutPaidAt\s*\?\?\s*rawRider\.payout_paid_at/, 'admin-store must sanitize payout_paid_at');
+    assert.match(adminStoreContent, /payout_amount_paid:\s*Number\(rawRider\.payoutAmountPaid\s*\?\?\s*rawRider\.payout_amount_paid\)/, 'admin-store must sanitize payout_amount_paid');
   });
 
   await t.test('2. Bug 2 Fix: renderRiderFleetTable does NOT overwrite Overview Counter Cash Drawer elements', () => {
@@ -102,5 +102,45 @@ test('OWNER PORTAL AUDIT FIXES VERIFICATION SUITE', async (t) => {
     assert.match(ownerCssContent, /\.badge-rider-pin-table/, 'owner.css print media must target badge-rider-pin-table');
     assert.match(ownerCssContent, /#owner-rider-table th:nth-child\(3\)/, 'owner.css print media must target 3rd column (PIN)');
     assert.match(ownerCssContent, /#owner-rider-table th:nth-child\(11\)/, 'owner.css print media must target 11th column (Actions)');
+  });
+
+  await t.test('6. Settlement Persistence & Owner Token Prioritization in dataService & admin-store', () => {
+    // Check that _adminStoreAction prioritizes owner token for save_settings & clear_orders
+    assert.match(dataServiceContent, /isOwnerAction\s*=\s*action\s*===\s*'save_settings'/, '_adminStoreAction must detect owner actions');
+    assert.match(dataServiceContent, /ensureAdminToken\(isOwnerAction \? 'owner' : 'admin'\)/, '_adminStoreAction must call ensureAdminToken with owner role');
+
+    // Check that admin-store accepts both camelCase and snake_case via nullish coalescing
+    assert.match(adminStoreContent, /cash_settled_at:\s*rawRider\.cashSettledAt\s*\?\?\s*rawRider\.cash_settled_at/, 'admin-store must handle camelCase cashSettledAt');
+    assert.match(adminStoreContent, /payout_paid_at:\s*rawRider\.payoutPaidAt\s*\?\?\s*rawRider\.payout_paid_at/, 'admin-store must handle camelCase payoutPaidAt');
+  });
+
+  await t.test('7. Rider App Settings Sync on Login / Refresh and Realtime publication in SQL', () => {
+    const deliveryJsPath = path.resolve(__dirname, '../delivery.js');
+    const sqlPath = path.resolve(__dirname, '../supabase_setup.sql');
+    const deliveryContent = fs.readFileSync(deliveryJsPath, 'utf8');
+    const sqlContent = fs.readFileSync(sqlPath, 'utf8');
+
+    // Verify delivery.js syncs settings on login and refresh
+    assert.match(deliveryContent, /syncSettingsFromSupabase\(true\)/, 'delivery.js must sync settings on login and refresh');
+
+    // Verify heartbeat in dataService syncs settings for delivery/owner
+    assert.match(dataServiceContent, /syncSettingsFromSupabase\(\)\.catch/, 'dataService heartbeat must sync settings');
+
+    // Verify store_settings is added to supabase_realtime
+    assert.match(sqlContent, /ALTER PUBLICATION supabase_realtime ADD TABLE public\.store_settings/, 'supabase_setup.sql must include store_settings in realtime publication');
+  });
+
+  await t.test('8. Payout Rounding Unification & Milestone Order Indexing', () => {
+    const deliveryJsPath = path.resolve(__dirname, '../delivery.js');
+    const deliveryContent = fs.readFileSync(deliveryJsPath, 'utf8');
+
+    // Verify owner.js uses exactPayout for calculatedPayout
+    assert.match(ownerJsContent, /calculatedPayout\s*=\s*safeNumber\(payoutResult\?\.exactPayout\s*\?\?\s*payoutResult\?\.totalPayout\)/, 'owner.js must use exactPayout');
+
+    // Verify delivery.js includes undelivered orders in completed shift counts
+    assert.match(deliveryContent, /o\.status !== 'delivered' && o\.status !== 'undelivered'/, 'delivery.js must count undelivered orders in milestone progress');
+
+    // Verify delivery.js sorts deliveredOrders by completion time
+    assert.match(deliveryContent, /tsB - tsA/, 'delivery.js must sort delivered orders chronologically');
   });
 });

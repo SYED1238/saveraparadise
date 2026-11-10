@@ -5,7 +5,7 @@
  */
 
 import { supabase } from './supabaseClient.js';
-import { isStaffSessionActive } from './securityUtils.js';
+import { isStaffSessionActive, ensureAdminToken } from './securityUtils.js';
 
 const STORAGE_KEYS = {
   CATEGORIES: 'quickbite_categories',
@@ -3992,6 +3992,9 @@ class QuickBiteDataService {
         if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
           if (this.isStaffAuthorized()) {
             await this.syncOrdersFromSupabase();
+            if (this.portalType === 'delivery' || this.portalType === 'owner') {
+              await this.syncSettingsFromSupabase().catch(() => {});
+            }
           }
         } else {
           // Customer portal: only poll if customer currently has active orders
@@ -4545,9 +4548,25 @@ class QuickBiteDataService {
 
   async _adminStoreAction(action, payload = {}) {
     if (typeof window === 'undefined') return null;
-    const token = (typeof sessionStorage !== 'undefined')
-      ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
-      : null;
+    const isOwnerAction = action === 'save_settings' || action === 'clear_orders' || action === 'reset_business_data' || this.portalType === 'owner';
+    let token = null;
+
+    if (typeof sessionStorage !== 'undefined') {
+      token = isOwnerAction
+        ? (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token'))
+        : (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'));
+    }
+
+    if (!token && typeof ensureAdminToken === 'function') {
+      try {
+        token = await ensureAdminToken(isOwnerAction ? 'owner' : 'admin');
+      } catch {}
+    }
+
+    if (!token && typeof sessionStorage !== 'undefined') {
+      token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token');
+    }
+
     if (!token) throw new Error('Unauthorized: Staff or Owner session required');
 
     const res = await fetch('/api/admin-store', {
@@ -7817,7 +7836,7 @@ class QuickBiteDataService {
       riders[idx].cashHandoverRequestedAt = requestedAt;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
-      if (this.isStaffAuthorized()) {
+      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token')))) {
         this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
           console.warn('[DataService] Background sync rider error:', err?.message || err);
         });
@@ -7866,7 +7885,7 @@ class QuickBiteDataService {
       riders[idx].lastCashCollectedAmount = amount;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
-      if (this.isStaffAuthorized()) {
+      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token')))) {
         this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
           console.warn('[DataService] Background sync rider error:', err?.message || err);
         });
@@ -8350,7 +8369,7 @@ class QuickBiteDataService {
       riders[idx].payoutAmountPaid = Number(amount) || 0;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
-      if (this.isStaffAuthorized()) {
+      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token')))) {
         this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
           console.warn('[DataService] Background sync rider error:', err?.message || err);
         });

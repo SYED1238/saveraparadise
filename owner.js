@@ -1100,12 +1100,13 @@ function renderRiderFleetTable(orders) {
       `;
     } else {
       riderCardsContainer.innerHTML = statsList.map(st => {
-        const deliveryCount = st.deliveredOrders.length;
+        const deliveryCount = st.deliveredOrders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length;
         const kms = Math.round(st.totalKms * 10) / 10;
         const cash = st.cashInHand;
         const online = st.onlineOrdersCount;
-        const payoutObj = dataService.calculateRiderPayout(st.deliveredOrders);
-        const riderPayout = payoutObj.totalPayout;
+        const payoutConfig = dataService.getPayoutConfig();
+        const payoutObj = dataService.calculateRiderPayout(st.deliveredOrders, payoutConfig);
+        const riderPayout = payoutObj.exactPayout || payoutObj.totalPayout || 0;
         const netDeposit = cash - riderPayout;
 
         let statusClass = 'deposit';
@@ -2944,7 +2945,7 @@ function renderKmPayoutsView(orders) {
         payoutResult = { totalPayout: 0, exactPayout: 0, totalKms: 0, orderCount: riderOrders.length, surgeCount: 0 };
       }
 
-      const calculatedPayout = safeNumber(payoutResult?.totalPayout);
+      const calculatedPayout = safeNumber(payoutResult?.exactPayout ?? payoutResult?.totalPayout);
       const exactPayout = safeNumber(payoutResult?.exactPayout || calculatedPayout);
       const roundedKms = safeNumber(payoutResult?.totalKms);
 

@@ -560,6 +560,10 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
   EXCEPTION WHEN others THEN NULL;
   END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.store_settings;
+  EXCEPTION WHEN others THEN NULL;
+  END;
 END $$;
 
 -- 4. Initial Starter Data

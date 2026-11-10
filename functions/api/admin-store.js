@@ -343,9 +343,9 @@ export async function onRequest(context) {
           bank_account_no: rawRider.bank_account_no || null,
           bank_ifsc: rawRider.bank_ifsc || null,
           payout_method_pref: rawRider.payout_method_pref || 'cash',
-          cash_settled_at: rawRider.cash_settled_at || rawRider.cashSettledAt || null,
-          payout_paid_at: rawRider.payout_paid_at || rawRider.payoutPaidAt || null,
-          payout_amount_paid: Number(rawRider.payout_amount_paid || rawRider.payoutAmountPaid || 0)
+          cash_settled_at: rawRider.cashSettledAt ?? rawRider.cash_settled_at ?? null,
+          payout_paid_at: rawRider.payoutPaidAt ?? rawRider.payout_paid_at ?? null,
+          payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid) || 0
         };
 
         const { data, error } = await sb
