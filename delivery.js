@@ -2527,8 +2527,8 @@ const initDeliveryApp = () => {
     showToast(`📦 New parcel packed & ready on restaurant kitchen counter!`, 'success');
 
     sendSystemNotification({
-      title: `📦 Order ${order.id} Ready on Kitchen Counter!`,
-      body: `Pick up the packed food bag from the kitchen dispatch counter and enter the 4-digit code written on it.`,
+      title: `📦 New Parcel Ready on Kitchen Counter!`,
+      body: `Pick up the packed food bag from the kitchen dispatch counter and enter the 4-digit code written inside.`,
       tag: `rider-ready-${order.id}`,
       data: { orderId: order.id, url: '/delivery.html' },
       onClick: () => {
@@ -2543,7 +2543,7 @@ const initDeliveryApp = () => {
       }
     });
 
-    flashTabTitle(`📦 READY FOR PICKUP: ${order.id}!`);
+    flashTabTitle(`📦 NEW PARCEL READY ON COUNTER!`);
     renderPortal();
   }
 
@@ -2580,14 +2580,14 @@ const initDeliveryApp = () => {
       }
       markRiderStatusAlerted(orderId, status);
       playNotificationSound('rider_new_task');
-      showToast(`📦 Order ${orderId} is packed & ready on kitchen counter!`, 'success');
+      showToast(`📦 New parcel packed & ready on kitchen counter!`, 'success');
       sendSystemNotification({
-        title: `📦 Order ${orderId} Ready on Kitchen Counter!`,
-        body: `Pick up the packed food bag from the restaurant counter and enter the 4-digit code to start delivery.`,
+        title: `📦 New Parcel Ready on Kitchen Counter!`,
+        body: `Pick up the packed food bag from the restaurant counter and enter the 4-digit code written inside to start delivery.`,
         tag: `rider-ready-${orderId}`,
         data: { orderId, url: '/delivery.html' }
       });
-      flashTabTitle(`📦 READY FOR PICKUP: ${orderId}`);
+      flashTabTitle(`📦 NEW PARCEL READY ON COUNTER!`);
     } else {
       if (orderId) {
         knownDeliveryIds.add(orderId);

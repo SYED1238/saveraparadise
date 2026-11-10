@@ -345,14 +345,14 @@ public class OrderMonitorService extends Service {
                         }
                     }
                 } else {
-                    // Rider App: Alert when food is marked ready for pickup
+                    // Rider App: Alert when food is marked ready for pickup (blinded notification - bag number remains inside physical bag)
                     boolean isReady = "ready_for_pickup".equalsIgnoreCase(status);
                     if (isReady && !notifiedReadyIds.contains(id)) {
                         notifiedReadyIds.add(id);
                         knownOrderIds.add(id);
                         fireHeadsUpNotification(
-                            "🛵 ORDER READY FOR PICKUP " + id,
-                            "Pickup Code: " + pickupCode + " • " + total + " • " + address,
+                            "🛵 NEW PARCEL READY FOR PICKUP",
+                            "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
                             id
                         );
                         saveKnownOrdersToStorage();
