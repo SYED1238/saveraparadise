@@ -305,7 +305,8 @@ const initDeliveryApp = () => {
       showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
       Promise.allSettled([
         dataService.syncOrdersFromSupabase(true),
-        dataService.syncSettingsFromSupabase(true)
+        dataService.syncSettingsFromSupabase(true),
+        dataService.syncRidersFromSupabase()
       ]).finally(() => {
         renderPortal();
       });
@@ -327,7 +328,8 @@ const initDeliveryApp = () => {
       renderPortal();
       Promise.allSettled([
         dataService.syncOrdersFromSupabase(true),
-        dataService.syncSettingsFromSupabase(true)
+        dataService.syncSettingsFromSupabase(true),
+        dataService.syncRidersFromSupabase()
       ]).finally(() => {
         renderPortal();
       });
@@ -2154,7 +2156,13 @@ const initDeliveryApp = () => {
   // ========================================================
   // CASH IN HAND BREAKDOWN MODAL (SEGREGATED PER RIDER)
   // ========================================================
-  function openCashSummaryModal() {
+  async function openCashSummaryModal() {
+    try {
+      await Promise.allSettled([
+        dataService.syncRidersFromSupabase(),
+        dataService.syncOrdersFromSupabase(true)
+      ]);
+    } catch {}
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
     const cashSummary = dataService.getRiderCashSummary(currentRider.pin);
     const grandTotal = cashSummary.cashInHand;
@@ -2278,7 +2286,13 @@ const initDeliveryApp = () => {
   // ========================================================
   // SHIFT PAYOUT & EARNINGS BREAKDOWN MODAL
   // ========================================================
-  function openPayoutModal() {
+  async function openPayoutModal() {
+    try {
+      await Promise.allSettled([
+        dataService.syncRidersFromSupabase(),
+        dataService.syncOrdersFromSupabase(true)
+      ]);
+    } catch {}
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
     const summary = dataService.getRiderPayoutSummary(currentRider.pin);
 
@@ -2386,7 +2400,8 @@ const initDeliveryApp = () => {
       try {
         await Promise.allSettled([
           dataService.syncOrdersFromSupabase(true),
-          dataService.syncSettingsFromSupabase(true)
+          dataService.syncSettingsFromSupabase(true),
+          dataService.syncRidersFromSupabase()
         ]);
       } catch {}
       renderPortal();

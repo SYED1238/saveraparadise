@@ -7287,38 +7287,58 @@ class QuickBiteDataService {
 
   async syncRidersFromSupabase() {
     try {
+      let rawRiders = null;
       if (this.isStaffAuthorized()) {
         try {
           const res = await this._adminStoreAction('list_riders');
           if (res && res.success && Array.isArray(res.riders)) {
-            const localList = this.getRiders();
-            const localMap = new Map(localList.map(r => [r.pin, r]));
-            const mapped = res.riders.map(r => {
-              const pin = String(r.pin).trim();
-              const existing = localMap.get(pin);
-              return {
-                ...(existing || {}),
-                pin,
-                id: r.id || `rider-${pin}`,
-                name: r.name || existing?.name || `Rider ${pin}`,
-                phone: r.phone || existing?.phone || '',
-                vehicle: r.vehicle || existing?.vehicle || '🏍️ Bike',
-                status: r.status || existing?.status || 'online',
-                avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
-                avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
-                cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null,
-                payoutPaidAt: r.payout_paid_at || existing?.payoutPaidAt || null,
-                payoutAmountPaid: Number(r.payout_amount_paid || existing?.payoutAmountPaid || 0)
-              };
-            });
-            this.ridersCache = mapped;
-            localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
-            this.notifyChange('riders', { action: 'sync_riders', source: 'server' });
-            return mapped;
+            rawRiders = res.riders;
           }
         } catch (apiErr) {
           console.warn('[DataService] syncRidersFromSupabase API error:', apiErr?.message);
         }
+      }
+
+      // Authoritative fallback: Read directly from Supabase public table (e.g. for delivery rider sessions)
+      if (!rawRiders && supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('riders')
+            .select('*')
+            .order('created_at', { ascending: true });
+          if (!error && Array.isArray(data) && data.length > 0) {
+            rawRiders = data;
+          }
+        } catch (dbErr) {
+          console.warn('[DataService] syncRidersFromSupabase DB fallback error:', dbErr?.message);
+        }
+      }
+
+      if (Array.isArray(rawRiders) && rawRiders.length > 0) {
+        const localList = this.getRiders();
+        const localMap = new Map(localList.map(r => [r.pin, r]));
+        const mapped = rawRiders.map(r => {
+          const pin = String(r.pin).trim();
+          const existing = localMap.get(pin);
+          return {
+            ...(existing || {}),
+            pin,
+            id: r.id || `rider-${pin}`,
+            name: r.name || existing?.name || `Rider ${pin}`,
+            phone: r.phone || existing?.phone || '',
+            vehicle: r.vehicle || existing?.vehicle || '🏍️ Bike',
+            status: r.status || existing?.status || 'online',
+            avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
+            avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
+            cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null,
+            payoutPaidAt: r.payout_paid_at || existing?.payoutPaidAt || null,
+            payoutAmountPaid: Number(r.payout_amount_paid || existing?.payoutAmountPaid || 0)
+          };
+        });
+        this.ridersCache = mapped;
+        localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
+        this.notifyChange('riders', { action: 'sync_riders', source: 'server' });
+        return mapped;
       }
     } catch (err) {
       console.warn('[DataService] syncRidersFromSupabase error:', err);
