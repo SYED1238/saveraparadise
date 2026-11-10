@@ -224,19 +224,37 @@ export default async function handler(req, res) {
         if (!id) return res.status(400).json({ error: 'Category ID is required' });
         const key = catKey || id;
 
-        // Attempt atomic database RPC cascade first
-        let rpcExecuted = false;
+        // 1. Attempt atomic database RPC cascade
+        let isMissingRpc = false;
         try {
           const rpcRes = await sb.rpc('delete_category_cascade', { p_category_id: id, p_category_key: key });
-          if (!rpcRes.error && rpcRes.data && rpcRes.data.success) {
-            rpcExecuted = true;
-            return res.status(200).json({ success: true, method: 'rpc', ...rpcRes.data });
+          if (!rpcRes.error) {
+            if (rpcRes.data && rpcRes.data.success) {
+              return res.status(200).json({ success: true, method: 'rpc', ...rpcRes.data });
+            }
+            if (rpcRes.data && (rpcRes.data.not_found || !rpcRes.data.success)) {
+              return res.status(404).json({ error: rpcRes.data.error || `Category '${id}' not found in database to delete` });
+            }
           }
-        } catch {
-          rpcExecuted = false;
+          const errMsg = String(rpcRes.error?.message || '');
+          const errCode = String(rpcRes.error?.code || '');
+          if (errCode === 'PGRST202' || errMsg.includes('does not exist') || errMsg.includes('delete_category_cascade')) {
+            isMissingRpc = true;
+          } else {
+            throw rpcRes.error;
+          }
+        } catch (rpcErr) {
+          const errMsg = String(rpcErr?.message || '');
+          const errCode = String(rpcErr?.code || '');
+          if (errCode === 'PGRST202' || errMsg.includes('does not exist') || errMsg.includes('delete_category_cascade')) {
+            isMissingRpc = true;
+          } else {
+            throw rpcErr;
+          }
         }
 
-        if (!rpcExecuted) {
+        // 2. Sequential fallback ONLY if Migration 11 RPC is genuinely not yet applied to Supabase
+        if (isMissingRpc) {
           const { error: cascadeErr } = await sb.from('dishes').delete().or(`category.eq.${key},category.eq.${id}`);
           if (cascadeErr) throw cascadeErr;
           const { data, error } = await sb.from('categories').delete().eq('id', id).select();
@@ -244,7 +262,7 @@ export default async function handler(req, res) {
           if (!data || data.length === 0) {
             return res.status(404).json({ error: `Category '${id}' not found in database to delete` });
           }
-          return res.status(200).json({ success: true, deletedCount: data.length });
+          return res.status(200).json({ success: true, method: 'sequential_fallback', deletedCount: data.length });
         }
       }
 

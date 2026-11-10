@@ -4723,13 +4723,17 @@ const initAdminApp = () => {
       }
 
       try {
-        await dataService.saveSettings(updated);
+        const res = await dataService.saveSettings(updated);
         if (typeof syncHoursSummaryChips === 'function') {
           syncHoursSummaryChips();
         }
         // Auto-close operating timings panel on save
         document.querySelector('.btn-close-hours-panel[data-target="hours-card-schedule"]')?.click();
-        showToast('💾 Store operating timings, notice & helpline updated!', 'success');
+        if (res?._localOnly) {
+          showToast('⚠️ Operating timings updated locally (Cloud database sync requires Owner role).', 'warning');
+        } else {
+          showToast('💾 Store operating timings, notice & helpline updated!', 'success');
+        }
         if (saveBtn) {
           saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
           setTimeout(() => {
@@ -4739,7 +4743,7 @@ const initAdminApp = () => {
         }
       } catch (err) {
         console.error('[Admin] Error saving store settings:', err);
-        showToast('⚠️ Settings updated locally.', 'warning');
+        showToast(`⚠️ Settings error: ${err?.message || 'Failed to persist to cloud'}`, 'error');
         if (saveBtn) {
           saveBtn.disabled = false;
           saveBtn.innerHTML = originalBtnHtml;

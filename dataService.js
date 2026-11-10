@@ -4519,9 +4519,10 @@ class QuickBiteDataService {
       // Authoritative sync via authenticated Admin API if privileged session exists
       if (token) {
         const res = await this._adminStoreAction('save_settings', { settings: payloadSettings });
-        return res?.data || payloadSettings;
+        return { ...(res?.data || payloadSettings), _syncedToCloud: true, _localOnly: false };
       }
-      return payloadSettings;
+      console.warn('[DataService] syncSettingsToSupabase: Staff/Owner token missing. Saved to localStorage only.');
+      return { ...payloadSettings, _syncedToCloud: false, _localOnly: true };
     } catch (err) {
       console.warn('[DataService] syncSettingsToSupabase error:', err?.message || err);
       throw err;
@@ -4589,13 +4590,51 @@ class QuickBiteDataService {
   }
 
   setAllCategoryImage(imageUrl) {
+    const oldMap = this.getCategoryImages();
+    const map = { ...oldMap };
     const sanitized = imageUrl && typeof imageUrl === 'string' && imageUrl.trim()
       ? sanitizeCategoryImageUrl(imageUrl.trim())
       : '';
-    const res = this.saveCategoryImage('all', sanitized);
-    this.saveCategoryImage('cat-all', sanitized);
+
+    if (sanitized) {
+      map['all'] = sanitized;
+      map['cat-all'] = sanitized;
+    } else {
+      delete map['all'];
+      delete map['cat-all'];
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(map));
+    }
     this.notifyChange('categories');
-    return res || sanitized;
+
+    // Dual-resolution: synchronous callers get map immediately, async callers await authoritative server confirmation for both keys in one request
+    const serverPromise = (async () => {
+      const token = (typeof sessionStorage !== 'undefined')
+        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
+        : null;
+      if (!token) {
+        return map;
+      }
+      try {
+        await this._adminStoreAction('save_category_images', { images: map });
+        return map;
+      } catch (err) {
+        console.warn('[DataService] setAllCategoryImage server persistence failed, rolling back:', err?.message || err);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(oldMap));
+        }
+        this.notifyChange('categories');
+        throw err;
+      }
+    })();
+
+    const result = { ...map };
+    result.then = (onF, onR) => serverPromise.then(onF, onR);
+    result.catch = (onR) => serverPromise.catch(onR);
+    result.finally = (onFn) => serverPromise.finally(onFn);
+    return result;
   }
 
   saveCategoryImage(idOrSlug, imageUrl) {

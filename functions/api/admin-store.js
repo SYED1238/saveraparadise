@@ -231,19 +231,37 @@ export async function onRequest(context) {
         }
         const key = catKey || id;
 
-        // Attempt atomic database RPC cascade first
-        let rpcExecuted = false;
+        // 1. Attempt atomic database RPC cascade
+        let isMissingRpc = false;
         try {
           const rpcRes = await sb.rpc('delete_category_cascade', { p_category_id: id, p_category_key: key });
-          if (!rpcRes.error && rpcRes.data && rpcRes.data.success) {
-            rpcExecuted = true;
-            return jsonResponse({ success: true, method: 'rpc', ...rpcRes.data }, 200, Object.fromEntries(corsHeaders.entries()));
+          if (!rpcRes.error) {
+            if (rpcRes.data && rpcRes.data.success) {
+              return jsonResponse({ success: true, method: 'rpc', ...rpcRes.data }, 200, Object.fromEntries(corsHeaders.entries()));
+            }
+            if (rpcRes.data && (rpcRes.data.not_found || !rpcRes.data.success)) {
+              return jsonResponse({ error: rpcRes.data.error || `Category '${id}' not found in database to delete` }, 404, Object.fromEntries(corsHeaders.entries()));
+            }
           }
-        } catch {
-          rpcExecuted = false;
+          const errMsg = String(rpcRes.error?.message || '');
+          const errCode = String(rpcRes.error?.code || '');
+          if (errCode === 'PGRST202' || errMsg.includes('does not exist') || errMsg.includes('delete_category_cascade')) {
+            isMissingRpc = true;
+          } else {
+            throw rpcRes.error;
+          }
+        } catch (rpcErr) {
+          const errMsg = String(rpcErr?.message || '');
+          const errCode = String(rpcErr?.code || '');
+          if (errCode === 'PGRST202' || errMsg.includes('does not exist') || errMsg.includes('delete_category_cascade')) {
+            isMissingRpc = true;
+          } else {
+            throw rpcErr;
+          }
         }
 
-        if (!rpcExecuted) {
+        // 2. Sequential fallback ONLY if Migration 11 RPC is genuinely not yet applied to Supabase
+        if (isMissingRpc) {
           const { error: cascadeErr } = await sb.from('dishes').delete().or(`category.eq.${key},category.eq.${id}`);
           if (cascadeErr) throw cascadeErr;
           const { data, error } = await sb.from('categories').delete().eq('id', id).select();
@@ -251,7 +269,7 @@ export async function onRequest(context) {
           if (!data || data.length === 0) {
             return jsonResponse({ error: `Category '${id}' not found in database to delete` }, 404, Object.fromEntries(corsHeaders.entries()));
           }
-          return jsonResponse({ success: true, deletedCount: data.length }, 200, Object.fromEntries(corsHeaders.entries()));
+          return jsonResponse({ success: true, method: 'sequential_fallback', deletedCount: data.length }, 200, Object.fromEntries(corsHeaders.entries()));
         }
       }
 

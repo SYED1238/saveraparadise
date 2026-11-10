@@ -166,6 +166,9 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
     assert.match(dataServiceContent, /_adminStoreAction\('save_category_images'/, 'saveCategoryImage must use _adminStoreAction');
     assert.match(dataServiceContent, /_adminStoreAction\('save_settings'/, 'syncSettingsToSupabase must use _adminStoreAction');
 
+    // Asserts setAllCategoryImage updates both keys in one map and uses _adminStoreAction
+    assert.match(dataServiceContent, /map\['all'\]\s*=\s*sanitized;[\s\S]*map\['cat-all'\]\s*=\s*sanitized;/, 'setAllCategoryImage must set both keys in single map');
+
     // Asserts no direct store_settings.upsert(...).catch
     assert.doesNotMatch(dataServiceContent, /store_settings'\)\.upsert[^;\n]+\.catch\(/, 'store_settings upsert must not directly invoke .catch');
   });
@@ -189,7 +192,7 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
     );
   });
 
-  it('13. api/admin-store.js and functions/api/admin-store.js delete operations return 404 when 0 rows affected and support atomic cascade RPC', () => {
+  it('13. api/admin-store.js and functions/api/admin-store.js delete operations return 404 when 0 rows affected and only fall back for missing RPC', () => {
     const nodeApiPath = path.resolve(process.cwd(), 'api/admin-store.js');
     const cfApiPath = path.resolve(process.cwd(), 'functions/api/admin-store.js');
     const nodeApiContent = fs.readFileSync(nodeApiPath, 'utf8');
@@ -202,11 +205,12 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
 
       // delete_category must attempt delete_category_cascade RPC
       assert.match(content, /delete_category_cascade/, 'delete_category must call delete_category_cascade RPC');
+      assert.match(content, /isMissingRpc/, 'delete_category must strictly detect if RPC is missing');
       assert.match(content, /Category '.*' not found in database to delete/, 'delete_category fallback must return 404 if zero rows affected');
     }
   });
 
-  it('14. Migration 11 provides transactional delete_category_cascade RPC with safe search_path and security definer', () => {
+  it('14. Migration 11 provides transactional delete_category_cascade RPC with safe search_path, locks category first, and restricts execution to service_role', () => {
     const mig11Path = path.resolve(process.cwd(), 'supabase_migration_11_atomic_category_deletion.sql');
     assert.ok(fs.existsSync(mig11Path), 'supabase_migration_11_atomic_category_deletion.sql must exist');
     const mig11Content = fs.readFileSync(mig11Path, 'utf8');
@@ -214,7 +218,16 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
     assert.match(mig11Content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.delete_category_cascade/i);
     assert.match(mig11Content, /SECURITY\s+DEFINER/i);
     assert.match(mig11Content, /SET\s+search_path\s*=\s*public/i);
+
+    // Security: must revoke from authenticated and grant strictly to service_role
     assert.match(mig11Content, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.delete_category_cascade.*FROM\s+anon/i);
+    assert.match(mig11Content, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.delete_category_cascade.*FROM\s+authenticated/i);
     assert.match(mig11Content, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.delete_category_cascade.*TO\s+service_role/i);
+    assert.doesNotMatch(mig11Content, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.delete_category_cascade.*TO\s+authenticated/i, 'Must NOT grant execution to authenticated role');
+
+    // Pre-validation: must lock category row before deleting dishes
+    const selectLockIdx = mig11Content.indexOf('FOR UPDATE');
+    const deleteDishIdx = mig11Content.indexOf('DELETE FROM public.dishes');
+    assert.ok(selectLockIdx !== -1 && selectLockIdx < deleteDishIdx, 'Category row must be locked with FOR UPDATE BEFORE deleting dishes');
   });
 });
