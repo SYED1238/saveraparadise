@@ -187,9 +187,12 @@ export async function onRequest(context) {
         if (!id) {
           return jsonResponse({ error: 'Dish ID is required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        const { error } = await sb.from('dishes').delete().eq('id', id);
+        const { data, error } = await sb.from('dishes').delete().eq('id', id).select();
         if (error) throw error;
-        return jsonResponse({ success: true }, 200, Object.fromEntries(corsHeaders.entries()));
+        if (!data || data.length === 0) {
+          return jsonResponse({ error: `Dish '${id}' not found in database to delete` }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+        return jsonResponse({ success: true, deletedCount: data.length }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       case 'add_category': {
@@ -226,13 +229,30 @@ export async function onRequest(context) {
         if (!id) {
           return jsonResponse({ error: 'Category ID is required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        if (catKey) {
-          const { error: cascadeErr } = await sb.from('dishes').delete().or(`category.eq.${catKey},category.eq.${id}`);
-          if (cascadeErr) throw cascadeErr;
+        const key = catKey || id;
+
+        // Attempt atomic database RPC cascade first
+        let rpcExecuted = false;
+        try {
+          const rpcRes = await sb.rpc('delete_category_cascade', { p_category_id: id, p_category_key: key });
+          if (!rpcRes.error && rpcRes.data && rpcRes.data.success) {
+            rpcExecuted = true;
+            return jsonResponse({ success: true, method: 'rpc', ...rpcRes.data }, 200, Object.fromEntries(corsHeaders.entries()));
+          }
+        } catch {
+          rpcExecuted = false;
         }
-        const { error } = await sb.from('categories').delete().eq('id', id);
-        if (error) throw error;
-        return jsonResponse({ success: true }, 200, Object.fromEntries(corsHeaders.entries()));
+
+        if (!rpcExecuted) {
+          const { error: cascadeErr } = await sb.from('dishes').delete().or(`category.eq.${key},category.eq.${id}`);
+          if (cascadeErr) throw cascadeErr;
+          const { data, error } = await sb.from('categories').delete().eq('id', id).select();
+          if (error) throw error;
+          if (!data || data.length === 0) {
+            return jsonResponse({ error: `Category '${id}' not found in database to delete` }, 404, Object.fromEntries(corsHeaders.entries()));
+          }
+          return jsonResponse({ success: true, deletedCount: data.length }, 200, Object.fromEntries(corsHeaders.entries()));
+        }
       }
 
       case 'save_settings': {

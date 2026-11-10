@@ -182,9 +182,12 @@ export default async function handler(req, res) {
       case 'delete_dish': {
         const { id } = body;
         if (!id) return res.status(400).json({ error: 'Dish ID is required' });
-        const { error } = await sb.from('dishes').delete().eq('id', id);
+        const { data, error } = await sb.from('dishes').delete().eq('id', id).select();
         if (error) throw error;
-        return res.status(200).json({ success: true });
+        if (!data || data.length === 0) {
+          return res.status(404).json({ error: `Dish '${id}' not found in database to delete` });
+        }
+        return res.status(200).json({ success: true, deletedCount: data.length });
       }
 
       case 'add_category': {
@@ -219,13 +222,30 @@ export default async function handler(req, res) {
       case 'delete_category': {
         const { id, catKey } = body;
         if (!id) return res.status(400).json({ error: 'Category ID is required' });
-        if (catKey) {
-          const { error: cascadeErr } = await sb.from('dishes').delete().or(`category.eq.${catKey},category.eq.${id}`);
-          if (cascadeErr) throw cascadeErr;
+        const key = catKey || id;
+
+        // Attempt atomic database RPC cascade first
+        let rpcExecuted = false;
+        try {
+          const rpcRes = await sb.rpc('delete_category_cascade', { p_category_id: id, p_category_key: key });
+          if (!rpcRes.error && rpcRes.data && rpcRes.data.success) {
+            rpcExecuted = true;
+            return res.status(200).json({ success: true, method: 'rpc', ...rpcRes.data });
+          }
+        } catch {
+          rpcExecuted = false;
         }
-        const { error } = await sb.from('categories').delete().eq('id', id);
-        if (error) throw error;
-        return res.status(200).json({ success: true });
+
+        if (!rpcExecuted) {
+          const { error: cascadeErr } = await sb.from('dishes').delete().or(`category.eq.${key},category.eq.${id}`);
+          if (cascadeErr) throw cascadeErr;
+          const { data, error } = await sb.from('categories').delete().eq('id', id).select();
+          if (error) throw error;
+          if (!data || data.length === 0) {
+            return res.status(404).json({ error: `Category '${id}' not found in database to delete` });
+          }
+          return res.status(200).json({ success: true, deletedCount: data.length });
+        }
       }
 
       case 'save_settings': {

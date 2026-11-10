@@ -4503,26 +4503,28 @@ class QuickBiteDataService {
   }
 
   async syncSettingsToSupabase(settings) {
+    if (!settings || typeof window === 'undefined') return settings;
     try {
-      if (!supabase || typeof window === 'undefined') return;
       const phone = settings.restaurantPhone || settings.helpline || DEFAULT_SETTINGS.restaurantPhone;
       const payloadSettings = {
         ...settings,
         restaurantPhone: phone,
         helpline: phone
       };
-      // Authoritative sync via authenticated Admin API
-      this._adminStoreSync('save_settings', { settings: payloadSettings });
-      if (supabase) {
-        supabase
-          .from('store_settings')
-          .upsert([
-            { id: 'restaurant_config', settings: payloadSettings, updated_at: new Date().toISOString() },
-            { id: 'main_settings', settings: payloadSettings, updated_at: new Date().toISOString() }
-          ], { onConflict: 'id' }).catch(() => {});
+
+      const token = (typeof sessionStorage !== 'undefined')
+        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
+        : null;
+
+      // Authoritative sync via authenticated Admin API if privileged session exists
+      if (token) {
+        const res = await this._adminStoreAction('save_settings', { settings: payloadSettings });
+        return res?.data || payloadSettings;
       }
+      return payloadSettings;
     } catch (err) {
-      console.warn('[DataService] syncSettingsToSupabase error:', err);
+      console.warn('[DataService] syncSettingsToSupabase error:', err?.message || err);
+      throw err;
     }
   }
 
@@ -4590,61 +4592,61 @@ class QuickBiteDataService {
     const sanitized = imageUrl && typeof imageUrl === 'string' && imageUrl.trim()
       ? sanitizeCategoryImageUrl(imageUrl.trim())
       : '';
-    this.saveCategoryImage('all', sanitized);
+    const res = this.saveCategoryImage('all', sanitized);
     this.saveCategoryImage('cat-all', sanitized);
     this.notifyChange('categories');
-    return sanitized;
+    return res || sanitized;
   }
 
   saveCategoryImage(idOrSlug, imageUrl) {
-    if (!idOrSlug) return;
-    try {
-      const map = this.getCategoryImages();
-      const sanitized = imageUrl && typeof imageUrl === 'string' && imageUrl.trim()
-        ? sanitizeCategoryImageUrl(imageUrl.trim())
-        : '';
+    if (!idOrSlug) return null;
+    const oldMap = this.getCategoryImages();
+    const map = { ...oldMap };
+    const sanitized = imageUrl && typeof imageUrl === 'string' && imageUrl.trim()
+      ? sanitizeCategoryImageUrl(imageUrl.trim())
+      : '';
 
-      if (sanitized) {
-        map[idOrSlug] = sanitized;
-      } else {
-        delete map[idOrSlug];
-      }
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(map));
-      }
-
-      // Asynchronously push to Supabase store_settings row 'category_images' via authenticated Admin API
-      this._adminStoreSync('save_category_images', { images: map });
-      if (supabase) {
-        supabase.from('store_settings').upsert([{
-          id: 'category_images',
-          settings: map,
-          updated_at: new Date().toISOString()
-        }]).catch(() => {});
-      }
-    } catch (e) {
-      console.warn('[DataService] saveCategoryImage error:', e);
+    if (sanitized) {
+      map[idOrSlug] = sanitized;
+    } else {
+      delete map[idOrSlug];
     }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(map));
+    }
+    this.notifyChange('categories');
+
+    // Dual-resolution: synchronous callers get the map immediately, async callers await authoritative server confirmation
+    const serverPromise = (async () => {
+      const token = (typeof sessionStorage !== 'undefined')
+        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
+        : null;
+      if (!token) {
+        return map;
+      }
+      try {
+        await this._adminStoreAction('save_category_images', { images: map });
+        return map;
+      } catch (err) {
+        console.warn('[DataService] saveCategoryImage server persistence failed, rolling back:', err?.message || err);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(oldMap));
+        }
+        this.notifyChange('categories');
+        throw err;
+      }
+    })();
+
+    const result = { ...map };
+    result.then = (onF, onR) => serverPromise.then(onF, onR);
+    result.catch = (onR) => serverPromise.catch(onR);
+    result.finally = (onFn) => serverPromise.finally(onFn);
+    return result;
   }
 
   removeCategoryImage(idOrSlug) {
-    if (!idOrSlug) return;
-    try {
-      const map = this.getCategoryImages();
-      delete map[idOrSlug];
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(map));
-      }
-
-      this._adminStoreSync('save_category_images', { images: map });
-      if (supabase) {
-        supabase.from('store_settings').upsert([{
-          id: 'category_images',
-          settings: map,
-          updated_at: new Date().toISOString()
-        }]).catch(() => {});
-      }
-    } catch {}
+    if (!idOrSlug) return null;
+    return this.saveCategoryImage(idOrSlug, '');
   }
 
   getCategories() {

@@ -797,22 +797,22 @@ const initAdminApp = () => {
                 const activeEditId = catEditId ? catEditId.value : null;
                 if (activeEditId === 'all' || activeEditId === 'cat-all') {
                   if (typeof dataService.setAllCategoryImage === 'function') {
-                    dataService.setAllCategoryImage(finalImg);
+                    await dataService.setAllCategoryImage(finalImg);
                   } else {
-                    dataService.saveCategoryImage('all', finalImg);
-                    dataService.saveCategoryImage('cat-all', finalImg);
+                    await dataService.saveCategoryImage('all', finalImg);
+                    await dataService.saveCategoryImage('cat-all', finalImg);
                   }
-                  showToast('✓ "All" category photo uploaded! Click Save Category to publish.', 'success');
+                  showToast('✓ "All" category photo uploaded and saved!', 'success');
                 } else if (activeEditId) {
-                  dataService.saveCategoryImage(activeEditId, finalImg);
+                  await dataService.saveCategoryImage(activeEditId, finalImg);
                   const cats = dataService.getCategories();
                   const matchedCat = cats.find(c => c.id === activeEditId || c.slug === activeEditId);
                   if (matchedCat) {
-                    if (matchedCat.id) dataService.saveCategoryImage(matchedCat.id, finalImg);
-                    if (matchedCat.slug) dataService.saveCategoryImage(matchedCat.slug, finalImg);
-                    dataService.updateCategory(activeEditId, { image: finalImg });
+                    if (matchedCat.id) await dataService.saveCategoryImage(matchedCat.id, finalImg);
+                    if (matchedCat.slug) await dataService.saveCategoryImage(matchedCat.slug, finalImg);
+                    await dataService.updateCategory(activeEditId, { image: finalImg });
                   }
-                  showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
+                  showToast('✓ Category photo uploaded and saved!', 'success');
                 } else {
                   showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
                 }
@@ -889,21 +889,21 @@ const initAdminApp = () => {
 
       if (editId === 'all' || editId === 'cat-all') {
         if (typeof dataService.setAllCategoryImage === 'function') {
-          dataService.setAllCategoryImage(image);
+          await dataService.setAllCategoryImage(image);
         } else {
-          dataService.saveCategoryImage('all', image);
-          dataService.saveCategoryImage('cat-all', image);
+          await dataService.saveCategoryImage('all', image);
+          await dataService.saveCategoryImage('cat-all', image);
         }
         showToast('"All" category photo updated successfully!', 'success');
       } else if (editId) {
         await dataService.updateCategory(editId, { name, emoji, image });
         if (image) {
-          dataService.saveCategoryImage(editId, image);
+          await dataService.saveCategoryImage(editId, image);
           const cats = dataService.getCategories();
           const matchedCat = cats.find(c => c.id === editId || c.slug === editId);
           if (matchedCat) {
-            if (matchedCat.id) dataService.saveCategoryImage(matchedCat.id, image);
-            if (matchedCat.slug) dataService.saveCategoryImage(matchedCat.slug, image);
+            if (matchedCat.id) await dataService.saveCategoryImage(matchedCat.id, image);
+            if (matchedCat.slug) await dataService.saveCategoryImage(matchedCat.slug, image);
           }
         }
         showToast(`Category updated to "${name}"!`, 'success');

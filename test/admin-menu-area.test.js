@@ -157,4 +157,64 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
       assert.match(content, /upsertRes\s*=\s*await\s+sb\.from\('categories'\)\.upsert/, 'Must upsert unseeded category if update touched 0 rows');
     }
   });
+
+  it('11. dataService.js category image and settings persistence uses _adminStoreAction with rollback', () => {
+    const dataServicePath = path.resolve(process.cwd(), 'dataService.js');
+    const dataServiceContent = fs.readFileSync(dataServicePath, 'utf8');
+
+    // Asserts saveCategoryImage and syncSettingsToSupabase call _adminStoreAction
+    assert.match(dataServiceContent, /_adminStoreAction\('save_category_images'/, 'saveCategoryImage must use _adminStoreAction');
+    assert.match(dataServiceContent, /_adminStoreAction\('save_settings'/, 'syncSettingsToSupabase must use _adminStoreAction');
+
+    // Asserts no direct store_settings.upsert(...).catch
+    assert.doesNotMatch(dataServiceContent, /store_settings'\)\.upsert[^;\n]+\.catch\(/, 'store_settings upsert must not directly invoke .catch');
+  });
+
+  it('12. admin.js strictly awaits category photo upload mutations', () => {
+    // Verifies category photo upload reader awaits persistence
+    assert.match(
+      adminJsContent,
+      /await\s+dataService\.saveCategoryImage\(/,
+      'admin.js must await dataService.saveCategoryImage during photo upload'
+    );
+    assert.match(
+      adminJsContent,
+      /await\s+dataService\.setAllCategoryImage\(/,
+      'admin.js must await dataService.setAllCategoryImage during "all" photo upload'
+    );
+    assert.match(
+      adminJsContent,
+      /await\s+dataService\.updateCategory\(activeEditId,\s*\{\s*image:\s*finalImg\s*\}\)/,
+      'admin.js must await dataService.updateCategory for active category photo upload'
+    );
+  });
+
+  it('13. api/admin-store.js and functions/api/admin-store.js delete operations return 404 when 0 rows affected and support atomic cascade RPC', () => {
+    const nodeApiPath = path.resolve(process.cwd(), 'api/admin-store.js');
+    const cfApiPath = path.resolve(process.cwd(), 'functions/api/admin-store.js');
+    const nodeApiContent = fs.readFileSync(nodeApiPath, 'utf8');
+    const cfApiContent = fs.readFileSync(cfApiPath, 'utf8');
+
+    for (const content of [nodeApiContent, cfApiContent]) {
+      // delete_dish must select and return 404 if not found
+      assert.match(content, /sb\.from\('dishes'\)\.delete\(\)\.eq\('id',\s*id\)\.select\(\)/, 'delete_dish must select deleted rows');
+      assert.match(content, /Dish '.*' not found in database to delete/, 'delete_dish must return 404 if zero rows affected');
+
+      // delete_category must attempt delete_category_cascade RPC
+      assert.match(content, /delete_category_cascade/, 'delete_category must call delete_category_cascade RPC');
+      assert.match(content, /Category '.*' not found in database to delete/, 'delete_category fallback must return 404 if zero rows affected');
+    }
+  });
+
+  it('14. Migration 11 provides transactional delete_category_cascade RPC with safe search_path and security definer', () => {
+    const mig11Path = path.resolve(process.cwd(), 'supabase_migration_11_atomic_category_deletion.sql');
+    assert.ok(fs.existsSync(mig11Path), 'supabase_migration_11_atomic_category_deletion.sql must exist');
+    const mig11Content = fs.readFileSync(mig11Path, 'utf8');
+
+    assert.match(mig11Content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.delete_category_cascade/i);
+    assert.match(mig11Content, /SECURITY\s+DEFINER/i);
+    assert.match(mig11Content, /SET\s+search_path\s*=\s*public/i);
+    assert.match(mig11Content, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.delete_category_cascade.*FROM\s+anon/i);
+    assert.match(mig11Content, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.delete_category_cascade.*TO\s+service_role/i);
+  });
 });
