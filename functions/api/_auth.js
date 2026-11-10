@@ -169,22 +169,16 @@ export function getPinRole(inputPin, env = null) {
   if (!/^\d{4,8}$/.test(cleanPin)) return null;
 
   const expectedOwnerPin = getOwnerPin(env);
-  const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
-  if (!isProd && safeEqual(cleanPin, '9900')) return 'owner';
   if (expectedOwnerPin && safeEqual(cleanPin, expectedOwnerPin)) {
     return 'owner';
   }
 
   const expectedAdminPin = getAdminPin(env);
-  if (!isProd && safeEqual(cleanPin, '8899')) return 'admin';
   if (expectedAdminPin && safeEqual(cleanPin, expectedAdminPin)) {
     return 'admin';
   }
 
   // Check Fleet Delivery Rider PIN
-  if (!isProd && DEFAULT_RIDER_PINS.some(p => safeEqual(cleanPin, p))) {
-    return 'rider';
-  }
   const envRiderPin = (env && env.RIDER_PIN) || (typeof process !== 'undefined' && process.env && process.env.RIDER_PIN);
   if (envRiderPin && safeEqual(cleanPin, String(envRiderPin).trim())) {
     return 'rider';
@@ -193,6 +187,11 @@ export function getPinRole(inputPin, env = null) {
   if (envRiderPins) {
     const pins = String(envRiderPins).split(',').map(p => p.trim());
     if (pins.some(p => safeEqual(cleanPin, p))) return 'rider';
+  }
+
+  const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+  if (!isProd && !envRiderPin && !envRiderPins && DEFAULT_RIDER_PINS.some(p => safeEqual(cleanPin, p))) {
+    return 'rider';
   }
 
   return null;

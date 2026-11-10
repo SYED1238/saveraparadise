@@ -191,8 +191,6 @@ export function getPinRole(inputPin) {
 
   // 1. Check Owner PIN
   const expectedOwnerPin = getOwnerPin();
-  const isProd = process.env.NODE_ENV === 'production';
-  if (!isProd && safeEqual(cleanPin, '9900')) return 'owner';
   if (expectedOwnerPin && safeEqual(cleanPin, expectedOwnerPin)) {
     return 'owner';
   }
@@ -205,7 +203,6 @@ export function getPinRole(inputPin) {
 
   // 2. Check Admin / Kitchen PIN
   const expectedAdminPin = getAdminPin();
-  if (!isProd && safeEqual(cleanPin, '8899')) return 'admin';
   if (expectedAdminPin && safeEqual(cleanPin, expectedAdminPin)) {
     return 'admin';
   }
@@ -217,15 +214,16 @@ export function getPinRole(inputPin) {
   }
 
   // 3. Check Fleet Delivery Rider PIN
-  if (!isProd && DEFAULT_RIDER_PINS.some(p => safeEqual(cleanPin, p))) {
-    return 'rider';
-  }
   if (process.env.RIDER_PIN && safeEqual(cleanPin, String(process.env.RIDER_PIN).trim())) {
     return 'rider';
   }
   if (process.env.RIDER_PINS) {
     const pins = String(process.env.RIDER_PINS).split(',').map(p => p.trim());
     if (pins.some(p => safeEqual(cleanPin, p))) return 'rider';
+  }
+  const isProd = (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production');
+  if (!isProd && !process.env.RIDER_PIN && !process.env.RIDER_PINS && DEFAULT_RIDER_PINS.some(p => safeEqual(cleanPin, p))) {
+    return 'rider';
   }
 
   return null;

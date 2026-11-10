@@ -226,6 +226,7 @@ export default async function handler(req, res) {
   }
 
   const isProd = (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+  const allowTestOverrides = !isProd && isTestEnv;
 
   const catalogMap = new Map();
   let serverDishes = null;
@@ -241,8 +242,8 @@ export default async function handler(req, res) {
       if (d && d.id) catalogMap.set(String(d.id), d);
       if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
     });
-  } else if (!isProd && Array.isArray(catalogDishes)) {
-    // In local non-production/test environments only, fallback to test fixture catalog if server catalog is offline
+  } else if (allowTestOverrides && Array.isArray(catalogDishes)) {
+    // In local automated test environments only, fallback to test fixture catalog if server catalog is offline
     catalogDishes.forEach(d => {
       if (d && d.id) catalogMap.set(String(d.id), d);
       if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
@@ -273,7 +274,7 @@ export default async function handler(req, res) {
     }
     let unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : null;
     if (unitPrice === null) {
-      if (isProd) {
+      if (!allowTestOverrides) {
         return res.status(503).json({ error: `Item '${item.name || 'dish'}' price cannot be verified. Please retry in a moment.` });
       }
       unitPrice = Math.max(0, Number(item.price) || 0);
@@ -317,12 +318,12 @@ export default async function handler(req, res) {
   };
   const serverSettings = await fetchAuthoritativeSettings();
   const settings = (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0)
-    ? { ...DEFAULT_SETTINGS_FALLBACK, ...(!isProd ? (storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) : {}), ...serverSettings }
-    : (isProd
-        ? { ...DEFAULT_SETTINGS_FALLBACK }
-        : { ...DEFAULT_SETTINGS_FALLBACK, ...(storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) });
-  if (isProd && (!serverSettings || Object.keys(serverSettings).length === 0)) {
-    // In production, never trust unverified client-supplied settings if server settings are unavailable
+    ? { ...DEFAULT_SETTINGS_FALLBACK, ...(allowTestOverrides ? (storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) : {}), ...serverSettings }
+    : (allowTestOverrides
+        ? { ...DEFAULT_SETTINGS_FALLBACK, ...(storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) }
+        : { ...DEFAULT_SETTINGS_FALLBACK });
+  if (!allowTestOverrides && (!serverSettings || Object.keys(serverSettings).length === 0)) {
+    // In production and non-test environments, never trust unverified client-supplied settings if server settings are unavailable
     for (const key of Object.keys(settings)) {
       if (!(key in DEFAULT_SETTINGS_FALLBACK)) {
         delete settings[key];

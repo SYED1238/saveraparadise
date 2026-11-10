@@ -10,6 +10,8 @@ not_found_handling = "single-page-application"
 html_handling = "auto-trailing-slash"
 
 [vars]
+ENVIRONMENT = "production"
+NODE_ENV = "production"
 VITE_SUPABASE_URL = "https://zrgkglwqkdxmwrgepnqh.supabase.co"
 SUPABASE_URL = "https://zrgkglwqkdxmwrgepnqh.supabase.co"
 VITE_SUPABASE_ANON_KEY = "sb_publishable_obyAWrTPc2oIxF3V9Bp23Q_cd_WxEZk"

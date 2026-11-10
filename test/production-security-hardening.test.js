@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { escapeHtml, sanitizeUrl, sanitizePhone, hashPasscode } from '../securityUtils.js';
-import { createAdminToken, verifyAdminToken, verifyAdminPin, verifySignedPayload } from '../api/_auth.js';
+import { createAdminToken, verifyAdminToken, verifyAdminPin, verifySignedPayload, getPinRole } from '../api/_auth.js';
+import { getPinRole as getPinRolePages } from '../functions/api/_auth.js';
 import checkoutHandler from '../api/checkout.js';
 
 function createMockReqRes({ method = 'GET', url = '/', headers = {}, body = null } = {}) {
@@ -93,6 +95,51 @@ test('PRODUCTION SECURITY HARDENING: Staff Authentication & Cryptographic Tokens
     const h2 = await hashPasscode('2233');
     assert.strictEqual(h1, h2);
     assert.strictEqual(h1.length, 64, 'SHA-256 hex must be 64 characters');
+  });
+
+  await t.test('wrangler.toml explicitly defines production environment variables', () => {
+    const toml = fs.readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+    assert.match(toml, /ENVIRONMENT\s*=\s*"production"/);
+    assert.match(toml, /NODE_ENV\s*=\s*"production"/);
+  });
+
+  await t.test('Custom OWNER_PIN and ADMIN_PIN strictly revoke default PINs (no backdoor)', () => {
+    // Pages Functions environment
+    const envWithCustomPins = { OWNER_PIN: '5544', ADMIN_PIN: '6677' };
+    assert.strictEqual(getPinRolePages('5544', envWithCustomPins), 'owner');
+    assert.strictEqual(getPinRolePages('9900', envWithCustomPins), null, 'Default owner PIN 9900 must be revoked when custom OWNER_PIN is set');
+    assert.strictEqual(getPinRolePages('6677', envWithCustomPins), 'admin');
+    assert.strictEqual(getPinRolePages('8899', envWithCustomPins), null, 'Default admin PIN 8899 must be revoked when custom ADMIN_PIN is set');
+
+    // Node API environment
+    const origOwner = process.env.OWNER_PIN;
+    const origAdmin = process.env.ADMIN_PIN;
+    try {
+      process.env.OWNER_PIN = '7711';
+      process.env.ADMIN_PIN = '8822';
+      assert.strictEqual(getPinRole('7711'), 'owner');
+      assert.strictEqual(getPinRole('9900'), null, 'Node API must revoke default 9900 when OWNER_PIN is configured');
+      assert.strictEqual(getPinRole('8822'), 'admin');
+      assert.strictEqual(getPinRole('8899'), null, 'Node API must revoke default 8899 when ADMIN_PIN is configured');
+    } finally {
+      if (origOwner !== undefined) process.env.OWNER_PIN = origOwner; else delete process.env.OWNER_PIN;
+      if (origAdmin !== undefined) process.env.ADMIN_PIN = origAdmin; else delete process.env.ADMIN_PIN;
+    }
+  });
+
+  await t.test('Custom RIDER_PIN strictly revokes default rider PINs', () => {
+    const envWithRider = { RIDER_PIN: '9988' };
+    assert.strictEqual(getPinRolePages('9988', envWithRider), 'rider');
+    assert.strictEqual(getPinRolePages('2233', envWithRider), null, 'Default rider PIN 2233 must be revoked when custom RIDER_PIN is set');
+
+    const origRider = process.env.RIDER_PIN;
+    try {
+      process.env.RIDER_PIN = '9988';
+      assert.strictEqual(getPinRole('9988'), 'rider');
+      assert.strictEqual(getPinRole('2233'), null, 'Node API must revoke default rider PIN 2233 when RIDER_PIN is configured');
+    } finally {
+      if (origRider !== undefined) process.env.RIDER_PIN = origRider; else delete process.env.RIDER_PIN;
+    }
   });
 });
 

@@ -212,6 +212,7 @@ export async function onRequest(context) {
 
 
     const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) || (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
+    const allowTestOverrides = !isProd && isTestEnv;
 
     const DEFAULT_SETTINGS_FALLBACK = {
       freeDeliveryEnabled: true,
@@ -222,19 +223,16 @@ export async function onRequest(context) {
       unlockedDealsMinOrder: 299,
       unlockedDealsDiscountPct: 15,
       minOrderValue: 0
-
     };
 
     const storeSettings = (authoritativeSettings && typeof authoritativeSettings === 'object' && Object.keys(authoritativeSettings).length > 0)
-      ? { ...DEFAULT_SETTINGS_FALLBACK, ...(!isProd ? (body?.storeSettings || {}) : {}), ...authoritativeSettings }
-      : (isProd
-          ? { ...DEFAULT_SETTINGS_FALLBACK }
-          : { ...DEFAULT_SETTINGS_FALLBACK, ...((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {})) });
+      ? { ...DEFAULT_SETTINGS_FALLBACK, ...(allowTestOverrides ? (body?.storeSettings || {}) : {}), ...authoritativeSettings }
+      : (allowTestOverrides
+          ? { ...DEFAULT_SETTINGS_FALLBACK, ...((body?.storeSettings && typeof body.storeSettings === 'object') ? body.storeSettings : (authoritativeSettings || {})) }
+          : { ...DEFAULT_SETTINGS_FALLBACK });
 
-
-
-    if (isProd && (!authoritativeSettings || Object.keys(authoritativeSettings).length === 0)) {
-      // In production, never trust unverified client-supplied settings if server settings are unavailable
+    if (!allowTestOverrides && (!authoritativeSettings || Object.keys(authoritativeSettings).length === 0)) {
+      // In production and non-test environments, never trust unverified client-supplied settings if server settings are unavailable
       for (const key of Object.keys(storeSettings)) {
         if (!(key in DEFAULT_SETTINGS_FALLBACK)) {
           delete storeSettings[key];
@@ -286,8 +284,8 @@ export async function onRequest(context) {
         if (d && d.id) catalogMap.set(String(d.id), d);
         if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
       });
-    } else if (!isProd && Array.isArray(body?.catalogDishes)) {
-      // In local non-production/test environments only, fallback to test fixture catalog if server catalog is offline
+    } else if (allowTestOverrides && Array.isArray(body?.catalogDishes)) {
+      // In local automated test environments only, fallback to test fixture catalog if server catalog is offline
       body.catalogDishes.forEach(d => {
         if (d && d.id) catalogMap.set(String(d.id), d);
         if (d && d.name) catalogMap.set(String(d.name).toLowerCase(), d);
@@ -334,7 +332,7 @@ export async function onRequest(context) {
       }
 
       if (authoritativePrice === null || isNaN(authoritativePrice)) {
-        if (isProd) {
+        if (!allowTestOverrides) {
           return jsonResponse({ error: `Item "${item.name || 'dish'}" price cannot be verified. Please retry in a moment.` }, 503, Object.fromEntries(corsHeaders.entries()));
         }
         const clientPrice = Number(item.price);
