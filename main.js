@@ -1708,6 +1708,7 @@ function initStorefrontApp() {
       }
       const platformFeeRow = document.getElementById('summary-platform-fee-row');
       if (platformFeeRow) platformFeeRow.style.display = 'none';
+      updateStoreStatusUI();
       return;
     }
 
@@ -1987,6 +1988,7 @@ function initStorefrontApp() {
     renderCartAddresses();
     renderCartOrderLimitUI();
     updateFloatingUnlockedDealsBar(subtotal, settings);
+    updateStoreStatusUI();
   }
 
   // Delegated click handler on #menu-section (handles all 40+ dishes with 1 listener)
@@ -5498,7 +5500,7 @@ function initStorefrontApp() {
       const settings = dataService.getSettings();
       if (settings.storeOpen === false || (typeof dataService.isStoreOpen === 'function' && !dataService.isStoreOpen())) {
         const closedInfo = getStoreClosedDisplayInfo(settings);
-        showToast(closedInfo.bannerText || 'Kitchen is currently closed for orders.', 'warning');
+        showToast(closedInfo.toastText || closedInfo.bannerText || 'Kitchen is currently closed for orders.', 'warning');
         return;
       }
 
@@ -8877,9 +8879,10 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
 
   let storeStatusInterval = null;
   let storeClockInterval = null;
+  let wasStoreClosedOnPreviousTick = null;
 
-  function ensureStoreStatusTicker(shouldRushTick) {
-    if (shouldRushTick) {
+  function ensureStoreStatusTicker(shouldFastTick) {
+    if (shouldFastTick) {
       if (storeClockInterval) {
         clearInterval(storeClockInterval);
         storeClockInterval = null;
@@ -8903,10 +8906,10 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     const openTimeStr = (settings.openTime || '11:00 AM').trim();
     const closeTimeStr = (settings.closeTime || '11:00 PM').trim();
 
-    function parseTimeToMinutes(str) {
-      if (!str) return 660; // 11:00 AM default
+    function parseTimeToMinutes(str, defaultMins) {
+      if (!str) return defaultMins;
       const m = String(str).match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
-      if (!m) return 660;
+      if (!m) return defaultMins;
       let h = parseInt(m[1], 10);
       const min = parseInt(m[2] || '0', 10);
       const mod = (m[3] || '').toUpperCase();
@@ -8915,54 +8918,120 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       return h * 60 + min;
     }
 
-    const openMinutes = parseTimeToMinutes(openTimeStr);
-    const closeMinutes = parseTimeToMinutes(closeTimeStr);
+    const openMinutes = parseTimeToMinutes(openTimeStr, 660);
+    const closeMinutes = parseTimeToMinutes(closeTimeStr, 1380);
 
     const now = (typeof getNowInIST === 'function') ? getNowInIST(new Date()) : new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const currentSeconds = now.getSeconds();
 
+    let hasTimer = false;
+    let remainingSeconds = 0;
     let headline = 'Kitchen Closed';
     let emoji = '🌙';
     let bannerText = '';
     let pillText = '';
+    let buttonText = 'Kitchen Closed';
+    let toastText = '';
 
-    // 1. Morning before opening hours (from 4:00 AM up to scheduled openTime)
-    if (currentMinutes >= 240 && currentMinutes < openMinutes) {
-      headline = 'Kitchen Opening Soon';
-      emoji = '☀️';
-      bannerText = `The kitchen is preparing fresh food for the day! We will reopen today at ${openTimeStr}. You can still browse our menu!`;
-      pillText = `<strong>☀️ Opening Soon:</strong> Reopens Today at ${openTimeStr} • Browsing Only`;
+    // Determine if store is closed due to clock schedule
+    let isClockClosed = false;
+    if (openMinutes < closeMinutes) {
+      isClockClosed = currentMinutes < openMinutes || currentMinutes >= closeMinutes;
+    } else if (openMinutes > closeMinutes) {
+      isClockClosed = currentMinutes >= closeMinutes && currentMinutes < openMinutes;
     }
-    // 2. Past scheduled opening time, but kitchen is still toggled closed in admin
-    else if (currentMinutes >= openMinutes && (currentMinutes < closeMinutes || closeMinutes < openMinutes)) {
-      if (currentMinutes - openMinutes <= 120) {
-        headline = 'Kitchen Opening Shortly';
-        emoji = '🍳';
-        bannerText = `Our kitchen opens at ${openTimeStr} and is finishing food prep. We will start accepting orders shortly!`;
-        pillText = `<strong>🍳 Opening Shortly:</strong> Preparation in Progress • Browsing Only`;
+
+    const isMasterOff = settings.storeOpen === false;
+
+    if (isClockClosed || isMasterOff) {
+      // Calculate remaining minutes until next open window
+      let minutesUntilOpen = 0;
+      if (openMinutes < closeMinutes) {
+        if (currentMinutes < openMinutes) {
+          minutesUntilOpen = openMinutes - currentMinutes;
+        } else {
+          minutesUntilOpen = (1440 - currentMinutes) + openMinutes;
+        }
       } else {
-        headline = 'Kitchen Currently Closed';
-        emoji = '🕒';
-        bannerText = (settings.storeClosedReason && !settings.storeClosedReason.includes('for the night') && !settings.storeClosedReason.includes('tomorrow'))
-          ? settings.storeClosedReason
-          : `Orders are temporarily paused. Our kitchen will resume taking orders shortly!`;
-        pillText = `<strong>🕒 Currently Closed:</strong> Resuming Shortly • Browsing Only`;
+        // Overnight window (e.g. Open 9:00 PM, Close 2:00 AM)
+        if (currentMinutes >= closeMinutes && currentMinutes < openMinutes) {
+          minutesUntilOpen = openMinutes - currentMinutes;
+        } else {
+          minutesUntilOpen = (1440 - currentMinutes) + openMinutes;
+        }
       }
-    }
-    // 3. Late Night / After closeTime (nighttime closure)
-    else {
-      headline = 'Kitchen Closed for the Night';
-      emoji = '🌙';
-      bannerText = `The kitchen is currently closed for the night. We will reopen tomorrow at ${openTimeStr}! You can still browse our menu.`;
-      pillText = `<strong>🌙 Closed for the Night:</strong> Reopens Tomorrow at ${openTimeStr} • Browsing Only`;
+
+      remainingSeconds = Math.max(0, minutesUntilOpen * 60 - currentSeconds);
+      hasTimer = remainingSeconds > 0;
+
+      const hrs = Math.floor(remainingSeconds / 3600);
+      const mins = Math.floor((remainingSeconds % 3600) / 60);
+      const secs = remainingSeconds % 60;
+
+      const clockStr = hrs > 0
+        ? `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+        : `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+      const humanStr = hrs > 0
+        ? `${hrs}h ${mins}m ${secs}s`
+        : `${mins}m ${secs}s`;
+
+      const humanShort = hrs > 0
+        ? `${hrs}h ${mins}m`
+        : `${mins}m`;
+
+      // 1. Daytime / Before opening hours
+      if (isClockClosed && currentMinutes < openMinutes && (openMinutes < closeMinutes || currentMinutes >= closeMinutes)) {
+        headline = 'Kitchen Opening Soon';
+        emoji = '☀️';
+        bannerText = `The kitchen is preparing fresh food! Reopening today at ${openTimeStr} (in ${humanStr}). You can customize your basket now!`;
+        pillText = `<strong>☀️ Opening Soon:</strong> Reopens in <strong>${humanStr}</strong> (${openTimeStr}) • Browsing Only`;
+        buttonText = `⏳ Opens in ${humanStr} (${openTimeStr})`;
+        toastText = `⏳ The kitchen opens today at ${openTimeStr} (in ${humanShort}). Your items will stay saved in your basket!`;
+      }
+      // 2. Overnight / After closeTime
+      else if (isClockClosed) {
+        headline = 'Kitchen Closed for the Night';
+        emoji = '🌙';
+        bannerText = `The kitchen is currently closed for the night. We will reopen tomorrow at ${openTimeStr} (in ${humanStr})! You can still browse our menu.`;
+        pillText = `<strong>🌙 Closed for the Night:</strong> Reopens Tomorrow at ${openTimeStr} (in ${humanShort}) • Browsing Only`;
+        buttonText = `⏳ Reopens Tomorrow at ${openTimeStr} (${humanShort})`;
+        toastText = `🌙 The kitchen reopens tomorrow at ${openTimeStr} (in ${humanShort}). You can customize your basket!`;
+      }
+      // 3. Within operating hours, but master toggle is switched OFF manually
+      else {
+        headline = 'Kitchen Temporarily Closed';
+        emoji = '🕒';
+        bannerText = settings.storeClosedReason || `Orders are temporarily paused by kitchen management. We will resume taking orders shortly!`;
+        pillText = `<strong>🕒 Currently Closed:</strong> Resuming Shortly • Browsing Only`;
+        buttonText = `⏸️ Orders Temporarily Paused`;
+        toastText = settings.storeClosedReason || `Orders are temporarily paused. Our kitchen will resume taking orders shortly!`;
+        hasTimer = false;
+      }
+
+      if (settings.storeClosedReason && !settings.storeClosedReason.includes('closed for the night') && !settings.storeClosedReason.includes('reopen tomorrow')) {
+        bannerText = settings.storeClosedReason;
+      }
+
+      return {
+        headline,
+        emoji,
+        bannerText,
+        pillText,
+        buttonText,
+        toastText,
+        openTimeStr,
+        closeTimeStr,
+        hasTimer,
+        clockStr,
+        humanStr,
+        humanShort,
+        remainingSeconds
+      };
     }
 
-    // If owner explicitly set a custom reason that doesn't say "closed for the night"
-    if (settings.storeClosedReason && !settings.storeClosedReason.includes('closed for the night') && !settings.storeClosedReason.includes('reopen tomorrow')) {
-      bannerText = settings.storeClosedReason;
-    }
-
-    return { headline, emoji, bannerText, pillText, openTimeStr };
+    return { headline, emoji, bannerText, pillText, buttonText, toastText, openTimeStr, closeTimeStr, hasTimer: false };
   }
 
   function updateStoreStatusUI() {
@@ -8970,9 +9039,18 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     const isClosed = settings.storeOpen === false || (typeof dataService.isStoreOpen === 'function' && !dataService.isStoreOpen());
     const isPaused = !isClosed && settings.isRushPaused && settings.pauseUntil && Date.now() < settings.pauseUntil;
 
+    // Toast customer when kitchen automatically flips from Closed -> Open
+    if (wasStoreClosedOnPreviousTick === true && !isClosed && !isPaused) {
+      if (typeof showToast === 'function') {
+        showToast('🎉 The kitchen is now OPEN! You can proceed to checkout.', 'success');
+      }
+    }
+    wasStoreClosedOnPreviousTick = Boolean(isClosed || isPaused);
+
     if (isClosed) {
-      ensureStoreStatusTicker(false);
       const closedInfo = getStoreClosedDisplayInfo(settings);
+      ensureStoreStatusTicker(closedInfo.hasTimer);
+
       if (storeRushBanner) {
         storeRushBanner.style.display = 'block';
         const headline = storeRushBanner.querySelector('.rush-banner-headline');
@@ -8980,7 +9058,14 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         const countdown = storeRushBanner.querySelector('.rush-banner-countdown');
         if (headline) headline.textContent = closedInfo.headline;
         if (flame) flame.textContent = closedInfo.emoji;
-        if (countdown) countdown.style.display = 'none';
+        if (countdown) {
+          if (closedInfo.hasTimer) {
+            countdown.style.display = 'flex';
+            if (rushBannerTimer) rushBannerTimer.textContent = closedInfo.clockStr;
+          } else {
+            countdown.style.display = 'none';
+          }
+        }
         if (rushBannerReason) {
           rushBannerReason.textContent = closedInfo.bannerText;
         }
@@ -8992,10 +9077,15 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       if (homeStatusText) {
         homeStatusText.innerHTML = closedInfo.pillText;
       }
+
+      // Update basket drawer checkout button to countdown state
+      if (btnCheckout) {
+        btnCheckout.classList.add('disabled-closed');
+      }
       if (btnCheckoutLabel) {
-        btnCheckoutLabel.textContent = `${closedInfo.emoji} Kitchen Closed`;
+        btnCheckoutLabel.textContent = closedInfo.buttonText;
       } else if (btnCheckout) {
-        btnCheckout.textContent = `${closedInfo.emoji} Kitchen Closed`;
+        btnCheckout.textContent = closedInfo.buttonText;
       }
       if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'none';
     } else if (isPaused) {
@@ -9030,11 +9120,14 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         homeStatusText.innerHTML = `<strong>⚡ Kitchen Rush:</strong> Orders resume in <strong>${mins}m ${secs}s</strong>`;
       }
 
-      // Update checkout button if present
+      // Update checkout button to rush paused state
+      if (btnCheckout) {
+        btnCheckout.classList.add('disabled-closed');
+      }
       if (btnCheckoutLabel) {
-        btnCheckoutLabel.textContent = `⏸️ Rush Paused (${mins}m left)`;
+        btnCheckoutLabel.textContent = `⏸️ Rush Paused (${mins}m ${secs}s left)`;
       } else if (btnCheckout) {
-        btnCheckout.textContent = `⏸️ Rush Paused (${mins}m left)`;
+        btnCheckout.textContent = `⏸️ Rush Paused (${mins}m ${secs}s left)`;
       }
       if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'none';
     } else {
@@ -9069,13 +9162,16 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         }
       }
 
-      // Restore checkout button
-      if (btnCheckoutLabel) {
-        btnCheckoutLabel.textContent = 'Proceed to Checkout';
-      } else if (btnCheckout) {
-        btnCheckout.textContent = 'Proceed to Checkout';
+      // Restore checkout button when open
+      if (btnCheckout) {
+        btnCheckout.classList.remove('disabled-closed');
       }
       if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'inline';
+      if (btnCheckoutLabel && !btnCheckout?.classList.contains('disabled-sold-out') && !btnCheckout?.classList.contains('disabled-min-order') && !btnCheckout?.classList.contains('disabled-limit')) {
+        btnCheckoutLabel.textContent = 'Proceed to Checkout';
+      } else if (btnCheckout && !btnCheckoutLabel && !btnCheckout?.classList.contains('disabled-sold-out') && !btnCheckout?.classList.contains('disabled-min-order') && !btnCheckout?.classList.contains('disabled-limit')) {
+        btnCheckout.textContent = 'Proceed to Checkout';
+      }
     }
   }
 

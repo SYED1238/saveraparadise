@@ -10175,6 +10175,24 @@ body.order-modal-open .unlocked-deals-floating-bar {
   box-shadow: none !important;
 }
 
+.btn-checkout.disabled-closed {
+  background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%) !important;
+  color: #FBBF24 !important;
+  border: 1px solid rgba(251, 191, 36, 0.4) !important;
+  cursor: not-allowed !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+  transform: none !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.btn-checkout.disabled-closed:hover {
+  background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%) !important;
+  color: #FBBF24 !important;
+  transform: none !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+}
+
 /* ==============================================================
    LIVE ORDER TRACKER EMPTY STATE & MY ORDERS MODAL STYLES
    ============================================================== */
