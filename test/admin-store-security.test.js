@@ -136,6 +136,8 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
       /CREATE\s+POLICY\s+"staff_manage_dishes"[\s\S]*?TO\s+[^;]*anon/i,
       'Migration 08 must not grant write to anon on dishes'
     );
+    assert.match(mig08Content, /FUNCTION\s+public\.get_order_status_by_token[\s\S]*?total\s+TEXT[\s\S]*?created_at\s+BIGINT/i, 'RPC must return total TEXT and created_at BIGINT');
+    assert.match(mig08Content, /o\.tracking_token::text\s*=\s*p_tracking_token/i, 'RPC must cast tracking_token to text');
   });
 
   await t.test('6. POST /api/admin-store rejects clear_orders with 403 Forbidden for kitchen admin role', async () => {

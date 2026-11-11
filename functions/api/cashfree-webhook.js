@@ -78,7 +78,7 @@ export async function onRequest(context) {
 
       const cleanOrderId = cfOrderId
         .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
-        .split('_')[0];
+        .replace(/_\d{4}$/, '');
 
       if (!cleanOrderId) {
         return jsonResponse({ error: 'Invalid Order ID in webhook event' }, 400);

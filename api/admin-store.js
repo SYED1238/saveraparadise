@@ -118,7 +118,10 @@ export default async function handler(req, res) {
           upi_vpa: rawRider.upiVpa || rawRider.upi_vpa || null,
           bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
           bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
-          payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash'
+          payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
+          cash_handover_status: rawRider.cashHandoverStatus ?? rawRider.cash_handover_status ?? null,
+          cash_handover_amount: Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount) || 0,
+          cash_handover_requested_at: rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at ?? null
         };
         return res.status(200).json({ success: true, rider: mappedRider });
       }
@@ -326,6 +329,13 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'PIN must be 4 to 6 digits' });
         }
 
+        if (userRole === 'rider') {
+          const authPin = String(auth.payload?.riderPin || '').trim();
+          if (!authPin || authPin !== pin) {
+            return res.status(403).json({ error: 'Forbidden: Riders can only update their own profile and cash handover state' });
+          }
+        }
+
         const originalPin = body.originalPin ? String(body.originalPin).trim() : null;
         if (originalPin && originalPin !== pin) {
           await sb.from('riders').delete().eq('pin', originalPin);
@@ -348,7 +358,10 @@ export default async function handler(req, res) {
           payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
           cash_settled_at: rawRider.cashSettledAt ?? rawRider.cash_settled_at ?? null,
           payout_paid_at: rawRider.payoutPaidAt ?? rawRider.payout_paid_at ?? null,
-          payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid) || 0
+          payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid) || 0,
+          cash_handover_status: rawRider.cashHandoverStatus ?? rawRider.cash_handover_status ?? null,
+          cash_handover_amount: Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount) || 0,
+          cash_handover_requested_at: rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at ?? null
         };
 
         const { data, error } = await sb
@@ -358,9 +371,9 @@ export default async function handler(req, res) {
         if (error) throw error;
         const returnRider = {
           ...(data && data.length > 0 ? data[0] : sanitizedRider),
-          ...(rawRider.cashHandoverStatus ? { cashHandoverStatus: rawRider.cashHandoverStatus } : {}),
-          ...(rawRider.cashHandoverAmount ? { cashHandoverAmount: rawRider.cashHandoverAmount } : {}),
-          ...(rawRider.cashHandoverRequestedAt ? { cashHandoverRequestedAt: rawRider.cashHandoverRequestedAt } : {})
+          cashHandoverStatus: sanitizedRider.cash_handover_status,
+          cashHandoverAmount: sanitizedRider.cash_handover_amount,
+          cashHandoverRequestedAt: sanitizedRider.cash_handover_requested_at
         };
         return res.status(200).json({ success: true, rider: returnRider });
       }

@@ -5,6 +5,7 @@
  */
 import QRCode from 'qrcode';
 import { generateDoorstepUpiQr } from './_cashfree.js';
+import { verifyAdminToken } from './_auth.js';
 
 const ALLOWED_ORIGINS = [
   'https://foodbliz.in',
@@ -45,6 +46,14 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed', message: 'Only POST requests are supported' });
+  }
+
+  const authHeader = req.headers['authorization'] || req.headers['Authorization'] || req.headers['x-admin-token'];
+  if (authHeader) {
+    const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+    if (!auth || !auth.valid) {
+      return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff or Rider session required' });
+    }
   }
 
   try {

@@ -3001,7 +3001,7 @@ function renderKmPayoutsView(orders) {
         const shiftStartMs = (typeof dataService !== 'undefined' && typeof dataService.getShiftStartTimeMs === 'function')
           ? dataService.getShiftStartTimeMs()
           : new Date(new Date().setHours(1, 0, 0, 0)).getTime();
-        isPaid = Boolean(paidTs && (paidTs >= shiftStartMs || paidDate.toDateString() === new Date().toDateString()));
+        isPaid = Boolean(paidTs && (paidTs >= shiftStartMs));
         paidTime = paidTs ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
         paidAmount = safeNumber(r.payoutAmountPaid) || (payoutSummary ? safeNumber(payoutSummary.paidAmount) : calculatedPayout);
         currentPayable = (payoutBalance !== undefined && payoutBalance > 0) ? payoutBalance : (isPaid ? 0 : calculatedPayout);
@@ -3041,11 +3041,13 @@ function renderKmPayoutsView(orders) {
     // Render Table
     if (tbody) {
       tbody.innerHTML = payoutList.map(st => {
-        const statusBadge = st.isPaid
-          ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
-          : (st.calculatedPayout === 0
-            ? `<span class="badge-payout-paid" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`
-            : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`);
+        const statusBadge = (st.isPaid && st.hasUnpaidBalance)
+          ? `<span class="badge-payout-pending" style="background:#fef3c7; color:#d97706;"><i class="fa-solid fa-triangle-exclamation"></i> Partial (₹${formatInr(st.paidAmount)} paid, ₹${formatInr(st.currentPayable)} due)</span>`
+          : (st.isPaid
+            ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
+            : (st.calculatedPayout === 0
+              ? `<span class="badge-payout-paid" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`
+              : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`));
 
         let actionBtn = '';
         if (activeInFlightPayoutPins && activeInFlightPayoutPins.has(st.pin)) {

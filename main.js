@@ -3054,22 +3054,38 @@ function initStorefrontApp() {
   }
 
 
-  // Escape key handler for all modals
+  // Escape key handler for all modals (guards against double stepBack bubbling)
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (backNav && typeof backNav.hasActiveSteps === 'function' && backNav.hasActiveSteps()) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        backNav.stepBack();
+        return;
+      }
       if (cartDrawer && cartDrawer.classList.contains('open')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         closeCartDrawer();
       }
       if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         closeOffersModal();
       }
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         closeOrderModal();
       }
       if (foodDetailBackdrop && foodDetailBackdrop.classList.contains('open')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         closeFoodDetail();
       }
       if (modalAddressBackdrop && modalAddressBackdrop.classList.contains('open')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         const swiggyStepForm = document.getElementById('swiggy-step-form');
         if (swiggyStepForm && swiggyStepForm.style.display !== 'none') {
           backToMapStep();
@@ -5922,11 +5938,13 @@ function initStorefrontApp() {
           return;
         }
 
+        const finalOrderId = addResult?.id || addResult?.orderId || newOrder.id || newOrderId;
+
         // Track order ID in user session & storage
         try {
           const myIds = JSON.parse(localStorage.getItem('quickbite_my_order_ids') || '[]');
-          if (!myIds.includes(newOrderId)) {
-            myIds.push(newOrderId);
+          if (!myIds.includes(finalOrderId)) {
+            myIds.push(finalOrderId);
             localStorage.setItem('quickbite_my_order_ids', JSON.stringify(myIds));
           }
         } catch {}
@@ -5934,21 +5952,21 @@ function initStorefrontApp() {
         try {
           navigator.serviceWorker?.controller?.postMessage({
             type: 'TRACK_ORDERS',
-            orderIds: [newOrderId]
+            orderIds: [finalOrderId]
           });
         } catch {}
 
         orders = dataService.getOrders();
-        activeOrderId = newOrderId;
+        activeOrderId = finalOrderId;
 
         closeCheckoutModalInternal();
         backNav.removeStepDirect('cart-drawer');
         if (backNav.isTopStep('checkout-modal')) {
           backNav.replaceTopStep('order-modal', () => closeOrderModalInternal());
-          openOrderModal(newOrderId, true, true);
+          openOrderModal(finalOrderId, true, true);
         } else {
           backNav.removeStepDirect('checkout-modal');
-          openOrderModal(newOrderId, true);
+          openOrderModal(finalOrderId, true);
         }
 
         // Clear cart after confirmed checkout
@@ -5961,13 +5979,13 @@ function initStorefrontApp() {
         updateAppBadge(1);
         showToast('🎉 Order placed successfully! Paying via Cash on Delivery.', 'success');
         sendSystemNotification({
-          title: `🎉 Order ${newOrderId} Confirmed!`,
+          title: `🎉 Order ${finalOrderId} Confirmed!`,
           body: `Total: ${newOrder.total || totalAmount} • Kitchen has received your order and is reviewing it.`,
-          tag: `order-${newOrderId}`,
-          data: { orderId: newOrderId, url: '/' },
+          tag: `order-${finalOrderId}`,
+          data: { orderId: finalOrderId, url: '/' },
           onlyIfHidden: true
         });
-        flashTabTitle(`🎉 ORDER CONFIRMED: ${newOrderId}`);
+        flashTabTitle(`🎉 ORDER CONFIRMED: ${finalOrderId}`);
       } catch (submitErr) {
         console.error('[Checkout]: Uncaught error during order placement:', submitErr);
         showToast(`❌ Order submission issue: ${submitErr?.message || 'Please check your connection and try again'}.`, 'error');

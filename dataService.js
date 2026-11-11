@@ -4103,8 +4103,8 @@ class QuickBiteDataService {
             const strId = String(id).trim();
             const clean = strId.replace(/^#/, '').trim();
             if (clean) {
-              allVariantIds.add(encodeURIComponent(clean));
-              allVariantIds.add(encodeURIComponent(`#${clean}`));
+              allVariantIds.add(clean);
+              allVariantIds.add(`#${clean}`);
             }
           });
           const idList = Array.from(allVariantIds).slice(0, 40);
@@ -4595,9 +4595,42 @@ class QuickBiteDataService {
   async _orderAction(action, payload = {}) {
     if (typeof window === 'undefined') return null;
     try {
-      const token = (typeof sessionStorage !== 'undefined')
-        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_rider_token'))
-        : null;
+      let targetRole = null;
+      if (this.portalType === 'delivery' || action === 'request_cash_handover' || action === 'rider_at_doorstep' || action === 'cancel_doorstep_wait') {
+        targetRole = 'rider';
+      } else if (this.portalType === 'owner') {
+        targetRole = 'owner';
+      } else if (this.portalType === 'admin') {
+        targetRole = 'admin';
+      }
+
+      let token = null;
+      if (typeof sessionStorage !== 'undefined') {
+        if (targetRole === 'rider') {
+          token = sessionStorage.getItem('quickbite_rider_token');
+        } else if (targetRole === 'owner') {
+          token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token');
+        } else if (targetRole === 'admin') {
+          token = sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token');
+        } else {
+          token = sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_rider_token');
+        }
+      }
+
+      if (typeof ensureAdminToken === 'function') {
+        const roleForRefresh = targetRole || (token ? (sessionStorage?.getItem('quickbite_rider_token') === token ? 'rider' : (sessionStorage?.getItem('quickbite_owner_token') === token ? 'owner' : 'admin')) : null);
+        if (roleForRefresh) {
+          try {
+            const freshToken = await ensureAdminToken(roleForRefresh);
+            if (freshToken) token = freshToken;
+          } catch {}
+        }
+      }
+
+      if (!token && typeof sessionStorage !== 'undefined') {
+        token = sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_rider_token');
+      }
+
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -5814,6 +5847,18 @@ class QuickBiteDataService {
         if (actionRes.orderId && actionRes.orderId !== orderData.id) {
           const oldId = orderData.id;
           orderData.id = actionRes.orderId;
+          try {
+            const currentOrders = this.getOrders().map(o => o.id === oldId ? { ...o, id: actionRes.orderId } : o);
+            this.saveOrders(currentOrders, { action: 'order_id_resolved', oldOrderId: oldId, orderId: actionRes.orderId });
+          } catch {}
+          try {
+            const latest = JSON.parse(localStorage.getItem('quickbite_latest_incoming_order') || '{}');
+            if (latest && (latest.id === oldId || latest.order?.id === oldId)) {
+              latest.id = actionRes.orderId;
+              if (latest.order) latest.order.id = actionRes.orderId;
+              localStorage.setItem('quickbite_latest_incoming_order', JSON.stringify(latest));
+            }
+          } catch {}
           try {
             const myIds = JSON.parse(localStorage.getItem('quickbite_my_order_ids') || '[]');
             const updatedIds = myIds.map(id => id === oldId ? actionRes.orderId : id);
@@ -7357,9 +7402,18 @@ class QuickBiteDataService {
             status: r.status || existing?.status || 'online',
             avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
             avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
+            earnings: Number(r.earnings ?? existing?.earnings ?? 0),
+            trips: Number(r.trips ?? existing?.trips ?? 0),
+            upiVpa: r.upi_vpa || r.upiVpa || existing?.upiVpa || null,
+            bankAccountNo: r.bank_account_no || r.bankAccountNo || existing?.bankAccountNo || null,
+            bankIfsc: r.bank_ifsc || r.bankIfsc || existing?.bankIfsc || null,
+            payoutMethodPref: r.payout_method_pref || r.payoutMethodPref || existing?.payoutMethodPref || 'cash',
             cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null,
             payoutPaidAt: r.payout_paid_at || existing?.payoutPaidAt || null,
-            payoutAmountPaid: Number(r.payout_amount_paid || existing?.payoutAmountPaid || 0)
+            payoutAmountPaid: Number(r.payout_amount_paid || existing?.payoutAmountPaid || 0),
+            cashHandoverStatus: r.cash_handover_status || r.cashHandoverStatus || existing?.cashHandoverStatus || null,
+            cashHandoverAmount: Number(r.cash_handover_amount ?? r.cashHandoverAmount ?? existing?.cashHandoverAmount ?? 0),
+            cashHandoverRequestedAt: r.cash_handover_requested_at || r.cashHandoverRequestedAt || existing?.cashHandoverRequestedAt || null
           };
         });
         this.ridersCache = mapped;
@@ -7872,7 +7926,11 @@ class QuickBiteDataService {
       riders[idx].cashHandoverRequestedAt = requestedAt;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
-      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token')))) {
+      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('quickbite_rider_token')) {
+        this._orderAction('request_cash_handover', { riderPin: cleanPin, amount, requestedAt }).catch(err => {
+          console.warn('[DataService] Background sync cash handover error:', err?.message || err);
+        });
+      } else if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token')))) {
         this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
           console.warn('[DataService] Background sync rider error:', err?.message || err);
         });
@@ -7921,7 +7979,7 @@ class QuickBiteDataService {
       riders[idx].lastCashCollectedAmount = amount;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
-      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token')))) {
+      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token')))) {
         this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
           console.warn('[DataService] Background sync rider error:', err?.message || err);
         });
@@ -8405,11 +8463,17 @@ class QuickBiteDataService {
     const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
     if (idx >= 0) {
       const paidTime = Date.now();
+      const shiftStartMs = typeof this.getShiftStartTimeMs === 'function' ? this.getShiftStartTimeMs() : 0;
+      const prevPaidTs = Number(riders[idx].payoutPaidAt || 0);
+      const isSameShift = Boolean(shiftStartMs && prevPaidTs >= shiftStartMs);
+      const prevAmount = isSameShift ? Number(riders[idx].payoutAmountPaid || 0) : 0;
+      const newPaidAmount = Math.round((prevAmount + (Number(amount) || 0)) * 100) / 100;
+
       riders[idx].payoutPaidAt = paidTime;
-      riders[idx].payoutAmountPaid = Number(amount) || 0;
+      riders[idx].payoutAmountPaid = newPaidAmount;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
-      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token')))) {
+      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token')))) {
         this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
           console.warn('[DataService] Background sync rider error:', err?.message || err);
         });
@@ -8417,18 +8481,18 @@ class QuickBiteDataService {
       try {
         localStorage.setItem(`quickbite_rider_payout_paid_${cleanPin}`, JSON.stringify({
           paidAt: paidTime,
-          amount
+          amount: newPaidAmount
         }));
       } catch {}
-      this.notifyChange('payout_paid', { riderPin: cleanPin, paidAt: paidTime, amount });
+      this.notifyChange('payout_paid', { riderPin: cleanPin, paidAt: paidTime, amount: newPaidAmount });
       if (this.sharedBroadcastChannel) {
         this.sharedBroadcastChannel.send({
           type: 'broadcast',
           event: 'payout_paid',
-          payload: { riderPin: cleanPin, paidAt: paidTime, amount }
+          payload: { riderPin: cleanPin, paidAt: paidTime, amount: newPaidAmount }
         }).catch(() => {});
       }
-      return { success: true, paidAt: paidTime, amount, rider: riders[idx] };
+      return { success: true, paidAt: paidTime, amount: newPaidAmount, rider: riders[idx] };
     }
     return { success: false };
   }

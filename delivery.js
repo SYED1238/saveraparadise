@@ -1551,9 +1551,15 @@ const initDeliveryApp = () => {
     if (doorstepQrImg) doorstepQrImg.style.display = 'none';
 
     try {
+      const riderToken = typeof sessionStorage !== 'undefined'
+        ? (sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
+        : null;
+      const headers = { 'Content-Type': 'application/json' };
+      if (riderToken) headers['Authorization'] = `Bearer ${riderToken}`;
+
       const resp = await fetch('/api/cashfree-generate-qr', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           orderId: order.id,
           amount: Number(cash),
@@ -2149,7 +2155,7 @@ const initDeliveryApp = () => {
 
       closeUnreachableModal();
       showToast('✓ Customer answered! Wait timer cancelled.', 'success');
-      renderOrders();
+      renderPortal();
     });
   }
 

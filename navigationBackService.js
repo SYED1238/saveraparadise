@@ -177,6 +177,18 @@ export class NavigationBackManager {
   }
 
   /**
+   * Silently unwinds history by one entry without triggering registered step close handlers.
+   */
+  popHistorySilently() {
+    this.pendingManualPops++;
+    try {
+      window.history.back();
+    } catch {
+      this.pendingManualPops = Math.max(0, this.pendingManualPops - 1);
+    }
+  }
+
+  /**
    * Has active steps or DOM overlays that should intercept Back
    */
   hasActiveSteps() {

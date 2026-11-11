@@ -88,14 +88,14 @@ RETURNS TABLE (
   status_label TEXT,
   eta TEXT,
   items_summary TEXT,
-  total NUMERIC,
+  total TEXT,
   payment_method TEXT,
   payment_status TEXT,
   is_paid_online BOOLEAN,
   assigned_rider_name TEXT,
   assigned_rider_phone TEXT,
   assigned_rider_vehicle TEXT,
-  created_at TIMESTAMPTZ
+  created_at BIGINT
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -119,8 +119,8 @@ BEGIN
     o.assigned_rider_vehicle,
     o.created_at
   FROM public.orders o
-  WHERE (o.id = p_order_id OR o.id = ('#' || p_order_id) OR ('#' || o.id) = p_order_id)
-    AND o.tracking_token = p_tracking_token;
+  WHERE LTRIM(o.id, '#') = LTRIM(p_order_id, '#')
+    AND o.tracking_token::text = p_tracking_token;
 END;
 $$;
 
@@ -136,14 +136,14 @@ RETURNS TABLE (
   status_label TEXT,
   eta TEXT,
   items_summary TEXT,
-  total NUMERIC,
+  total TEXT,
   payment_method TEXT,
   payment_status TEXT,
   is_paid_online BOOLEAN,
   assigned_rider_name TEXT,
   assigned_rider_phone TEXT,
   assigned_rider_vehicle TEXT,
-  created_at TIMESTAMPTZ
+  created_at BIGINT
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -167,8 +167,8 @@ BEGIN
     o.assigned_rider_vehicle,
     o.created_at
   FROM public.orders o
-  WHERE (o.id = ANY(p_order_ids) OR ('#' || o.id) = ANY(p_order_ids))
-    AND o.tracking_token = ANY(p_tracking_tokens);
+  WHERE (o.id = ANY(p_order_ids) OR LTRIM(o.id, '#') = ANY(SELECT LTRIM(x, '#') FROM unnest(p_order_ids) AS x))
+    AND o.tracking_token::text = ANY(p_tracking_tokens);
 END;
 $$;
 

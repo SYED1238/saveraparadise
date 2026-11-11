@@ -4,6 +4,7 @@
  */
 import QRCode from 'qrcode';
 import { generateDoorstepUpiQr } from './_cashfree.js';
+import { verifyAdminToken } from './_auth.js';
 import { hydrateEnv, isOriginAllowed, jsonResponse } from './_adapter.js';
 
 export async function onRequest(context) {
@@ -25,6 +26,14 @@ export async function onRequest(context) {
   if (request.method !== 'POST') {
     corsHeaders.set('Allow', 'POST, OPTIONS');
     return new Response(JSON.stringify({ error: 'Method Not Allowed', message: 'Only POST requests are supported' }), { status: 405, headers: corsHeaders });
+  }
+
+  const authHeader = request.headers.get('Authorization') || request.headers.get('authorization') || request.headers.get('x-admin-token');
+  if (authHeader) {
+    const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+    if (!auth || !auth.valid) {
+      return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
+    }
   }
 
   try {

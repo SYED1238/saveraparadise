@@ -44,7 +44,7 @@ export async function onRequest(context) {
   }
 
   // 1. Role Gate: Enforce authentication for staff-restricted actions
-  if (['sync_orders', 'update_status', 'claim_order'].includes(action)) {
+  if (['sync_orders', 'update_status', 'claim_order', 'request_cash_handover'].includes(action)) {
     const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
     if (!auth || !auth.valid) {
       return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -236,7 +236,7 @@ export async function onRequest(context) {
       return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
     }
 
-    if (isTestEnv && ['sync_orders', 'update_status', 'claim_order'].includes(action)) {
+    if (isTestEnv && ['sync_orders', 'update_status', 'claim_order', 'request_cash_handover'].includes(action)) {
       const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
         return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -428,6 +428,19 @@ export async function onRequest(context) {
         };
         return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
       }
+
+      if (action === 'request_cash_handover') {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        const amount = Number(body.amount) || 0;
+        const requestedAt = Number(body.requestedAt) || Date.now();
+        if (!pin) {
+          return jsonResponse({ error: 'riderPin is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        return jsonResponse({
+          success: true,
+          rider: { pin, cash_handover_status: 'pending_owner_approval', cash_handover_amount: amount, cash_handover_requested_at: requestedAt }
+        }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
     }
     console.warn('[OrderAction] Supabase service credentials missing');
     return jsonResponse({ error: 'Database service credentials not configured on server' }, 503, Object.fromEntries(corsHeaders.entries()));
@@ -607,6 +620,9 @@ export async function onRequest(context) {
             if (isDoorstep) {
               updatePayload.doorstep_upi = true;
               updatePayload.payment_method = 'doorstep_upi';
+              if (existing.cf_payment_status !== 'SUCCESS') {
+                updatePayload.upi_manual_verified = true;
+              }
             }
           } else {
             updatePayload.is_paid_online = false;
@@ -808,6 +824,42 @@ export async function onRequest(context) {
 
         if (updateErr) throw updateErr;
         return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      // 5b. Rider Cash Handover Request
+      case 'request_cash_handover': {
+        const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+        if (!auth || !auth.valid) {
+          return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const pin = String(body.riderPin || body.pin || '').trim();
+        const amount = Number(body.amount) || 0;
+        const requestedAt = Number(body.requestedAt) || Date.now();
+
+        if (!pin) {
+          return jsonResponse({ error: 'riderPin is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        if (auth.payload?.role === 'rider') {
+          const riderPin = String(auth.payload?.riderPin || '').trim();
+          if (riderPin && riderPin !== pin) {
+            return jsonResponse({ error: 'Forbidden: Riders can only request cash handover for themselves' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
+
+        const { data, error } = await sb
+          .from('riders')
+          .update({
+            cash_handover_status: 'pending_owner_approval',
+            cash_handover_amount: amount,
+            cash_handover_requested_at: requestedAt
+          })
+          .eq('pin', pin)
+          .select();
+
+        if (error) throw error;
+        return jsonResponse({ success: true, rider: data && data.length > 0 ? data[0] : null }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       // 6. Authoritative Order Creation (Prevents Client-Side Price Tampering)

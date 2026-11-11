@@ -57,7 +57,7 @@ export default async function handler(req, res) {
   }
 
   // 1. Role Gate: Enforce authentication for staff-restricted actions
-  if (['sync_orders', 'update_status', 'claim_order'].includes(action)) {
+  if (['sync_orders', 'update_status', 'claim_order', 'request_cash_handover'].includes(action)) {
     const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
     if (!auth || !auth.valid) {
       return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff or Rider session required' });
@@ -247,7 +247,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, order: updated });
     }
 
-    if (isTestEnv && ['sync_orders', 'update_status', 'claim_order'].includes(action)) {
+    if (isTestEnv && ['sync_orders', 'update_status', 'claim_order', 'request_cash_handover'].includes(action)) {
       const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
         return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff session required' });
@@ -439,6 +439,19 @@ export default async function handler(req, res) {
         };
         return res.status(200).json({ success: true, order: updated });
       }
+
+      if (action === 'request_cash_handover') {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        const amount = Number(body.amount) || 0;
+        const requestedAt = Number(body.requestedAt) || Date.now();
+        if (!pin) {
+          return res.status(400).json({ error: 'riderPin is required' });
+        }
+        return res.status(200).json({
+          success: true,
+          rider: { pin, cash_handover_status: 'pending_owner_approval', cash_handover_amount: amount, cash_handover_requested_at: requestedAt }
+        });
+      }
     }
     return res.status(503).json({ error: 'Database service credentials not configured on server' });
   }
@@ -616,6 +629,9 @@ export default async function handler(req, res) {
             if (isDoorstep) {
               updatePayload.doorstep_upi = true;
               updatePayload.payment_method = 'doorstep_upi';
+              if (existing.cf_payment_status !== 'SUCCESS') {
+                updatePayload.upi_manual_verified = true;
+              }
             }
           } else {
             updatePayload.is_paid_online = false;
@@ -817,6 +833,42 @@ export default async function handler(req, res) {
 
         if (updateErr) throw updateErr;
         return res.status(200).json({ success: true, order: updated });
+      }
+
+      // 5b. Rider Cash Handover Request
+      case 'request_cash_handover': {
+        const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+        if (!auth || !auth.valid) {
+          return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff or Rider session required' });
+        }
+
+        const pin = String(body.riderPin || body.pin || '').trim();
+        const amount = Number(body.amount) || 0;
+        const requestedAt = Number(body.requestedAt) || Date.now();
+
+        if (!pin) {
+          return res.status(400).json({ error: 'riderPin is required' });
+        }
+
+        if (auth.payload?.role === 'rider') {
+          const riderPin = String(auth.payload?.riderPin || '').trim();
+          if (riderPin && riderPin !== pin) {
+            return res.status(403).json({ error: 'Forbidden: Riders can only request cash handover for themselves' });
+          }
+        }
+
+        const { data, error } = await sb
+          .from('riders')
+          .update({
+            cash_handover_status: 'pending_owner_approval',
+            cash_handover_amount: amount,
+            cash_handover_requested_at: requestedAt
+          })
+          .eq('pin', pin)
+          .select();
+
+        if (error) throw error;
+        return res.status(200).json({ success: true, rider: data && data.length > 0 ? data[0] : null });
       }
 
       // 6. Authoritative Order Creation (Prevents Client-Side Price Tampering)

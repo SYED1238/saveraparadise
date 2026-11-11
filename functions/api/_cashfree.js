@@ -166,6 +166,24 @@ export async function generateDoorstepUpiQr({
       env
     });
 
+    if (!pgRes.success) {
+      if (cfg.isProd) {
+        return {
+          success: false,
+          error: pgRes.error || 'Cashfree Doorstep QR creation failed'
+        };
+      }
+      return {
+        success: true,
+        isFallback: true,
+        orderId: cleanId,
+        amount: cleanAmount,
+        merchantVpa,
+        upiIntentUri,
+        expiresAt: Date.now() + (expiryMinutes * 60 * 1000)
+      };
+    }
+
     return {
       success: true,
       orderId: cleanId,

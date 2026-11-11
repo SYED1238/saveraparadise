@@ -93,7 +93,7 @@ function r2DevMiddlewarePlugin() {
         if (req.method === 'POST' && url === '/api/admin-auth') {
           const chunks = [];
           req.on('data', c => chunks.push(c));
-          req.on('end', () => {
+          req.on('end', async () => {
             try {
               const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
               const isRefresh = body?.action === 'refresh' || Boolean(body?.refreshToken);
@@ -127,7 +127,56 @@ function r2DevMiddlewarePlugin() {
               }
 
               const pin = body.pin;
-              const role = getPinRole(pin);
+              let role = getPinRole(pin);
+              let dynamicRider = null;
+
+              if (!role) {
+                const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+                const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+                if (supabaseUrl && serviceKey) {
+                  try {
+                    const { createClient } = await import('@supabase/supabase-js');
+                    const sb = createClient(supabaseUrl, serviceKey);
+                    const { data: dbRider, error } = await sb
+                      .from('riders')
+                      .select('pin, name, phone, vehicle, status')
+                      .eq('pin', String(pin).trim())
+                      .maybeSingle();
+
+                    if (dbRider && dbRider.status === 'inactive') {
+                      res.statusCode = 401;
+                      res.setHeader('Content-Type', 'application/json');
+                      return res.end(JSON.stringify({
+                        error: 'Account is deactivated. Please contact restaurant management.',
+                        inactive: true
+                      }));
+                    }
+
+                    if (!error && dbRider && dbRider.status !== 'inactive') {
+                      role = 'rider';
+                      dynamicRider = dbRider;
+                    }
+                  } catch (sbErr) {
+                    console.warn('[Vite Dev] Supabase rider query error:', sbErr?.message);
+                  }
+                } else if (body?.simulateDynamicRiders) {
+                  const dynamicList = body.simulateDynamicRiders;
+                  const matched = Array.isArray(dynamicList) ? dynamicList.find(r => String(r.pin).trim() === String(pin).trim()) : null;
+                  if (matched) {
+                    if (matched.status === 'inactive') {
+                      res.statusCode = 401;
+                      res.setHeader('Content-Type', 'application/json');
+                      return res.end(JSON.stringify({
+                        error: 'Account is deactivated. Please contact restaurant management.',
+                        inactive: true
+                      }));
+                    }
+                    role = 'rider';
+                    dynamicRider = matched;
+                  }
+                }
+              }
+
               if (role) {
                 const extraPayload = role === 'rider' ? { riderPin: String(pin).trim() } : {};
                 const token = createAdminToken(undefined, role, undefined, extraPayload);
@@ -137,7 +186,21 @@ function r2DevMiddlewarePlugin() {
                   success: true,
                   token,
                   role,
-                  ...(role === 'rider' ? { riderPin: String(pin).trim() } : {}),
+                  ...(role === 'rider' ? {
+                    riderPin: String(pin).trim(),
+                    rider: dynamicRider ? {
+                      pin: String(pin).trim(),
+                      name: dynamicRider.name,
+                      phone: dynamicRider.phone,
+                      vehicle: dynamicRider.vehicle,
+                      status: dynamicRider.status
+                    } : {
+                      pin: String(pin).trim(),
+                      name: 'Delivery Partner',
+                      vehicle: '🏍️ Bike',
+                      status: 'online'
+                    }
+                  } : {}),
                   expiresIn: 43200
                 }));
               }

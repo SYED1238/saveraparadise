@@ -274,4 +274,12 @@ test('CUSTOMER UNREACHABLE AT DOORSTEP (CNR) PROTOCOL SUITE', async (t) => {
     assert.strictEqual(cfData2.order.status, 'on_the_way');
     assert.strictEqual(cfData2.order.cancellation_reason, null);
   });
+
+  await t.test('9. delivery.js cancels doorstep wait timer with renderPortal and has zero calls to undefined renderOrders', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const deliveryContent = fs.readFileSync(path.resolve('./delivery.js'), 'utf8');
+    assert.strictEqual(deliveryContent.includes('renderOrders()'), false, 'delivery.js must never call undefined renderOrders()');
+    assert.ok(deliveryContent.includes('renderPortal()'), 'delivery.js must call renderPortal()');
+  });
 });

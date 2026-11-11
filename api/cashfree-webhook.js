@@ -17,7 +17,9 @@ export default async function handler(req, res) {
     const timestamp = req.headers['x-webhook-timestamp'] || '';
     
     let rawBody = '';
-    if (typeof req.body === 'string') {
+    if (typeof req.rawBody === 'string') {
+      rawBody = req.rawBody;
+    } else if (typeof req.body === 'string') {
       rawBody = req.body;
     } else {
       rawBody = JSON.stringify(req.body || {});
@@ -69,7 +71,7 @@ export default async function handler(req, res) {
 
       const cleanOrderId = cfOrderId
         .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
-        .split('_')[0];
+        .replace(/_\d{4}$/, '');
 
       if (!cleanOrderId) {
         return res.status(400).json({ error: 'Invalid Order ID in webhook event' });

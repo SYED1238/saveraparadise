@@ -196,9 +196,13 @@ export function isStaffSessionActive(role) {
  * Sends the server-verified signed bearer token.
  * @returns {Record<string, string>}
  */
-export function getAdminAuthHeaders() {
+export function getAdminAuthHeaders(role = 'admin') {
   if (typeof sessionStorage === 'undefined') return {};
-  const token = sessionStorage.getItem('quickbite_admin_token');
+  const token = role === 'rider'
+    ? sessionStorage.getItem('quickbite_rider_token')
+    : (role === 'owner'
+      ? (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token'))
+      : (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token')));
   if (!token) return {};
   return {
     'Authorization': `Bearer ${token}`
@@ -322,12 +326,13 @@ export function clearStaffSession(role) {
 export async function verifyStaffPin(role, inputPin) {
   if (!inputPin) return false;
   const cleanPin = String(inputPin).trim();
-  if (!cleanPin || !/^\d{4}$/.test(cleanPin)) return false;
+  if (!cleanPin || !/^\d{4,6}$/.test(cleanPin)) return false;
 
   const inputHash = await hashPasscode(cleanPin);
 
   // 1. Admin verification (strictly via server-side verification and signed session token)
   if (role === 'admin') {
+    if (!/^\d{4}$/.test(cleanPin)) return false;
     try {
       const res = await fetch('/api/admin-auth', {
         method: 'POST',
@@ -355,6 +360,36 @@ export async function verifyStaffPin(role, inputPin) {
 
   // 2. Rider verification (strictly registered riders created by Admin or default fleet)
   if (role === 'rider') {
+    if (typeof fetch !== 'undefined') {
+      try {
+        const res = await fetch('/api/admin-auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: cleanPin })
+        });
+        if (res.status === 401 || res.status === 403) {
+          // Server explicitly rejected or deactivated this rider
+          return false;
+        }
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.token && (data.role === 'rider' || data.role === 'admin' || data.role === 'owner')) {
+            if (typeof sessionStorage !== 'undefined') {
+              sessionStorage.setItem('quickbite_rider_token', data.token);
+            }
+            setStaffSessionActive('rider');
+            return true;
+          }
+          return false;
+        }
+      } catch (e) {
+        if (typeof localStorage === 'undefined') {
+          return false;
+        }
+        console.warn('[Security] Rider server auth request failed, attempting local fallback:', e?.message || e);
+      }
+    }
+
     if (typeof localStorage === 'undefined') {
       return false; // Safely fail in non-browser Node.js environments
     }
@@ -377,34 +412,7 @@ export async function verifyStaffPin(role, inputPin) {
     }
 
     if (isMatch) {
-      if (typeof fetch !== 'undefined') {
-        try {
-          const res = await fetch('/api/admin-auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pin: cleanPin })
-          });
-          if (res.status === 401 || res.status === 403) {
-            // Server explicitly rejected or deactivated this rider
-            return false;
-          }
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.token && typeof sessionStorage !== 'undefined') {
-              sessionStorage.setItem('quickbite_rider_token', data.token);
-            }
-            return true;
-          }
-          return false;
-        } catch (e) {
-          // Allow local roster fallback ONLY when fetch fails with invalid URL (Node.js test runner without base URL)
-          if (e?.code === 'ERR_INVALID_URL' || String(e?.message).includes('Failed to parse URL') || String(e?.message).includes('Invalid URL')) {
-            return true;
-          }
-          console.warn('[Security] Rider server auth request failed:', e);
-          return false;
-        }
-      }
+      setStaffSessionActive('rider');
       return true;
     }
 

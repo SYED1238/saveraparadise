@@ -152,6 +152,9 @@ ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS trips INTEGER DEFAULT 0;
 ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_settled_at BIGINT;
 ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_paid_at BIGINT;
 ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_amount_paid NUMERIC DEFAULT 0;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_handover_status TEXT DEFAULT NULL;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_handover_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_handover_requested_at BIGINT DEFAULT NULL;
 
 -- 2. Enable Row Level Security (RLS) & Hardened Security Policies
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
