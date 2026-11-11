@@ -130,10 +130,10 @@ public class OrderMonitorService extends Service {
             // 1. Silent Low-Priority Channel for Foreground Service Status
             NotificationChannel serviceChannel = new NotificationChannel(
                 CHANNEL_ID_SERVICE,
-                "Savera Paradise Background Monitor",
+                "Savera Paradise Kitchen Monitor",
                 NotificationManager.IMPORTANCE_LOW
             );
-            serviceChannel.setDescription("Keeps order notifications alive 24/7 when app is closed");
+            serviceChannel.setDescription("Receives kitchen order alerts during active operating hours");
             serviceChannel.setShowBadge(false);
             manager.createNotificationChannel(serviceChannel);
 
@@ -160,7 +160,15 @@ public class OrderMonitorService extends Service {
         }
     }
 
-    private void startForegroundNotification() {
+    private volatile String lastNotificationMode = "";
+
+    private String getCurrentMonitorMode() {
+        if (isNightQuietHoursIST()) return "quiet";
+        if (isAppInForeground) return "foreground";
+        return "background";
+    }
+
+    private Notification buildServiceNotification(String mode) {
         Intent openAppIntent = new Intent(this, MainActivity.class);
         openAppIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
@@ -169,24 +177,56 @@ public class OrderMonitorService extends Service {
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openAppIntent, pendingFlags);
 
-        String title;
+        String portalLabel;
         if (isRiderApp) {
-            title = "🟢 Savera Rider Dispatch Active";
+            portalLabel = "Savera Rider Dispatch";
         } else if (isOwnerApp) {
-            title = "🟢 Savera Owner Monitor Active";
+            portalLabel = "Savera Owner Monitor";
         } else {
-            title = "🟢 Savera Kitchen Monitor Active";
+            portalLabel = "Savera Kitchen Monitor";
         }
-        String subtitle = "24/7 live order monitoring active in background";
 
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID_SERVICE)
+        String title;
+        String subtitle;
+        if ("quiet".equals(mode)) {
+            title = "🌙 " + portalLabel + " (Quiet Hours)";
+            subtitle = "1:00 AM – 9:00 AM IST • Polling paused until morning";
+        } else if ("foreground".equals(mode)) {
+            title = "⚡ " + portalLabel + " Live";
+            subtitle = "App active on screen • Real-time alerts enabled";
+        } else {
+            title = "🟢 " + portalLabel + " Active";
+            subtitle = "Scheduled background check every 20s";
+        }
+
+        return new NotificationCompat.Builder(this, CHANNEL_ID_SERVICE)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(subtitle)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pendingIntent)
             .build();
+    }
+
+    private void updateForegroundNotificationIfNeeded(String mode) {
+        if (mode == null || mode.equals(lastNotificationMode)) return;
+        lastNotificationMode = mode;
+        try {
+            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                manager.notify(SERVICE_NOTIFICATION_ID, buildServiceNotification(mode));
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to update notification mode: " + e.getMessage());
+        }
+    }
+
+    private void startForegroundNotification() {
+        String initialMode = getCurrentMonitorMode();
+        lastNotificationMode = initialMode;
+        Notification notification = buildServiceNotification(initialMode);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // API 34
             startForeground(SERVICE_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
@@ -260,6 +300,7 @@ public class OrderMonitorService extends Service {
             while (isRunning) {
                 // 1. If currently in night quiet hours (1:00 AM to 9:00 AM IST), sleep 60 seconds
                 if (isNightQuietHoursIST()) {
+                    updateForegroundNotificationIfNeeded("quiet");
                     try {
                         Thread.sleep(60000);
                     } catch (InterruptedException e) {
@@ -270,6 +311,7 @@ public class OrderMonitorService extends Service {
 
                 // 2. If app is active on screen in foreground, WebView WebSocket handles orders in <200ms
                 if (isAppInForeground) {
+                    updateForegroundNotificationIfNeeded("foreground");
                     try {
                         Thread.sleep(15000); // Sleep gently while user is active on screen
                     } catch (InterruptedException e) {
@@ -279,6 +321,7 @@ public class OrderMonitorService extends Service {
                 }
 
                 // 3. Otherwise (minimized/backgrounded during operating hours), poll Cloudflare
+                updateForegroundNotificationIfNeeded("background");
                 try {
                     pollKitchenOrders();
                 } catch (Exception e) {
