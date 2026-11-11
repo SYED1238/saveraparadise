@@ -2344,9 +2344,12 @@ body.owner-body .lock-footer-info {
 /* ============================================================== */
 .owner-cards-grid {
   display: none; /* Hidden on desktop by default; visible on mobile */
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .owner-empty-card {
@@ -2382,6 +2385,10 @@ body.owner-body .lock-footer-info {
   flex-direction: column;
   gap: 12px;
   position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
   transition: transform 0.15s ease, border-color 0.15s ease;
@@ -2537,6 +2544,11 @@ body.owner-body .lock-footer-info {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
 }
 
@@ -2546,6 +2558,19 @@ body.owner-body .lock-footer-info {
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.oc-top-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .oc-time {
@@ -2555,20 +2580,34 @@ body.owner-body .lock-footer-info {
   align-items: center;
   gap: 4px;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .oc-customer {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .oc-cust-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
   font-size: 0.88rem;
   color: var(--owner-text);
+}
+
+.oc-cust-title strong {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .oc-phone-link {
@@ -2578,6 +2617,7 @@ body.owner-body .lock-footer-info {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .oc-phone-link:hover {
@@ -2587,12 +2627,26 @@ body.owner-body .lock-footer-info {
 .oc-address {
   font-size: 0.76rem;
   color: #334155;
-  line-height: 1.35;
+  line-height: 1.4;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 6px;
   flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.oc-address > span:first-child {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .oc-dist-chip {
@@ -2606,6 +2660,7 @@ body.owner-body .lock-footer-info {
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .oc-items {
@@ -2613,12 +2668,27 @@ body.owner-body .lock-footer-info {
   color: #334155;
   background: #F8FAFC;
   border: 1px solid var(--owner-border);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: 8px;
+  padding: 8px 10px;
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   line-height: 1.35;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.oc-items .order-item-chip {
+  background: #FFFFFF;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+  padding: 3px 8px;
 }
 
 .oc-footer {
@@ -2629,6 +2699,10 @@ body.owner-body .lock-footer-info {
   border-top: 1px solid var(--owner-border);
   padding-top: 10px;
   flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .oc-footer-left {
@@ -2636,6 +2710,8 @@ body.owner-body .lock-footer-info {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .oc-rider-tag {
@@ -2647,6 +2723,7 @@ body.owner-body .lock-footer-info {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
 }
 
 .oc-footer-right {
@@ -2654,6 +2731,9 @@ body.owner-body .lock-footer-info {
   align-items: center;
   gap: 10px;
   margin-left: auto;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .oc-total {
@@ -3348,6 +3428,7 @@ body.owner-body .lock-footer-info {
   .orders-search-wrap {
     width: 100%;
     max-width: 100%;
+    min-width: 0;
   }
 
   .orders-toolbar-bar {
