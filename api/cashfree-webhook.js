@@ -53,14 +53,27 @@ export default async function handler(req, res) {
 
     // Process payment success
     if (eventType === 'PAYMENT_SUCCESS_WEBHOOK' || eventType === 'PAYMENT_CAPTURED') {
-      const cfOrderId = eventData.order?.order_id || '';
-      const cfPaymentId = eventData.payment?.cf_payment_id || '';
-      const paymentAmount = eventData.payment?.payment_amount || 0;
+      const cfOrderId = String(eventData.order?.order_id || '');
+      const cfPaymentId = String(eventData.payment?.cf_payment_id || '');
+      const paymentAmount = Number(eventData.payment?.payment_amount || 0);
+      const paymentStatus = String(eventData.payment?.payment_status || '').toUpperCase();
       const paymentMethod = eventData.payment?.payment_group || 'upi';
+
+      if (paymentStatus && paymentStatus !== 'SUCCESS') {
+        return res.status(400).json({
+          success: false,
+          error: 'Payment not successful',
+          message: `Payment status is ${paymentStatus}`
+        });
+      }
 
       const cleanOrderId = cfOrderId
         .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
         .split('_')[0];
+
+      if (!cleanOrderId) {
+        return res.status(400).json({ error: 'Invalid Order ID in webhook event' });
+      }
 
       // Safe update in Supabase if server-side client is available
       try {

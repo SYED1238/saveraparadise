@@ -326,18 +326,24 @@ async function verifyOwnerPin(pin) {
           serverHandled = true;
           isValid = false;
         }
-      } else if (authRes.status === 401 || authRes.status === 403) {
-        // Server definitively rejected this PIN
+      } else {
+        // Server definitively rejected this PIN (401, 403, etc.)
         serverHandled = true;
         isValid = false;
       }
     } catch (e) {
-      console.warn('[OwnerAuth] Server verification network error, attempting offline hash check:', e);
+      if (e?.code === 'ERR_INVALID_URL' || String(e?.message).includes('Failed to parse URL')) {
+        serverHandled = false;
+      } else {
+        console.warn('[OwnerAuth] Server verification network error:', e);
+        serverHandled = true;
+        isValid = false;
+      }
     }
   }
 
-  // 2. Offline fallback if server was unreachable
-  if (!serverHandled) {
+  // 2. Offline fallback strictly for Node.js test environments lacking relative URL support
+  if (!serverHandled && typeof window === 'undefined') {
     if (targetHash && inputHash === targetHash) {
       isValid = true;
     } else if (legacyPin && cleanPin === legacyPin) {

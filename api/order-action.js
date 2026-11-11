@@ -184,6 +184,12 @@ export default async function handler(req, res) {
           total: enforcedTotal,
           items: enforcedItems,
           items_summary: itemsSummary,
+          discount: typeof decoded?.discount === 'number' ? decoded.discount : (orderData.discount || 0),
+          discountAmount: typeof decoded?.discount === 'number' ? decoded.discount : (orderData.discount || 0),
+          deliveryFee: typeof decoded?.deliveryFee === 'number' ? decoded.deliveryFee : (orderData.deliveryFee || 0),
+          delivery_fee: typeof decoded?.deliveryFee === 'number' ? decoded.deliveryFee : (orderData.deliveryFee || 0),
+          platformFee: typeof decoded?.platformFee === 'number' ? decoded.platformFee : (orderData.platformFee || 0),
+          platform_fee: typeof decoded?.platformFee === 'number' ? decoded.platformFee : (orderData.platformFee || 0),
           tracking_token: trackingToken
         }
       });
@@ -195,7 +201,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'orderId is required' });
       }
 
-      const cleanId = String(orderId).replace(/^#/, '');
+      const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!cleanId) {
+        return res.status(400).json({ error: 'Invalid orderId format' });
+      }
       const auth = verifyAdminToken(req, ['admin', 'owner']);
       const isStaff = auth && auth.valid;
 
@@ -277,7 +286,10 @@ export default async function handler(req, res) {
         if (!orderId || !status) {
           return res.status(400).json({ error: 'orderId and status are required' });
         }
-        const cleanId = String(orderId).replace(/^#/, '');
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return res.status(400).json({ error: 'Invalid orderId format' });
+        }
         const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
         if (!existing) {
           return res.status(404).json({ error: 'Order not found' });
@@ -307,15 +319,20 @@ export default async function handler(req, res) {
           }
         }
 
+        const inputCash = body.cashCollected ?? body.cash_collected;
+        const inputDoorstepUpi = typeof body.doorstepUpi === 'boolean' ? body.doorstepUpi : (typeof body.doorstep_upi === 'boolean' ? body.doorstep_upi : undefined);
+        const inputStepIndex = typeof body.stepIndex === 'number' ? body.stepIndex : (typeof body.step_index === 'number' ? body.step_index : undefined);
+        const inputStatusLabel = body.statusLabel || body.status_label;
+
         let enforcedCash = 0;
         let enforcedPaymentStatus = existing.payment_status || 'Pending';
         let enforcedIsPaidOnline = existing.is_paid_online;
-        let enforcedDoorstepUpi = typeof body.doorstepUpi === 'boolean' ? body.doorstepUpi : existing.doorstep_upi;
+        let enforcedDoorstepUpi = inputDoorstepUpi !== undefined ? inputDoorstepUpi : existing.doorstep_upi;
         let enforcedPaymentMethod = existing.payment_method;
 
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
-          const isDoorstep = Boolean(body.doorstepUpi === true || existing.doorstep_upi === true);
+          const isDoorstep = Boolean(inputDoorstepUpi === true || existing.doorstep_upi === true);
 
           if (isPrepaid || isDoorstep) {
             enforcedPaymentStatus = 'Paid';
@@ -332,20 +349,20 @@ export default async function handler(req, res) {
                 ? existing.numeric_total
                 : (parseFloat(String(existing.total || 0).replace(/[^0-9.]/g, '')) || 0)
             );
-            if (typeof body.cashCollected !== 'number' || !Number.isFinite(body.cashCollected)) {
+            if (typeof inputCash !== 'number' || !Number.isFinite(inputCash)) {
               return res.status(400).json({ error: 'For Cash on Delivery orders, cashCollected amount is required upon delivery' });
             }
-            if (body.cashCollected < 0) {
+            if (inputCash < 0) {
               return res.status(400).json({ error: 'Cash collected cannot be negative' });
             }
-            if (body.cashCollected < orderTotal) {
-              return res.status(400).json({ error: `Cash collected (₹${body.cashCollected}) is less than payable order total (₹${orderTotal}). Full payment is required for COD delivery.` });
+            if (inputCash < orderTotal) {
+              return res.status(400).json({ error: `Cash collected (₹${inputCash}) is less than payable order total (₹${orderTotal}). Full payment is required for COD delivery.` });
             }
             const maxAllowed = orderTotal + 200;
-            if (orderTotal > 0 && body.cashCollected > maxAllowed) {
-              return res.status(400).json({ error: `Cash collected (₹${body.cashCollected}) exceeds payable order total (₹${orderTotal}). Maximum allowed with tip is ₹${maxAllowed}.` });
+            if (orderTotal > 0 && inputCash > maxAllowed) {
+              return res.status(400).json({ error: `Cash collected (₹${inputCash}) exceeds payable order total (₹${orderTotal}). Maximum allowed with tip is ₹${maxAllowed}.` });
             }
-            enforcedCash = body.cashCollected;
+            enforcedCash = inputCash;
             enforcedPaymentStatus = 'Paid';
           }
         }
@@ -353,8 +370,8 @@ export default async function handler(req, res) {
         const updated = {
           ...existing,
           status,
-          step_index: status === 'delivered' ? 4 : (typeof body.stepIndex === 'number' ? body.stepIndex : existing.step_index),
-          status_label: status === 'delivered' ? 'Delivered' : (status === 'undelivered' ? 'Undelivered' : (body.statusLabel || existing.status_label)),
+          step_index: status === 'delivered' ? 4 : (inputStepIndex !== undefined ? inputStepIndex : existing.step_index),
+          status_label: status === 'delivered' ? 'Delivered' : (status === 'undelivered' ? 'Undelivered' : (inputStatusLabel || existing.status_label)),
           cash_collected: enforcedCash,
           payment_status: enforcedPaymentStatus,
           is_paid_online: enforcedIsPaidOnline,
@@ -371,7 +388,10 @@ export default async function handler(req, res) {
         if (!orderId) {
           return res.status(400).json({ error: 'orderId is required' });
         }
-        const cleanId = String(orderId).replace(/^#/, '');
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return res.status(400).json({ error: 'Invalid orderId format' });
+        }
         const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
         if (!existing) {
           return res.status(404).json({ error: 'Order not found' });
@@ -519,12 +539,26 @@ export default async function handler(req, res) {
           return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff or Rider session required' });
         }
 
-        const { orderId, status, stepIndex, statusLabel, eta, cancellationReason, deliveredAt, cashCollected, paymentStatus, doorstepUpi, isPaidOnline } = body;
+        const { orderId, status } = body;
         if (!orderId || !status) {
           return res.status(400).json({ error: 'orderId and status are required' });
         }
 
-        const cleanId = String(orderId).replace(/^#/, '');
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return res.status(400).json({ error: 'Invalid orderId format' });
+        }
+
+        const stepIndex = typeof body.stepIndex === 'number' ? body.stepIndex : (typeof body.step_index === 'number' ? body.step_index : undefined);
+        const statusLabel = body.statusLabel || body.status_label;
+        const eta = body.eta;
+        const cancellationReason = body.cancellationReason || body.cancellation_reason;
+        const deliveredAt = body.deliveredAt || body.delivered_at;
+        const cashCollected = body.cashCollected ?? body.cash_collected;
+        const paymentStatus = body.paymentStatus || body.payment_status;
+        const doorstepUpi = typeof body.doorstepUpi === 'boolean' ? body.doorstepUpi : (typeof body.doorstep_upi === 'boolean' ? body.doorstep_upi : undefined);
+        const isPaidOnline = typeof body.isPaidOnline === 'boolean' ? body.isPaidOnline : (typeof body.is_paid_online === 'boolean' ? body.is_paid_online : undefined);
+
         const { data: existing, error: fetchErr } = await sb
           .from('orders')
           .select('*')
@@ -656,7 +690,10 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'orderId is required' });
         }
 
-        const cleanId = String(orderId).replace(/^#/, '');
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return res.status(400).json({ error: 'Invalid orderId format' });
+        }
 
         // 1. Fetch current order state to verify readiness
         const { data: existing, error: fetchErr } = await sb
@@ -704,9 +741,10 @@ export default async function handler(req, res) {
           .or(`id.eq.${cleanId},id.eq.#${cleanId}`);
 
         if (isRider) {
+          const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
           query = query
             .in('status', ['ready_for_pickup', 'on_the_way'])
-            .or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${effectivePin}`);
+            .or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${safePin}`);
         }
 
         const { data: updatedList, error: updateErr } = await query.select();
@@ -729,7 +767,10 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'orderId is required' });
         }
 
-        const cleanId = String(orderId).replace(/^#/, '');
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return res.status(400).json({ error: 'Invalid orderId format' });
+        }
         const { data: order, error: fetchErr } = await sb
           .from('orders')
           .select('*')
@@ -861,7 +902,8 @@ export default async function handler(req, res) {
         }
 
         const rawId = String(orderData.id || '').trim();
-        const cleanId = rawId ? (rawId.startsWith('#') ? rawId : `#${rawId}`) : `#QB-${Math.floor(1000 + Math.random() * 9000)}`;
+        const rawClean = rawId ? rawId.replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '') : '';
+        const cleanId = rawClean ? `#${rawClean}` : `#QB-${Math.floor(1000 + Math.random() * 9000)}`;
         const digits = cleanId.replace(/\D/g, '');
         const pickupCode = orderData.pickup_code || orderData.pickupCode || (digits.length >= 4 ? digits.slice(-4) : '1001');
         const trackingToken = orderData.tracking_token || orderData.trackingToken || crypto.randomUUID();
@@ -870,6 +912,11 @@ export default async function handler(req, res) {
         const itemsSummary = (Array.isArray(enforcedItems) && enforcedItems.length > 0)
           ? enforcedItems.map(i => `${i.quantity || 1}x ${i.name}`).join(', ')
           : (orderData.items_summary || orderData.itemsSummary || '');
+
+        const addressDetails = (orderData.address_details || orderData.addressDetails) ? { ...(orderData.address_details || orderData.addressDetails) } : {};
+        if (enforcedDiscount) addressDetails.discount = enforcedDiscount;
+        if (enforcedDeliveryFee) addressDetails.deliveryFee = enforcedDeliveryFee;
+        if (enforcedPlatformFee) addressDetails.platformFee = enforcedPlatformFee;
 
         const insertPayload = {
           id: cleanId,
@@ -892,9 +939,9 @@ export default async function handler(req, res) {
           items_summary: itemsSummary,
           items: enforcedItems,
           total: enforcedTotal || '₹0',
-          lat: (orderData.lat !== undefined && !isNaN(Number(orderData.lat))) ? Number(orderData.lat) : (orderData.address_details?.lat ? Number(orderData.address_details.lat) : (orderData.addressDetails?.lat ? Number(orderData.addressDetails.lat) : null)),
-          lng: (orderData.lng !== undefined && !isNaN(Number(orderData.lng))) ? Number(orderData.lng) : (orderData.address_details?.lng ? Number(orderData.address_details.lng) : (orderData.addressDetails?.lng ? Number(orderData.addressDetails.lng) : null)),
-          address_details: orderData.address_details || orderData.addressDetails || null,
+          lat: (orderData.lat !== undefined && !isNaN(Number(orderData.lat))) ? Number(orderData.lat) : (addressDetails.lat ? Number(addressDetails.lat) : null),
+          lng: (orderData.lng !== undefined && !isNaN(Number(orderData.lng))) ? Number(orderData.lng) : (addressDetails.lng ? Number(addressDetails.lng) : null),
+          address_details: Object.keys(addressDetails).length > 0 ? addressDetails : null,
           tracking_token: trackingToken
         };
 
@@ -906,10 +953,11 @@ export default async function handler(req, res) {
 
         if (insertErr) {
           if (insertErr.code === '23505' || String(insertErr.message || '').includes('duplicate key')) {
+            const lookupId = cleanId.replace(/^#/, '');
             const { data: existingOrder } = await sb
               .from('orders')
               .select('id, tracking_token, status, total, created_at')
-              .or(`id.eq.${cleanId},id.eq.${cleanId.replace(/^#/, '')}`)
+              .or(`id.eq.${cleanId},id.eq.${lookupId}`)
               .maybeSingle();
 
             const callerProvidedToken = body.trackingToken || orderData.trackingToken || orderData.tracking_token;
@@ -947,7 +995,16 @@ export default async function handler(req, res) {
               success: true,
               orderId: resolvedOrder.id,
               trackingToken: resolvedOrder.tracking_token || freshTrackingToken,
-              order: resolvedOrder,
+              order: {
+                ...insertPayload,
+                ...resolvedOrder,
+                discount: enforcedDiscount,
+                discountAmount: enforcedDiscount,
+                deliveryFee: enforcedDeliveryFee,
+                delivery_fee: enforcedDeliveryFee,
+                platformFee: enforcedPlatformFee,
+                platform_fee: enforcedPlatformFee
+              },
               resolvedCollision: true
             });
           }
@@ -958,7 +1015,16 @@ export default async function handler(req, res) {
           success: true,
           orderId: inserted.id,
           trackingToken: inserted.tracking_token || trackingToken,
-          order: inserted
+          order: {
+            ...insertPayload,
+            ...inserted,
+            discount: enforcedDiscount,
+            discountAmount: enforcedDiscount,
+            deliveryFee: enforcedDeliveryFee,
+            delivery_fee: enforcedDeliveryFee,
+            platformFee: enforcedPlatformFee,
+            platform_fee: enforcedPlatformFee
+          }
         });
       }
 

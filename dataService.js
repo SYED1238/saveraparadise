@@ -3334,25 +3334,22 @@ class QuickBiteDataService {
           const targetNorm = norm(order.id);
           const existingIdx = orders.findIndex(o => o && norm(o.id) === targetNorm);
 
+          // Security Hardening: Never allow unauthenticated broadcast to overwrite existing verified orders
           if (existingIdx !== -1) {
-            Object.assign(orders[existingIdx], order);
-            this.ordersCache = orders;
-            try {
-              localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-            } catch {}
-          } else {
-            orders.unshift(order);
-            this.ordersCache = orders;
-            try {
-              localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-            } catch {}
-            this.notifyChange('orders', {
-              action: 'new_order',
-              order,
-              source: 'supabase_broadcast',
-              timestamp: payload.timestamp || Date.now()
-            });
+            return;
           }
+
+          orders.unshift(order);
+          this.ordersCache = orders;
+          try {
+            localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+          } catch {}
+          this.notifyChange('orders', {
+            action: 'new_order',
+            order,
+            source: 'supabase_broadcast',
+            timestamp: payload.timestamp || Date.now()
+          });
         })
         .on('broadcast', { event: 'stop_alarm' }, (event) => {
           const payload = event?.payload || {};
@@ -3390,25 +3387,11 @@ class QuickBiteDataService {
         })
         .on('broadcast', { event: 'settings_updated' }, (event) => {
           const payload = event?.payload || {};
-          console.log('[Supabase Realtime] Received cross-device settings_updated broadcast:', payload);
-          if (payload.settings) {
-            try {
-              const current = this.getSettings();
-              const merged = { ...current, ...payload.settings };
-              localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
-              if (payload.settings.payoutConfig && typeof payload.settings.payoutConfig === 'object') {
-                localStorage.setItem('quickbite_payout_config', JSON.stringify(payload.settings.payoutConfig));
-                if (payload.settings.kmPayoutRate) {
-                  localStorage.setItem('quickbite_owner_km_rate', String(payload.settings.kmPayoutRate));
-                }
-                this.notifyChange('payout_config_updated', payload.settings.payoutConfig);
-                this.notifyChange('km_rate_updated', { rate: payload.settings.kmPayoutRate || payload.settings.payoutConfig?.flatLinear?.ratePerKm });
-              }
-              this.notifyChange('settings', { settings: merged, source: 'supabase_broadcast' });
-            } catch (err) {
-              console.warn('[DataService] Error applying remote settings broadcast:', err);
-            }
-          }
+          console.log('[Supabase Realtime] Received cross-device settings_updated broadcast notification');
+          // Security Hardening: Fetch authoritative settings from backend rather than blindly trusting unauthenticated broadcast payload
+          this.syncSettingsFromSupabase(true).catch(err => {
+            console.warn('[DataService] Error syncing authoritative settings after broadcast:', err);
+          });
         })
         .on('broadcast', { event: 'order_status_updated' }, (event) => {
           const payload = event?.payload || {};
@@ -3423,13 +3406,14 @@ class QuickBiteDataService {
               orders[idx].statusLabel = payload.statusLabel || STATUS_TO_LABEL_MAP[payload.status] || orders[idx].statusLabel;
               orders[idx].stepIndex = payload.stepIndex !== undefined ? payload.stepIndex : (STATUS_TO_STEP_INDEX[payload.status] ?? orders[idx].stepIndex);
               orders[idx].eta = payload.eta || orders[idx].eta;
+              // Security Hardening: Never allow unauthenticated broadcast to mutate financial, total, or payment invariants
               if (payload.order && typeof payload.order === 'object') {
-                Object.assign(orders[idx], payload.order);
+                const safeAllowedProps = ['status', 'statusLabel', 'stepIndex', 'eta', 'cancellationReason', 'deliveredAt'];
+                for (const key of safeAllowedProps) {
+                  if (payload.order[key] !== undefined) orders[idx][key] = payload.order[key];
+                }
               }
               this.saveOrders(orders, { action: 'status_updated', orderId: payload.orderId, order: orders[idx], prevStatus, source: 'supabase_broadcast', timestamp: payload.timestamp || Date.now() });
-            } else if (payload.order) {
-              orders.unshift(payload.order);
-              this.saveOrders(orders, { action: 'status_updated', orderId: payload.orderId, order: payload.order, prevStatus: payload.prevStatus, source: 'supabase_broadcast', timestamp: payload.timestamp || Date.now() });
             }
           }
         })
@@ -3875,7 +3859,31 @@ class QuickBiteDataService {
                 const cleanId = String(orderData.id || '').replace(/^#/, '');
                 const hashId = `#${cleanId}`;
 
-                if (supabase) {
+                let orderActionSuccess = false;
+                try {
+                  const res = await this._orderAction('update_status', {
+                    orderId: orderData.id,
+                    status: orderData.status,
+                    stepIndex: typeof orderData.stepIndex === 'number' ? orderData.stepIndex : 0,
+                    statusLabel: orderData.statusLabel || 'Accepted',
+                    eta: orderData.eta || '20 - 30 Minutes',
+                    deliveredAt: orderData.deliveredAt ? Number(orderData.deliveredAt) : undefined,
+                    cancellationReason: orderData.cancellationReason,
+                    cashCollected: typeof orderData.cashCollected === 'number' ? orderData.cashCollected : orderData.cash_collected,
+                    paymentStatus: orderData.paymentStatus,
+                    doorstepUpi: orderData.doorstepUpi,
+                    isPaidOnline: orderData.isPaidOnline
+                  });
+                  if (res && (res.success || res.order)) {
+                    orderActionSuccess = true;
+                    delete orderData.pendingStatusSync;
+                    anySynced = true;
+                  }
+                } catch (actionErr) {
+                  // Fall through to supabase fallback below
+                }
+
+                if (!orderActionSuccess && supabase) {
                   const query = supabase.from('orders')
                     .update(fullPayload)
                     .or(`id.eq.${cleanId},id.eq.${hashId}`)
@@ -4554,7 +4562,7 @@ class QuickBiteDataService {
     if (typeof sessionStorage !== 'undefined') {
       token = isOwnerAction
         ? (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token'))
-        : (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'));
+        : (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_rider_token'));
     }
 
     if (!token && typeof ensureAdminToken === 'function') {
@@ -4564,7 +4572,7 @@ class QuickBiteDataService {
     }
 
     if (!token && typeof sessionStorage !== 'undefined') {
-      token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token');
+      token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token');
     }
 
     if (!token) throw new Error('Unauthorized: Staff or Owner session required');
@@ -6366,10 +6374,7 @@ class QuickBiteDataService {
         }
       };
 
-      doUpdate(orderId).then(() => {
-        const altId = orderId.startsWith('#') ? cleanId : hashId;
-        doUpdate(altId);
-      }).catch(() => {
+      doUpdate(orderId).catch(() => {
         order.pendingStatusSync = true;
         this.saveOrders(list);
       });
@@ -6474,18 +6479,33 @@ class QuickBiteDataService {
       const o = list[idx];
       const updatePayload = {
         status: o.status,
+        stepIndex: o.stepIndex,
         step_index: o.stepIndex,
+        statusLabel: o.statusLabel,
         status_label: o.statusLabel,
         eta: o.eta
       };
-      if (o.cancellationReason) updatePayload.cancellation_reason = o.cancellationReason;
-      if (o.deliveredAt) updatePayload.delivered_at = Number(o.deliveredAt);
+      if (o.cancellationReason) {
+        updatePayload.cancellationReason = o.cancellationReason;
+        updatePayload.cancellation_reason = o.cancellationReason;
+      }
+      if (o.deliveredAt) {
+        updatePayload.deliveredAt = Number(o.deliveredAt);
+        updatePayload.delivered_at = Number(o.deliveredAt);
+      }
       this._orderAction('update_status', {
         orderId,
         ...updatePayload
       }).catch(() => {
         if (supabase) {
-          Promise.resolve(supabase.from('orders').update(updatePayload).eq('id', orderId)).catch(() => {});
+          Promise.resolve(supabase.from('orders').update({
+            status: o.status,
+            step_index: o.stepIndex,
+            status_label: o.statusLabel,
+            eta: o.eta,
+            ...(o.cancellationReason ? { cancellation_reason: o.cancellationReason } : {}),
+            ...(o.deliveredAt ? { delivered_at: Number(o.deliveredAt) } : {})
+          }).eq('id', orderId)).catch(() => {});
         }
       });
     } catch (e) {}
@@ -6958,7 +6978,7 @@ class QuickBiteDataService {
 
       // Guest mode (unauthenticated or initial page load before auth finishes)
       const guestAddrs = list.filter(a => !a.userId && !a.userEmail);
-      return guestAddrs.length > 0 ? guestAddrs : list;
+      return guestAddrs;
     } catch {
       return [];
     }
@@ -6978,9 +6998,9 @@ class QuickBiteDataService {
         area: addr.details || addr.area || 'Ramanagara',
         city: addr.city || 'Ramanagara',
         pincode: addr.pincode || '',
-        lat: Number(addr.lat) || RESTAURANT_COORDINATES.lat,
-        lng: Number(addr.lng) || RESTAURANT_COORDINATES.lng,
-        distance_km: Number(addr.distanceKm) || 0,
+        lat: (addr.lat !== null && addr.lat !== undefined && !isNaN(Number(addr.lat)) && Number(addr.lat) !== 0) ? Number(addr.lat) : null,
+        lng: (addr.lng !== null && addr.lng !== undefined && !isNaN(Number(addr.lng)) && Number(addr.lng) !== 0) ? Number(addr.lng) : null,
+        distance_km: (addr.distanceKm !== null && addr.distanceKm !== undefined && !isNaN(Number(addr.distanceKm))) ? Number(addr.distanceKm) : null,
         is_default: Boolean(addr.isDefault)
       };
 
@@ -6999,10 +7019,19 @@ class QuickBiteDataService {
   saveUserAddress(addressData) {
     const list = this.getAllAddressesRaw();
     const id = addressData.id || `addr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const lat = Number(addressData.lat) || RESTAURANT_COORDINATES.lat;
-    const lng = Number(addressData.lng) || RESTAURANT_COORDINATES.lng;
-    const explicitDist = addressData.distanceKm ? Number(addressData.distanceKm) : null;
-    const distanceKm = (explicitDist && explicitDist > 0) ? explicitDist : (this.calculateDistanceToRestaurant(lat, lng) ?? 0);
+    const hasLat = addressData.lat !== undefined && addressData.lat !== null && !isNaN(Number(addressData.lat));
+    const hasLng = addressData.lng !== undefined && addressData.lng !== null && !isNaN(Number(addressData.lng));
+    const numLat = hasLat ? Number(addressData.lat) : null;
+    const numLng = hasLng ? Number(addressData.lng) : null;
+    const isUnpinned = numLat === null || numLng === null || (numLat === 0 && numLng === 0);
+    const lat = isUnpinned ? null : numLat;
+    const lng = isUnpinned ? null : numLng;
+    const explicitDist = (addressData.distanceKm !== undefined && addressData.distanceKm !== null && addressData.distanceKm !== '')
+      ? Number(addressData.distanceKm)
+      : null;
+    const distanceKm = (explicitDist !== null && !isNaN(explicitDist) && explicitDist > 0)
+      ? explicitDist
+      : (!isUnpinned ? (this.calculateDistanceToRestaurant(lat, lng) ?? null) : null);
 
     const userAddresses = this.getUserAddresses(addressData.userId, addressData.userEmail);
     const isFirst = userAddresses.length === 0;
@@ -7025,7 +7054,7 @@ class QuickBiteDataService {
       fullText: (addressData.fullText || addressData.details || `${addressData.flatNo || addressData.street || ''}, ${addressData.area || ''}`).trim(),
       lat,
       lng,
-      distanceKm: Number(distanceKm) || 0,
+      distanceKm: distanceKm !== null && !isNaN(distanceKm) ? Number(distanceKm) : null,
       isDefault: Boolean(isDefault),
       updatedAt: Date.now()
     };
@@ -7048,7 +7077,9 @@ class QuickBiteDataService {
     }
 
     try {
-      localStorage.setItem(STORAGE_KEYS.ADDRESSES, JSON.stringify(updatedList));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.ADDRESSES, JSON.stringify(updatedList));
+      }
     } catch (e) {
       console.warn('Could not save address to localStorage:', e);
     }
@@ -7288,7 +7319,7 @@ class QuickBiteDataService {
   async syncRidersFromSupabase() {
     try {
       let rawRiders = null;
-      if (this.isStaffAuthorized()) {
+      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('quickbite_rider_token'))) {
         try {
           const res = await this._adminStoreAction('list_riders');
           if (res && res.success && Array.isArray(res.riders)) {
@@ -7761,10 +7792,7 @@ class QuickBiteDataService {
         }
       };
 
-      doUpdate(order.id).then(() => {
-        const altId = String(order.id || '').startsWith('#') ? cleanId : hashId;
-        doUpdate(altId);
-      }).catch(() => {
+      doUpdate(order.id).catch(() => {
         order.pendingStatusSync = true;
         this.saveOrders(this.getOrders());
       });

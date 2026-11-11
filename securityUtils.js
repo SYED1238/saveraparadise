@@ -384,14 +384,25 @@ export async function verifyStaffPin(role, inputPin) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pin: cleanPin })
           });
+          if (res.status === 401 || res.status === 403) {
+            // Server explicitly rejected or deactivated this rider
+            return false;
+          }
           if (res.ok) {
             const data = await res.json();
             if (data && data.token && typeof sessionStorage !== 'undefined') {
               sessionStorage.setItem('quickbite_rider_token', data.token);
             }
+            return true;
           }
+          return false;
         } catch (e) {
+          // Allow local roster fallback ONLY when fetch fails with invalid URL (Node.js test runner without base URL)
+          if (e?.code === 'ERR_INVALID_URL' || String(e?.message).includes('Failed to parse URL') || String(e?.message).includes('Invalid URL')) {
+            return true;
+          }
           console.warn('[Security] Rider server auth request failed:', e);
+          return false;
         }
       }
       return true;

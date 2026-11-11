@@ -59,6 +59,8 @@ export async function onRequest(context) {
     );
   }
 
+  const userRole = auth.payload?.role;
+
   // 2. Parse payload
   let body = {};
   try {
@@ -73,10 +75,10 @@ export async function onRequest(context) {
   }
 
   // Role Gate: Clearing orders requires Executive Owner session; saving store settings requires Staff or Owner session
-  if (action === 'clear_orders' && auth.payload?.role !== 'owner') {
+  if (action === 'clear_orders' && userRole !== 'owner') {
     return jsonResponse({ error: `Forbidden: Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
-  if (action === 'save_settings' && auth.payload?.role !== 'owner' && auth.payload?.role !== 'admin') {
+  if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
     return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
 
@@ -110,7 +112,16 @@ export async function onRequest(context) {
         if (!/^\d{4,6}$/.test(pin)) {
           return jsonResponse({ error: 'PIN must be 4 to 6 digits' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        return jsonResponse({ success: true, rider: { ...rawRider, pin } }, 200, Object.fromEntries(corsHeaders.entries()));
+        const mappedRider = {
+          ...rawRider,
+          pin,
+          avatar_img: rawRider.avatarImg || rawRider.avatar_img || '/avatars/rider-1.svg',
+          upi_vpa: rawRider.upiVpa || rawRider.upi_vpa || null,
+          bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
+          bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
+          payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash'
+        };
+        return jsonResponse({ success: true, rider: mappedRider }, 200, Object.fromEntries(corsHeaders.entries()));
       }
       if (action === 'delete_rider') {
         const pin = String(body.pin || '').trim();
@@ -324,6 +335,7 @@ export async function onRequest(context) {
         }
 
         const originalPin = body.originalPin ? String(body.originalPin).trim() : null;
+
         if (originalPin && originalPin !== pin) {
           await sb.from('riders').delete().eq('pin', originalPin);
         }
@@ -336,13 +348,13 @@ export async function onRequest(context) {
           vehicle: rawRider.vehicle ? String(rawRider.vehicle).trim() : 'Bike',
           status: ['online', 'offline', 'inactive'].includes(rawRider.status) ? rawRider.status : 'online',
           avatar: rawRider.avatar || '🏍️',
-          avatar_img: rawRider.avatar_img || '/avatars/rider-1.svg',
+          avatar_img: rawRider.avatarImg || rawRider.avatar_img || '/avatars/rider-1.svg',
           earnings: Number(rawRider.earnings) || 0,
           trips: Number(rawRider.trips) || 0,
-          upi_vpa: rawRider.upi_vpa || null,
-          bank_account_no: rawRider.bank_account_no || null,
-          bank_ifsc: rawRider.bank_ifsc || null,
-          payout_method_pref: rawRider.payout_method_pref || 'cash',
+          upi_vpa: rawRider.upiVpa || rawRider.upi_vpa || null,
+          bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
+          bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
+          payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
           cash_settled_at: rawRider.cashSettledAt ?? rawRider.cash_settled_at ?? null,
           payout_paid_at: rawRider.payoutPaidAt ?? rawRider.payout_paid_at ?? null,
           payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid) || 0
@@ -353,7 +365,13 @@ export async function onRequest(context) {
           .upsert([sanitizedRider], { onConflict: 'pin' })
           .select();
         if (error) throw error;
-        return jsonResponse({ success: true, rider: data && data.length > 0 ? data[0] : sanitizedRider }, 200, Object.fromEntries(corsHeaders.entries()));
+        const returnRider = {
+          ...(data && data.length > 0 ? data[0] : sanitizedRider),
+          ...(rawRider.cashHandoverStatus ? { cashHandoverStatus: rawRider.cashHandoverStatus } : {}),
+          ...(rawRider.cashHandoverAmount ? { cashHandoverAmount: rawRider.cashHandoverAmount } : {}),
+          ...(rawRider.cashHandoverRequestedAt ? { cashHandoverRequestedAt: rawRider.cashHandoverRequestedAt } : {})
+        };
+        return jsonResponse({ success: true, rider: returnRider }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       case 'delete_rider': {

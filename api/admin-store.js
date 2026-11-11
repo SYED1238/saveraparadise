@@ -68,6 +68,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: auth?.error || 'Unauthorized: Admin or Owner session required' });
   }
 
+  const userRole = auth.payload?.role;
+
   const body = req.body || {};
   const action = String(body.action || '').trim();
   if (!action) {
@@ -75,10 +77,10 @@ export default async function handler(req, res) {
   }
 
   // Role Gate: Clearing orders requires Executive Owner session; saving store settings requires Staff or Owner session
-  if (action === 'clear_orders' && auth.payload?.role !== 'owner') {
+  if (action === 'clear_orders' && userRole !== 'owner') {
     return res.status(403).json({ error: `Forbidden: Owner role required for ${action}` });
   }
-  if (action === 'save_settings' && auth.payload?.role !== 'owner' && auth.payload?.role !== 'admin') {
+  if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
     return res.status(403).json({ error: `Forbidden: Staff or Owner role required for ${action}` });
   }
 
@@ -109,7 +111,16 @@ export default async function handler(req, res) {
         if (!/^\d{4,6}$/.test(pin)) {
           return res.status(400).json({ error: 'PIN must be 4 to 6 digits' });
         }
-        return res.status(200).json({ success: true, rider: { ...rawRider, pin } });
+        const mappedRider = {
+          ...rawRider,
+          pin,
+          avatar_img: rawRider.avatarImg || rawRider.avatar_img || '/avatars/rider-1.svg',
+          upi_vpa: rawRider.upiVpa || rawRider.upi_vpa || null,
+          bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
+          bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
+          payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash'
+        };
+        return res.status(200).json({ success: true, rider: mappedRider });
       }
       if (action === 'delete_rider') {
         const pin = String(body.pin || '').trim();
@@ -328,13 +339,13 @@ export default async function handler(req, res) {
           vehicle: rawRider.vehicle ? String(rawRider.vehicle).trim() : 'Bike',
           status: ['online', 'offline', 'inactive'].includes(rawRider.status) ? rawRider.status : 'online',
           avatar: rawRider.avatar || '🏍️',
-          avatar_img: rawRider.avatar_img || '/avatars/rider-1.svg',
+          avatar_img: rawRider.avatarImg || rawRider.avatar_img || '/avatars/rider-1.svg',
           earnings: Number(rawRider.earnings) || 0,
           trips: Number(rawRider.trips) || 0,
-          upi_vpa: rawRider.upi_vpa || null,
-          bank_account_no: rawRider.bank_account_no || null,
-          bank_ifsc: rawRider.bank_ifsc || null,
-          payout_method_pref: rawRider.payout_method_pref || 'cash',
+          upi_vpa: rawRider.upiVpa || rawRider.upi_vpa || null,
+          bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
+          bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
+          payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
           cash_settled_at: rawRider.cashSettledAt ?? rawRider.cash_settled_at ?? null,
           payout_paid_at: rawRider.payoutPaidAt ?? rawRider.payout_paid_at ?? null,
           payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid) || 0
@@ -345,7 +356,13 @@ export default async function handler(req, res) {
           .upsert([sanitizedRider], { onConflict: 'pin' })
           .select();
         if (error) throw error;
-        return res.status(200).json({ success: true, rider: data && data.length > 0 ? data[0] : sanitizedRider });
+        const returnRider = {
+          ...(data && data.length > 0 ? data[0] : sanitizedRider),
+          ...(rawRider.cashHandoverStatus ? { cashHandoverStatus: rawRider.cashHandoverStatus } : {}),
+          ...(rawRider.cashHandoverAmount ? { cashHandoverAmount: rawRider.cashHandoverAmount } : {}),
+          ...(rawRider.cashHandoverRequestedAt ? { cashHandoverRequestedAt: rawRider.cashHandoverRequestedAt } : {})
+        };
+        return res.status(200).json({ success: true, rider: returnRider });
       }
 
       case 'delete_rider': {

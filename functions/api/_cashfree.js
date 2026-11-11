@@ -205,6 +205,16 @@ function safeCompare(a, b) {
 
 export function verifyCashfreeWebhookSignature(signature, rawBody, timestamp, env = null) {
   const cfg = getCashfreeConfig(env);
+
+  // Replay Protection: Reject webhooks older than 5 minutes
+  const tsNum = Number(timestamp);
+  if (Number.isFinite(tsNum) && tsNum > 1000000000) {
+    const tsMs = tsNum < 10000000000 ? tsNum * 1000 : tsNum;
+    if (Math.abs(Date.now() - tsMs) > 5 * 60 * 1000) {
+      return false;
+    }
+  }
+
   if (!cfg.webhookSecret || !signature || !timestamp || !rawBody) {
     if ((typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') || cfg.isProd) {
       return false;

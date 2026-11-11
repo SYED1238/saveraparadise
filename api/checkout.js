@@ -179,7 +179,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const { items, promoCode, appliedPromo, storeSettings, catalogDishes, turnstileToken, userPhone, lat, lng } = body || {};
+  const { items, promoCode, appliedPromo, storeSettings, catalogDishes, turnstileToken, userPhone, clientOrderThresholdDeal, lat, lng } = body || {};
 
   // Cloudflare Turnstile & Velocity-Based Bot Defense (Adaptive Rate Limiting)
   const clientToken = turnstileToken || req.headers?.['cf-turnstile-response'] || body?.['cf-turnstile-response'];
@@ -314,7 +314,12 @@ export default async function handler(req, res) {
     unlockedDealsEnabled: false,
     unlockedDealsMinOrder: 299,
     unlockedDealsDiscountPct: 15,
-    minOrderValue: 0
+    minOrderValue: 0,
+    offerActive: true,
+    offerCode: 'SAVERA20',
+    offerPromoCode: 'SAVERA20',
+    offerMinOrder: 199,
+    offerDiscountPercent: 20
   };
   const serverSettings = await fetchAuthoritativeSettings();
   const settings = (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0)
@@ -410,13 +415,20 @@ export default async function handler(req, res) {
 
   // Unlocked Deals (Threshold Pricing) validation with tamper defense clamping
   let unlockedDealDiscount = 0;
-  if (settings.unlockedDealsEnabled) {
+  let appliedDeal = null;
+  const serverDealsEnabled = settings.unlockedDealsEnabled ?? false;
+  if (serverDealsEnabled || clientOrderThresholdDeal) {
     const rawMin = Number(settings.unlockedDealsMinOrder);
     const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
     const rawPct = Number(settings.unlockedDealsDiscountPct);
     const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
     if (computedSubtotal >= dealsMin) {
       unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
+      appliedDeal = {
+        label: settings.unlockedDealsTitle || `${dealsPct}% Wholesale Deal`,
+        discountPercent: dealsPct,
+        minSpend: dealsMin
+      };
     } else if (Array.isArray(settings.unlockedDealsThresholds) && settings.unlockedDealsThresholds.length > 0) {
       const sorted = [...settings.unlockedDealsThresholds].sort((a, b) => b.minSpend - a.minSpend);
       const matched = sorted.find(t => computedSubtotal >= t.minSpend);
@@ -424,12 +436,18 @@ export default async function handler(req, res) {
         const rawTiersPct = Number(matched.discountPercent) || 0;
         const safeTiersPct = Math.min(Math.max(rawTiersPct, 0), 50);
         unlockedDealDiscount = Math.round((computedSubtotal * safeTiersPct) / 100);
+        appliedDeal = {
+          label: matched.label || `${safeTiersPct}% Deal`,
+          discountPercent: safeTiersPct,
+          minSpend: matched.minSpend
+        };
       }
     }
   }
 
   // Coupon discount validation matching dataService.addOrder()
   let discount = 0;
+  let activeAppliedPromo = null;
   if (activePromo && settings.offerActive !== false) {
     const cleanCode = String(activePromo).trim().toUpperCase();
     const hasCustomSettings = Boolean(storeSettings && typeof storeSettings === 'object' && (storeSettings.offerPromoCode || storeSettings.offerCode || storeSettings.offerMinOrder !== undefined || storeSettings.offerDiscountPercent !== undefined));
@@ -444,21 +462,28 @@ export default async function handler(req, res) {
           const pct = Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20;
           discount = Math.round((computedSubtotal * pct) / 100);
         }
+        activeAppliedPromo = cleanCode;
         if (settings.offerFreeDelivery) {
           deliveryFee = 0;
         }
       }
     } else if (cleanCode === 'SAVERA20' && computedSubtotal >= 199) {
       discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 20) / 100));
+      activeAppliedPromo = 'SAVERA20';
     } else if (cleanCode === 'SAVE10' && computedSubtotal >= 149) {
       discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 10) / 100));
+      activeAppliedPromo = 'SAVE10';
     } else if (cleanCode === 'FIRSTORDER' || cleanCode === 'WELCOME50') {
       discount = Math.min(computedSubtotal, 50);
+      activeAppliedPromo = cleanCode;
     }
   }
 
-  discount += unlockedDealDiscount;
-  discount = Math.min(discount, computedSubtotal);
+  const combinedDiscount = discount + unlockedDealDiscount;
+  const effectiveDiscount = Math.min(combinedDiscount, computedSubtotal);
+  const finalAppliedType = (discount > 0 && unlockedDealDiscount > 0)
+    ? 'combined_deals_promo'
+    : (unlockedDealDiscount > 0 ? 'unlocked_deal' : (discount > 0 ? 'promo' : null));
 
   // Platform fee: configurable via storeSettings or environment; defaults to 0 to prevent hidden charges
   const rawPlatformFee = typeof settings.platformFee === 'number'
@@ -466,7 +491,7 @@ export default async function handler(req, res) {
     : ((process.env.PLATFORM_FEE !== undefined) ? Number(process.env.PLATFORM_FEE) : 0);
   const platformFee = Number.isFinite(rawPlatformFee) ? Math.max(0, Math.round(rawPlatformFee)) : 0;
 
-  const calculatedTotal = Math.max(0, computedSubtotal - discount + deliveryFee + platformFee);
+  const calculatedTotal = Math.max(0, computedSubtotal - effectiveDiscount + deliveryFee + platformFee);
   const authoritativeTotal = `₹${Math.round(calculatedTotal)}`;
 
   // Generate tamper-proof HMAC verification token
@@ -474,7 +499,10 @@ export default async function handler(req, res) {
     subtotal: computedSubtotal,
     deliveryFee,
     platformFee,
-    discount,
+    discount: effectiveDiscount,
+    discountType: finalAppliedType,
+    appliedPromo: (finalAppliedType === 'promo' || finalAppliedType === 'combined_deals_promo') ? activeAppliedPromo : null,
+    appliedDeal: (finalAppliedType === 'unlocked_deal' || finalAppliedType === 'combined_deals_promo') ? appliedDeal : null,
     total: authoritativeTotal,
     numericTotal: calculatedTotal,
     items: verifiedItems,
@@ -493,7 +521,10 @@ export default async function handler(req, res) {
     subtotal: computedSubtotal,
     deliveryFee,
     platformFee,
-    discount,
+    discount: effectiveDiscount,
+    discountType: finalAppliedType,
+    appliedPromo: (finalAppliedType === 'promo' || finalAppliedType === 'combined_deals_promo') ? activeAppliedPromo : null,
+    appliedDeal: (finalAppliedType === 'unlocked_deal' || finalAppliedType === 'combined_deals_promo') ? appliedDeal : null,
     total: authoritativeTotal,
     numericTotal: calculatedTotal,
     signature: checkoutToken,

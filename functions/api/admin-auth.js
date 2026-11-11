@@ -98,15 +98,18 @@ export async function onRequest(context) {
           try {
             const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
             if (payload && (payload.role === 'admin' || payload.role === 'owner' || payload.role === 'rider')) {
-              const extraPayload = (payload.role === 'rider' && payload.riderPin) ? { riderPin: payload.riderPin } : {};
-              const refreshedToken = createAdminToken(undefined, payload.role, env, extraPayload);
-              return jsonResponse({
-                success: true,
-                token: refreshedToken,
-                role: payload.role,
-                ...(payload.riderPin ? { riderPin: payload.riderPin } : {}),
-                expiresIn: 43200
-              }, 200, Object.fromEntries(corsHeaders.entries()));
+              const maxRefreshAge = 24 * 60 * 60 * 1000;
+              if (payload.iat && (Date.now() - payload.iat < maxRefreshAge)) {
+                const extraPayload = (payload.role === 'rider' && payload.riderPin) ? { riderPin: payload.riderPin } : {};
+                const refreshedToken = createAdminToken(undefined, payload.role, env, extraPayload);
+                return jsonResponse({
+                  success: true,
+                  token: refreshedToken,
+                  role: payload.role,
+                  ...(payload.riderPin ? { riderPin: payload.riderPin } : {}),
+                  expiresIn: 43200
+                }, 200, Object.fromEntries(corsHeaders.entries()));
+              }
             }
           } catch {}
         }

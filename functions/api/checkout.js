@@ -222,7 +222,12 @@ export async function onRequest(context) {
       unlockedDealsEnabled: false,
       unlockedDealsMinOrder: 299,
       unlockedDealsDiscountPct: 15,
-      minOrderValue: 0
+      minOrderValue: 0,
+      offerActive: true,
+      offerCode: 'SAVERA20',
+      offerPromoCode: 'SAVERA20',
+      offerMinOrder: 199,
+      offerDiscountPercent: 20
     };
 
     const storeSettings = (authoritativeSettings && typeof authoritativeSettings === 'object' && Object.keys(authoritativeSettings).length > 0)
@@ -366,6 +371,10 @@ export async function onRequest(context) {
         authoritativePrice = clientPrice;
       }
 
+      if (authoritativePrice < 10) {
+        return jsonResponse({ error: `Item "${item.name || 'dish'}" has an invalid price (must be at least ₹10)` }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+
       // Aggregate quantity check per dish
       const aggregateKey = itemId || String(item.name || 'dish');
       const curQty = (dishQtyMap.get(aggregateKey) || 0) + quantity;
@@ -401,9 +410,10 @@ export async function onRequest(context) {
 
     const isOfferActive = storeSettings?.offerActive !== false;
     const configuredCode = String(storeSettings?.offerCode || storeSettings?.offerPromoCode || 'SAVERA20').trim().toUpperCase();
+    const activePromo = promoCode || body?.appliedPromo || null;
 
-    if (promoCode && typeof promoCode === 'string' && isOfferActive) {
-      const code = promoCode.trim().toUpperCase();
+    if (activePromo && typeof activePromo === 'string' && isOfferActive) {
+      const code = activePromo.trim().toUpperCase();
       if (code === configuredCode) {
         const discountType = storeSettings?.offerDiscountType || 'percent';
         const rawPct = Number(storeSettings?.offerDiscountPercent);
@@ -411,7 +421,7 @@ export async function onRequest(context) {
         const discountAmt = Math.max(0, Number(storeSettings?.offerDiscountAmount || 50));
         const minOrder = (storeSettings?.offerMinOrder !== undefined && storeSettings?.offerMinOrder !== null)
           ? Number(storeSettings.offerMinOrder)
-          : 0;
+          : 199;
         if (subtotal >= minOrder) {
           discount = (discountType === 'flat' || discountType === 'fixed' || discountType === 'amount')
             ? Math.min(subtotal, discountAmt)

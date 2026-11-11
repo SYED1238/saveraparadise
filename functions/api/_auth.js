@@ -172,10 +172,24 @@ export function getPinRole(inputPin, env = null) {
   if (expectedOwnerPin && safeEqual(cleanPin, expectedOwnerPin)) {
     return 'owner';
   }
+  const envOwnerHash = (env && env.OWNER_PIN_HASH) || (typeof process !== 'undefined' && process.env && process.env.OWNER_PIN_HASH);
+  if (envOwnerHash) {
+    const hash = crypto.createHash('sha256').update(`quickbite_salt_${cleanPin}`).digest('hex');
+    if (safeEqual(hash, String(envOwnerHash).trim())) {
+      return 'owner';
+    }
+  }
 
   const expectedAdminPin = getAdminPin(env);
   if (expectedAdminPin && safeEqual(cleanPin, expectedAdminPin)) {
     return 'admin';
+  }
+  const envAdminHash = (env && env.ADMIN_PIN_HASH) || (typeof process !== 'undefined' && process.env && process.env.ADMIN_PIN_HASH);
+  if (envAdminHash) {
+    const hash = crypto.createHash('sha256').update(`quickbite_salt_${cleanPin}`).digest('hex');
+    if (safeEqual(hash, String(envAdminHash).trim())) {
+      return 'admin';
+    }
   }
 
   // Check Fleet Delivery Rider PIN

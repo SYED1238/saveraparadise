@@ -50,7 +50,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-key');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-key, x-filename');
     return res.status(200).end();
   }
 

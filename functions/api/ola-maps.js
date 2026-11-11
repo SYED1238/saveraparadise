@@ -89,7 +89,10 @@ export async function onRequest(context) {
     if (OLA_API_KEY) {
       try {
         const tileUrl = `https://api.olamaps.io/tiles/vector/v1/styles/default-light-standard/${parsedZ}/${parsedX}/${parsedY}.png?api_key=${encodeURIComponent(OLA_API_KEY)}`;
-        const response = await fetch(tileUrl, { headers: { 'Accept': 'image/png' } });
+        const response = await fetch(tileUrl, {
+          headers: { 'Accept': 'image/png' },
+          signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(5000) : undefined
+        });
         if (response.ok) {
           return new Response(response.body, { status: 200, headers: tileHeaders });
         }
@@ -100,7 +103,8 @@ export async function onRequest(context) {
 
     try {
       const fallbackRes = await fetch(`https://tile.openstreetmap.org/${parsedZ}/${parsedX}/${parsedY}.png`, {
-        headers: { 'User-Agent': 'SaveraParadise/1.0' }
+        headers: { 'User-Agent': 'SaveraParadise/1.0' },
+        signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(4000) : undefined
       });
       if (fallbackRes.ok) {
         return new Response(fallbackRes.body, { status: 200, headers: tileHeaders });
