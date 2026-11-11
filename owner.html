@@ -141,38 +141,77 @@
           <span id="owner-live-clock">--:-- --</span>
         </div>
 
-        <!-- Sound & Alert Status Button -->
-        <button type="button" class="btn-owner-action" id="btn-owner-sound-test" title="Test Executive Alert Sounds">
-          <i class="fa-solid fa-bell" id="owner-sound-icon"></i>
-          <span class="hide-mobile" id="owner-sound-text">Alerts: Active</span>
-        </button>
+        <!-- Header Actions Dropdown Menu (3-Bars / 3-Dots Menu) -->
+        <div class="owner-menu-dropdown-wrap" id="owner-menu-dropdown-wrap">
+          <button type="button" class="btn-owner-menu-toggle" id="btn-owner-menu-toggle" aria-expanded="false" aria-haspopup="true" aria-label="Open Actions Menu" title="Quick Actions & Reports">
+            <i class="fa-solid fa-bars" id="owner-menu-icon"></i>
+          </button>
 
-        <!-- Calendar & Date Reports Quick Action -->
-        <button type="button" class="btn-owner-action btn-calendar-highlight" id="btn-owner-calendar" title="Open Sales Calendar & Historical Reports">
-          <i class="fa-solid fa-calendar-days"></i>
-          <span class="hide-mobile">Calendar & Reports</span>
-        </button>
+          <div class="owner-menu-dropdown" id="owner-menu-dropdown" style="display: none;" role="menu" aria-label="Owner Quick Actions">
+            <div class="owner-menu-dropdown-header">
+              <span class="omd-title">Executive Actions</span>
+              <span class="omd-badge"><i class="fa-solid fa-crown"></i> Owner</span>
+            </div>
 
-        <!-- Quick Action Buttons -->
-        <button type="button" class="btn-owner-action" id="btn-owner-refresh" title="Refresh Live Data">
-          <i class="fa-solid fa-rotate"></i>
-          <span class="hide-mobile">Refresh</span>
-        </button>
+            <div class="owner-menu-dropdown-list">
+              <!-- 1. Refresh Live Data -->
+              <button type="button" class="owner-dropdown-item" id="btn-owner-refresh" role="menuitem">
+                <div class="odi-icon odi-blue"><i class="fa-solid fa-rotate"></i></div>
+                <div class="odi-text">
+                  <span class="odi-title">Refresh Live Data</span>
+                  <span class="odi-desc">Sync orders, riders & counter cash</span>
+                </div>
+              </button>
 
-        <button type="button" class="btn-owner-action" id="btn-owner-print" title="Print Executive Daily/Weekly Statement">
-          <i class="fa-solid fa-print"></i>
-          <span class="hide-mobile">Print Report</span>
-        </button>
+              <!-- 2. Calendar & Sales Reports -->
+              <button type="button" class="owner-dropdown-item" id="btn-owner-calendar" role="menuitem">
+                <div class="odi-icon odi-amber"><i class="fa-solid fa-calendar-days"></i></div>
+                <div class="odi-text">
+                  <span class="odi-title">Calendar & Reports</span>
+                  <span class="odi-desc">Sales audits & date-range reports</span>
+                </div>
+              </button>
 
-        <button type="button" class="btn-owner-action" id="btn-owner-export-csv" title="Export Orders & Financials to CSV">
-          <i class="fa-solid fa-file-csv"></i>
-          <span class="hide-mobile">Export CSV</span>
-        </button>
+              <!-- 3. Print Daily Statement -->
+              <button type="button" class="owner-dropdown-item" id="btn-owner-print" role="menuitem">
+                <div class="odi-icon odi-purple"><i class="fa-solid fa-print"></i></div>
+                <div class="odi-text">
+                  <span class="odi-title">Print Statement</span>
+                  <span class="odi-desc">Print daily or weekly report</span>
+                </div>
+              </button>
 
-        <button type="button" class="btn-owner-action btn-owner-lock" id="btn-owner-lock" title="Lock Owner Dashboard">
-          <i class="fa-solid fa-arrow-right-from-bracket"></i>
-          <span class="hide-mobile">Lock</span>
-        </button>
+              <!-- 4. Export Orders to CSV -->
+              <button type="button" class="owner-dropdown-item" id="btn-owner-export-csv" role="menuitem">
+                <div class="odi-icon odi-emerald"><i class="fa-solid fa-file-csv"></i></div>
+                <div class="odi-text">
+                  <span class="odi-title">Export CSV</span>
+                  <span class="odi-desc">Download financial ledger sheet</span>
+                </div>
+              </button>
+
+              <!-- 5. Sound & Alert Chimes -->
+              <button type="button" class="owner-dropdown-item" id="btn-owner-sound-test" role="menuitem" title="Test Executive Alert Sounds">
+                <div class="odi-icon odi-indigo"><i class="fa-solid fa-bell" id="owner-sound-icon"></i></div>
+                <div class="odi-text">
+                  <span class="odi-title" id="owner-sound-text">Alerts: Active</span>
+                  <span class="odi-desc">Test chime and push alerts</span>
+                </div>
+              </button>
+
+              <div class="owner-dropdown-divider"></div>
+
+              <!-- 6. Lock Owner Portal -->
+              <button type="button" class="owner-dropdown-item odi-danger" id="btn-owner-lock" role="menuitem" title="Lock Owner Dashboard">
+                <div class="odi-icon odi-rose"><i class="fa-solid fa-arrow-right-from-bracket"></i></div>
+                <div class="odi-text">
+                  <span class="odi-title">Lock Dashboard</span>
+                  <span class="odi-desc">Secure session with PIN</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -316,92 +355,118 @@
       </div>
 
       <!-- ========================================================== -->
-      <!-- SECTION B: EXECUTIVE FINANCIAL & OPERATIONAL KPIS          -->
+      <!-- SECTION B: EXECUTIVE FINANCIAL & OPERATIONAL OVERVIEW      -->
       <!-- ========================================================== -->
-      <section class="owner-kpi-grid" id="owner-kpi-grid">
-        <!-- 1. Total Sales -->
-        <article class="kpi-card card-revenue">
-          <div class="kpi-card-header">
-            <span class="kpi-icon-wrap icon-gold">
-              <i class="fa-solid fa-indian-rupee-sign"></i>
-            </span>
-            <span class="kpi-title">TOTAL SALES</span>
-          </div>
-          <div class="kpi-value-row">
-            <h2 class="kpi-main-num" id="kpi-total-revenue">₹0</h2>
-            <span class="kpi-tag success" id="kpi-delivered-revenue-tag">Delivered Orders</span>
-          </div>
-          <div class="kpi-sub-stats">
-            <span id="kpi-delivered-count">0 orders delivered</span>
-            <span class="kpi-dot">•</span>
-            <span id="kpi-aov">AOV: ₹0</span>
-          </div>
-        </article>
 
-        <!-- 2. Cash on Delivery (COD) -->
-        <article class="kpi-card card-cash">
-          <div class="kpi-card-header">
-            <span class="kpi-icon-wrap icon-amber">
-              <i class="fa-solid fa-money-bill-wave"></i>
-            </span>
-            <span class="kpi-title">COD CASH (DRAWER)</span>
+      <!-- 1. MASTER FINANCIAL HERO: Total Sales + 2 Payment Destinations (Parent & Children) -->
+      <section class="owner-revenue-hero-card kpi-card card-revenue" id="owner-revenue-hero-card">
+        <!-- Hero Header: Gross Sales & Real-time Order Summary -->
+        <div class="revenue-hero-main">
+          <div class="revenue-hero-left">
+            <div class="revenue-hero-badge-wrap">
+              <span class="kpi-icon-wrap icon-gold hero-gold-bubble">
+                <i class="fa-solid fa-indian-rupee-sign"></i>
+              </span>
+              <div>
+                <span class="revenue-hero-eyebrow">TOTAL SALES REVENUE</span>
+                <div class="revenue-hero-amount-row">
+                  <h2 class="kpi-main-num hero-sales-number" id="kpi-total-revenue">₹0</h2>
+                  <span class="kpi-tag success" id="kpi-delivered-revenue-tag">Delivered Orders</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="kpi-value-row">
-            <h2 class="kpi-main-num num-amber" id="kpi-cod-revenue">₹0</h2>
-            <span class="kpi-percent-chip" id="kpi-cod-percent">0% of Sales</span>
+          <div class="revenue-hero-right">
+            <div class="revenue-meta-pill">
+              <i class="fa-solid fa-circle-check text-emerald"></i>
+              <span id="kpi-delivered-count">0 orders delivered</span>
+            </div>
+            <div class="revenue-meta-pill">
+              <i class="fa-solid fa-chart-line text-blue"></i>
+              <span id="kpi-aov">AOV: ₹0</span>
+            </div>
           </div>
-          <div class="kpi-sub-stats">
-            <span id="kpi-cod-orders-count">0 cash orders</span>
-            <span class="kpi-dot">•</span>
-            <span>Physical Cash Collected</span>
-          </div>
-        </article>
+        </div>
 
-        <!-- 3. Online Payments -->
-        <article class="kpi-card card-online">
-          <div class="kpi-card-header">
-            <span class="kpi-icon-wrap icon-teal">
-              <i class="fa-solid fa-credit-card"></i>
-            </span>
-            <span class="kpi-title">ONLINE & UPI (BANK)</span>
+        <!-- Two Payment Channel Cards: Where the Money is Right Now -->
+        <div class="revenue-channels-row">
+          <!-- Channel 1: COD Cash Drawer -->
+          <div class="channel-tile kpi-card card-cash" id="card-cod-drawer">
+            <div class="channel-tile-header">
+              <div class="channel-title-group">
+                <span class="kpi-icon-wrap icon-amber small">
+                  <i class="fa-solid fa-vault"></i>
+                </span>
+                <div>
+                  <span class="channel-tile-tag">COUNTER DRAWER</span>
+                  <div class="kpi-title">COD CASH (DRAWER)</div>
+                </div>
+              </div>
+              <span class="kpi-percent-chip amber-chip" id="kpi-cod-percent">0% of Sales</span>
+            </div>
+            <div class="channel-value-row">
+              <h3 class="kpi-main-num num-amber channel-main-num" id="kpi-cod-revenue">₹0</h3>
+            </div>
+            <div class="channel-sub-stats">
+              <span id="kpi-cod-orders-count">0 cash orders</span>
+              <span class="kpi-dot">•</span>
+              <span class="channel-descriptor">Physical Cash Handover</span>
+            </div>
           </div>
-          <div class="kpi-value-row">
-            <h2 class="kpi-main-num num-teal" id="kpi-online-revenue">₹0</h2>
-            <span class="kpi-percent-chip" id="kpi-online-percent">0% of Sales</span>
-          </div>
-          <div class="kpi-sub-stats">
-            <span id="kpi-online-orders-count">0 prepaid orders</span>
-            <span class="kpi-dot">•</span>
-            <span>Direct in Bank Account</span>
-          </div>
-        </article>
 
-        <!-- 4. Fleet Total KMs & Deliveries -->
-        <article class="kpi-card card-fleet">
-          <div class="kpi-card-header">
-            <span class="kpi-icon-wrap icon-purple">
-              <i class="fa-solid fa-route"></i>
-            </span>
-            <span class="kpi-title">DELIVERY FLEET KMs</span>
+          <!-- Channel 2: Online & UPI Bank -->
+          <div class="channel-tile kpi-card card-online" id="card-online-bank">
+            <div class="channel-tile-header">
+              <div class="channel-title-group">
+                <span class="kpi-icon-wrap icon-teal small">
+                  <i class="fa-solid fa-building-columns"></i>
+                </span>
+                <div>
+                  <span class="channel-tile-tag">BANK ACCOUNT</span>
+                  <div class="kpi-title">ONLINE &amp; UPI (BANK)</div>
+                </div>
+              </div>
+              <span class="kpi-percent-chip teal-chip" id="kpi-online-percent">0% of Sales</span>
+            </div>
+            <div class="channel-value-row">
+              <h3 class="kpi-main-num num-teal channel-main-num" id="kpi-online-revenue">₹0</h3>
+            </div>
+            <div class="channel-sub-stats">
+              <span id="kpi-online-orders-count">0 prepaid orders</span>
+              <span class="kpi-dot">•</span>
+              <span class="channel-descriptor">Direct Bank Deposit</span>
+            </div>
           </div>
-          <div class="kpi-value-row">
-            <h2 class="kpi-main-num num-purple" id="kpi-fleet-kms">0.0 km</h2>
-            <span class="kpi-tag" id="kpi-avg-km-tag">0.0 km / order</span>
-          </div>
-          <div class="kpi-sub-stats">
-            <span id="kpi-active-riders-count">0 riders active</span>
-            <span class="kpi-dot">•</span>
-            <span>Total Road Driven</span>
-          </div>
-        </article>
+        </div>
 
-        <!-- 5. Live Orders Breakdown -->
-        <article class="kpi-card card-orders">
+        <!-- Integrated Payment Split Bar inside the Hero Card -->
+        <div class="owner-ratio-section integrated" id="owner-ratio-section">
+          <div class="ratio-bar-header">
+            <span class="ratio-title"><i class="fa-solid fa-scale-balanced"></i> Cash vs Online Payment Split</span>
+            <div class="ratio-legend">
+              <span class="legend-item legend-cash"><span class="legend-square"></span> Cash in Drawer (COD)</span>
+              <span class="legend-item legend-online"><span class="legend-square"></span> Online &amp; UPI (Direct Bank)</span>
+            </div>
+          </div>
+          <div class="ratio-bar-track">
+            <div class="ratio-segment segment-cash" id="bar-segment-cash" style="width: 50%;"></div>
+            <div class="ratio-segment segment-online" id="bar-segment-online" style="width: 50%;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. OPERATIONS & FLEET PULSE (2 Focused Operational Cards) -->
+      <section class="owner-kpi-grid owner-ops-grid" id="owner-kpi-grid">
+        <!-- Total Orders & Pipeline -->
+        <article class="kpi-card card-orders interactive-kpi" onclick="document.getElementById('owner-nav-orders').click()" title="View Customer Orders">
           <div class="kpi-card-header">
             <span class="kpi-icon-wrap icon-blue">
               <i class="fa-solid fa-boxes-stacked"></i>
             </span>
-            <span class="kpi-title">TOTAL ORDERS</span>
+            <div class="kpi-header-titles">
+              <span class="kpi-title">TOTAL ORDERS</span>
+              <span class="kpi-quick-nav">View <i class="fa-solid fa-arrow-right"></i></span>
+            </div>
           </div>
           <div class="kpi-value-row">
             <h2 class="kpi-main-num" id="kpi-total-orders">0</h2>
@@ -413,59 +478,77 @@
             <span id="kpi-success-rate">100% completion</span>
           </div>
         </article>
-      </section>
 
-      <!-- Visual Payment Ratio Bar -->
-      <section class="owner-ratio-section">
-        <div class="ratio-bar-header">
-          <span class="ratio-title"><i class="fa-solid fa-scale-balanced"></i> Cash vs Online Payment Split</span>
-          <div class="ratio-legend">
-            <span class="legend-item legend-cash"><span class="legend-square"></span> Cash on Delivery (COD)</span>
-            <span class="legend-item legend-online"><span class="legend-square"></span> Online & UPI (Direct Bank Deposit)</span>
+        <!-- Delivery Fleet Total KMs & Deliveries -->
+        <article class="kpi-card card-fleet interactive-kpi" onclick="document.getElementById('owner-nav-fleet').click()" title="View Fleet Roster">
+          <div class="kpi-card-header">
+            <span class="kpi-icon-wrap icon-purple">
+              <i class="fa-solid fa-route"></i>
+            </span>
+            <div class="kpi-header-titles">
+              <span class="kpi-title">DELIVERY FLEET KMs</span>
+              <span class="kpi-quick-nav">Fleet <i class="fa-solid fa-arrow-right"></i></span>
+            </div>
           </div>
-        </div>
-        <div class="ratio-bar-track">
-          <div class="ratio-segment segment-cash" id="bar-segment-cash" style="width: 50%;"></div>
-          <div class="ratio-segment segment-online" id="bar-segment-online" style="width: 50%;"></div>
-        </div>
+          <div class="kpi-value-row">
+            <h2 class="kpi-main-num num-purple" id="kpi-fleet-kms">0.0 km</h2>
+            <span class="kpi-tag purple" id="kpi-avg-km-tag">0.0 km / order</span>
+          </div>
+          <div class="kpi-sub-stats">
+            <span id="kpi-active-riders-count">0 riders active</span>
+            <span class="kpi-dot">•</span>
+            <span>Total Road Driven</span>
+          </div>
+        </article>
       </section>
 
-      <!-- Cash Drawer Reconciliation Summary Card (Plain English, High Visibility) -->
+      <!-- 3. CASH DRAWER RECONCILIATION SUMMARY CARD (High Visibility, Real-World Till Math) -->
       <section class="owner-drawer-summary-card" id="owner-drawer-summary-card">
         <div class="drawer-summary-header">
           <div class="drawer-summary-title-box">
             <span class="drawer-icon-bubble"><i class="fa-solid fa-vault"></i></span>
             <div>
-              <span class="drawer-tag">COUNTER CASH SUMMARY</span>
-              <h3 class="drawer-title">Food Cash vs Night Rider Payouts</h3>
+              <span class="drawer-tag">COUNTER CASH RECONCILIATION</span>
+              <h3 class="drawer-title">Counter Till Balance: Food Cash vs Night Rider Payouts</h3>
             </div>
           </div>
           <div class="drawer-headline-box">
-            <span class="drawer-headline-label">Net Cash Left in Drawer Tonight:</span>
+            <span class="drawer-headline-label">NET CASH TO RETAIN:</span>
             <div class="drawer-headline-amount num-emerald" id="drawer-net-total">₹0</div>
           </div>
         </div>
 
         <div class="drawer-math-breakdown">
-          <div class="math-col">
+          <div class="math-col math-cod">
+            <span class="math-step-indicator plus"><i class="fa-solid fa-plus"></i> Inflow</span>
             <span class="math-label"><i class="fa-solid fa-hand-holding-dollar"></i> Total COD Cash Collected</span>
             <span class="math-val num-amber" id="drawer-cod-total">₹0</span>
+            <span class="math-hint">Customer cash received</span>
           </div>
           <span class="math-operator">−</span>
-          <div class="math-col">
+          <div class="math-col math-payout">
+            <span class="math-step-indicator minus"><i class="fa-solid fa-minus"></i> Outflow</span>
             <span class="math-label"><i class="fa-solid fa-motorcycle"></i> Tonight's Rider Payouts</span>
             <span class="math-val num-purple" id="drawer-payout-total">₹0</span>
+            <span class="math-hint">Owed to delivery fleet</span>
           </div>
           <span class="math-operator">=</span>
-          <div class="math-col highlight">
+          <div class="math-col highlight math-retained">
+            <span class="math-step-indicator equal"><i class="fa-solid fa-check"></i> Net</span>
             <span class="math-label"><i class="fa-solid fa-vault"></i> Net Cash Retained in Drawer</span>
             <span class="math-val num-emerald" id="drawer-net-sub-total">₹0</span>
+            <span class="math-hint">Pure counter cash retained</span>
           </div>
         </div>
 
-        <div class="drawer-plain-english-note">
-          <i class="fa-solid fa-circle-info"></i>
-          <span><strong>How Cash Flow Works:</strong> Delivery boys deposit <strong>100% of the food cash</strong> into your counter drawer. Riders do NOT deduct money from food orders. At the end of the shift/night, you pay their delivery earnings separately (via Cash or instant Cashfree UPI) in the <strong>Payouts</strong> tab.</span>
+        <div class="drawer-footer-row">
+          <div class="drawer-plain-english-note">
+            <i class="fa-solid fa-circle-info"></i>
+            <span><strong>How Cash Flow Works:</strong> Delivery boys deposit <strong>100% of the food cash</strong> into your counter drawer. Riders do NOT deduct money from food orders. At the end of the shift/night, you pay their delivery earnings separately in the <strong>Payouts</strong> tab.</span>
+          </div>
+          <button type="button" class="btn-drawer-settle-link" onclick="document.getElementById('owner-nav-payouts').click()">
+            <i class="fa-solid fa-money-bill-transfer"></i> Settle Shift Payouts <i class="fa-solid fa-chevron-right"></i>
+          </button>
         </div>
       </section>
       </div><!-- End #view-overview -->
@@ -475,39 +558,39 @@
       <!-- ========================================================== -->
       <div class="owner-view-tab" id="view-orders" style="display: none;">
         <section class="owner-section" id="section-orders">
-          <div class="section-header-row">
-            <div>
-              <h2 class="section-title"><i class="fa-solid fa-clipboard-list"></i> Customer Orders & Live Stream</h2>
-              <p class="section-sub">Real-time view of customer orders. Search by order ID, customer name, phone, or rider.</p>
+          <!-- Top Row: Section Title + Full Search Input -->
+          <div class="section-header-row orders-section-header">
+            <div class="orders-header-title-box">
+              <h2 class="section-title"><i class="fa-solid fa-clipboard-list"></i> Customer Orders &amp; Live Stream</h2>
+              <p class="section-sub">Real-time order audit &amp; invoice tracking. Instant search by customer, ID, phone, or rider.</p>
             </div>
 
-            <!-- Order Sub-Filters & Search -->
-            <div class="orders-filter-controls">
-              <div class="search-input-wrap">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="order-search-input" placeholder="Search order ID, customer, rider, phone...">
-              </div>
+            <!-- Full/Flexible Search Bar -->
+            <div class="search-input-wrap orders-search-wrap">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="order-search-input" placeholder="Search order ID, customer, phone, rider, address...">
+            </div>
+          </div>
 
-              <div class="orders-view-and-filters">
-                <div class="status-pills-row" id="order-status-filter-pills">
-                  <button type="button" class="order-filter-pill active" data-status="all">All (<span id="count-all">0</span>)</button>
-                  <button type="button" class="order-filter-pill" data-status="active">Live (<span id="count-active">0</span>)</button>
-                  <button type="button" class="order-filter-pill" data-status="delivered">Delivered (<span id="count-delivered">0</span>)</button>
-                  <button type="button" class="order-filter-pill" data-status="cash">Cash (COD)</button>
-                  <button type="button" class="order-filter-pill" data-status="online">Online (UPI)</button>
-                  <button type="button" class="order-filter-pill" data-status="cancelled">Cancelled (<span id="count-cancelled">0</span>)</button>
-                </div>
+          <!-- Secondary Toolbar: Filter Status Pills on Left + Cards/Table Switcher on Right -->
+          <div class="orders-toolbar-bar">
+            <div class="status-pills-row" id="order-status-filter-pills">
+              <button type="button" class="order-filter-pill active" data-status="all">All (<span id="count-all">0</span>)</button>
+              <button type="button" class="order-filter-pill" data-status="active"><span class="pill-dot live"></span> Live (<span id="count-active">0</span>)</button>
+              <button type="button" class="order-filter-pill" data-status="delivered"><i class="fa-solid fa-check"></i> Delivered (<span id="count-delivered">0</span>)</button>
+              <button type="button" class="order-filter-pill" data-status="cash"><i class="fa-solid fa-money-bill-wave"></i> Cash</button>
+              <button type="button" class="order-filter-pill" data-status="online"><i class="fa-solid fa-credit-card"></i> UPI/Online</button>
+              <button type="button" class="order-filter-pill" data-status="cancelled"><i class="fa-solid fa-xmark"></i> Cancelled (<span id="count-cancelled">0</span>)</button>
+            </div>
 
-                <!-- View Toggle: Cards vs Table -->
-                <div class="view-toggle-wrap" id="orders-view-toggle">
-                  <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
-                    <i class="fa-solid fa-table-cells-large"></i> Cards
-                  </button>
-                  <button type="button" class="btn-view-toggle" data-view="table" title="Show Spreadsheet Table View">
-                    <i class="fa-solid fa-table"></i> Table
-                  </button>
-                </div>
-              </div>
+            <!-- View Toggle: Cards vs Table -->
+            <div class="view-toggle-wrap" id="orders-view-toggle">
+              <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
+                <i class="fa-solid fa-table-cells-large"></i> Cards
+              </button>
+              <button type="button" class="btn-view-toggle" data-view="table" title="Show Spreadsheet Table View">
+                <i class="fa-solid fa-table"></i> Table
+              </button>
             </div>
           </div>
 
@@ -521,22 +604,21 @@
             <table class="owner-table" id="owner-orders-table">
               <thead>
                 <tr>
-                  <th>Order ID</th>
-                  <th>Time</th>
-                  <th>Customer & Phone</th>
+                  <th>Order &amp; Time</th>
+                  <th>Customer &amp; Phone</th>
                   <th>Delivery Location</th>
                   <th>Items Ordered</th>
                   <th>Payment Mode</th>
-                  <th>Assigned Delivery Boy</th>
+                  <th>Assigned Rider</th>
                   <th class="text-right">Total Amount</th>
                   <th class="text-center">Status</th>
-                  <th class="text-center">Action</th>
+                  <th class="text-center sticky-action">Receipt</th>
                 </tr>
               </thead>
               <tbody id="orders-table-body">
                 <!-- Dynamically populated -->
                 <tr>
-                  <td colspan="10" class="table-loading">
+                  <td colspan="9" class="table-loading">
                     <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading orders stream...</div>
                   </td>
                 </tr>
@@ -618,306 +700,23 @@
           <div class="section-header-row">
             <div>
               <h2 class="section-title"><i class="fa-solid fa-calculator"></i> Rider Delivery Payouts & Night Settlement</h2>
-              <p class="section-sub">Choose your delivery payment model, test trip rates with the calculator, and pay your delivery boys at night via Cash or instant Cashfree UPI.</p>
+              <p class="section-sub">Review rider delivery earnings, calculate distance pay, and settle shifts via Cash or instant UPI.</p>
             </div>
             <div class="section-badge-info">
-              <span class="active-model-pill" id="active-model-badge">
-                <i class="fa-solid fa-circle-check"></i> <span id="active-model-name-text">Tiered Standard Base Pay</span>
-              </span>
+              <button type="button" class="active-model-pill-btn" id="btn-jump-payout-config" title="Click to view and configure compensation rates">
+                <span class="active-model-pill" id="active-model-badge">
+                  <i class="fa-solid fa-circle-check"></i> <span id="active-model-name-text">Tiered Standard Base Pay</span>
+                </span>
+                <span class="pill-gear-icon"><i class="fa-solid fa-sliders"></i> Rates</span>
+              </button>
             </div>
           </div>
 
-          <!-- 3 COMPACT QUICK-SELECT BUTTONS FOR PAYOUT MODELS -->
-          <div class="payout-methods-grid" id="payout-methods-selector" role="tablist" aria-label="Payout compensation models">
-            <!-- Button 1: Tiered Standard Base Pay -->
-            <button type="button" class="payout-method-card active" data-method="tiered_standard" id="pm-card-tiered-standard" role="tab" aria-selected="true">
-              <div class="pm-card-top">
-                <span class="pm-badge badge-green"><i class="fa-solid fa-shield-halved"></i> Recommended</span>
-                <span class="pm-radio"><i class="fa-solid fa-circle-check"></i></span>
-              </div>
-              <h3 class="pm-title">1. Tiered Standard</h3>
-              <div class="pm-formula-tag">
-                <i class="fa-solid fa-calculator"></i> <span id="formula-tag-ts">₹25 first 1.0 km + ₹10/km extra</span>
-              </div>
-              <div class="pm-open-hint"><i class="fa-solid fa-pen-to-square"></i> Tap to Edit Settings</div>
-              <p class="pm-desc" style="display:none;">Guaranteed ₹25 base pay for first 1.0 km + ₹10/km after. Protects profit margins while ensuring fair pay for short deliveries.</p>
-              <div class="pm-example-row" style="display:none;">
-                <span>Trip 1.31 km:</span> <strong class="pm-highlight" id="example-ts-calc">₹28.10</strong>
-              </div>
-            </button>
-
-            <!-- Button 2: Tiered + Milestone Volume Incentive -->
-            <button type="button" class="payout-method-card" data-method="tiered_milestone" id="pm-card-tiered-milestone" role="tab" aria-selected="false">
-              <div class="pm-card-top">
-                <span class="pm-badge badge-purple"><i class="fa-solid fa-fire"></i> High Volume</span>
-                <span class="pm-radio"><i class="fa-regular fa-circle"></i></span>
-              </div>
-              <h3 class="pm-title">2. Milestone Incentive</h3>
-              <div class="pm-formula-tag">
-                <i class="fa-solid fa-trophy"></i> <span id="formula-tag-tm">₹25 base + ₹10/km (1-10) → ₹15/km (11+)</span>
-              </div>
-              <div class="pm-open-hint"><i class="fa-solid fa-sliders"></i> Open Settings</div>
-              <p class="pm-desc" style="display:none;">Regular ₹25 + ₹10/km for first 10 orders. After 10 orders, rate surges to ₹15/km to reward fast, hardworking riders.</p>
-              <div class="pm-example-row" style="display:none;">
-                <span>Trip 1.31 km:</span> <span id="example-tm-calc">1-10: <strong>₹28.10</strong> • 11+: <strong class="pm-highlight-purple">₹29.65</strong></span>
-              </div>
-            </button>
-
-            <!-- Button 3: Flat Linear Rate -->
-            <button type="button" class="payout-method-card" data-method="flat_linear" id="pm-card-flat-linear" role="tab" aria-selected="false">
-              <div class="pm-card-top">
-                <span class="pm-badge badge-amber"><i class="fa-solid fa-ruler-horizontal"></i> Direct KM</span>
-                <span class="pm-radio"><i class="fa-regular fa-circle"></i></span>
-              </div>
-              <h3 class="pm-title">3. Flat Linear Rate</h3>
-              <div class="pm-formula-tag">
-                <i class="fa-solid fa-road"></i> <span id="formula-tag-fl">₹30 per exact road km</span>
-              </div>
-              <div class="pm-open-hint"><i class="fa-solid fa-sliders"></i> Open Settings</div>
-              <p class="pm-desc" style="display:none;">Straight ₹30 per kilometer driven without fixed base fare. Traditional benchmark model.</p>
-              <div class="pm-example-row" style="display:none;">
-                <span>Trip 1.31 km:</span> <strong class="pm-highlight" id="example-fl-calc">₹39.30</strong>
-              </div>
-            </button>
-          </div>
-
-          <!-- INTERACTIVE PARAMETER CONFIGURATION & STEPPERS PANEL -->
-          <div class="payout-settings-panel" id="payout-settings-panel" style="display: none;">
-            <div class="panel-header-row">
-              <div class="panel-title-wrap">
-                <h4 class="panel-title"><i class="fa-solid fa-sliders"></i> <span id="panel-active-title">Tiered Standard Base Pay Settings</span></h4>
-                <p class="panel-subtitle">Use the <strong>+</strong> and <strong>−</strong> buttons to adjust rates. All changes calculate instantly.</p>
-              </div>
-              <div class="panel-actions">
-                <button type="button" class="btn-close-payout-config" id="btn-close-payout-config" title="Close settings panel without saving">
-                  <i class="fa-solid fa-xmark"></i> Close
-                </button>
-                <button type="button" class="btn-save-payout-config" id="btn-save-payout-config">
-                  <i class="fa-solid fa-floppy-disk"></i> Save Payout Settings
-                </button>
-              </div>
+          <!-- Payout View Toggle Toolbar -->
+          <div class="payout-toolbar-row">
+            <div class="payout-toolbar-info">
+              <span class="payout-count-badge"><i class="fa-solid fa-motorcycle"></i> Active Delivery Fleet</span>
             </div>
-
-            <!-- Active Model Summary Card (Shows description & example right inside settings panel) -->
-            <div class="active-model-summary-card" id="active-model-summary-card">
-              <div class="ams-top">
-                <span class="ams-badge badge-green" id="ams-badge"><i class="fa-solid fa-shield-halved"></i> Recommended Model</span>
-                <span class="ams-formula-text" id="ams-rate-pill">₹25 first 1.0 km + ₹10/km extra</span>
-                <span class="ams-example-text">Trip 1.31 km: <strong id="ams-calc-text">₹28.10</strong></span>
-              </div>
-              <p class="ams-desc" id="ams-desc">Guaranteed ₹25 base pay for first 1.0 km + ₹10/km after. Protects profit margins while ensuring fair pay for short deliveries.</p>
-            </div>
-
-            <!-- Form Controls for Method 1: Tiered Standard -->
-            <div class="payout-controls-group" id="controls-tiered-standard">
-              <div class="stepper-grid">
-                <!-- Base Fare -->
-                <div class="stepper-item">
-                  <label for="cfg-ts-base-pay">Guaranteed Base Pay</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-ts-base-pay" data-step="1" title="Decrease base pay">− ₹1</button>
-                    <div class="stepper-input-wrap">
-                      <span class="step-unit-prefix">₹</span>
-                      <input type="number" id="cfg-ts-base-pay" min="0" max="200" step="1" value="25" />
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-ts-base-pay" data-step="1" title="Increase base pay">+ ₹1</button>
-                  </div>
-                  <span class="stepper-hint">Fixed minimum fare for nearby trips</span>
-                </div>
-
-                <!-- Base Distance -->
-                <div class="stepper-item">
-                  <label for="cfg-ts-base-km">Base Distance Threshold</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-ts-base-km" data-step="0.1" title="Decrease base km">− 0.1</button>
-                    <div class="stepper-input-wrap">
-                      <input type="number" id="cfg-ts-base-km" min="0.1" max="10" step="0.1" value="1.0" />
-                      <span class="step-unit-suffix">km</span>
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-ts-base-km" data-step="0.1" title="Increase base km">+ 0.1</button>
-                  </div>
-                  <span class="stepper-hint">Initial distance covered by base pay</span>
-                </div>
-
-                <!-- Extra KM Surcharge -->
-                <div class="stepper-item">
-                  <label for="cfg-ts-extra-km">Extra Distance Surcharge</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-ts-extra-km" data-step="1" title="Decrease extra km rate">− ₹1</button>
-                    <div class="stepper-input-wrap">
-                      <span class="step-unit-prefix">₹</span>
-                      <input type="number" id="cfg-ts-extra-km" min="0" max="100" step="1" value="10" />
-                      <span class="step-unit-suffix">/ km</span>
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-ts-extra-km" data-step="1" title="Increase extra km rate">+ ₹1</button>
-                  </div>
-                  <span class="stepper-hint">Added for every km beyond base threshold</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Form Controls for Method 2: Tiered Milestone -->
-            <div class="payout-controls-group" id="controls-tiered-milestone" style="display: none;">
-              <div class="stepper-grid">
-                <!-- Base Fare -->
-                <div class="stepper-item">
-                  <label for="cfg-tm-base-pay">Guaranteed Base Pay</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-base-pay" data-step="1">− ₹1</button>
-                    <div class="stepper-input-wrap">
-                      <span class="step-unit-prefix">₹</span>
-                      <input type="number" id="cfg-tm-base-pay" min="0" max="200" step="1" value="25" />
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-base-pay" data-step="1">+ ₹1</button>
-                  </div>
-                  <span class="stepper-hint">Base pay per delivery</span>
-                </div>
-
-                <!-- Base Distance -->
-                <div class="stepper-item">
-                  <label for="cfg-tm-base-km">Base Distance Threshold</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-base-km" data-step="0.1">− 0.1</button>
-                    <div class="stepper-input-wrap">
-                      <input type="number" id="cfg-tm-base-km" min="0.1" max="10" step="0.1" value="1.0" />
-                      <span class="step-unit-suffix">km</span>
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-base-km" data-step="0.1">+ 0.1</button>
-                  </div>
-                  <span class="stepper-hint">Distance covered by base pay</span>
-                </div>
-
-                <!-- Regular Extra KM -->
-                <div class="stepper-item">
-                  <label for="cfg-tm-extra-km">Regular Extra KM Rate</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-extra-km" data-step="1">− ₹1</button>
-                    <div class="stepper-input-wrap">
-                      <span class="step-unit-prefix">₹</span>
-                      <input type="number" id="cfg-tm-extra-km" min="0" max="100" step="1" value="10" />
-                      <span class="step-unit-suffix">/ km</span>
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-extra-km" data-step="1">+ ₹1</button>
-                  </div>
-                  <span class="stepper-hint">For orders up to milestone</span>
-                </div>
-
-                <!-- Milestone Order Count -->
-                <div class="stepper-item">
-                  <label for="cfg-tm-milestone">Milestone Target Orders</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-milestone" data-step="1">− 1</button>
-                    <div class="stepper-input-wrap">
-                      <input type="number" id="cfg-tm-milestone" min="1" max="50" step="1" value="10" />
-                      <span class="step-unit-suffix">trips</span>
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-milestone" data-step="1">+ 1</button>
-                  </div>
-                  <span class="stepper-hint">Threshold before surge kicks in</span>
-                </div>
-
-                <!-- Surge Extra KM -->
-                <div class="stepper-item">
-                  <label for="cfg-tm-surge-km">Surge Extra KM Rate (Post-Milestone)</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-surge-km" data-step="1">− ₹1</button>
-                    <div class="stepper-input-wrap">
-                      <span class="step-unit-prefix">₹</span>
-                      <input type="number" id="cfg-tm-surge-km" min="0" max="100" step="1" value="15" />
-                      <span class="step-unit-suffix">/ km</span>
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-surge-km" data-step="1">+ ₹1</button>
-                  </div>
-                  <span class="stepper-hint">Earned from order (Milestone + 1) onwards</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Form Controls for Method 3: Flat Linear Rate -->
-            <div class="payout-controls-group" id="controls-flat-linear" style="display: none;">
-              <div class="stepper-grid">
-                <!-- Flat Rate per KM -->
-                <div class="stepper-item">
-                  <label for="cfg-fl-rate">Flat Rate per Road KM</label>
-                  <div class="stepper-control">
-                    <button type="button" class="btn-step" data-action="dec" data-target="cfg-fl-rate" data-step="1">− ₹1</button>
-                    <div class="stepper-input-wrap">
-                      <span class="step-unit-prefix">₹</span>
-                      <input type="number" id="cfg-fl-rate" min="1" max="100" step="1" value="30" />
-                      <span class="step-unit-suffix">/ km</span>
-                    </div>
-                    <button type="button" class="btn-step" data-action="inc" data-target="cfg-fl-rate" data-step="1">+ ₹1</button>
-                  </div>
-                  <span class="stepper-hint">Linear payout per kilometer driven</span>
-                </div>
-
-                <!-- Presets for Flat Linear -->
-                <div class="stepper-item presets-container">
-                  <label>Quick Presets</label>
-                  <div class="fl-presets-chips">
-                    <button type="button" class="btn-fl-preset" data-rate="15">₹15/km</button>
-                    <button type="button" class="btn-fl-preset" data-rate="20">₹20/km</button>
-                    <button type="button" class="btn-fl-preset" data-rate="25">₹25/km</button>
-                    <button type="button" class="btn-fl-preset active" data-rate="30">₹30/km</button>
-                    <button type="button" class="btn-fl-preset" data-rate="35">₹35/km</button>
-                  </div>
-                  <span class="stepper-hint">Tap preset to set rate immediately</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Customer Unreachable Doorstep Compensation Policy -->
-            <div class="payout-controls-group" id="controls-unreachable-policy">
-              <div class="unreachable-policy-label-row">
-                <label for="payout-undelivered-mode" class="unreachable-policy-label">
-                  <i class="fa-solid fa-phone-slash" style="color: #F59E0B;"></i> Customer Unreachable Compensation
-                </label>
-                <span class="unreachable-badge">When returned to kitchen</span>
-              </div>
-              <div class="unreachable-controls-row">
-                <select id="payout-undelivered-mode" class="unreachable-select">
-                  <option value="zero">₹0 (No Compensation - Default)</option>
-                  <option value="half">50% Half Distance Pay (Compensate rider trip)</option>
-                  <option value="base">Fixed Base Fare (₹25 standard trip base)</option>
-                  <option value="custom">Custom Fixed Fuel Allowance (₹)</option>
-                </select>
-                <div id="wrap-undelivered-custom" class="unreachable-custom-wrap">
-                  <span class="unreachable-currency">₹</span>
-                  <input type="number" id="payout-undelivered-amount" min="0" max="200" step="5" value="20" class="unreachable-custom-input" />
-                </div>
-              </div>
-              <span class="stepper-hint" id="undelivered-mode-hint">
-                If rider waited 10 minutes at doorstep and had to return food to kitchen, choose trip compensation policy.
-              </span>
-            </div>
-
-            <!-- LIVE INTERACTIVE TRIP CALCULATOR PREVIEW -->
-            <div class="live-calc-card">
-              <div class="calc-row">
-                <div class="calc-input-block">
-                  <label for="sim-trip-distance"><i class="fa-solid fa-route"></i> Test Trip Distance:</label>
-                  <div class="sim-input-wrap">
-                    <button type="button" class="btn-sim-step" id="btn-sim-dec">− 0.1</button>
-                    <input type="number" id="sim-trip-distance" min="0.1" max="25" step="0.05" value="1.31" />
-                    <span class="sim-unit">km</span>
-                    <button type="button" class="btn-sim-step" id="btn-sim-inc">+ 0.1</button>
-                  </div>
-                </div>
-                <div class="calc-result-block">
-                  <div class="calc-result-tag">Trip Payout Preview:</div>
-                  <div class="calc-result-val" id="sim-payout-val">₹28.10</div>
-                  <div class="calc-breakdown-text" id="sim-breakdown-text">₹25.00 (first 1.0 km) + ₹3.10 (0.31 km × ₹10/km)</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Hidden input to maintain backward compatibility with legacy scripts looking for #input-km-rate -->
-            <input type="hidden" id="input-km-rate" value="15" />
-            <button type="button" id="btn-save-km-rate" style="display: none;"></button>
-          </div>
-
-          <!-- Payout View Toggle -->
-          <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
             <div class="view-toggle-wrap" id="payout-view-toggle">
               <button type="button" class="btn-view-toggle active" data-view="cards" title="Show Mobile Cards View">
                 <i class="fa-solid fa-table-cells-large"></i> Cards
@@ -958,6 +757,318 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- ========================================================== -->
+          <!-- COLLAPSIBLE PAYOUT COMPENSATION SETTINGS (AT SECTION END) -->
+          <!-- ========================================================== -->
+          <div class="payout-config-collapsible" id="payout-config-collapsible">
+            <button type="button" class="payout-config-collapsible-trigger" id="btn-toggle-payout-settings-accordion" aria-expanded="false" aria-controls="payout-config-collapsible-body">
+              <div class="pcc-left">
+                <div class="pcc-icon">
+                  <i class="fa-solid fa-sliders"></i>
+                </div>
+                <div class="pcc-text">
+                  <span class="pcc-title">Delivery Compensation Model & Rate Settings</span>
+                  <span class="pcc-subtitle">Choose between Tiered Standard, Milestone Incentive, or Flat Linear KM rates & test trip simulator</span>
+                </div>
+              </div>
+              <div class="pcc-right">
+                <span class="pcc-state-pill" id="pcc-state-pill"><i class="fa-solid fa-gear"></i> Configure Rates</span>
+                <span class="pcc-chevron" id="pcc-chevron"><i class="fa-solid fa-chevron-down"></i></span>
+              </div>
+            </button>
+
+            <div class="payout-config-collapsible-body" id="payout-config-collapsible-body" style="display: none;">
+              <!-- 3 COMPACT QUICK-SELECT BUTTONS FOR PAYOUT MODELS -->
+              <div class="payout-methods-grid" id="payout-methods-selector" role="tablist" aria-label="Payout compensation models">
+                <!-- Button 1: Tiered Standard Base Pay -->
+                <button type="button" class="payout-method-card active" data-method="tiered_standard" id="pm-card-tiered-standard" role="tab" aria-selected="true">
+                  <div class="pm-card-top">
+                    <span class="pm-badge badge-green"><i class="fa-solid fa-shield-halved"></i> Recommended</span>
+                    <span class="pm-radio"><i class="fa-solid fa-circle-check"></i></span>
+                  </div>
+                  <h3 class="pm-title">1. Tiered Standard</h3>
+                  <div class="pm-formula-tag">
+                    <i class="fa-solid fa-calculator"></i> <span id="formula-tag-ts">₹25 first 1.0 km + ₹10/km extra</span>
+                  </div>
+                  <div class="pm-open-hint"><i class="fa-solid fa-pen-to-square"></i> Tap to Edit Settings</div>
+                  <p class="pm-desc" style="display:none;">Guaranteed ₹25 base pay for first 1.0 km + ₹10/km after. Protects profit margins while ensuring fair pay for short deliveries.</p>
+                  <div class="pm-example-row" style="display:none;">
+                    <span>Trip 1.31 km:</span> <strong class="pm-highlight" id="example-ts-calc">₹28.10</strong>
+                  </div>
+                </button>
+
+                <!-- Button 2: Tiered + Milestone Volume Incentive -->
+                <button type="button" class="payout-method-card" data-method="tiered_milestone" id="pm-card-tiered-milestone" role="tab" aria-selected="false">
+                  <div class="pm-card-top">
+                    <span class="pm-badge badge-purple"><i class="fa-solid fa-fire"></i> High Volume</span>
+                    <span class="pm-radio"><i class="fa-regular fa-circle"></i></span>
+                  </div>
+                  <h3 class="pm-title">2. Milestone Incentive</h3>
+                  <div class="pm-formula-tag">
+                    <i class="fa-solid fa-trophy"></i> <span id="formula-tag-tm">₹25 base + ₹10/km (1-10) → ₹15/km (11+)</span>
+                  </div>
+                  <div class="pm-open-hint"><i class="fa-solid fa-sliders"></i> Open Settings</div>
+                  <p class="pm-desc" style="display:none;">Regular ₹25 + ₹10/km for first 10 orders. After 10 orders, rate surges to ₹15/km to reward fast, hardworking riders.</p>
+                  <div class="pm-example-row" style="display:none;">
+                    <span>Trip 1.31 km:</span> <span id="example-tm-calc">1-10: <strong>₹28.10</strong> • 11+: <strong class="pm-highlight-purple">₹29.65</strong></span>
+                  </div>
+                </button>
+
+                <!-- Button 3: Flat Linear Rate -->
+                <button type="button" class="payout-method-card" data-method="flat_linear" id="pm-card-flat-linear" role="tab" aria-selected="false">
+                  <div class="pm-card-top">
+                    <span class="pm-badge badge-amber"><i class="fa-solid fa-ruler-horizontal"></i> Direct KM</span>
+                    <span class="pm-radio"><i class="fa-regular fa-circle"></i></span>
+                  </div>
+                  <h3 class="pm-title">3. Flat Linear Rate</h3>
+                  <div class="pm-formula-tag">
+                    <i class="fa-solid fa-road"></i> <span id="formula-tag-fl">₹30 per exact road km</span>
+                  </div>
+                  <div class="pm-open-hint"><i class="fa-solid fa-sliders"></i> Open Settings</div>
+                  <p class="pm-desc" style="display:none;">Straight ₹30 per kilometer driven without fixed base fare. Traditional benchmark model.</p>
+                  <div class="pm-example-row" style="display:none;">
+                    <span>Trip 1.31 km:</span> <strong class="pm-highlight" id="example-fl-calc">₹39.30</strong>
+                  </div>
+                </button>
+              </div>
+
+              <!-- INTERACTIVE PARAMETER CONFIGURATION & STEPPERS PANEL -->
+              <div class="payout-settings-panel" id="payout-settings-panel" style="display: none;">
+                <div class="panel-header-row">
+                  <div class="panel-title-wrap">
+                    <h4 class="panel-title"><i class="fa-solid fa-sliders"></i> <span id="panel-active-title">Tiered Standard Base Pay Settings</span></h4>
+                    <p class="panel-subtitle">Use the <strong>+</strong> and <strong>−</strong> buttons to adjust rates. All changes calculate instantly.</p>
+                  </div>
+                  <div class="panel-actions">
+                    <button type="button" class="btn-close-payout-config" id="btn-close-payout-config" title="Close settings panel without saving">
+                      <i class="fa-solid fa-xmark"></i> Close
+                    </button>
+                    <button type="button" class="btn-save-payout-config" id="btn-save-payout-config">
+                      <i class="fa-solid fa-floppy-disk"></i> Save Payout Settings
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Active Model Summary Card (Shows description & example right inside settings panel) -->
+                <div class="active-model-summary-card" id="active-model-summary-card">
+                  <div class="ams-top">
+                    <span class="ams-badge badge-green" id="ams-badge"><i class="fa-solid fa-shield-halved"></i> Recommended Model</span>
+                    <span class="ams-formula-text" id="ams-rate-pill">₹25 first 1.0 km + ₹10/km extra</span>
+                    <span class="ams-example-text">Trip 1.31 km: <strong id="ams-calc-text">₹28.10</strong></span>
+                  </div>
+                  <p class="ams-desc" id="ams-desc">Guaranteed ₹25 base pay for first 1.0 km + ₹10/km after. Protects profit margins while ensuring fair pay for short deliveries.</p>
+                </div>
+
+                <!-- Form Controls for Method 1: Tiered Standard -->
+                <div class="payout-controls-group" id="controls-tiered-standard">
+                  <div class="stepper-grid">
+                    <!-- Base Fare -->
+                    <div class="stepper-item">
+                      <label for="cfg-ts-base-pay">Guaranteed Base Pay</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-ts-base-pay" data-step="1" title="Decrease base pay">− ₹1</button>
+                        <div class="stepper-input-wrap">
+                          <span class="step-unit-prefix">₹</span>
+                          <input type="number" id="cfg-ts-base-pay" min="0" max="200" step="1" value="25" />
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-ts-base-pay" data-step="1" title="Increase base pay">+ ₹1</button>
+                      </div>
+                      <span class="stepper-hint">Fixed minimum fare for nearby trips</span>
+                    </div>
+
+                    <!-- Base Distance -->
+                    <div class="stepper-item">
+                      <label for="cfg-ts-base-km">Base Distance Threshold</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-ts-base-km" data-step="0.1" title="Decrease base km">− 0.1</button>
+                        <div class="stepper-input-wrap">
+                          <input type="number" id="cfg-ts-base-km" min="0.1" max="10" step="0.1" value="1.0" />
+                          <span class="step-unit-suffix">km</span>
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-ts-base-km" data-step="0.1" title="Increase base km">+ 0.1</button>
+                      </div>
+                      <span class="stepper-hint">Initial distance covered by base pay</span>
+                    </div>
+
+                    <!-- Extra KM Surcharge -->
+                    <div class="stepper-item">
+                      <label for="cfg-ts-extra-km">Extra Distance Surcharge</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-ts-extra-km" data-step="1" title="Decrease extra km rate">− ₹1</button>
+                        <div class="stepper-input-wrap">
+                          <span class="step-unit-prefix">₹</span>
+                          <input type="number" id="cfg-ts-extra-km" min="0" max="100" step="1" value="10" />
+                          <span class="step-unit-suffix">/ km</span>
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-ts-extra-km" data-step="1" title="Increase extra km rate">+ ₹1</button>
+                      </div>
+                      <span class="stepper-hint">Added for every km beyond base threshold</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Form Controls for Method 2: Tiered Milestone -->
+                <div class="payout-controls-group" id="controls-tiered-milestone" style="display: none;">
+                  <div class="stepper-grid">
+                    <!-- Base Fare -->
+                    <div class="stepper-item">
+                      <label for="cfg-tm-base-pay">Guaranteed Base Pay</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-base-pay" data-step="1">− ₹1</button>
+                        <div class="stepper-input-wrap">
+                          <span class="step-unit-prefix">₹</span>
+                          <input type="number" id="cfg-tm-base-pay" min="0" max="200" step="1" value="25" />
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-base-pay" data-step="1">+ ₹1</button>
+                      </div>
+                      <span class="stepper-hint">Base pay per delivery</span>
+                    </div>
+
+                    <!-- Base Distance -->
+                    <div class="stepper-item">
+                      <label for="cfg-tm-base-km">Base Distance Threshold</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-base-km" data-step="0.1">− 0.1</button>
+                        <div class="stepper-input-wrap">
+                          <input type="number" id="cfg-tm-base-km" min="0.1" max="10" step="0.1" value="1.0" />
+                          <span class="step-unit-suffix">km</span>
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-base-km" data-step="0.1">+ 0.1</button>
+                      </div>
+                      <span class="stepper-hint">Distance covered by base pay</span>
+                    </div>
+
+                    <!-- Regular Extra KM -->
+                    <div class="stepper-item">
+                      <label for="cfg-tm-extra-km">Regular Extra KM Rate</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-extra-km" data-step="1">− ₹1</button>
+                        <div class="stepper-input-wrap">
+                          <span class="step-unit-prefix">₹</span>
+                          <input type="number" id="cfg-tm-extra-km" min="0" max="100" step="1" value="10" />
+                          <span class="step-unit-suffix">/ km</span>
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-extra-km" data-step="1">+ ₹1</button>
+                      </div>
+                      <span class="stepper-hint">For orders up to milestone</span>
+                    </div>
+
+                    <!-- Milestone Order Count -->
+                    <div class="stepper-item">
+                      <label for="cfg-tm-milestone">Milestone Target Orders</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-milestone" data-step="1">− 1</button>
+                        <div class="stepper-input-wrap">
+                          <input type="number" id="cfg-tm-milestone" min="1" max="50" step="1" value="10" />
+                          <span class="step-unit-suffix">trips</span>
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-milestone" data-step="1">+ 1</button>
+                      </div>
+                      <span class="stepper-hint">Threshold before surge kicks in</span>
+                    </div>
+
+                    <!-- Surge Extra KM -->
+                    <div class="stepper-item">
+                      <label for="cfg-tm-surge-km">Surge Extra KM Rate (Post-Milestone)</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-tm-surge-km" data-step="1">− ₹1</button>
+                        <div class="stepper-input-wrap">
+                          <span class="step-unit-prefix">₹</span>
+                          <input type="number" id="cfg-tm-surge-km" min="0" max="100" step="1" value="15" />
+                          <span class="step-unit-suffix">/ km</span>
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-tm-surge-km" data-step="1">+ ₹1</button>
+                      </div>
+                      <span class="stepper-hint">Earned from order (Milestone + 1) onwards</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Form Controls for Method 3: Flat Linear Rate -->
+                <div class="payout-controls-group" id="controls-flat-linear" style="display: none;">
+                  <div class="stepper-grid">
+                    <!-- Flat Rate per KM -->
+                    <div class="stepper-item">
+                      <label for="cfg-fl-rate">Flat Rate per Road KM</label>
+                      <div class="stepper-control">
+                        <button type="button" class="btn-step" data-action="dec" data-target="cfg-fl-rate" data-step="1">− ₹1</button>
+                        <div class="stepper-input-wrap">
+                          <span class="step-unit-prefix">₹</span>
+                          <input type="number" id="cfg-fl-rate" min="1" max="100" step="1" value="30" />
+                          <span class="step-unit-suffix">/ km</span>
+                        </div>
+                        <button type="button" class="btn-step" data-action="inc" data-target="cfg-fl-rate" data-step="1">+ ₹1</button>
+                      </div>
+                      <span class="stepper-hint">Linear payout per kilometer driven</span>
+                    </div>
+
+                    <!-- Presets for Flat Linear -->
+                    <div class="stepper-item presets-container">
+                      <label>Quick Presets</label>
+                      <div class="fl-presets-chips">
+                        <button type="button" class="btn-fl-preset" data-rate="15">₹15/km</button>
+                        <button type="button" class="btn-fl-preset" data-rate="20">₹20/km</button>
+                        <button type="button" class="btn-fl-preset" data-rate="25">₹25/km</button>
+                        <button type="button" class="btn-fl-preset active" data-rate="30">₹30/km</button>
+                        <button type="button" class="btn-fl-preset" data-rate="35">₹35/km</button>
+                      </div>
+                      <span class="stepper-hint">Tap preset to set rate immediately</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Customer Unreachable Doorstep Compensation Policy -->
+                <div class="payout-controls-group" id="controls-unreachable-policy">
+                  <div class="unreachable-policy-label-row">
+                    <label for="payout-undelivered-mode" class="unreachable-policy-label">
+                      <i class="fa-solid fa-phone-slash" style="color: #F59E0B;"></i> Customer Unreachable Compensation
+                    </label>
+                    <span class="unreachable-badge">When returned to kitchen</span>
+                  </div>
+                  <div class="unreachable-controls-row">
+                    <select id="payout-undelivered-mode" class="unreachable-select">
+                      <option value="zero">₹0 (No Compensation - Default)</option>
+                      <option value="half">50% Half Distance Pay (Compensate rider trip)</option>
+                      <option value="base">Fixed Base Fare (₹25 standard trip base)</option>
+                      <option value="custom">Custom Fixed Fuel Allowance (₹)</option>
+                    </select>
+                    <div id="wrap-undelivered-custom" class="unreachable-custom-wrap">
+                      <span class="unreachable-currency">₹</span>
+                      <input type="number" id="payout-undelivered-amount" min="0" max="200" step="5" value="20" class="unreachable-custom-input" />
+                    </div>
+                  </div>
+                  <span class="stepper-hint" id="undelivered-mode-hint">
+                    If rider waited 10 minutes at doorstep and had to return food to kitchen, choose trip compensation policy.
+                  </span>
+                </div>
+
+                <!-- LIVE INTERACTIVE TRIP CALCULATOR PREVIEW -->
+                <div class="live-calc-card">
+                  <div class="calc-row">
+                    <div class="calc-input-block">
+                      <label for="sim-trip-distance"><i class="fa-solid fa-route"></i> Test Trip Distance:</label>
+                      <div class="sim-input-wrap">
+                        <button type="button" class="btn-sim-step" id="btn-sim-dec">− 0.1</button>
+                        <input type="number" id="sim-trip-distance" min="0.1" max="25" step="0.05" value="1.31" />
+                        <span class="sim-unit">km</span>
+                        <button type="button" class="btn-sim-step" id="btn-sim-inc">+ 0.1</button>
+                      </div>
+                    </div>
+                    <div class="calc-result-block">
+                      <div class="calc-result-tag">Trip Payout Preview:</div>
+                      <div class="calc-result-val" id="sim-payout-val">₹28.10</div>
+                      <div class="calc-breakdown-text" id="sim-breakdown-text">₹25.00 (first 1.0 km) + ₹3.10 (0.31 km × ₹10/km)</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Hidden input to maintain backward compatibility with legacy scripts looking for #input-km-rate -->
+                <input type="hidden" id="input-km-rate" value="15" />
+                <button type="button" id="btn-save-km-rate" style="display: none;"></button>
+              </div>
+            </div>
           </div>
         </section>
       </div><!-- End #view-payouts -->

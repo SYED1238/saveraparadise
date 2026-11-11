@@ -20,13 +20,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
-function createMockReqRes({ method = 'POST', headers = {}, body = null } = {}) {
+function createMockReqRes({ method = 'POST', headers = {}, body = null, url = '/api/order-action', query = null } = {}) {
   let statusCode = 200;
   let responseData = null;
   const responseHeaders = {};
 
   const req = {
     method,
+    url,
+    query: query || (url && url.includes('?') ? Object.fromEntries(new URL(url, 'http://localhost').searchParams.entries()) : {}),
     headers: { ...headers },
     body
   };
@@ -232,6 +234,17 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     await orderActionHandler(req, res);
     assert.equal(res.statusCode, 405);
     assert.equal(res.responseHeaders['Allow'], 'POST, OPTIONS');
+  });
+
+  await t.test('12b. GET /api/order-action?action=kitchen_poll permits lightweight edge-cached poll with s-maxage=15', async () => {
+    const { req, res } = createMockReqRes({
+      method: 'GET',
+      url: '/api/order-action?action=kitchen_poll'
+    });
+    await orderActionHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.ok(Array.isArray(res.responseData), 'kitchen_poll must return array of orders');
+    assert.match(res.responseHeaders['Cache-Control'], /s-maxage=15/);
   });
 
   await t.test('13. POST /api/order-action CORS allows trusted domains and rejects arbitrary origins', async () => {

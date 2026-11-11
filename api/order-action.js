@@ -30,13 +30,16 @@ function isOriginAllowed(origin) {
   return false;
 }
 
+let kitchenPollCache = null;
+let kitchenPollCachedAt = 0;
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
   const origin = req.headers.origin;
   if (origin && isOriginAllowed(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-token');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
@@ -45,13 +48,20 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
+  const queryAction = req.query?.action || (req.url ? new URL(req.url, 'http://localhost').searchParams.get('action') : null);
+
+  if (req.method === 'GET' && queryAction !== 'kitchen_poll') {
     res.setHeader('Allow', 'POST, OPTIONS');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    res.setHeader('Allow', 'POST, GET, OPTIONS');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   const body = req.body || {};
-  const action = String(body.action || '').trim();
+  const action = String(body.action || queryAction || '').trim();
   if (!action) {
     return res.status(400).json({ error: 'Action parameter is required' });
   }
@@ -245,6 +255,14 @@ export default async function handler(req, res) {
         if (idx !== -1) ordersList[idx] = updated;
       }
       return res.status(200).json({ success: true, order: updated });
+    }
+
+    if (isTestEnv && action === 'kitchen_poll') {
+      const sample = [
+        { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', pickup_code: '1001', delivery_address: 'Main St', created_at: new Date().toISOString() }
+      ];
+      res.setHeader('Cache-Control', 'public, s-maxage=15, max-age=10');
+      return res.status(200).json(sample);
     }
 
     if (isTestEnv && ['sync_orders', 'update_status', 'claim_order', 'request_cash_handover'].includes(action)) {
@@ -460,6 +478,29 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
+      // 0. Lightweight Edge-Cached Kitchen Monitor Poll (Absorbs Android APK Background Loop)
+      case 'kitchen_poll': {
+        const now = Date.now();
+        if (kitchenPollCache && (now - kitchenPollCachedAt < 15000)) {
+          res.setHeader('Cache-Control', 'public, s-maxage=15, max-age=10');
+          return res.status(200).json(kitchenPollCache);
+        }
+
+        const { data, error } = await sb
+          .from('orders')
+          .select('id, status, customer_name, total, pickup_code, delivery_address, created_at')
+          .order('created_at', { ascending: false })
+          .limit(8);
+
+        if (error) throw error;
+
+        kitchenPollCache = data || [];
+        kitchenPollCachedAt = now;
+
+        res.setHeader('Cache-Control', 'public, s-maxage=15, max-age=10');
+        return res.status(200).json(kitchenPollCache);
+      }
+
       // 1. Authenticated Staff Sync (Admin, Delivery, Owner)
       case 'sync_orders': {
         const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
@@ -1004,6 +1045,10 @@ export default async function handler(req, res) {
           .insert([insertPayload])
           .select('id, tracking_token, status, total, created_at')
           .single();
+
+        if (!insertErr) {
+          kitchenPollCachedAt = 0;
+        }
 
         if (insertErr) {
           if (insertErr.code === '23505' || String(insertErr.message || '').includes('duplicate key')) {

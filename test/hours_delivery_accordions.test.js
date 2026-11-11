@@ -3,6 +3,18 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 
+if (typeof global.localStorage === 'undefined') {
+  const store = new Map();
+  global.localStorage = {
+    getItem: (key) => store.get(String(key)) ?? null,
+    setItem: (key, val) => store.set(String(key), String(val)),
+    removeItem: (key) => store.delete(String(key)),
+    clear: () => store.clear(),
+    key: (i) => Array.from(store.keys())[i] ?? null,
+    get length() { return store.size; }
+  };
+}
+
 describe('STORE HOURS & DELIVERY ACCORDION DROPDOWNS SUITE', () => {
   const adminHtmlPath = fs.existsSync(path.resolve('admin.html')) ? path.resolve('admin.html') : path.resolve('savera-cloudflare-migration/admin.html');
   const adminJsPath = fs.existsSync(path.resolve('admin.js')) ? path.resolve('admin.js') : path.resolve('savera-cloudflare-migration/admin.js');
@@ -116,5 +128,59 @@ describe('STORE HOURS & DELIVERY ACCORDION DROPDOWNS SUITE', () => {
 
   it('12. Accordion accessibility: header and button aria-expanded attributes remain in sync', () => {
     assert.ok(adminJs.includes('.offer-collapsible-header') && adminJs.includes("header.setAttribute('aria-expanded'"), 'toggleHoursCard and toggleDeliveryCard must sync header aria-expanded');
+  });
+
+  it('13. parseTimeToMinutes and dataService.isStoreOpen() evaluate operating hours against IST clock', async () => {
+    const { dataService, parseTimeToMinutes } = await import('../dataService.js');
+    assert.strictEqual(parseTimeToMinutes('11:00 AM'), 660);
+    assert.strictEqual(parseTimeToMinutes('9:00 PM'), 1260);
+    assert.strictEqual(parseTimeToMinutes('11:00 PM'), 1380);
+    assert.strictEqual(parseTimeToMinutes('12:00 PM'), 720);
+    assert.strictEqual(parseTimeToMinutes('12:00 AM'), 0);
+
+    // Save test settings: open 9:00 PM to 11:00 PM
+    dataService.saveSettings({
+      ...dataService.getSettings(),
+      storeOpen: true,
+      openTime: '9:00 PM',
+      closeTime: '11:00 PM'
+    });
+
+    // At 5:33 PM IST (17:33 IST): store must be closed
+    const dateAt533PM = new Date('2026-11-11T12:03:00Z'); // 12:03 UTC = 17:33 IST (5:33 PM)
+    assert.strictEqual(dataService.isStoreOpen(dateAt533PM), false, 'Store must evaluate to closed at 5:33 PM when hours are 9:00 PM - 11:00 PM');
+
+    // At 9:30 PM IST (21:30 IST): store must be open
+    const dateAt930PM = new Date('2026-11-11T16:00:00Z'); // 16:00 UTC = 21:30 IST (9:30 PM)
+    assert.strictEqual(dataService.isStoreOpen(dateAt930PM), true, 'Store must evaluate to open at 9:30 PM when hours are 9:00 PM - 11:00 PM');
+
+    // At 11:15 PM IST (23:15 IST): store must be closed
+    const dateAt1115PM = new Date('2026-11-11T17:45:00Z'); // 17:45 UTC = 23:15 IST (11:15 PM)
+    assert.strictEqual(dataService.isStoreOpen(dateAt1115PM), false, 'Store must evaluate to closed at 11:15 PM when hours are 9:00 PM - 11:00 PM');
+
+    // Master toggle OFF overrides clock:
+    dataService.saveSettings({ ...dataService.getSettings(), storeOpen: false });
+    assert.strictEqual(dataService.isStoreOpen(dateAt930PM), false, 'Master toggle OFF must always close store even during open hours');
+  });
+
+  it('14. dataService.isStoreOpen() supports overnight windows (e.g. 9:00 PM to 2:00 AM)', async () => {
+    const { dataService } = await import('../dataService.js');
+    dataService.saveSettings({
+      ...dataService.getSettings(),
+      storeOpen: true,
+      openTime: '9:00 PM',
+      closeTime: '2:00 AM'
+    });
+
+    const lateNight1AM = new Date('2026-11-11T19:30:00Z'); // 19:30 UTC = 01:00 IST (1:00 AM)
+    assert.strictEqual(dataService.isStoreOpen(lateNight1AM), true, 'Overnight window should be open at 1:00 AM');
+
+    const morning6AM = new Date('2026-11-11T00:30:00Z'); // 00:30 UTC = 06:00 IST (6:00 AM)
+    assert.strictEqual(dataService.isStoreOpen(morning6AM), false, 'Overnight window should be closed at 6:00 AM');
+  });
+
+  it('15. admin.js syncHoursSummaryChips and updateRushUI show Scheduled Closed when storeOpen is true but outside clock hours', () => {
+    assert.ok(adminJs.includes("Scheduled Closed (Opens"), 'admin.js must show Scheduled Closed with opening time');
+    assert.ok(adminJs.includes("dataService.isStoreOpen"), 'admin.js must check dataService.isStoreOpen');
   });
 });

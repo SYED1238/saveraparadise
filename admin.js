@@ -4248,8 +4248,8 @@ const initAdminApp = () => {
 
   function updateDeliveryPreview() {
     const isFreeEnabled = inputFreeDeliveryEnabled ? inputFreeDeliveryEnabled.checked : true;
-    const thresh = Math.max(0, Number(inputFreeDeliveryThreshold?.value || 250));
-    const stdFee = Number(inputDeliveryFeeStandard?.value || 40);
+    const thresh = Math.max(0, Number(inputFreeDeliveryThreshold?.value !== '' ? inputFreeDeliveryThreshold.value : 250));
+    const stdFee = Math.max(0, Number(inputDeliveryFeeStandard?.value !== '' ? inputDeliveryFeeStandard.value : 40));
     const movVal = Math.max(0, Number(inputMinOrderValue?.value || 0));
 
     if (deliveryStatusBadge) {
@@ -4259,7 +4259,7 @@ const initAdminApp = () => {
     if (adminDeliveryStatusChip) adminDeliveryStatusChip.classList.toggle('paused', !isFreeEnabled);
     if (deliveryStatusDot) deliveryStatusDot.classList.toggle('paused', !isFreeEnabled);
     if (deliveryStatusChipText) {
-      let chipMsg = isFreeEnabled ? `Free Delivery (Above ₹${thresh})` : `Flat ₹${Math.round(stdFee)}`;
+      let chipMsg = isFreeEnabled ? (thresh === 0 ? 'Free Delivery (All Orders)' : `Free Delivery (Above ₹${thresh})`) : `Flat ₹${Math.round(stdFee)}`;
       if (movVal > 0) chipMsg += ` • Min Order ₹${movVal}`;
       deliveryStatusChipText.textContent = chipMsg;
     }
@@ -4275,18 +4275,22 @@ const initAdminApp = () => {
       if (isFreeEnabled && thresh > 0) {
         const sampleRemaining = Math.max(0, Math.round(thresh * 0.4));
         previewDeliveryTitle.innerHTML = `Add <strong>₹${sampleRemaining}</strong> more for <strong>FREE Priority Delivery</strong>!`;
+      } else if (isFreeEnabled && thresh === 0) {
+        previewDeliveryTitle.innerHTML = '🎉 <strong>100% FREE Priority Delivery</strong> on ALL Orders!';
       } else {
         previewDeliveryTitle.textContent = `Standard Delivery Fee: ₹${Math.round(stdFee)}`;
       }
     }
     if (previewDeliveryBar) {
-      previewDeliveryBar.style.width = isFreeEnabled ? '60%' : '0%';
-      previewDeliveryBar.style.background = isFreeEnabled ? 'var(--brand-primary)' : '#9CA3AF';
+      previewDeliveryBar.style.width = isFreeEnabled ? '100%' : '0%';
+      previewDeliveryBar.style.background = isFreeEnabled ? (thresh === 0 ? '#10B981' : 'var(--brand-primary)') : '#9CA3AF';
     }
     if (previewDeliveryDesc) {
       let desc = '';
       if (isFreeEnabled && thresh > 0) {
         desc = `Orders above <strong style="color: var(--admin-accent);">${thresh}</strong> qualify for 100% Free Doorstep Delivery. Below that: ₹${Math.round(stdFee)}.`;
+      } else if (isFreeEnabled && thresh === 0) {
+        desc = '100% Free Doorstep Delivery applied automatically to all customer orders.';
       } else {
         desc = `All orders charged standard delivery fee of <strong>₹${Math.round(stdFee)}</strong>.`;
       }
@@ -4354,28 +4358,34 @@ const initAdminApp = () => {
       if (rushSetterBox) rushSetterBox.style.display = 'block';
 
       // Header status pill
+      const openTime = settings.openTime || '11:00 AM';
+      const isManualClosed = settings.storeOpen === false;
       if (headerStatusDot) {
-        headerStatusDot.style.background = '#EF4444';
-        headerStatusDot.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.35)';
+        headerStatusDot.style.background = isManualClosed ? '#EF4444' : '#F59E0B';
+        headerStatusDot.style.boxShadow = isManualClosed ? '0 0 0 3px rgba(239, 68, 68, 0.35)' : '0 0 0 3px rgba(245, 158, 11, 0.35)';
       }
-      if (headerStatusText) headerStatusText.textContent = '🌙 Store Closed for Night';
+      if (headerStatusText) {
+        headerStatusText.textContent = isManualClosed ? '🌙 Store Closed for Night' : `🕒 Scheduled Closed (Opens ${openTime})`;
+      }
       if (adminStoreStatusPill) {
         adminStoreStatusPill.style.display = 'inline-flex';
-        adminStoreStatusPill.style.background = '#FEF2F2';
-        adminStoreStatusPill.style.borderColor = '#FECACA';
-        adminStoreStatusPill.style.color = '#991B1B';
+        adminStoreStatusPill.style.background = isManualClosed ? '#FEF2F2' : '#FEF3C7';
+        adminStoreStatusPill.style.borderColor = isManualClosed ? '#FECACA' : '#FDE68A';
+        adminStoreStatusPill.style.color = isManualClosed ? '#991B1B' : '#92400E';
       }
 
       // View chips
-      if (rushStatusDot) rushStatusDot.style.background = '#EF4444';
-      if (rushStatusChipText) rushStatusChipText.textContent = 'Store Closed (Night)';
+      if (rushStatusDot) rushStatusDot.style.background = isManualClosed ? '#EF4444' : '#F59E0B';
+      if (rushStatusChipText) {
+        rushStatusChipText.textContent = isManualClosed ? 'Store Closed (Night)' : `Scheduled Closed (Opens ${openTime})`;
+      }
       if (adminLiveRushChip) {
         adminLiveRushChip.classList.remove('paused');
       }
       if (rushModeBadge) {
-        rushModeBadge.textContent = '🌙 Store Closed';
+        rushModeBadge.textContent = isManualClosed ? '🌙 Store Closed' : `🕒 Opens ${openTime}`;
         rushModeBadge.className = 'count-pill rush-mode-pill';
-        rushModeBadge.style.background = '#EF4444';
+        rushModeBadge.style.background = isManualClosed ? '#EF4444' : '#F59E0B';
         rushModeBadge.style.color = '#FFFFFF';
       }
 
@@ -5253,15 +5263,25 @@ const initAdminApp = () => {
     const summarySchedulePhone = document.getElementById('summary-schedule-phone');
     const scheduleStatusBadge = document.getElementById('schedule-status-badge');
 
-    const storeIsOpen = inputStoreOpen ? inputStoreOpen.checked : (settings.storeOpen !== false);
+    const masterToggleOn = inputStoreOpen ? inputStoreOpen.checked : (settings.storeOpen !== false);
+    const clockOpen = typeof dataService.isStoreOpen === 'function' ? dataService.isStoreOpen() : masterToggleOn;
+    const storeIsOpen = masterToggleOn && clockOpen;
     const openTime = inputOpenTime?.value?.trim() || settings.openTime || '11:00 AM';
     const closeTime = inputCloseTime?.value?.trim() || settings.closeTime || '11:00 PM';
     const rawPhone = inputRestaurantPhone?.value?.trim() || settings.restaurantPhone || settings.helpline || '+91 98450 12345';
     const phoneFormatted = formatStorePhoneNumber(rawPhone);
 
     if (summaryScheduleStatus) {
-      summaryScheduleStatus.textContent = storeIsOpen ? 'Store Open' : 'Store Closed';
-      summaryScheduleStatus.style.color = storeIsOpen ? 'var(--color-success, #16a34a)' : '#ef4444';
+      if (!masterToggleOn) {
+        summaryScheduleStatus.textContent = 'Store Closed';
+        summaryScheduleStatus.style.color = '#ef4444';
+      } else if (!clockOpen) {
+        summaryScheduleStatus.textContent = `Scheduled Closed (Opens ${openTime})`;
+        summaryScheduleStatus.style.color = '#f59e0b';
+      } else {
+        summaryScheduleStatus.textContent = 'Store Open';
+        summaryScheduleStatus.style.color = 'var(--color-success, #16a34a)';
+      }
     }
 
     if (summaryScheduleHours) {
@@ -5273,9 +5293,19 @@ const initAdminApp = () => {
     }
 
     if (scheduleStatusBadge) {
-      scheduleStatusBadge.textContent = storeIsOpen ? 'Open' : 'Closed';
-      scheduleStatusBadge.style.background = storeIsOpen ? '#D1FAE5' : '#FEE2E2';
-      scheduleStatusBadge.style.color = storeIsOpen ? '#065F46' : '#991B1B';
+      if (!masterToggleOn) {
+        scheduleStatusBadge.textContent = 'Closed';
+        scheduleStatusBadge.style.background = '#FEE2E2';
+        scheduleStatusBadge.style.color = '#991B1B';
+      } else if (!clockOpen) {
+        scheduleStatusBadge.textContent = `Opens ${openTime}`;
+        scheduleStatusBadge.style.background = '#FEF3C7';
+        scheduleStatusBadge.style.color = '#92400E';
+      } else {
+        scheduleStatusBadge.textContent = 'Open';
+        scheduleStatusBadge.style.background = '#D1FAE5';
+        scheduleStatusBadge.style.color = '#065F46';
+      }
     }
   }
 
@@ -5290,13 +5320,19 @@ const initAdminApp = () => {
     const deliveryStatusBadge = document.getElementById('delivery-status-badge');
 
     const freeEnabled = inputFreeDeliveryEnabled ? inputFreeDeliveryEnabled.checked : (settings.freeDeliveryEnabled !== false);
-    const freeThreshold = inputFreeDeliveryThreshold ? Number(inputFreeDeliveryThreshold.value || 250) : (settings.freeDeliveryThreshold !== undefined ? settings.freeDeliveryThreshold : 250);
-    const stdFee = inputDeliveryFeeStandard ? Number(inputDeliveryFeeStandard.value || 40) : (settings.deliveryFeeStandard !== undefined ? settings.deliveryFeeStandard : 40);
-    const mov = inputMinOrderValue ? Number(inputMinOrderValue.value || 0) : (settings.minOrderValue !== undefined ? settings.minOrderValue : (settings.minOrder ?? 0));
+    const freeThreshold = inputFreeDeliveryThreshold && inputFreeDeliveryThreshold.value !== '' ? Math.max(0, Number(inputFreeDeliveryThreshold.value)) : (settings.freeDeliveryThreshold !== undefined ? settings.freeDeliveryThreshold : 250);
+    const stdFee = inputDeliveryFeeStandard && inputDeliveryFeeStandard.value !== '' ? Math.max(0, Number(inputDeliveryFeeStandard.value)) : (settings.deliveryFeeStandard !== undefined ? settings.deliveryFeeStandard : 40);
+    const mov = inputMinOrderValue && inputMinOrderValue.value !== '' ? Math.max(0, Number(inputMinOrderValue.value)) : (settings.minOrderValue !== undefined ? settings.minOrderValue : (settings.minOrder ?? 0));
     const maxActive = inputMaxActiveOrders ? Number(inputMaxActiveOrders.value || 2) : (settings.maxActiveOrdersPerCustomer !== undefined ? settings.maxActiveOrdersPerCustomer : 2);
 
     if (summaryFree) {
-      summaryFree.textContent = freeEnabled && freeThreshold > 0 ? `₹${freeThreshold}` : 'Disabled';
+      if (!freeEnabled) {
+        summaryFree.textContent = 'Disabled';
+      } else if (freeThreshold === 0) {
+        summaryFree.textContent = 'Free for All (₹0)';
+      } else {
+        summaryFree.textContent = `₹${freeThreshold}`;
+      }
     }
     if (summaryFee) {
       summaryFee.textContent = `₹${stdFee}`;
@@ -5586,9 +5622,9 @@ const initAdminApp = () => {
     formStoreDelivery.addEventListener('submit', async (e) => {
       e.preventDefault();
       const freeDelivEnabled = inputFreeDeliveryEnabled ? inputFreeDeliveryEnabled.checked : true;
-      const freeDelivThreshold = Math.max(0, Number(inputFreeDeliveryThreshold?.value || 250));
-      const minOrderVal = Math.max(0, Number(inputMinOrderValue?.value || 0));
-      const stdFee = Math.max(0, Number(inputDeliveryFeeStandard?.value || 40));
+      const freeDelivThreshold = Math.max(0, Number(inputFreeDeliveryThreshold?.value !== '' ? inputFreeDeliveryThreshold.value : 250));
+      const minOrderVal = Math.max(0, Number(inputMinOrderValue?.value !== '' ? inputMinOrderValue.value : 0));
+      const stdFee = Math.max(0, Number(inputDeliveryFeeStandard?.value !== '' ? inputDeliveryFeeStandard.value : 40));
       const radiusKm = Number(deliveryRadiusSlider?.value || 7);
       const maxActive = Math.max(1, Number(inputMaxActiveOrders?.value || 2));
 
@@ -5613,8 +5649,8 @@ const initAdminApp = () => {
         if (typeof syncDeliverySummaryChips === 'function') {
           syncDeliverySummaryChips();
         }
-        const freeMsg = freeDelivEnabled && freeDelivThreshold > 0
-          ? `Free delivery on orders above ₹${freeDelivThreshold} is active!`
+        const freeMsg = freeDelivEnabled
+          ? (freeDelivThreshold === 0 ? 'Free delivery on ALL orders is active!' : `Free delivery on orders above ₹${freeDelivThreshold} is active!`)
           : `Flat delivery fee of ₹${Math.round(stdFee)} is active!`;
         const movMsg = minOrderVal > 0 ? ` Minimum order: ₹${minOrderVal}.` : ' No minimum order limit.';
         // Auto-close delivery options panel on save

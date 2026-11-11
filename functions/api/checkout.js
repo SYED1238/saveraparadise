@@ -257,6 +257,46 @@ export async function onRequest(context) {
         }, 400, Object.fromEntries(corsHeaders.entries()));
       }
 
+      // Validate operating hours schedule against IST
+      const parseTimeToMinutes = (str, defaultMins) => {
+        if (!str) return defaultMins;
+        const m = String(str).match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
+        if (!m) return defaultMins;
+        let h = parseInt(m[1], 10);
+        const min = parseInt(m[2] || '0', 10);
+        const mod = (m[3] || '').toUpperCase();
+        if (mod === 'PM' && h < 12) h += 12;
+        if (mod === 'AM' && h === 12) h = 0;
+        return h * 60 + min;
+      };
+
+      const openStr = (storeSettings.openTime || '11:00 AM').trim();
+      const closeStr = (storeSettings.closeTime || '11:00 PM').trim();
+      const openMinutes = parseTimeToMinutes(openStr, 660);
+      const closeMinutes = parseTimeToMinutes(closeStr, 1380);
+
+      // Convert current time to Asia/Kolkata (UTC+5:30)
+      const istDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+
+      let isClockOpen = true;
+      if (openMinutes < closeMinutes) {
+        isClockOpen = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+      } else if (openMinutes > closeMinutes) {
+        isClockOpen = currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+      }
+
+      if (!isClockOpen) {
+        return jsonResponse({
+          error: 'Store Closed',
+          message: `The kitchen is currently closed for orders. Operating hours are ${openStr} to ${closeStr}.`,
+          storeClosed: true,
+          scheduledClosed: true,
+          openTime: openStr,
+          closeTime: closeStr
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+
       const pauseUntil = Number(storeSettings.pauseUntil || 0);
       if (storeSettings.isRushPaused && pauseUntil > Date.now()) {
         const remainingMins = Math.max(1, Math.ceil((pauseUntil - Date.now()) / 60000));
@@ -491,7 +531,7 @@ export async function onRequest(context) {
         ? Number(storeSettings.deliveryFee)
         : 40;
     const standardFee = Number.isFinite(rawStandardFee) ? Math.max(0, Math.round(rawStandardFee)) : 40;
-    const deliveryFee = (promoFreeDelivery || (isFreeDeliveryEnabled && freeThreshold > 0 && subtotal >= freeThreshold))
+    const deliveryFee = (promoFreeDelivery || (isFreeDeliveryEnabled && (freeThreshold === 0 || (freeThreshold > 0 && subtotal >= freeThreshold))))
       ? 0
       : standardFee;
     // Platform fee: configurable via storeSettings or environment; defaults to 0 to prevent hidden charges

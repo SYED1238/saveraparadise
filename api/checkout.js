@@ -348,6 +348,46 @@ export default async function handler(req, res) {
       });
     }
 
+    // Validate operating hours schedule against IST
+    const parseTimeToMinutes = (str, defaultMins) => {
+      if (!str) return defaultMins;
+      const m = String(str).match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
+      if (!m) return defaultMins;
+      let h = parseInt(m[1], 10);
+      const min = parseInt(m[2] || '0', 10);
+      const mod = (m[3] || '').toUpperCase();
+      if (mod === 'PM' && h < 12) h += 12;
+      if (mod === 'AM' && h === 12) h = 0;
+      return h * 60 + min;
+    };
+
+    const openStr = (settings.openTime || '11:00 AM').trim();
+    const closeStr = (settings.closeTime || '11:00 PM').trim();
+    const openMinutes = parseTimeToMinutes(openStr, 660);
+    const closeMinutes = parseTimeToMinutes(closeStr, 1380);
+
+    // Convert current time to Asia/Kolkata (UTC+5:30)
+    const istDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+
+    let isClockOpen = true;
+    if (openMinutes < closeMinutes) {
+      isClockOpen = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+    } else if (openMinutes > closeMinutes) {
+      isClockOpen = currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+    }
+
+    if (!isClockOpen) {
+      return res.status(400).json({
+        error: 'Store Closed',
+        message: `The kitchen is currently closed for orders. Operating hours are ${openStr} to ${closeStr}.`,
+        storeClosed: true,
+        scheduledClosed: true,
+        openTime: openStr,
+        closeTime: closeStr
+      });
+    }
+
     const pauseUntil = Number(settings.pauseUntil || 0);
     if (settings.isRushPaused && pauseUntil > Date.now()) {
       const remainingMins = Math.max(1, Math.ceil((pauseUntil - Date.now()) / 60000));
@@ -411,7 +451,7 @@ export default async function handler(req, res) {
   const standardFee = (typeof settings.deliveryFeeStandard === 'number' || (settings.deliveryFeeStandard !== undefined && !Number.isNaN(Number(settings.deliveryFeeStandard))))
     ? Number(settings.deliveryFeeStandard)
     : 40;
-  let deliveryFee = (isFreeDeliveryEnabled && threshold > 0 && computedSubtotal >= threshold) ? 0 : Math.max(0, standardFee);
+  let deliveryFee = (isFreeDeliveryEnabled && (threshold === 0 || (threshold > 0 && computedSubtotal >= threshold))) ? 0 : Math.max(0, standardFee);
 
   // Unlocked Deals (Threshold Pricing) validation with tamper defense clamping
   let unlockedDealDiscount = 0;

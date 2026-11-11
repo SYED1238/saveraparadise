@@ -9,6 +9,9 @@ import { verifyAdminToken, verifySignedPayload } from './_auth.js';
 import { hydrateEnv, jsonResponse, isOriginAllowed } from './_adapter.js';
 import crypto from 'crypto';
 
+let kitchenPollCache = null;
+let kitchenPollCachedAt = 0;
+
 export async function onRequest(context) {
   hydrateEnv(context);
   const { request, env } = context;
@@ -17,7 +20,7 @@ export async function onRequest(context) {
   const corsHeaders = new Headers();
   if (origin && isOriginAllowed(origin)) {
     corsHeaders.set('Access-Control-Allow-Origin', origin);
-    corsHeaders.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    corsHeaders.set('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
     corsHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-token');
     corsHeaders.set('Access-Control-Allow-Credentials', 'true');
   }
@@ -26,19 +29,29 @@ export async function onRequest(context) {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  if (request.method !== 'POST') {
+  const parsedUrl = new URL(request.url);
+  const queryAction = parsedUrl.searchParams.get('action');
+
+  if (request.method === 'GET' && queryAction !== 'kitchen_poll') {
     corsHeaders.set('Allow', 'POST, OPTIONS');
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
   }
 
-  let body = {};
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
+  if (request.method !== 'POST' && request.method !== 'GET') {
+    corsHeaders.set('Allow', 'POST, GET, OPTIONS');
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
   }
 
-  const action = String(body?.action || '').trim();
+  let body = {};
+  if (request.method === 'POST') {
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+  }
+
+  const action = String(body?.action || queryAction || '').trim();
   if (!action) {
     return jsonResponse({ error: 'Action parameter is required' }, 400, Object.fromEntries(corsHeaders.entries()));
   }
@@ -234,6 +247,15 @@ export async function onRequest(context) {
         if (idx !== -1) ordersList[idx] = updated;
       }
       return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
+    }
+
+    if (isTestEnv && action === 'kitchen_poll') {
+      const sample = [
+        { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', pickup_code: '1001', delivery_address: 'Main St', created_at: new Date().toISOString() }
+      ];
+      const pollHeaders = Object.fromEntries(corsHeaders.entries());
+      pollHeaders['Cache-Control'] = 'public, s-maxage=15, max-age=10';
+      return jsonResponse(sample, 200, pollHeaders);
     }
 
     if (isTestEnv && ['sync_orders', 'update_status', 'claim_order', 'request_cash_handover'].includes(action)) {
@@ -451,6 +473,31 @@ export async function onRequest(context) {
     const sb = createClient(supabaseUrl, serviceKey);
 
     switch (action) {
+      // 0. Lightweight Edge-Cached Kitchen Monitor Poll (Absorbs Android APK Background Loop)
+      case 'kitchen_poll': {
+        const now = Date.now();
+        if (kitchenPollCache && (now - kitchenPollCachedAt < 15000)) {
+          const pollHeaders = Object.fromEntries(corsHeaders.entries());
+          pollHeaders['Cache-Control'] = 'public, s-maxage=15, max-age=10';
+          return jsonResponse(kitchenPollCache, 200, pollHeaders);
+        }
+
+        const { data, error } = await sb
+          .from('orders')
+          .select('id, status, customer_name, total, pickup_code, delivery_address, created_at')
+          .order('created_at', { ascending: false })
+          .limit(8);
+
+        if (error) throw error;
+
+        kitchenPollCache = data || [];
+        kitchenPollCachedAt = now;
+
+        const pollHeaders = Object.fromEntries(corsHeaders.entries());
+        pollHeaders['Cache-Control'] = 'public, s-maxage=15, max-age=10';
+        return jsonResponse(kitchenPollCache, 200, pollHeaders);
+      }
+
       // 1. Authenticated Staff Sync (Admin, Delivery, Owner)
       case 'sync_orders': {
         const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
@@ -995,6 +1042,10 @@ export async function onRequest(context) {
           .insert([insertPayload])
           .select('id, tracking_token, status, total, created_at')
           .single();
+
+        if (!insertErr) {
+          kitchenPollCachedAt = 0;
+        }
 
         if (insertErr) {
           if (insertErr.code === '23505' || String(insertErr.message || '').includes('duplicate key')) {

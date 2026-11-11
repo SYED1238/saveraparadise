@@ -1791,12 +1791,12 @@ function initStorefrontApp() {
 
     // Free delivery calculation
     const isFreeDeliveryEnabled = settings.freeDeliveryEnabled !== false;
-    const freeDeliveryThreshold = Number(settings.freeDeliveryThreshold !== undefined ? settings.freeDeliveryThreshold : 250);
-    const standardDeliveryFee = Number(settings.deliveryFeeStandard || 40);
+    const freeDeliveryThreshold = (settings.freeDeliveryThreshold !== undefined && settings.freeDeliveryThreshold !== null && !isNaN(Number(settings.freeDeliveryThreshold))) ? Number(settings.freeDeliveryThreshold) : 250;
+    const standardDeliveryFee = (settings.deliveryFeeStandard !== undefined && settings.deliveryFeeStandard !== null && !isNaN(Number(settings.deliveryFeeStandard))) ? Number(settings.deliveryFeeStandard) : 40;
 
-    const thresholdUnlockedFreeDelivery = isFreeDeliveryEnabled && freeDeliveryThreshold > 0 && subtotal >= freeDeliveryThreshold;
+    const thresholdUnlockedFreeDelivery = isFreeDeliveryEnabled && (freeDeliveryThreshold === 0 || (freeDeliveryThreshold > 0 && subtotal >= freeDeliveryThreshold));
     const freeDeliveryUnlocked = thresholdUnlockedFreeDelivery || promoUnlockedFreeDelivery;
-    const deliveryFee = freeDeliveryUnlocked ? 0 : standardDeliveryFee;
+    const deliveryFee = freeDeliveryUnlocked ? 0 : Math.max(0, standardDeliveryFee);
 
     // Minimum Order & Free Delivery Meter
     const minOrderValue = Number(settings.minOrderValue !== undefined ? settings.minOrderValue : (settings.minOrder !== undefined ? settings.minOrder : 0));
@@ -1818,7 +1818,11 @@ function initStorefrontApp() {
         btnCheckoutLabel.textContent = 'Proceed to Checkout';
       }
 
-      if (isFreeDeliveryEnabled && freeDeliveryThreshold > 0) {
+      if (isFreeDeliveryEnabled && freeDeliveryThreshold === 0) {
+        meterFill.style.width = '100%';
+        meterFill.style.background = '#10B981';
+        meterText.innerHTML = '🎉 <strong>FREE Priority Delivery</strong> on ALL orders!';
+      } else if (isFreeDeliveryEnabled && freeDeliveryThreshold > 0) {
         const remainingForFree = freeDeliveryThreshold - subtotal;
         if (freeDeliveryUnlocked) {
           meterFill.style.width = '100%';
@@ -5782,9 +5786,9 @@ function initStorefrontApp() {
         const freeDelivThreshold = (typeof settings.freeDeliveryThreshold === 'number') ? settings.freeDeliveryThreshold : 250;
         const standardDelivFee = (typeof settings.deliveryFeeStandard === 'number') ? settings.deliveryFeeStandard : 40;
         const promoFreeDelivery = Boolean(promoRes && promoRes.valid && promoRes.freeDelivery);
-        const rawDeliveryFee = ((isFreeDelivEnabled && freeDelivThreshold > 0 && cartSubtotal >= freeDelivThreshold) || promoFreeDelivery)
+        const rawDeliveryFee = ((isFreeDelivEnabled && (freeDelivThreshold === 0 || (freeDelivThreshold > 0 && cartSubtotal >= freeDelivThreshold))) || promoFreeDelivery)
           ? 0
-          : standardDelivFee;
+          : Math.max(0, standardDelivFee);
         const platformFee = Number(settings.platformFee || 0);
         calculatedTotal += rawDeliveryFee + platformFee;
         const totalAmount = `₹${Math.round(calculatedTotal)}`;
@@ -8872,13 +8876,26 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   const homeStatusText = document.getElementById('home-status-text');
 
   let storeStatusInterval = null;
+  let storeClockInterval = null;
 
-  function ensureStoreStatusTicker(shouldRun) {
-    if (shouldRun && !storeStatusInterval && !document.hidden) {
-      storeStatusInterval = setInterval(updateStoreStatusUI, 1000);
-    } else if (!shouldRun && storeStatusInterval) {
-      clearInterval(storeStatusInterval);
-      storeStatusInterval = null;
+  function ensureStoreStatusTicker(shouldRushTick) {
+    if (shouldRushTick) {
+      if (storeClockInterval) {
+        clearInterval(storeClockInterval);
+        storeClockInterval = null;
+      }
+      if (!storeStatusInterval && !document.hidden) {
+        storeStatusInterval = setInterval(updateStoreStatusUI, 1000);
+      }
+    } else {
+      if (storeStatusInterval) {
+        clearInterval(storeStatusInterval);
+        storeStatusInterval = null;
+      }
+      // Clock schedule ticker: check every 30 seconds so storefront automatically flips between Open and Closed
+      if (!storeClockInterval && !document.hidden) {
+        storeClockInterval = setInterval(updateStoreStatusUI, 30000);
+      }
     }
   }
 
@@ -9065,7 +9082,8 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   // Auto-pause background timer when tab is hidden, resume on focus
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      ensureStoreStatusTicker(false);
+      if (storeStatusInterval) { clearInterval(storeStatusInterval); storeStatusInterval = null; }
+      if (storeClockInterval) { clearInterval(storeClockInterval); storeClockInterval = null; }
     } else {
       updateStoreStatusUI();
     }

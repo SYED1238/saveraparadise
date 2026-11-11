@@ -194,6 +194,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        OrderMonitorService.setAppInForeground(true);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        OrderMonitorService.setAppInForeground(false);
+    }
+
+    @Override
     public void onBackPressed() {
         if (webView != null && webView.canGoBack()) {
             webView.goBack();

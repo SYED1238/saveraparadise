@@ -1349,7 +1349,7 @@ function renderOrdersTable(orders) {
   if (totalOrders === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="10" style="text-align: center; padding: 32px 16px; color: var(--owner-text-muted);">
+        <td colspan="9" style="text-align: center; padding: 36px 16px; color: var(--owner-text-muted);">
           <i class="fa-solid fa-inbox" style="font-size: 1.8rem; margin-bottom: 8px; display: block; color: var(--owner-text-dim);"></i>
           No orders match your filter criteria in this period.
         </td>
@@ -1380,12 +1380,16 @@ function renderOrdersTable(orders) {
     const distKm = Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0);
 
     const items = Array.isArray(o.items) ? o.items : [];
-    const itemsSummary = items.map(it => `${it.quantity || 1}x ${it.name}`).join(', ') || 'Food items';
+    const itemsFormatted = items.length > 0
+      ? items.map(it => `<span class="order-item-chip"><strong class="item-qty">${it.quantity || 1}×</strong> ${escapeHtml(it.name || '')}</span>`).join(' ')
+      : '<span style="color:#94a3b8;">Food items</span>';
 
     const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
     const isOnline = isOnlineOrderPayment(o);
 
-    const riderName = o.assignedRiderName ? escapeHtml(o.assignedRiderName) : '<span style="color:#64748b;">Unassigned</span>';
+    const riderName = o.assignedRiderName
+      ? `<span class="rider-assigned-name"><i class="fa-solid fa-motorcycle"></i> ${escapeHtml(o.assignedRiderName)}</span>`
+      : '<span style="color:#94a3b8; font-style: italic;">Unassigned</span>';
 
     const status = String(o.status || 'pending').toLowerCase();
     let statusBadge = status === 'undelivered'
@@ -1393,27 +1397,27 @@ function renderOrdersTable(orders) {
       : `<span class="status-badge ${status}">${status.replace(/_/g, ' ')}</span>`;
 
     let payBadge = isOnline
-      ? `<span class="pay-badge online"><i class="fa-solid fa-credit-card"></i> Online Paid</span>`
-      : `<span class="pay-badge cash"><i class="fa-solid fa-money-bill-wave"></i> Cash (COD)</span>`;
+      ? `<span class="pay-badge online"><i class="fa-solid fa-bolt"></i> Online</span>`
+      : `<span class="pay-badge cash"><i class="fa-solid fa-money-bill-wave"></i> Cash</span>`;
 
     return `
-      <tr>
+      <tr class="order-table-row" data-order-id="${escapeHtml(rawId)}" title="Click to view full invoice receipt">
         <td>
-          <span class="order-id-badge">${escapeHtml(cleanId)}</span>
-        </td>
-        <td style="color: var(--owner-text-muted); font-size: 0.8rem;">
-          ${dateStr}
+          <div class="order-id-cell">
+            <span class="order-id-badge">${escapeHtml(cleanId)}</span>
+            <span class="order-time-sub"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
+          </div>
         </td>
         <td>
-          <div style="font-weight: 600; color: var(--owner-text);">${escapeHtml(custName)}</div>
-          ${phone ? `<a href="tel:${sanitizePhone(phone)}" style="font-size: 0.74rem; color: var(--owner-text-muted); text-decoration: none;"><i class="fa-solid fa-phone"></i> ${escapeHtml(phone)}</a>` : ''}
+          <div class="order-cust-name">${escapeHtml(custName)}</div>
+          ${phone ? `<a href="tel:${sanitizePhone(phone)}" class="order-phone-link" onclick="event.stopPropagation()"><i class="fa-solid fa-phone"></i> ${escapeHtml(phone)}</a>` : ''}
         </td>
-        <td style="max-width: 220px; white-space: normal; line-height: 1.35; font-size: 0.78rem;">
-          <div style="color: var(--owner-text);">${escapeHtml(address)}</div>
-          ${distKm > 0 ? `<span style="color: var(--owner-purple); font-weight: 700; font-size: 0.72rem;"><i class="fa-solid fa-route"></i> ${distKm.toFixed(1)} km road</span>` : ''}
+        <td class="order-location-cell">
+          <div class="order-address-text" title="${escapeHtml(address)}">${escapeHtml(address)}</div>
+          ${distKm > 0 ? `<span class="order-dist-tag"><i class="fa-solid fa-route"></i> ${distKm.toFixed(1)} km</span>` : ''}
         </td>
-        <td style="max-width: 200px; white-space: normal; line-height: 1.35; font-size: 0.78rem; color: var(--owner-text-muted);">
-          ${escapeHtml(itemsSummary)}
+        <td class="order-items-cell">
+          <div class="order-items-wrap">${itemsFormatted}</div>
         </td>
         <td>
           ${payBadge}
@@ -1421,24 +1425,35 @@ function renderOrdersTable(orders) {
         <td>
           ${riderName}
         </td>
-        <td class="text-right font-bold" style="font-size: 0.95rem; color: var(--owner-text);">
-          ₹${rawTotal.toLocaleString('en-IN')}
+        <td class="text-right">
+          <span class="order-total-amount">₹${rawTotal.toLocaleString('en-IN')}</span>
         </td>
         <td class="text-center">
           ${statusBadge}
         </td>
-        <td class="text-center">
-          <button type="button" class="btn-view-receipt" data-order-id="${escapeHtml(rawId)}" title="View read-only invoice receipt">
-            <i class="fa-regular fa-eye"></i> Receipt
+        <td class="text-center sticky-action">
+          <button type="button" class="btn-view-receipt" data-order-id="${escapeHtml(rawId)}" title="View invoice receipt">
+            <i class="fa-regular fa-file-lines"></i> Receipt
           </button>
         </td>
       </tr>
     `;
   }).join('');
 
+  // Attach row click to open receipt modal
+  tbody.querySelectorAll('.order-table-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('a') || e.target.closest('button')) return;
+      const orderId = row.getAttribute('data-order-id');
+      const order = orders.find(o => String(o.id) === String(orderId));
+      if (order) openInvoiceModal(order);
+    });
+  });
+
   // Attach receipt modal click handlers
   tbody.querySelectorAll('.btn-view-receipt').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const orderId = btn.getAttribute('data-order-id');
       const order = orders.find(o => String(o.id) === String(orderId));
       if (order) {
@@ -1467,17 +1482,23 @@ function renderOrdersTable(orders) {
         const address = cleanDeliveryAddress(o.deliveryAddress || o.delivery_address || '');
         const distKm = Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0);
         const items = Array.isArray(o.items) ? o.items : [];
-        const itemsSummary = items.map(it => `${it.quantity || 1}x ${it.name}`).join(', ') || 'Food items';
+        const itemsFormatted = items.length > 0
+          ? items.map(it => `<span class="order-item-chip"><strong class="item-qty">${it.quantity || 1}×</strong> ${escapeHtml(it.name || '')}</span>`).join(' ')
+          : '<span style="color:#94a3b8;">Food items</span>';
         const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
         const isOnline = isOnlineOrderPayment(o);
-        const riderName = o.assignedRiderName ? escapeHtml(o.assignedRiderName) : 'Unassigned';
+        const riderName = o.assignedRiderName 
+          ? `<span class="rider-assigned-name"><i class="fa-solid fa-motorcycle"></i> ${escapeHtml(o.assignedRiderName)}</span>`
+          : '<span style="color:#94a3b8; font-style: italic;">Unassigned</span>';
         const status = String(o.status || 'pending').toLowerCase();
 
         return `
-          <div class="order-card-mobile">
+          <div class="order-card-mobile" data-order-id="${escapeHtml(rawId)}">
             <div class="oc-top">
-              <span class="order-id-badge">${escapeHtml(cleanId)}</span>
-              <span class="status-badge ${status}">${status.replace(/_/g, ' ')}</span>
+              <div class="oc-top-left">
+                <span class="order-id-badge">${escapeHtml(cleanId)}</span>
+                <span class="status-badge ${status}">${status.replace(/_/g, ' ')}</span>
+              </div>
               <span class="oc-time"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
             </div>
 
@@ -1493,18 +1514,18 @@ function renderOrdersTable(orders) {
             </div>
 
             <div class="oc-items">
-              <i class="fa-solid fa-utensils"></i> ${escapeHtml(itemsSummary)}
+              ${itemsFormatted}
             </div>
 
             <div class="oc-footer">
               <div class="oc-footer-left">
-                <span class="oc-rider-tag"><i class="fa-solid fa-motorcycle"></i> ${riderName}</span>
-                <span class="pay-badge ${isOnline ? 'online' : 'cash'}">${isOnline ? 'Online Paid' : 'Cash (COD)'}</span>
+                <span class="oc-rider-tag">${riderName}</span>
+                <span class="pay-badge ${isOnline ? 'online' : 'cash'}">${isOnline ? 'Online' : 'Cash (COD)'}</span>
               </div>
               <div class="oc-footer-right">
                 <span class="oc-total">₹${rawTotal.toLocaleString('en-IN')}</span>
                 <button type="button" class="btn-view-receipt btn-receipt-mobile" data-order-id="${escapeHtml(rawId)}">
-                  <i class="fa-regular fa-eye"></i> Receipt
+                  <i class="fa-regular fa-file-lines"></i> Receipt
                 </button>
               </div>
             </div>
@@ -1702,16 +1723,79 @@ function closeInvoiceModal() {
 // 11. PRINTING & REPORT EXPORT
 // ==============================================================
 function initActions() {
+  // Owner Header Actions Dropdown Menu (3-Bars / 3-Dots Menu)
+  const btnMenuToggle = document.getElementById('btn-owner-menu-toggle');
+  const menuDropdown = document.getElementById('owner-menu-dropdown');
+  const menuIcon = document.getElementById('owner-menu-icon');
+
+  function openOwnerMenuDropdown() {
+    if (!menuDropdown || !btnMenuToggle) return;
+    menuDropdown.style.display = 'block';
+    btnMenuToggle.classList.add('active');
+    btnMenuToggle.setAttribute('aria-expanded', 'true');
+    if (menuIcon) {
+      menuIcon.classList.remove('fa-bars');
+      menuIcon.classList.add('fa-xmark');
+    }
+  }
+
+  function closeOwnerMenuDropdown() {
+    if (!menuDropdown || !btnMenuToggle) return;
+    menuDropdown.style.display = 'none';
+    btnMenuToggle.classList.remove('active');
+    btnMenuToggle.setAttribute('aria-expanded', 'false');
+    if (menuIcon) {
+      menuIcon.classList.remove('fa-xmark');
+      menuIcon.classList.add('fa-bars');
+    }
+  }
+
+  if (btnMenuToggle && menuDropdown) {
+    btnMenuToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = menuDropdown.style.display !== 'none';
+      if (isOpen) closeOwnerMenuDropdown();
+      else openOwnerMenuDropdown();
+    });
+
+    menuDropdown.querySelectorAll('.owner-dropdown-item').forEach(item => {
+      item.addEventListener('click', () => {
+        closeOwnerMenuDropdown();
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!menuDropdown.contains(e.target) && !btnMenuToggle.contains(e.target)) {
+        closeOwnerMenuDropdown();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && menuDropdown.style.display !== 'none') {
+        closeOwnerMenuDropdown();
+      }
+    });
+  }
+
   // Refresh Button
   const btnRefresh = document.getElementById('btn-owner-refresh');
   if (btnRefresh) {
     btnRefresh.addEventListener('click', async () => {
-      btnRefresh.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Refreshing...';
+      const rotateIcon = btnRefresh.querySelector('.fa-rotate');
+      if (rotateIcon) rotateIcon.classList.add('fa-spin');
+      else btnRefresh.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Refreshing...';
+
       await dataService.syncOrdersFromSupabase(true).catch(() => {});
       await dataService.syncRidersFromSupabase().catch(() => {});
       renderDashboard();
+
       setTimeout(() => {
-        btnRefresh.innerHTML = '<i class="fa-solid fa-rotate"></i> <span class="hide-mobile">Refresh</span>';
+        if (rotateIcon) {
+          rotateIcon.classList.remove('fa-spin');
+        } else {
+          btnRefresh.innerHTML = '<i class="fa-solid fa-rotate"></i> <span class="hide-mobile">Refresh</span>';
+        }
+        showToast('✓ Live data refreshed', 'success');
       }, 400);
     });
   }
@@ -2214,6 +2298,26 @@ function initNavigation() {
     });
   }
 
+  // Collapsible Payout Compensation Settings Accordion Toggle
+  const btnTogglePayoutAccordion = document.getElementById('btn-toggle-payout-settings-accordion');
+  if (btnTogglePayoutAccordion) {
+    btnTogglePayoutAccordion.addEventListener('click', () => {
+      togglePayoutSettingsCollapsible();
+    });
+  }
+
+  // Jump to Payout Settings from Header Pill Button
+  const btnJumpPayoutConfig = document.getElementById('btn-jump-payout-config');
+  if (btnJumpPayoutConfig) {
+    btnJumpPayoutConfig.addEventListener('click', () => {
+      togglePayoutSettingsCollapsible(true);
+      const accordion = document.getElementById('payout-config-collapsible');
+      if (accordion) {
+        accordion.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
+
   // 3 Payout Compensation Method Buttons Selection (Opens Settings Directly or Toggles)
   document.querySelectorAll('.payout-method-card').forEach(card => {
     card.addEventListener('click', async () => {
@@ -2617,7 +2721,30 @@ function renderCashSettlementsView(orders) {
 // 13. RIDER PAYOUT MODELS & DAILY SETTLEMENT CONTROLLER
 // ==============================================================
 
+function togglePayoutSettingsCollapsible(forceState = null) {
+  const body = document.getElementById('payout-config-collapsible-body');
+  const trigger = document.getElementById('btn-toggle-payout-settings-accordion');
+  const statePill = document.getElementById('pcc-state-pill');
+  if (!body || !trigger) return;
+
+  const isCurrentlyOpen = body.style.display !== 'none';
+  const shouldOpen = forceState !== null ? forceState : !isCurrentlyOpen;
+
+  if (shouldOpen) {
+    body.style.display = 'block';
+    trigger.classList.add('expanded');
+    trigger.setAttribute('aria-expanded', 'true');
+    if (statePill) statePill.innerHTML = '<i class="fa-solid fa-chevron-up"></i> Hide Settings';
+  } else {
+    body.style.display = 'none';
+    trigger.classList.remove('expanded');
+    trigger.setAttribute('aria-expanded', 'false');
+    if (statePill) statePill.innerHTML = '<i class="fa-solid fa-gear"></i> Configure Rates';
+  }
+}
+
 function openPayoutSettingsPanel(scroll = true) {
+  togglePayoutSettingsCollapsible(true);
   const panel = document.getElementById('payout-settings-panel');
   if (!panel) return;
   isPayoutSettingsOpen = true;

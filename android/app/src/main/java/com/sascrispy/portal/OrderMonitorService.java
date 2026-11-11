@@ -50,7 +50,9 @@ public class OrderMonitorService extends Service {
     public static final String CHANNEL_ID_ALERTS = "sas_orders_channel_v2";
     private static final int SERVICE_NOTIFICATION_ID = 1001;
 
-    private static final String SUPABASE_ENDPOINT = 
+    private static final String CLOUDFLARE_ENDPOINT = 
+        "https://saveraparadise.foodbliz.in/api/order-action?action=kitchen_poll";
+    private static final String FALLBACK_SUPABASE_ENDPOINT = 
         "https://zrgkglwqkdxmwrgepnqh.supabase.co/rest/v1/orders?select=id,status,customer_name,total,pickup_code,delivery_address,created_at&order=created_at.desc&limit=8";
     private static final String SUPABASE_KEY = 
         "sb_publishable_obyAWrTPc2oIxF3V9Bp23Q_cd_WxEZk";
@@ -58,6 +60,11 @@ public class OrderMonitorService extends Service {
     private static final Set<String> knownOrderIds = Collections.synchronizedSet(new HashSet<>());
     private static final Set<String> notifiedReadyIds = Collections.synchronizedSet(new HashSet<>());
     private static volatile OrderMonitorService activeInstance = null;
+    private static volatile boolean isAppInForeground = false;
+
+    public static void setAppInForeground(boolean inForeground) {
+        isAppInForeground = inForeground;
+    }
 
     private volatile boolean isRunning = false;
     private Thread pollingThread;
@@ -238,20 +245,52 @@ public class OrderMonitorService extends Service {
         }
     }
 
+    private boolean isNightQuietHoursIST() {
+        try {
+            java.util.Calendar cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
+            int hour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+            // Night quiet hours: 1:00 AM to 9:00 AM IST
+            return hour >= 1 && hour < 9;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void startPolling() {
         if (isRunning) return;
         isRunning = true;
 
         pollingThread = new Thread(() -> {
             while (isRunning) {
+                // 1. If currently in night quiet hours (1:00 AM to 9:00 AM IST), sleep 60 seconds
+                if (isNightQuietHoursIST()) {
+                    try {
+                        Thread.sleep(60000);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                    continue;
+                }
+
+                // 2. If app is active on screen in foreground, WebView WebSocket handles orders in <200ms
+                if (isAppInForeground) {
+                    try {
+                        Thread.sleep(15000); // Sleep gently while user is active on screen
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                    continue;
+                }
+
+                // 3. Otherwise (minimized/backgrounded during operating hours), poll Cloudflare
                 try {
-                    pollSupabaseOrders();
+                    pollKitchenOrders();
                 } catch (Exception e) {
                     Log.w(TAG, "Polling exception: " + e.getMessage());
                 }
 
                 try {
-                    Thread.sleep(4000); // Poll every 4 seconds
+                    Thread.sleep(20000); // Poll every 20 seconds when minimized
                 } catch (InterruptedException e) {
                     break;
                 }
@@ -260,10 +299,52 @@ public class OrderMonitorService extends Service {
         pollingThread.start();
     }
 
-    private void pollSupabaseOrders() {
+    private void pollKitchenOrders() {
         HttpURLConnection conn = null;
         try {
-            URL url = new URL(SUPABASE_ENDPOINT);
+            // Priority 1: Cloudflare Edge-Cached endpoint (0 Supabase Log Ingestion)
+            URL url = new URL(CLOUDFLARE_ENDPOINT);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(6000);
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == 200) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                reader.close();
+
+                String respStr = sb.toString().trim();
+                JSONArray orders = null;
+                if (respStr.startsWith("[")) {
+                    orders = new JSONArray(respStr);
+                } else if (respStr.startsWith("{")) {
+                    JSONObject obj = new JSONObject(respStr);
+                    orders = obj.optJSONArray("orders");
+                }
+                if (orders != null) {
+                    processIncomingOrders(orders);
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Cloudflare poll error, attempting fallback: " + e.getMessage());
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+                conn = null;
+            }
+        }
+
+        // Priority 2: Direct Supabase fallback only if Cloudflare was completely unreachable
+        try {
+            URL url = new URL(FALLBACK_SUPABASE_ENDPOINT);
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setRequestProperty("apikey", SUPABASE_KEY);
@@ -286,7 +367,7 @@ public class OrderMonitorService extends Service {
                 processIncomingOrders(orders);
             }
         } catch (Exception e) {
-            Log.w(TAG, "Failed to fetch orders from Supabase: " + e.getMessage());
+            Log.w(TAG, "Fallback Supabase poll exception: " + e.getMessage());
         } finally {
             if (conn != null) {
                 conn.disconnect();

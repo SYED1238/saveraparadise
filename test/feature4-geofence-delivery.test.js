@@ -86,6 +86,46 @@ test('FEATURE #4: GEOFENCE DELIVERY DEFENSE & DYNAMIC FEE SUITE', async (t) => {
     assert.strictEqual(res.data.total, '₹400');
   });
 
+  await t.test('2b. Dynamic delivery fee applies ₹0 when deliveryFeeStandard is 0 regardless of threshold', async () => {
+    const { req, res } = createMockReqRes({
+      body: {
+        items: [{ id: '1', name: 'Mutton Biryani', price: 150, quantity: 1 }],
+        catalogDishes: [{ id: '1', name: 'Mutton Biryani', price: 150 }],
+        storeSettings: {
+          freeDeliveryEnabled: true,
+          freeDeliveryThreshold: 500,
+          deliveryFeeStandard: 0
+        }
+      }
+    });
+
+    await checkoutHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.data.subtotal, 150);
+    assert.strictEqual(res.data.deliveryFee, 0);
+    assert.strictEqual(res.data.total, '₹150');
+  });
+
+  await t.test('2c. Dynamic delivery fee applies ₹0 when freeDeliveryThreshold is 0 (all deliveries free)', async () => {
+    const { req, res } = createMockReqRes({
+      body: {
+        items: [{ id: '1', name: 'Mutton Biryani', price: 120, quantity: 1 }],
+        catalogDishes: [{ id: '1', name: 'Mutton Biryani', price: 120 }],
+        storeSettings: {
+          freeDeliveryEnabled: true,
+          freeDeliveryThreshold: 0,
+          deliveryFeeStandard: 40
+        }
+      }
+    });
+
+    await checkoutHandler(req, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.data.subtotal, 120);
+    assert.strictEqual(res.data.deliveryFee, 0);
+    assert.strictEqual(res.data.total, '₹120');
+  });
+
   await t.test('3. /api/checkout blocks out-of-zone coordinates with 400 and clear error message', async () => {
     const { req, res } = createMockReqRes({
       body: {
