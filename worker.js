@@ -35,6 +35,11 @@ const ROUTES = {
   '/api/r2-video': r2VideoHandler
 };
 
+// Clean URL Aliases for Static Assets (Cloudflare Workers Static Assets does not evaluate _redirects)
+const CUSTOM_REWRITES = {
+  '/poster': '/qr-standee.html'
+};
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -53,7 +58,14 @@ export default {
       return handler(context);
     }
 
-    // 2. Static Assets Dispatching via Cloudflare ASSETS binding
+    // 2. Custom Clean URL Aliases (e.g. /poster -> /qr-standee.html)
+    if (CUSTOM_REWRITES[pathname] && env.ASSETS) {
+      const targetUrl = new URL(CUSTOM_REWRITES[pathname], url.origin);
+      targetUrl.search = url.search;
+      return env.ASSETS.fetch(new Request(targetUrl.toString(), request));
+    }
+
+    // 3. Static Assets Dispatching via Cloudflare ASSETS binding
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }

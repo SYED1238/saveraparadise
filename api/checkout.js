@@ -450,7 +450,10 @@ export default async function handler(req, res) {
   let activeAppliedPromo = null;
   if (activePromo && settings.offerActive !== false) {
     const cleanCode = String(activePromo).trim().toUpperCase();
-    const hasCustomSettings = Boolean(storeSettings && typeof storeSettings === 'object' && (storeSettings.offerPromoCode || storeSettings.offerCode || storeSettings.offerMinOrder !== undefined || storeSettings.offerDiscountPercent !== undefined));
+    const hasCustomSettings = Boolean(
+      (storeSettings && typeof storeSettings === 'object' && (storeSettings.offerPromoCode || storeSettings.offerCode || storeSettings.offerMinOrder !== undefined || storeSettings.offerDiscountPercent !== undefined)) ||
+      (serverSettings && typeof serverSettings === 'object' && (serverSettings.offerPromoCode || serverSettings.offerCode || serverSettings.offerMinOrder !== undefined || serverSettings.offerDiscountPercent !== undefined))
+    );
     const configCode = String(settings.offerPromoCode || settings.offerCode || 'SAVERA20').trim().toUpperCase();
 
     if (hasCustomSettings && cleanCode === configCode) {

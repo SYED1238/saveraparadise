@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ORDER_STATUS_RANKS } from '../dataService.js';
+import nodeOrderActionHandler from '../api/order-action.js';
+import { onRequest as cfOrderActionHandler } from '../functions/api/order-action.js';
+import { createAdminToken } from '../api/_auth.js';
+import { createAdminToken as createCloudflareAdminToken } from '../functions/api/_auth.js';
 
 test('CUSTOMER UNREACHABLE AT DOORSTEP (CNR) PROTOCOL SUITE', async (t) => {
   await t.test('1. Status monotonic ranking permits transition to undelivered and blocks regressions', () => {
@@ -172,5 +176,102 @@ test('CUSTOMER UNREACHABLE AT DOORSTEP (CNR) PROTOCOL SUITE', async (t) => {
     assert.ok(waUrl.includes('Farhan'));
     assert.ok(waUrl.includes('%23QB-4912'));
     assert.ok(waUrl.includes('Savera%20Paradise'));
+  });
+
+  await t.test('7. Doorstep Wait ([DOORSTEP_WAIT]) status update preserves on_the_way state on Node and Cloudflare', async () => {
+    function createMockRes() {
+      let statusCode = 200;
+      let data = null;
+      return {
+        status(code) { statusCode = code; return this; },
+        setHeader() { return this; },
+        json(d) { data = d; return this; },
+        end() { return this; },
+        get statusCode() { return statusCode; },
+        get data() { return data; }
+      };
+    }
+
+    const riderToken = createAdminToken(3600000, 'rider', null, { riderPin: '2233' });
+    const waitMsg = '[DOORSTEP_WAIT] Rider waiting since 12:00:00 PM';
+
+    // Node Serverless API
+    const req1 = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: { action: 'update_status', orderId: '#QB-102', status: 'on_the_way', cancellationReason: waitMsg }
+    };
+    const res1 = createMockRes();
+    await nodeOrderActionHandler(req1, res1);
+    assert.strictEqual(res1.statusCode, 200);
+    assert.strictEqual(res1.data.success, true);
+    assert.strictEqual(res1.data.order.status, 'on_the_way');
+    assert.strictEqual(res1.data.order.cancellation_reason, waitMsg);
+
+    // Cloudflare Pages Function
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const cfRiderToken = createCloudflareAdminToken(3600000, 'rider', mockCfEnv, { riderPin: '2233' });
+    const cfReq1 = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${cfRiderToken}`
+      },
+      body: JSON.stringify({ action: 'update_status', orderId: '#QB-102', status: 'on_the_way', cancellationReason: waitMsg })
+    });
+    const cfRes1 = await cfOrderActionHandler({ request: cfReq1, env: mockCfEnv });
+    assert.strictEqual(cfRes1.status, 200);
+    const cfData1 = await cfRes1.json();
+    assert.strictEqual(cfData1.success, true);
+    assert.strictEqual(cfData1.order.status, 'on_the_way');
+    assert.strictEqual(cfData1.order.cancellation_reason, waitMsg);
+  });
+
+  await t.test('8. Doorstep Wait cancellation with cancellationReason: null clears reason on Node and Cloudflare', async () => {
+    function createMockRes() {
+      let statusCode = 200;
+      let data = null;
+      return {
+        status(code) { statusCode = code; return this; },
+        setHeader() { return this; },
+        json(d) { data = d; return this; },
+        end() { return this; },
+        get statusCode() { return statusCode; },
+        get data() { return data; }
+      };
+    }
+
+    const riderToken = createAdminToken(3600000, 'rider', null, { riderPin: '2233' });
+
+    // Node Serverless API
+    const req2 = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${riderToken}` },
+      body: { action: 'update_status', orderId: '#QB-102', status: 'on_the_way', cancellationReason: null }
+    };
+    const res2 = createMockRes();
+    await nodeOrderActionHandler(req2, res2);
+    assert.strictEqual(res2.statusCode, 200);
+    assert.strictEqual(res2.data.success, true);
+    assert.strictEqual(res2.data.order.status, 'on_the_way');
+    assert.strictEqual(res2.data.order.cancellation_reason, null);
+
+    // Cloudflare Pages Function
+    const mockCfEnv = { SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!' };
+    const cfRiderToken = createCloudflareAdminToken(3600000, 'rider', mockCfEnv, { riderPin: '2233' });
+    const cfReq2 = new Request('https://saveraparadise.com/api/order-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${cfRiderToken}`
+      },
+      body: JSON.stringify({ action: 'update_status', orderId: '#QB-102', status: 'on_the_way', cancellationReason: null })
+    });
+    const cfRes2 = await cfOrderActionHandler({ request: cfReq2, env: mockCfEnv });
+    assert.strictEqual(cfRes2.status, 200);
+    const cfData2 = await cfRes2.json();
+    assert.strictEqual(cfData2.success, true);
+    assert.strictEqual(cfData2.order.status, 'on_the_way');
+    assert.strictEqual(cfData2.order.cancellation_reason, null);
   });
 });

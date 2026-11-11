@@ -73,6 +73,30 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       assert.ok(content.includes('env.ASSETS.fetch(request)'));
     });
 
+    it('worker.js rewrites /poster to /qr-standee.html via env.ASSETS for Cloudflare Workers Static Assets', async () => {
+      const workerModule = (await import('../worker.js')).default;
+      let fetchedUrl = null;
+      const mockAssetsEnv = {
+        ...mockEnv,
+        ASSETS: {
+          fetch: async (req) => {
+            fetchedUrl = req.url;
+            return new Response('QR Standee Standalone Poster', {
+              status: 200,
+              headers: { 'Content-Type': 'text/html' }
+            });
+          }
+        }
+      };
+
+      const req = new Request('https://saveraparadise.com/poster', { method: 'GET' });
+      const res = await workerModule.fetch(req, mockAssetsEnv);
+      assert.equal(res.status, 200);
+      assert.ok(fetchedUrl, 'ASSETS.fetch must be called');
+      const parsed = new URL(fetchedUrl);
+      assert.equal(parsed.pathname, '/qr-standee.html', 'URL must be rewritten to /qr-standee.html');
+    });
+
     it('prevents circular 307 redirect loops: public/_redirects must not rewrite clean URLs to .html', () => {
       const publicRedirectsPath = path.resolve(process.cwd(), 'public/_redirects');
       if (fs.existsSync(publicRedirectsPath)) {

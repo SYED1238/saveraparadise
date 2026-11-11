@@ -66,7 +66,8 @@ function r2DevMiddlewarePlugin() {
           '/terms': '/terms.html',
           '/privacy': '/privacy.html',
           '/refund': '/refund.html',
-          '/shipping': '/shipping.html'
+          '/shipping': '/shipping.html',
+          '/poster': '/qr-standee.html'
         };
         const normalized = url.replace(/\/+$/, '') || '/';
         if (cleanUrlMap[normalized]) {
@@ -234,13 +235,20 @@ function r2DevMiddlewarePlugin() {
 
         // 0b. GET/HEAD /api/r2-video
         if ((req.method === 'GET' || req.method === 'HEAD') && url === '/api/r2-video') {
-          const defaultKey = 'Untitled design (16).mp4';
+          const defaultKey = 'Untitled design (17).mp4';
           const query = new URL(req.url, 'http://localhost').searchParams;
           let videoKey = query.get('key') || defaultKey;
           const cleanKey = videoKey.replace(/^\/+/, '');
           if (cleanKey.includes('..') || (!cleanKey.endsWith('.mp4') && !cleanKey.endsWith('.webm'))) {
             res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ error: 'Invalid video key' }));
+            return;
+          }
+          if (!R2_CONFIG.ACCESS_KEY_ID || !R2_CONFIG.SECRET_ACCESS_KEY) {
+            res.statusCode = 503;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'Storage credentials not configured in .env.local' }));
             return;
           }
 

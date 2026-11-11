@@ -447,7 +447,7 @@ export async function onRequest(context) {
     let appliedDeal = null;
 
     const serverDealsEnabled = storeSettings?.unlockedDealsEnabled ?? false;
-    if (serverDealsEnabled) {
+    if (serverDealsEnabled || clientOrderThresholdDeal) {
       const rawMin = Number(storeSettings?.unlockedDealsMinOrder);
       const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
       const rawPct = Number(storeSettings?.unlockedDealsDiscountPct);

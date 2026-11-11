@@ -298,7 +298,7 @@ export async function onRequest(context) {
           if (['delivered', 'undelivered', 'cancelled'].includes(existing.status)) {
             return jsonResponse({ error: `Order is in terminal state (${existing.status}) and cannot be modified` }, 400, Object.fromEntries(corsHeaders.entries()));
           }
-          if (existing.status !== 'on_the_way' || !['delivered', 'undelivered'].includes(status)) {
+          if (existing.status !== 'on_the_way' || !['on_the_way', 'delivered', 'undelivered'].includes(status)) {
             return jsonResponse({ error: `Invalid status transition from "${existing.status}" to "${status}" for rider` }, 400, Object.fromEntries(corsHeaders.entries()));
           }
           if (body.simulateReassignmentRace) {
@@ -366,6 +366,7 @@ export async function onRequest(context) {
           is_paid_online: enforcedIsPaidOnline,
           doorstep_upi: enforcedDoorstepUpi,
           payment_method: enforcedPaymentMethod,
+          ...(body.cancellationReason !== undefined || body.cancellation_reason !== undefined ? { cancellation_reason: body.cancellationReason !== undefined ? body.cancellationReason : body.cancellation_reason } : {}),
           ...(status === 'delivered' ? { delivered_at: Date.now() } : {}),
           ...(status === 'undelivered' ? { undelivered_at: Date.now() } : {})
         };
@@ -543,7 +544,8 @@ export async function onRequest(context) {
         const stepIndex = typeof body.stepIndex === 'number' ? body.stepIndex : (typeof body.step_index === 'number' ? body.step_index : undefined);
         const statusLabel = body.statusLabel || body.status_label;
         const eta = body.eta;
-        const cancellationReason = body.cancellationReason || body.cancellation_reason;
+        const hasCancellationReason = body.cancellationReason !== undefined || body.cancellation_reason !== undefined;
+        const cancellationReason = body.cancellationReason !== undefined ? body.cancellationReason : body.cancellation_reason;
         const deliveredAt = body.deliveredAt || body.delivered_at;
         const cashCollected = body.cashCollected ?? body.cash_collected;
         const paymentStatus = body.paymentStatus || body.payment_status;
@@ -576,7 +578,7 @@ export async function onRequest(context) {
           if (['delivered', 'undelivered', 'cancelled'].includes(existing.status)) {
             return jsonResponse({ error: `Order is in terminal state (${existing.status}) and cannot be modified` }, 400, Object.fromEntries(corsHeaders.entries()));
           }
-          if (existing.status !== 'on_the_way' || !['delivered', 'undelivered'].includes(status)) {
+          if (existing.status !== 'on_the_way' || !['on_the_way', 'delivered', 'undelivered'].includes(status)) {
             return jsonResponse({ error: `Invalid status transition from "${existing.status}" to "${status}" for rider` }, 400, Object.fromEntries(corsHeaders.entries()));
           }
         }
@@ -589,7 +591,7 @@ export async function onRequest(context) {
         };
 
         if (deliveredAt || status === 'delivered') updatePayload.delivered_at = Number(deliveredAt) || Date.now();
-        if (cancellationReason || status === 'undelivered') updatePayload.cancellation_reason = cancellationReason || (status === 'undelivered' ? 'Marked undelivered by rider' : existing.cancellation_reason);
+        if (hasCancellationReason || status === 'undelivered') updatePayload.cancellation_reason = hasCancellationReason ? cancellationReason : (status === 'undelivered' ? 'Marked undelivered by rider' : existing.cancellation_reason);
         if (typeof doorstepUpi === 'boolean') updatePayload.doorstep_upi = doorstepUpi;
         if (typeof isPaidOnline === 'boolean') updatePayload.is_paid_online = isPaidOnline;
 

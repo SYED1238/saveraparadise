@@ -4901,14 +4901,10 @@ class QuickBiteDataService {
       if (hasNew) {
         try {
           localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(customImages));
-          if (supabase) {
-            supabase.from('store_settings').upsert([{
-              id: 'category_images',
-              settings: customImages,
-              updated_at: new Date().toISOString()
-            }]).then(({ error }) => {
-              if (error) console.warn('[Supabase] Persist category_images error:', error.message);
-            }).catch(() => {});
+          if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+            this._adminStoreAction('save_category_images', { images: customImages }).catch((err) => {
+              console.warn('[DataService] Persist category_images error:', err?.message || err);
+            });
           }
         } catch {}
       }
@@ -8463,22 +8459,15 @@ class QuickBiteDataService {
       localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
     } catch {}
 
-    // Resilient Supabase sync & Realtime Broadcast
+    // Resilient Server Gateway sync & Realtime Broadcast
     try {
-      if (typeof supabase !== 'undefined' && supabase) {
-        const cleanId = String(order.id || '').replace(/^#/, '');
-        const hashId = `#${cleanId}`;
-        const doSync = async (tid) => {
-          try {
-            await supabase.from('orders').update({
-              cancellation_reason: null
-            }).eq('id', tid);
-          } catch {}
-        };
-        doSync(order.id);
-        if (order.id !== cleanId) doSync(cleanId);
-        if (order.id !== hashId) doSync(hashId);
+      this._orderAction('update_status', {
+        orderId: order.id,
+        status: order.status || 'on_the_way',
+        cancellationReason: null
+      }).catch(() => {});
 
+      if (typeof supabase !== 'undefined' && supabase) {
         if (this.sharedBroadcastChannel) {
           this.sharedBroadcastChannel.send({
             type: 'broadcast',
@@ -8524,22 +8513,16 @@ class QuickBiteDataService {
       }));
     } catch {}
 
-    // Resilient Supabase sync & Realtime Broadcast to notify kitchen tablet and customer
+    // Resilient Server Gateway sync & Realtime Broadcast to notify kitchen tablet and customer
     try {
-      if (typeof supabase !== 'undefined' && supabase) {
-        const cleanId = String(order.id || '').replace(/^#/, '');
-        const hashId = `#${cleanId}`;
-        const doSync = async (tid) => {
-          try {
-            await supabase.from('orders').update({
-              cancellation_reason: `[DOORSTEP_WAIT] Rider waiting since ${new Date(waitingStartedAt).toLocaleTimeString()}`
-            }).eq('id', tid);
-          } catch {}
-        };
-        doSync(order.id);
-        if (order.id !== cleanId) doSync(cleanId);
-        if (order.id !== hashId) doSync(hashId);
+      const waitReason = `[DOORSTEP_WAIT] Rider waiting since ${new Date(waitingStartedAt).toLocaleTimeString()}`;
+      this._orderAction('update_status', {
+        orderId: order.id,
+        status: order.status || 'on_the_way',
+        cancellationReason: waitReason
+      }).catch(() => {});
 
+      if (typeof supabase !== 'undefined' && supabase) {
         if (this.sharedBroadcastChannel) {
           this.sharedBroadcastChannel.send({
             type: 'broadcast',

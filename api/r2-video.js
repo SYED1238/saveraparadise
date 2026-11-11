@@ -1,14 +1,16 @@
 import crypto from 'crypto';
 import https from 'https';
 
-const R2_CONFIG = {
-  HOST: process.env.R2_HOST || '',
-  BUCKET_NAME: process.env.R2_BUCKET_NAME || '',
-  ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
-  SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
-  REGION: process.env.R2_REGION || 'auto',
-  SERVICE: 's3'
-};
+function getR2Config() {
+  return {
+    HOST: process.env.R2_HOST || '',
+    BUCKET_NAME: process.env.R2_BUCKET_NAME || '',
+    ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
+    SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
+    REGION: process.env.R2_REGION || 'auto',
+    SERVICE: 's3'
+  };
+}
 
 const DEFAULT_VIDEO_KEY = 'Untitled design (17).mp4';
 
@@ -89,6 +91,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid video key: videos must reside in videos/ folder or be the default video' });
   }
 
+  const R2_CONFIG = getR2Config();
   if (!R2_CONFIG.ACCESS_KEY_ID || !R2_CONFIG.SECRET_ACCESS_KEY || !R2_CONFIG.HOST || !R2_CONFIG.BUCKET_NAME) {
     return res.status(503).json({ error: 'Storage credentials not configured' });
   }
