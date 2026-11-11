@@ -3023,7 +3023,7 @@ class QuickBiteDataService {
         let data = null;
         let error = null;
         try {
-          const actionRes = await this._orderAction('sync_orders', { limit: 30 });
+          const actionRes = await this._orderAction('sync_orders', { limit: 100 });
           if (actionRes && Array.isArray(actionRes.orders)) {
             data = actionRes.orders;
           }
@@ -4656,7 +4656,10 @@ class QuickBiteDataService {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Failed to execute ${action}`);
+        const httpErr = new Error(err.error || `Failed to execute ${action}`);
+        httpErr.status = res.status;
+        httpErr.data = err;
+        throw httpErr;
       }
       return await res.json();
     } catch (err) {
@@ -7712,16 +7715,39 @@ class QuickBiteDataService {
     return orders.find(isMatch) || null;
   }
 
-  claimOrderByBagCode(code, riderPin) {
-    const order = this.findOrderByBagCode(code);
-    if (!order) {
-      return { success: false, reason: 'not_found', message: `No order found matching 4-digit code "${code}". Please verify the number on the bag.` };
+  claimOrderByBagCode(code, riderPin, explicitOrderId = null, options = {}) {
+    const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
+    const currentOrders = this.getOrders();
+    let order = null;
+    if (explicitOrderId) {
+      const cleanExplicit = normalizeId(explicitOrderId);
+      order = currentOrders.find(o => o && normalizeId(o.id) === cleanExplicit) || null;
     }
+    if (!order) {
+      order = this.findOrderByBagCode(code);
+    }
+    if (!order) {
+      return { success: false, reason: 'not_found', message: `No order found matching order/bag code "${explicitOrderId || code}".` };
+    }
+
+    const cleanPin = riderPin ? String(riderPin).trim() : null;
+    const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider() || DEFAULT_RIDERS[0];
 
     // Atomic Claim Guards: Prevent claiming already claimed, delivered, or cancelled orders
     if (order.status === 'on_the_way') {
-      const cleanPin = riderPin ? String(riderPin).trim() : null;
       if (!order.assignedRiderPin || order.assignedRiderPin === cleanPin) {
+        const activeOther = this.getOrders().find(o =>
+          o && o.status === 'on_the_way' &&
+          String(o.assignedRiderPin || '').trim() === String(cleanPin || '').trim() &&
+          normalizeId(o.id) !== normalizeId(order.id)
+        );
+        if (activeOther) {
+          return {
+            success: false,
+            reason: 'active_order_limit',
+            message: `You already have active order ${activeOther.id} out for delivery. Complete it before picking another order.`
+          };
+        }
         order.assignedRiderPin = cleanPin;
         const currentRider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider() || DEFAULT_RIDERS[0];
         if (currentRider) {
@@ -7757,14 +7783,47 @@ class QuickBiteDataService {
       };
     }
 
-    const cleanPin = riderPin ? String(riderPin).trim() : null;
-    const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider() || DEFAULT_RIDERS[0];
     if (!rider) {
       return { success: false, reason: 'no_rider', message: 'No active delivery rider session found. Please log in with your Rider PIN.' };
     }
 
+    // Single Active Order Guard: Rider can only pick 1 active order at a time
+    const cleanOrderNorm = normalizeId(order.id);
+    const alreadyActiveOrder = this.getOrders().find(o =>
+      o &&
+      o.status === 'on_the_way' &&
+      String(o.assignedRiderPin || '').trim() === String(rider.pin || '').trim() &&
+      normalizeId(o.id) !== cleanOrderNorm
+    );
+    if (alreadyActiveOrder) {
+      return {
+        success: false,
+        reason: 'active_order_limit',
+        message: `You already have active order ${alreadyActiveOrder.id} out for delivery. Complete it before picking another order.`
+      };
+    }
+
+    // 3 km Restaurant Pickup Radius Guard when live coordinates are supplied
+    const hasValidCoords = options &&
+      options.riderLat !== undefined && options.riderLat !== null &&
+      options.riderLng !== undefined && options.riderLng !== null &&
+      Number.isFinite(Number(options.riderLat)) &&
+      Number.isFinite(Number(options.riderLng));
+    if (hasValidCoords) {
+      const distKm = this.calculateStraightDistance(Number(options.riderLat), Number(options.riderLng));
+      if (distKm === null || distKm > 3.0) {
+        return {
+          success: false,
+          reason: 'outside_pickup_radius',
+          message: distKm === null
+            ? 'Invalid live GPS coordinates. Please sync your live GPS location to pick an order.'
+            : `You are ${distKm.toFixed(2)} km from Savera Paradise. You must be within a 3 km radius of the restaurant to pick an order.`
+        };
+      }
+    }
+
     // Ensure pickupCode is firmly set and matches 4 digits
-    const cleanCode = String(code).trim().replace(/\D/g, '');
+    const cleanCode = String(code || '').trim().replace(/\D/g, '');
     order.pickupCode = order.pickupCode || (cleanCode.length === 4 ? cleanCode : String(order.id).replace(/\D/g, '').slice(-4));
 
     // Assign to this rider and transition to 'on_the_way'
@@ -7780,10 +7839,8 @@ class QuickBiteDataService {
     order.claimedAt = Date.now();
     order._optimisticTimestamp = Date.now();
 
-    const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
-    const cleanTargetId = normalizeId(order.id);
     const orders = this.getOrders();
-    const idx = orders.findIndex(o => o && normalizeId(o.id) === cleanTargetId);
+    const idx = orders.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
     if (idx >= 0) {
       orders[idx] = order;
     } else {
@@ -7826,16 +7883,14 @@ class QuickBiteDataService {
       }
     } catch {}
 
-    // Resilient Supabase update: try exact ID, then alternate with/without '#' prefix
+    // Resilient Supabase update: route through authoritative /api/order-action gateway first
     try {
-      const cleanId = normalizeId(order.id);
-      const hashId = `#${cleanId}`;
       const fullPayload = {
         status: 'on_the_way',
         step_index: 3,
         status_label: 'Dispatched for Delivery',
         eta: '10 - 15 Minutes',
-        pickup_code: order.pickupCode || String(code).trim(),
+        pickup_code: order.pickupCode || String(code || '').trim(),
         assigned_rider_pin: rider.pin,
         assigned_rider_name: rider.name,
         assigned_rider_phone: rider.phone,
@@ -7856,9 +7911,31 @@ class QuickBiteDataService {
             riderPin: rider.pin,
             riderName: rider.name,
             riderPhone: rider.phone,
-            riderVehicle: rider.vehicle
+            riderVehicle: rider.vehicle,
+            enforceSingleActiveOrder: true,
+            ...(hasValidCoords ? { riderLat: Number(options.riderLat), riderLng: Number(options.riderLng) } : {})
           });
-        } catch {
+        } catch (actionErr) {
+          if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
+            // Authoritative server rejection (e.g., race conflict or 3 km geofence): revert optimistic claim
+            try {
+              const list = this.getOrders();
+              const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
+              if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
+                list[rIdx].status = prevStatus;
+                list[rIdx].assignedRiderPin = null;
+                list[rIdx].assignedRiderName = null;
+                list[rIdx].assignedRiderPhone = null;
+                list[rIdx].assignedRiderVehicle = null;
+                delete list[rIdx]._optimisticTimestamp;
+                delete list[rIdx].pendingStatusSync;
+                this.saveOrders(list);
+              }
+              await this.syncOrdersFromSupabase(true);
+            } catch {}
+            this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr.message });
+            return;
+          }
           try {
             const { error } = await supabase.from('orders')
               .update(fullPayload)

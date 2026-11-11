@@ -77,6 +77,7 @@ const initDeliveryApp = () => {
   let isDutyOn = true;
   let activeConfirmOrder = null;
   let pendingBagOrder = null;
+  const DOORSTEP_UPI_ENABLED = false; // Closed until riders can collect UPI into their own account & transfer to restaurant
   let currentDoorstepPaymentMode = 'cash';
   const miniMapInstances = new Map();
 
@@ -562,9 +563,13 @@ const initDeliveryApp = () => {
   let lastGpsBroadcastLng = 0;
 
   function updateGpsStatusBadge(status, label) {
-    if (!riderGpsPill || !gpsStatusText) return;
-    riderGpsPill.className = `gps-status-pill ${status}`;
-    gpsStatusText.textContent = label;
+    if (riderGpsPill && gpsStatusText) {
+      riderGpsPill.className = `gps-status-pill ${status}`;
+      gpsStatusText.textContent = label;
+    }
+    if (typeof updatePickupGpsGateUI === 'function') {
+      updatePickupGpsGateUI();
+    }
   }
 
   function handleGpsPosition(pos) {
@@ -572,6 +577,9 @@ const initDeliveryApp = () => {
       // Discard excessively coarse GPS fixes (>150m) to prevent erratic tracker map jitter
       return;
     }
+    const prevGpsReady = isRiderGpsSyncedAndFresh();
+    const prevWithinZone = isRiderWithinRestaurantPickupRadius();
+
     riderLiveLocation.lat = pos.coords.latitude;
     riderLiveLocation.lng = pos.coords.longitude;
     riderLiveLocation.accuracy = Math.round(pos.coords.accuracy || 10);
@@ -579,7 +587,16 @@ const initDeliveryApp = () => {
     riderLiveLocation.lastUpdated = Date.now();
 
     updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
+    updatePickupGpsGateUI();
     updateLivePositionsOnMiniMaps();
+
+    if (
+      activeTab === 'ready' &&
+      (prevGpsReady !== isRiderGpsSyncedAndFresh() ||
+        prevWithinZone !== isRiderWithinRestaurantPickupRadius())
+    ) {
+      renderPortal();
+    }
 
     // Throttle micro-jitter broadcasts if stationary (< 5m displacement and < 3s elapsed)
     const now = Date.now();
@@ -708,11 +725,13 @@ const initDeliveryApp = () => {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && isStaffSessionActive('rider')) {
       initRiderLiveGeolocation(true);
+      try { dataService.syncOrdersFromSupabase(true); } catch {}
     }
   });
   window.addEventListener('focus', () => {
     if (isStaffSessionActive('rider')) {
       initRiderLiveGeolocation(true);
+      try { dataService.syncOrdersFromSupabase(true); } catch {}
     }
   });
 
@@ -825,6 +844,8 @@ const initDeliveryApp = () => {
 
   // Maximum allowed radius from customer drop location to mark order delivered (Anti-Arbitrage Defense)
   const MAX_DOORSTEP_GEOFENCE_METERS = 500;
+  // Maximum allowed radius from Savera Paradise restaurant to pick/claim an order (3 km = 3000m)
+  const MAX_RESTAURANT_PICKUP_RADIUS_METERS = 3000;
 
   // Direct straight-line distance in meters between two lat/lng coordinates for geofence validation
   function calculateStraightDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -838,6 +859,133 @@ const initDeliveryApp = () => {
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return Math.round(R * c);
+  }
+
+  function isRiderGpsSyncedAndFresh() {
+    return Boolean(
+      riderLiveLocation.hasGps &&
+      riderLiveLocation.lat &&
+      riderLiveLocation.lng &&
+      (Date.now() - (riderLiveLocation.lastUpdated || 0) <= 180000)
+    );
+  }
+
+  function getRiderDistanceFromRestaurantMeters() {
+    if (!isRiderGpsSyncedAndFresh()) return Infinity;
+    return calculateStraightDistanceMeters(
+      riderLiveLocation.lat,
+      riderLiveLocation.lng,
+      RESTAURANT_COORDINATES.lat,
+      RESTAURANT_COORDINATES.lng
+    );
+  }
+
+  function isRiderWithinRestaurantPickupRadius() {
+    const distMeters = getRiderDistanceFromRestaurantMeters();
+    return Number.isFinite(distMeters) && distMeters <= MAX_RESTAURANT_PICKUP_RADIUS_METERS;
+  }
+
+  function getRiderCurrentActiveOrder() {
+    const currentRider = dataService.getActiveRider();
+    if (!currentRider || !currentRider.pin) return null;
+    return dataService.getOrders().find(
+      o => o && o.status === 'on_the_way' && String(o.assignedRiderPin || '').trim() === String(currentRider.pin).trim()
+    ) || null;
+  }
+
+  function updatePickupGpsGateUI() {
+    const gateBar = document.getElementById('rider-pickup-gps-gate');
+    const gateText = document.getElementById('pickup-gps-gate-text');
+    const gateBtnLabel = document.getElementById('btn-sync-live-gps-label');
+    if (!gateBar || !gateText) return;
+
+    const gpsReady = isRiderGpsSyncedAndFresh();
+    if (!gpsReady) {
+      gateBar.className = 'pickup-gps-gate-bar gps-required';
+      gateText.textContent = '📍 Location Required to Pick Order — Turn on device location and tap "Turn On & Sync GPS" (must be within 3 km of restaurant).';
+      if (gateBtnLabel) gateBtnLabel.textContent = 'Turn On & Sync GPS';
+      return;
+    }
+
+    const distMeters = getRiderDistanceFromRestaurantMeters();
+    const withinZone = Number.isFinite(distMeters) && distMeters <= MAX_RESTAURANT_PICKUP_RADIUS_METERS;
+    if (!withinZone) {
+      gateBar.className = 'pickup-gps-gate-bar gps-out-of-zone';
+      gateText.textContent = `🚫 Outside 3 km Pickup Zone (${(distMeters / 1000).toFixed(2)} km from Savera Paradise) — Move within 3.0 km of the restaurant to pick an order.`;
+      if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
+      return;
+    }
+
+    const distLabel = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(2)} km` : `${distMeters}m`;
+    gateBar.className = 'pickup-gps-gate-bar gps-synced';
+    gateText.textContent = `✅ Live GPS Synced (${distLabel} from restaurant • Within 3 km zone) — Ready to pick 1 order!`;
+    if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
+  }
+
+  function requestLiveGpsSyncForPickup(onSynced) {
+    if (!('geolocation' in navigator)) {
+      showToast('⚠️ Location Required: GPS is not supported on this device.', 'error');
+      return;
+    }
+    showToast('📍 Syncing your live GPS location...', 'info');
+    const handleSuccess = (pos) => {
+      // Accept explicit user sync even if coarse up to 500m, preferring handleGpsPosition when accurate
+      if (pos?.coords) {
+        if (!pos.coords.accuracy || pos.coords.accuracy <= 150) {
+          handleGpsPosition(pos);
+        } else {
+          riderLiveLocation.lat = pos.coords.latitude;
+          riderLiveLocation.lng = pos.coords.longitude;
+          riderLiveLocation.accuracy = Math.round(pos.coords.accuracy);
+          riderLiveLocation.hasGps = true;
+          riderLiveLocation.lastUpdated = Date.now();
+          updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
+          updatePickupGpsGateUI();
+        }
+      }
+      renderPortal();
+      if (typeof onSynced === 'function') {
+        onSynced();
+      } else {
+        const distMeters = getRiderDistanceFromRestaurantMeters();
+        const distLabel = Number.isFinite(distMeters)
+          ? (distMeters >= 1000 ? `${(distMeters / 1000).toFixed(2)} km` : `${distMeters}m`)
+          : '--';
+        if (isRiderWithinRestaurantPickupRadius()) {
+          showToast(`✅ Live GPS synced (${distLabel} from Savera Paradise — within 3 km zone).`, 'success');
+        } else {
+          showToast(`📍 GPS synced (${distLabel} away) — Move within 3 km of Savera Paradise to pick an order.`, 'warning');
+        }
+      }
+    };
+    const handleFailure = () => {
+      updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
+      updatePickupGpsGateUI();
+      showToast('⚠️ Location Required: Please turn on device Location / GPS permission and sync your live location to pick an order.', 'error');
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      handleSuccess,
+      (err) => {
+        if (err && err.code === 1) {
+          handleFailure();
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          handleSuccess,
+          handleFailure,
+          { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 5000 }
+    );
+  }
+
+  const btnSyncLiveGps = document.getElementById('btn-sync-live-gps');
+  if (btnSyncLiveGps) {
+    btnSyncLiveGps.addEventListener('click', () => {
+      requestLiveGpsSyncForPickup();
+    });
   }
 
   // Intelligent coordinate resolver: guarantees rider navigates to customer's exact pinned doorstep
@@ -994,25 +1142,7 @@ const initDeliveryApp = () => {
 
     // 2. Filter orders by current active tab - 100% STRICT CATEGORY SEPARATION
     if (activeTab === 'ready') {
-      // Kitchen Queue: Show how many orders are pending in the kitchen counter
-      const existingCard = riderOrdersList.querySelector('.kitchen-pending-card');
-      const hasActiveCard = existingCard && !existingCard.classList.contains('empty') && readyOrders.length > 0;
-      const hasEmptyCard = existingCard && existingCard.classList.contains('empty') && readyOrders.length === 0;
-
-      // In-place non-destructive update
-      if (hasActiveCard) {
-        const countNum = existingCard.querySelector('.pending-count-num');
-        const headline = existingCard.querySelector('.pending-headline');
-        if (countNum) countNum.textContent = readyOrders.length;
-        if (headline) headline.textContent = `${readyOrders.length} Order${readyOrders.length === 1 ? '' : 's'} Preparing in Kitchen`;
-        attachBagInputListeners();
-        return;
-      }
-
-      if (hasEmptyCard) {
-        attachBagInputListeners();
-        return;
-      }
+      updatePickupGpsGateUI();
 
       if (readyOrders.length === 0) {
         riderOrdersList.innerHTML = `
@@ -1022,26 +1152,156 @@ const initDeliveryApp = () => {
             </div>
             <div class="pending-text-wrap">
               <div class="pending-pill-tag"><i class="fa-solid fa-kitchen-set"></i> Kitchen Counter Status</div>
-              <h3 class="pending-headline">Kitchen Counter Ready</h3>
-              <p class="pending-subtext">No orders waiting in cooking queue. Collect your packed food bag from Counter 1 and enter the 4-digit parcel number above to start delivery.</p>
+              <h3 class="pending-headline">Kitchen Counter is Clear</h3>
+              <p class="pending-subtext">No orders waiting right now. Incoming orders will appear here automatically with live distance and payout.</p>
             </div>
           </div>
         `;
-      } else {
-        riderOrdersList.innerHTML = `
-          <div class="kitchen-pending-card">
-            <div class="pending-count-badge">
-              <div class="pending-flame-icon"><i class="fa-solid fa-fire-burner"></i></div>
-              <span class="pending-count-num">${readyOrders.length}</span>
-            </div>
-            <div class="pending-text-wrap">
-              <div class="pending-pill-tag"><i class="fa-solid fa-kitchen-set"></i> Kitchen Counter Status</div>
-              <h3 class="pending-headline">${readyOrders.length} Order${readyOrders.length === 1 ? '' : 's'} Preparing in Kitchen</h3>
-              <p class="pending-subtext">Food parcels are being packed fresh. As soon as you grab a bag from Counter 1, enter its 4-digit number above to start delivery.</p>
-            </div>
-          </div>
-        `;
+        attachBagInputListeners();
+        return;
       }
+
+      const statusPriority = { ready_for_pickup: 0, cooking: 1, accepted: 2, pending: 3 };
+      const sortedReadyOrders = [...readyOrders].sort((a, b) => {
+        const pa = statusPriority[a.status] ?? 9;
+        const pb = statusPriority[b.status] ?? 9;
+        if (pa !== pb) return pa - pb;
+        return Number(a.createdAt || 0) - Number(b.createdAt || 0);
+      });
+
+      const existingActiveOrder = getRiderCurrentActiveOrder();
+      const gpsReady = isRiderGpsSyncedAndFresh();
+      const distFromRestMeters = getRiderDistanceFromRestaurantMeters();
+      const within3KmZone = isRiderWithinRestaurantPickupRadius();
+
+      riderOrdersList.innerHTML = sortedReadyOrders.map((order) => {
+        const isCod = isCashOnDelivery(order);
+        const cashAmount = extractCashAmount(order.total);
+        const cleanId = escapeHtml(String(order.id || '').replace(/^#+/, ''));
+        const safeId = escapeHtml(String(order.id || ''));
+        const safeCustomerName = escapeHtml(order.customerName || 'Online Guest');
+        const bagCode = escapeHtml(order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000'));
+        const displayId = escapeHtml(formatDisplayOrderId(order.id, bagCode));
+
+        const dropCoords = getOrderDropCoordinates(order);
+        const computedDist = dropCoords.hasCustomerCoords
+          ? calculateDistanceKm(RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng, dropCoords.lat, dropCoords.lng)
+          : 0;
+        const savedDist = parseFloat(order?.addressDetails?.distanceKm || order?.distance_km || order?.distanceKm || 0);
+        const distanceKm = (savedDist > 0 ? savedDist : computedDist) || 1.8;
+        const estimatedMins = Math.max(5, Math.round(distanceKm * 3.5));
+
+        const payoutOrder = {
+          ...order,
+          addressDetails: { ...(order.addressDetails || {}), distanceKm }
+        };
+        const orderPayout = dataService.calculateOrderPayout(payoutOrder, deliveredOrders.length + 1, payoutCfg);
+
+        const rawDropAddress = order.deliveryAddress || `${order.addressDetails?.flatNo || 'House'}, ${order.addressDetails?.area || 'Ramanagara'}`;
+        const safeDropAddress = escapeHtml(cleanDeliveryAddress(rawDropAddress));
+
+        let itemsSummary = 'Food Items';
+        if (Array.isArray(order.items) && order.items.length > 0) {
+          itemsSummary = order.items.map(it => `${it.quantity || 1}x ${it.name || 'Item'}`).join(', ');
+        } else if (order.itemsSummary) {
+          itemsSummary = String(order.itemsSummary);
+        } else if (order.itemCount) {
+          itemsSummary = `${order.itemCount} items`;
+        }
+        const safeItemsSummary = escapeHtml(itemsSummary);
+
+        const isReady = order.status === 'ready_for_pickup';
+        let prepBadgeHtml = '<span class="row-prep-badge status-accepted">⏳ Accepted in Queue</span>';
+        if (isReady) {
+          prepBadgeHtml = '<span class="row-prep-badge status-ready">✅ Ready for Pickup</span>';
+        } else if (order.status === 'cooking') {
+          prepBadgeHtml = '<span class="row-prep-badge status-cooking">🍳 Cooking in Kitchen</span>';
+        }
+
+        let actionHtml = '';
+        if (!isReady) {
+          actionHtml = `
+            <div class="row-kitchen-action">
+              <button type="button" class="btn-row-pickup btn-row-pickup-waiting" disabled title="Wait until kitchen marks order Ready for Pickup">
+                <i class="fa-solid fa-fire-burner"></i>
+                <span>Preparing in Kitchen</span>
+              </button>
+            </div>
+          `;
+        } else if (existingActiveOrder) {
+          actionHtml = `
+            <div class="row-kitchen-action">
+              <button type="button" class="btn-row-pickup btn-row-pickup-locked" data-action="start-delivery" data-id="${safeId}" title="Complete your current active order before picking another">
+                <i class="fa-solid fa-lock"></i>
+                <span>1 Order Limit (Active: ${escapeHtml(existingActiveOrder.id)})</span>
+              </button>
+            </div>
+          `;
+        } else if (gpsReady && !within3KmZone) {
+          actionHtml = `
+            <div class="row-kitchen-action">
+              <button type="button" class="btn-row-pickup btn-row-pickup-out-of-range" data-action="start-delivery" data-id="${safeId}" title="Move within 3 km of Savera Paradise to pick this order">
+                <i class="fa-solid fa-location-pin-lock"></i>
+                <span>Outside 3 km Zone (${(distFromRestMeters / 1000).toFixed(1)} km away)</span>
+              </button>
+            </div>
+          `;
+        } else {
+          actionHtml = `
+            <div class="row-kitchen-action">
+              <button type="button" class="btn-row-pickup ${!gpsReady ? 'needs-gps-sync' : ''}" data-action="start-delivery" data-id="${safeId}" title="${gpsReady ? 'Preview Route & Pick Up Order' : 'Tap to Sync Live GPS & Pick Up Order'}">
+                <i class="fa-solid ${gpsReady ? 'fa-motorcycle' : 'fa-location-crosshairs'}"></i>
+                <span>${gpsReady ? 'Pick Up Order' : 'Sync GPS & Pick Order'}</span>
+              </button>
+            </div>
+          `;
+        }
+
+        return `
+          <article class="rider-order-row row-kitchen ${isReady ? 'is-ready-pickup' : 'is-cooking-order'}" data-order-id="${safeId}" data-droplat="${dropCoords.lat}" data-droplng="${dropCoords.lng}" data-cleanid="${cleanId}">
+            <div class="row-top-bar">
+              <div class="row-id-meta-group">
+                <span class="row-order-id">${displayId}</span>
+                <span class="row-bag-badge"><i class="fa-solid fa-box"></i> Bag <strong>#${bagCode}</strong></span>
+                ${prepBadgeHtml}
+                <span class="row-live-dist" id="dist-badge-${cleanId}" title="Estimated road distance from Savera Paradise">
+                  <i class="fa-solid fa-route"></i> ${distanceKm} km • ~${estimatedMins} mins
+                </span>
+              </div>
+
+              <div class="row-finance-badges">
+                <div class="row-price-badge ${isCod ? 'cod' : 'prepaid'}">
+                  <span class="price-badge-label">${isCod ? 'Cash to Collect' : 'Paid Online'}</span>
+                  <strong class="price-badge-val">${isCod ? `₹${cashAmount}` : '₹0'}</strong>
+                </div>
+                <div class="row-payout-badge" title="${escapeHtml(orderPayout.formula)}">
+                  <span class="payout-badge-label">Your Payout</span>
+                  <strong class="payout-badge-val">+₹${orderPayout.amount.toFixed(2)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="row-customer-info">
+              <h4 class="row-customer-name">${safeCustomerName}</h4>
+              <div class="row-addr-text">
+                <i class="fa-solid fa-location-dot" style="color: var(--brand-primary, #FF5A26); margin-top: 3px;"></i>
+                <span>${safeDropAddress}</span>
+              </div>
+              <div class="row-items-preview">
+                <i class="fa-solid fa-utensils"></i>
+                <span>${safeItemsSummary}</span>
+              </div>
+              <div class="row-payout-calc-strip">
+                <span class="payout-calc-icon">🏍️</span>
+                <span class="payout-calc-text"><strong>Payoff: +₹${orderPayout.amount.toFixed(2)}</strong> (${orderPayout.distanceKm.toFixed(2)} km road • ${escapeHtml(orderPayout.formula)})</span>
+              </div>
+            </div>
+
+            ${actionHtml}
+          </article>
+        `;
+      }).join('');
+
       attachBagInputListeners();
       return;
     }
@@ -1058,11 +1318,11 @@ const initDeliveryApp = () => {
     if (!displayList || displayList.length === 0) {
       let emptyIcon = '🛵';
       let emptyMsg = 'No active delivery tasks out on the road right now.';
-      let emptySub = 'Pick up a packed food bag from kitchen Counter 1 and enter the 4-digit parcel number above to start GPS delivery.';
+      let emptySub = 'Pick an available order from the Pending tab (within 3 km of the restaurant with live GPS synced) to start delivery.';
       if (activeTab === 'delivered') {
         emptyIcon = '✅';
         emptyMsg = 'No completed deliveries recorded yet for today.';
-        emptySub = 'Deliveries you complete will appear here with cash collection receipts and earnings details. Pick up a parcel above to start your shift!';
+        emptySub = 'Deliveries you complete will appear here with cash collection receipts and earnings details. Pick an order from the Pending tab to start your shift!';
       }
 
       riderOrdersList.innerHTML = `
@@ -1382,8 +1642,41 @@ const initDeliveryApp = () => {
       showToast('❌ Order details not found.', 'error');
       return;
     }
+
+    // Gate 1: Order must be ready for pickup
+    if (order.status !== 'ready_for_pickup') {
+      showToast(`⏳ Order ${order.id} is still being prepared in the kitchen. You can pick it once marked Ready for Pickup.`, 'warning');
+      return;
+    }
+
+    // Gate 2: Single Active Order Limit ("can pick only one")
+    const existingActive = getRiderCurrentActiveOrder();
+    if (existingActive && String(existingActive.id || '').trim().replace(/^#/, '') !== cleanId) {
+      showToast(`⚠️ You can only pick 1 order at a time! Please complete your active delivery (${existingActive.id}) before picking another order.`, 'warning');
+      return;
+    }
+
     const code = order.pickupCode || String(order.id).replace(/\D/g, '').slice(-4) || cleanId.slice(-4);
-    openBagPreviewModal(order, code);
+    const verifyZoneAndOpenModal = () => {
+      const distFromRestMeters = getRiderDistanceFromRestaurantMeters();
+      if (!Number.isFinite(distFromRestMeters) || distFromRestMeters > MAX_RESTAURANT_PICKUP_RADIUS_METERS) {
+        const kmAway = Number.isFinite(distFromRestMeters) ? (distFromRestMeters / 1000).toFixed(2) : 'unknown';
+        showToast(`📍 Pickup Geofence: You are ${kmAway} km away from Savera Paradise. You can only pick an order when within a 3 km radius of the restaurant.`, 'error');
+        updatePickupGpsGateUI();
+        renderPortal();
+        return;
+      }
+      openBagPreviewModal(order, code);
+    };
+
+    // Gate 3: Mandatory Live GPS Location Turn-On & Sync before picking
+    if (!isRiderGpsSyncedAndFresh()) {
+      requestLiveGpsSyncForPickup(verifyZoneAndOpenModal);
+      return;
+    }
+
+    // Gate 4: 3 km Restaurant Pickup Radius Geofence
+    verifyZoneAndOpenModal();
   }
 
   // Open confirmation modal for delivery & cash collection
@@ -1493,6 +1786,11 @@ const initDeliveryApp = () => {
 
     if (isCod) {
       if (doorstepPaySelector) doorstepPaySelector.style.display = 'block';
+      if (btnDoorstepModeUpi) {
+        btnDoorstepModeUpi.disabled = !DOORSTEP_UPI_ENABLED;
+        btnDoorstepModeUpi.setAttribute('aria-disabled', String(!DOORSTEP_UPI_ENABLED));
+        btnDoorstepModeUpi.classList.toggle('disabled', !DOORSTEP_UPI_ENABLED);
+      }
       setDoorstepPaymentMode('cash');
       confirmCashValue.textContent = `₹${cash}`;
       checkCashReceived.checked = false;
@@ -1521,6 +1819,10 @@ const initDeliveryApp = () => {
 
   // Switch between Cash and PhonePe/UPI Doorstep Modes
   function setDoorstepPaymentMode(mode) {
+    if (mode === 'upi' && !DOORSTEP_UPI_ENABLED) {
+      mode = 'cash';
+      showToast('💵 Doorstep UPI QR is temporarily closed until rider-account settlement is integrated. Please collect Cash in Hand.', 'warning');
+    }
     currentDoorstepPaymentMode = mode;
     if (mode === 'upi') {
       if (btnDoorstepModeUpi) btnDoorstepModeUpi.classList.add('active');
@@ -1544,7 +1846,7 @@ const initDeliveryApp = () => {
   }
 
   async function generateAndShowDoorstepQr(order) {
-    if (!order) return;
+    if (!DOORSTEP_UPI_ENABLED || !order) return;
     const cash = extractCashAmount(order.total);
     if (doorstepUpiAmountBadge) doorstepUpiAmountBadge.textContent = `₹${cash}`;
     if (doorstepQrLoader) doorstepQrLoader.style.display = 'flex';
@@ -1608,7 +1910,14 @@ const initDeliveryApp = () => {
     btnDoorstepModeCash.addEventListener('click', () => setDoorstepPaymentMode('cash'));
   }
   if (btnDoorstepModeUpi) {
-    btnDoorstepModeUpi.addEventListener('click', () => setDoorstepPaymentMode('upi'));
+    btnDoorstepModeUpi.addEventListener('click', (e) => {
+      if (!DOORSTEP_UPI_ENABLED) {
+        e.preventDefault();
+        setDoorstepPaymentMode('cash');
+        return;
+      }
+      setDoorstepPaymentMode('upi');
+    });
   }
 
   function closeConfirmModal() {
@@ -1662,19 +1971,23 @@ const initDeliveryApp = () => {
       const isCod = isCashOnDelivery(activeConfirmOrder);
       const cash = extractCashAmount(activeConfirmOrder.total);
 
+      if (isCod && !DOORSTEP_UPI_ENABLED && currentDoorstepPaymentMode !== 'cash') {
+        setDoorstepPaymentMode('cash');
+      }
+
       // Explicit confirmation check: ensure rider confirmed collection
       if (isCod) {
         if (currentDoorstepPaymentMode === 'cash' && checkCashReceived && !checkCashReceived.checked) {
           showToast('⚠️ Please confirm cash collection by checking the box.', 'warning');
           return;
         }
-        if (currentDoorstepPaymentMode === 'upi' && checkUpiVerified && !checkUpiVerified.checked) {
+        if (DOORSTEP_UPI_ENABLED && currentDoorstepPaymentMode === 'upi' && checkUpiVerified && !checkUpiVerified.checked) {
           showToast('⚠️ Please verify customer showed the successful payment screen.', 'warning');
           return;
         }
       }
 
-      const isDoorstepUpi = (isCod && currentDoorstepPaymentMode === 'upi');
+      const isDoorstepUpi = DOORSTEP_UPI_ENABLED && (isCod && currentDoorstepPaymentMode === 'upi');
       const cashCollected = isDoorstepUpi ? 0 : (isCod ? Number(cash) : 0);
       const finalPaymentMethod = isDoorstepUpi ? 'doorstep_upi' : (isCod ? 'cod' : 'online');
 
@@ -2550,7 +2863,7 @@ const initDeliveryApp = () => {
 
     sendSystemNotification({
       title: `📦 New Parcel Ready on Kitchen Counter!`,
-      body: `Pick up the packed food bag from the kitchen dispatch counter and enter the 4-digit code written inside.`,
+      body: `Tap to view order distance & payout in your Pending queue and pick it up (within 3 km of restaurant).`,
       tag: `rider-ready-${order.id}`,
       data: { orderId: order.id, url: '/delivery.html' },
       onClick: () => {
@@ -2605,7 +2918,7 @@ const initDeliveryApp = () => {
       showToast(`📦 New parcel packed & ready on kitchen counter!`, 'success');
       sendSystemNotification({
         title: `📦 New Parcel Ready on Kitchen Counter!`,
-        body: `Pick up the packed food bag from the restaurant counter and enter the 4-digit code written inside to start delivery.`,
+        body: `View the order distance & payout in your Pending queue and tap Pick Up Order to start delivery.`,
         tag: `rider-ready-${orderId}`,
         data: { orderId, url: '/delivery.html' }
       });
@@ -2666,7 +2979,13 @@ const initDeliveryApp = () => {
   // 3. DataService In-Memory Subscription
   dataService.subscribeToChanges((entity, detail) => {
     if (entity === 'orders') {
-      if (detail?.action === 'new_order' && detail.order) {
+      if (detail?.action === 'claim_rejected') {
+        showToast(`⚠️ ${detail.message || 'Order could not be claimed. Refreshing queue...'}`, 'warning');
+        activeTab = 'ready';
+        persistRiderTab('ready');
+        updateActiveTabUI();
+        renderPortal();
+      } else if (detail?.action === 'new_order' && detail.order) {
         handleRiderIncomingOrder(detail.order);
       } else if (detail?.action === 'status_updated') {
         handleRiderOrderStatusSync(detail);
@@ -2941,10 +3260,39 @@ const initDeliveryApp = () => {
       const order = pendingClaimOrder;
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
 
+      // Re-verify Single-Order Limit, Live GPS Sync, and 3 km Pickup Radius before claiming
+      const existingActive = getRiderCurrentActiveOrder();
+      if (existingActive && String(existingActive.id || '').trim().replace(/^#/, '') !== String(order.id || '').trim().replace(/^#/, '')) {
+        closeBagPreviewModal();
+        showToast(`⚠️ You can only pick 1 order at a time! Complete active order ${existingActive.id} first.`, 'warning');
+        renderPortal();
+        return;
+      }
+
+      if (!isRiderGpsSyncedAndFresh()) {
+        closeBagPreviewModal();
+        showToast('⚠️ Location Required: Please turn on and sync your Live GPS Location to pick an order.', 'error');
+        requestLiveGpsSyncForPickup();
+        return;
+      }
+
+      const distFromRestMeters = getRiderDistanceFromRestaurantMeters();
+      if (!Number.isFinite(distFromRestMeters) || distFromRestMeters > MAX_RESTAURANT_PICKUP_RADIUS_METERS) {
+        closeBagPreviewModal();
+        const kmAway = Number.isFinite(distFromRestMeters) ? (distFromRestMeters / 1000).toFixed(2) : 'unknown';
+        showToast(`⚠️ Pickup Blocked: You are ${kmAway} km from the restaurant (outside the 3 km pickup zone).`, 'error');
+        updatePickupGpsGateUI();
+        renderPortal();
+        return;
+      }
+
       closeBagPreviewModal();
 
-      // Execute atomic claim in dataService
-      const res = dataService.claimOrderByBagCode(code, currentRider.pin);
+      // Execute atomic claim in dataService with explicit orderId and synced GPS coordinates
+      const res = dataService.claimOrderByBagCode(code, currentRider.pin, order.id, {
+        riderLat: riderLiveLocation.lat,
+        riderLng: riderLiveLocation.lng
+      });
       if (res.success) {
         const inputBagCode = document.getElementById('input-bag-code');
         if (inputBagCode) inputBagCode.value = '';
@@ -2954,12 +3302,11 @@ const initDeliveryApp = () => {
         updateActiveTabUI();
         renderPortal();
 
-        const allActive = dataService.getOrders().filter(o => o.status === 'on_the_way' && o.assignedRiderPin === currentRider.pin);
-        showToast(`🚀 Parcel #${code} accepted! (${Math.max(1, allActive.length)} active parcel${allActive.length > 1 ? 's' : ''} on your run)`, 'success');
+        showToast(`🚀 Order ${order.id} (Bag #${code}) picked! Head to Savera Paradise Counter 1 & deliver.`, 'success');
         playNotificationSound('rider_new_task');
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 
-        // Immediately broadcast initial location
+        // Immediately broadcast synced live rider location
         try {
           dataService.broadcastRiderLocation({
             orderId: order.id,
@@ -2972,13 +3319,8 @@ const initDeliveryApp = () => {
           });
         } catch {}
       } else {
-        showToast(`❌ ${res.message || 'Cannot claim parcel #' + code}`, 'error');
-        const inputBagCode = document.getElementById('input-bag-code');
-        if (inputBagCode) {
-          inputBagCode.classList.add('shake');
-          setTimeout(() => inputBagCode.classList.remove('shake'), 500);
-          inputBagCode.select();
-        }
+        showToast(`❌ ${res.message || 'Cannot pick order ' + order.id}`, 'error');
+        renderPortal();
       }
     });
   }
@@ -2986,6 +3328,27 @@ const initDeliveryApp = () => {
   function renderParcelReadyChips(readyOrders = []) {
     const container = document.getElementById('parcel-ready-chips-container');
     if (!container) return;
+
+    const existingActive = getRiderCurrentActiveOrder();
+    if (existingActive) {
+      container.innerHTML = `
+        <div class="kitchen-waiting-notice active">
+          <div class="kitchen-waiting-badge">
+            <i class="fa-solid fa-lock"></i>
+            <span>1</span>
+          </div>
+          <div class="kitchen-waiting-content">
+            <div class="kitchen-waiting-title">
+              <strong>Active Delivery In Progress (${escapeHtml(existingActive.id)})</strong>
+            </div>
+            <div class="kitchen-waiting-sub">
+              You can view all orders, distances, and payouts below, but only 1 order can be picked at a time. Complete ${escapeHtml(existingActive.id)} in the Active tab to unlock picking.
+            </div>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     if (readyOrders.length > 0) {
       const count = readyOrders.length;
@@ -2997,10 +3360,10 @@ const initDeliveryApp = () => {
           </div>
           <div class="kitchen-waiting-content">
             <div class="kitchen-waiting-title">
-              <strong>${count} Food Parcel${count === 1 ? '' : 's'} Waiting at Kitchen Counter</strong>
+              <strong>${count} Order${count === 1 ? '' : 's'} Ready to Pick Up</strong>
             </div>
             <div class="kitchen-waiting-sub">
-              Go to Counter 1, collect the packed bag, and enter the 4-digit code written on the bag seal above.
+              Review each order's distance and payout below, sync your live GPS within 3 km of the restaurant, and tap Pick Up Order on one order.
             </div>
           </div>
         </div>
@@ -3013,10 +3376,10 @@ const initDeliveryApp = () => {
           </div>
           <div class="kitchen-waiting-content">
             <div class="kitchen-waiting-title">
-              <strong>Kitchen Counter is Clear (0 orders waiting)</strong>
+              <strong>Kitchen Counter is Clear (0 orders ready)</strong>
             </div>
             <div class="kitchen-waiting-sub">
-              Food parcels being prepared will notify you here once packed and ready for dispatch.
+              Food parcels being prepared appear below with live distance and payout once placed.
             </div>
           </div>
         </div>

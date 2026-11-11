@@ -222,14 +222,26 @@
           </div>
           <div class="parcel-pickup-titles">
             <div class="parcel-pickup-badge">
-              <i class="fa-solid fa-kitchen-set"></i> Kitchen Counter Pick Up
+              <i class="fa-solid fa-kitchen-set"></i> Live Kitchen Dispatch Queue • 3 km Pickup Zone
             </div>
-            <h3 class="parcel-pickup-title">Enter Parcel Number to Start Delivery</h3>
-            <p class="parcel-pickup-sub">Enter the 4-digit code written inside the food bag by the kitchen to claim and start GPS delivery</p>
+            <h3 class="parcel-pickup-title">View Orders, Distance & Payout — Pick One to Deliver</h3>
+            <p class="parcel-pickup-sub">Review all kitchen orders, road distances, and delivery payouts below. Turn on & sync Live GPS Location within a 3 km radius of Savera Paradise to pick 1 ready order at a time.</p>
           </div>
         </div>
 
-        <form class="parcel-pickup-form" id="bag-pickup-form" autocomplete="off" onsubmit="event.preventDefault(); return false;">
+        <!-- Mandatory Live GPS Sync & 3 km Restaurant Pickup Radius Status Bar -->
+        <div class="pickup-gps-gate-bar gps-required" id="rider-pickup-gps-gate">
+          <div class="pickup-gps-gate-info">
+            <i class="fa-solid fa-location-crosshairs" id="pickup-gps-gate-icon"></i>
+            <span id="pickup-gps-gate-text">Syncing live GPS location... Turn on location within 3 km of restaurant to pick an order.</span>
+          </div>
+          <button type="button" class="btn-sync-live-gps" id="btn-sync-live-gps">
+            <i class="fa-solid fa-satellite-dish"></i>
+            <span id="btn-sync-live-gps-label">Turn On & Sync GPS</span>
+          </button>
+        </div>
+
+        <form class="parcel-pickup-form" id="bag-pickup-form" style="display: none;" autocomplete="off" onsubmit="event.preventDefault(); return false;">
           <div class="parcel-input-group">
             <div class="parcel-input-wrap">
               <span class="parcel-hash-symbol">#</span>
@@ -266,7 +278,7 @@
                 <strong>Kitchen Counter is Clear</strong>
               </div>
               <div class="kitchen-waiting-sub">
-                No orders waiting right now. When food is packed, enter the 4-digit bag seal number above.
+                No orders waiting right now. Incoming orders will appear below with live distance and payout.
               </div>
             </div>
           </div>
@@ -428,11 +440,15 @@
               <i class="fa-solid fa-money-bill-wave"></i>
               <span>Cash in Hand</span>
             </button>
-            <button type="button" class="btn-pay-option" id="btn-doorstep-mode-upi" data-mode="upi">
+            <button type="button" class="btn-pay-option disabled" id="btn-doorstep-mode-upi" data-mode="upi" disabled aria-disabled="true" title="Doorstep UPI collection is temporarily closed until rider-account UPI transfer settlement is integrated">
               <i class="fa-solid fa-qrcode"></i>
               <span>PhonePe / UPI QR</span>
+              <span class="pay-option-closed-pill">Closed</span>
             </button>
           </div>
+          <p class="doorstep-upi-closed-note" id="doorstep-upi-closed-note">
+            <i class="fa-solid fa-lock"></i> UPI QR collection is temporarily closed until riders can collect payments to their own account and settle with the restaurant. Please collect <strong>Cash in Hand</strong>.
+          </p>
         </div>
         
         <!-- Mode A: Physical Cash Collection Box -->
@@ -587,7 +603,7 @@
         <div class="confirm-icon-bubble">📦</div>
         <div class="bag-code-tag-pill" id="preview-bag-code-pill">BAG CODE: #0000</div>
         <h3 id="preview-order-id">Order #QB-0000</h3>
-        <p>Kitchen Bag verified! Review drop address, live distance, and cash payment.</p>
+        <p>Review drop address, live distance, and payout before picking this order.</p>
       </div>
 
       <div class="bag-preview-body">

@@ -33,6 +33,27 @@ function isOriginAllowed(origin) {
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
 
+const RESTAURANT_COORDINATES = { lat: 12.72088913328626, lng: 77.28051033981335 };
+const MAX_RIDER_PICKUP_RADIUS_KM = 3.0;
+
+function calculateStraightDistanceKm(lat1, lng1, lat2, lng2) {
+  const aLat = Number(lat1);
+  const aLng = Number(lng1);
+  const bLat = Number(lat2);
+  const bLng = Number(lng2);
+  if (!Number.isFinite(aLat) || !Number.isFinite(aLng) || !Number.isFinite(bLat) || !Number.isFinite(bLng)) return null;
+  if ((aLat === 0 && aLng === 0) || (bLat === 0 && bLng === 0)) return null;
+  const R = 6371;
+  const dLat = (bLat - aLat) * (Math.PI / 180);
+  const dLng = (bLng - aLng) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(aLat * (Math.PI / 180)) * Math.cos(bLat * (Math.PI / 180)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 1000) / 1000;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
@@ -430,12 +451,40 @@ export default async function handler(req, res) {
 
         if (isRider) {
           if (existingPin && existingPin !== effectivePin) {
-            return res.status(409).json({ error: 'Order is already claimed by another rider' });
+            return res.status(409).json({
+              error: 'Order is already claimed by another rider',
+              claimedBy: existing.assigned_rider_name || existing.assignedRiderName || null
+            });
           }
           if (!isRetryBySameRider && existing.status !== 'ready_for_pickup') {
             return res.status(400).json({
               error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
             });
+          }
+          if (!isRetryBySameRider && (body.riderLat !== undefined || body.riderLng !== undefined)) {
+            const pickupDistKm = calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng);
+            if (pickupDistKm === null) {
+              return res.status(400).json({ error: 'Invalid live GPS coordinates for pickup verification' });
+            }
+            if (pickupDistKm > MAX_RIDER_PICKUP_RADIUS_KM) {
+              return res.status(403).json({
+                error: `Forbidden: Rider is ${pickupDistKm.toFixed(2)} km away from Savera Paradise (outside the 3 km restaurant pickup radius).`,
+                code: 'OUTSIDE_PICKUP_RADIUS'
+              });
+            }
+          }
+          if (!isRetryBySameRider && body.enforceSingleActiveOrder === true) {
+            const activeOrder = testOrders.find(o => {
+              if (!o || o.status !== 'on_the_way') return false;
+              const oPin = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+              return oPin === effectivePin && String(o.id).replace(/^#/, '') !== cleanId;
+            });
+            if (activeOrder) {
+              return res.status(409).json({
+                error: `Rider already has an active order (${activeOrder.id}) on the way. Complete current delivery before claiming another order.`,
+                code: 'ACTIVE_ORDER_LIMIT'
+              });
+            }
           }
         }
 
@@ -757,7 +806,7 @@ export default async function handler(req, res) {
         // 1. Fetch current order state to verify readiness
         const { data: existing, error: fetchErr } = await sb
           .from('orders')
-          .select('id, status, assigned_rider_pin')
+          .select('id, status, assigned_rider_pin, assigned_rider_name')
           .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
           .maybeSingle();
 
@@ -771,7 +820,10 @@ export default async function handler(req, res) {
 
         if (isRider) {
           if (existingPin && existingPin !== effectivePin) {
-            return res.status(409).json({ error: 'Order is already claimed by another rider' });
+            return res.status(409).json({
+              error: 'Order is already claimed by another rider',
+              claimedBy: existing.assigned_rider_name || null
+            });
           }
 
           // Strictly require ready_for_pickup for initial claim
@@ -779,6 +831,37 @@ export default async function handler(req, res) {
             return res.status(400).json({
               error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
             });
+          }
+
+          // Enforce 3 km restaurant pickup radius when live coordinates are provided
+          if (!isRetryBySameRider && (body.riderLat !== undefined || body.riderLng !== undefined)) {
+            const pickupDistKm = calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng);
+            if (pickupDistKm === null) {
+              return res.status(400).json({ error: 'Invalid live GPS coordinates for pickup verification' });
+            }
+            if (pickupDistKm > MAX_RIDER_PICKUP_RADIUS_KM) {
+              return res.status(403).json({
+                error: `Forbidden: Rider is ${pickupDistKm.toFixed(2)} km away from Savera Paradise (outside the 3 km restaurant pickup radius).`,
+                code: 'OUTSIDE_PICKUP_RADIUS'
+              });
+            }
+          }
+
+          // Enforce single active order per rider when requested
+          if (!isRetryBySameRider && body.enforceSingleActiveOrder === true) {
+            const { data: activeOrders, error: activeErr } = await sb
+              .from('orders')
+              .select('id')
+              .eq('assigned_rider_pin', effectivePin)
+              .eq('status', 'on_the_way')
+              .limit(1);
+            if (activeErr) throw activeErr;
+            if (activeOrders && activeOrders.length > 0 && String(activeOrders[0].id).replace(/^#/, '') !== cleanId) {
+              return res.status(409).json({
+                error: `Rider already has an active order (${activeOrders[0].id}) on the way. Complete current delivery before claiming another order.`,
+                code: 'ACTIVE_ORDER_LIMIT'
+              });
+            }
           }
         }
 
