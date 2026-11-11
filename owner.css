@@ -202,18 +202,61 @@ body.owner-body .lock-footer-info {
 .owner-header {
   position: sticky;
   top: 0;
-  z-index: 100;
-  background: rgba(255, 255, 255, 0.95);
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--owner-border);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
-  padding: 12px 24px;
+  padding: 10px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  flex-wrap: wrap;
+  overflow: visible !important;
+}
+
+.owner-header-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.owner-header-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (min-width: 769px) {
+  .owner-header {
+    flex-wrap: nowrap;
+    padding: 12px 24px;
+  }
+
+  .owner-header-main {
+    display: contents;
+  }
+
+  .owner-brand {
+    order: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .owner-header-sub {
+    order: 2;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+  }
+
+  .owner-menu-dropdown-wrap {
+    order: 3;
+    margin-left: 8px;
+  }
 }
 
 .owner-header-left {
@@ -367,19 +410,28 @@ body.owner-body .lock-footer-info {
 }
 
 .btn-owner-menu-toggle {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   background: #FFFFFF;
   border: 1.5px solid #CBD5E1;
   color: #1E293B;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  z-index: 1001;
+}
+
+.btn-owner-menu-toggle i,
+.btn-owner-menu-toggle svg {
+  pointer-events: none;
 }
 
 .btn-owner-menu-toggle:hover {
@@ -394,7 +446,22 @@ body.owner-body .lock-footer-info {
   background: #FEF3C7;
   border-color: #F59E0B;
   color: #B45309;
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+
+.owner-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 99999;
+  animation: ownerFadeIn 0.15s ease-out;
+}
+
+@keyframes ownerFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .owner-menu-dropdown {
@@ -2849,35 +2916,80 @@ body.owner-body .lock-footer-info {
 /* ============================================================== */
 @media (max-width: 768px) {
   .owner-header {
+    flex-direction: column;
+    align-items: stretch;
     padding: 10px 14px;
-    gap: 10px;
+    gap: 8px;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;
-    overflow-x: hidden;
+    overflow: visible !important;
   }
 
-  .owner-header-left {
-    width: 100%;
+  /* Row 1: Brand on Left, [☰] Menu Button on Top Right */
+  .owner-header-main {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    width: 100%;
+    gap: 10px;
     min-width: 0;
     box-sizing: border-box;
+    overflow: visible !important;
   }
 
-  .owner-header-right {
+  .owner-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .owner-brand-text {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .owner-title {
+    font-size: 1.05rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .owner-sub {
+    font-size: 0.68rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .owner-menu-dropdown-wrap {
+    flex-shrink: 0;
+    overflow: visible !important;
+  }
+
+  /* Row 2: RESTAURANT OWNER chip on Left, Live Sync Active on Right */
+  .owner-header-sub {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     width: 100%;
-    justify-content: flex-start;
     gap: 8px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
     box-sizing: border-box;
+    overflow: visible !important;
   }
 
-  .owner-header-right::-webkit-scrollbar {
-    display: none;
+  .owner-menu-dropdown {
+    position: fixed !important;
+    top: 60px !important;
+    right: 12px !important;
+    left: auto !important;
+    width: 285px !important;
+    max-width: calc(100vw - 24px) !important;
+    z-index: 100000 !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08);
   }
 
   .owner-main {

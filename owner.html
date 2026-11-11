@@ -110,7 +110,7 @@
 
     <!-- Top Executive Navigation Bar -->
     <header class="owner-header">
-      <div class="owner-header-left">
+      <div class="owner-header-main">
         <div class="owner-brand">
           <div class="logo-icon-bubble owner-header-bubble" style="width: 44px; height: 44px; background: #FFF; border-radius: 50%; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25); padding: 2px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
             <img src="/owner-logo.png" alt="Savera Paradise Owner" class="brand-logo-img" width="40" height="40" loading="eager" decoding="async" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%;" />
@@ -123,25 +123,8 @@
             <span class="owner-sub">Sales, Cash Drawer & Rider Settlements</span>
           </div>
         </div>
-        <div class="owner-verified-chip" style="display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:9999px; background:#FEF3C7; border:1px solid #FDE68A; color:#B45309; font-size:0.75rem; font-weight:700;">
-          <i class="fa-solid fa-shield-halved"></i> RESTAURANT OWNER
-        </div>
-      </div>
 
-      <div class="owner-header-right">
-        <!-- Live Realtime Sync Status -->
-        <div class="owner-live-status-chip" id="owner-sync-status">
-          <span class="status-live-dot"></span>
-          <span class="status-live-text">Live Sync Active</span>
-        </div>
-
-        <!-- Clock -->
-        <div class="owner-clock-badge hide-mobile">
-          <i class="fa-regular fa-clock"></i>
-          <span id="owner-live-clock">--:-- --</span>
-        </div>
-
-        <!-- Header Actions Dropdown Menu (3-Bars / 3-Dots Menu) -->
+        <!-- 3-Lines Menu Toggle (Pinned to Top Right on ALL Devices) -->
         <div class="owner-menu-dropdown-wrap" id="owner-menu-dropdown-wrap">
           <button type="button" class="btn-owner-menu-toggle" id="btn-owner-menu-toggle" aria-expanded="false" aria-haspopup="true" aria-label="Open Actions Menu" title="Quick Actions & Reports">
             <i class="fa-solid fa-bars" id="owner-menu-icon"></i>
@@ -213,6 +196,25 @@
           </div>
         </div>
       </div>
+
+      <div class="owner-header-sub">
+        <div class="owner-verified-chip" style="display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:9999px; background:#FEF3C7; border:1px solid #FDE68A; color:#B45309; font-size:0.75rem; font-weight:700;">
+          <i class="fa-solid fa-shield-halved"></i> RESTAURANT OWNER
+        </div>
+
+        <div class="owner-live-status-chip" id="owner-sync-status">
+          <span class="status-live-dot"></span>
+          <span class="status-live-text">Live Sync Active</span>
+        </div>
+
+        <div class="owner-clock-badge hide-mobile">
+          <i class="fa-regular fa-clock"></i>
+          <span id="owner-live-clock">--:-- --</span>
+        </div>
+      </div>
+
+      <!-- Backdrop overlay to dismiss dropdown on mobile tap outside -->
+      <div class="owner-menu-backdrop" id="owner-menu-backdrop" style="display: none;"></div>
     </header>
 
     <!-- Real-time Notification Permission Opt-In Banner -->

@@ -39,7 +39,9 @@ jobs:
       - name: Generate Production Release Keystore
         run: |
           cd android/app
-          keytool -genkey -v -keystore release.jks -alias saveraparadise -keyalg RSA -keysize 2048 -validity 10000 -storepass "SaveraParadise2026!" -keypass "SaveraParadise2026!" -dname "CN=Savera Paradise, OU=Mobile, O=Savera Paradise, L=Bengaluru, ST=Karnataka, C=IN"
+          if [ ! -f release.jks ]; then
+            keytool -genkey -v -keystore release.jks -alias saveraparadise -keyalg RSA -keysize 2048 -validity 10000 -storepass "SaveraParadise2026!" -keypass "SaveraParadise2026!" -dname "CN=Savera Paradise, OU=Mobile, O=Savera Paradise, L=Bengaluru, ST=Karnataka, C=IN"
+          fi
 
       - name: Build Admin, Rider, and Owner APKs
         run: |
@@ -54,6 +56,19 @@ jobs:
           find android/app/build/outputs/apk/rider/release -name "*.apk" -exec cp {} dist-apks/Savera-Paradise-Rider.apk \;
           find android/app/build/outputs/apk/owner/release -name "*.apk" -exec cp {} dist-apks/Savera-Paradise-Owner.apk \;
           ls -la dist-apks/
+
+      - name: Auto-Update public/apk/ in Repository
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p public/apk
+          cp dist-apks/Savera-Kitchen-Admin.apk public/apk/Savera-Kitchen-Admin.apk
+          cp dist-apks/Savera-Paradise-Rider.apk public/apk/Savera-Paradise-Rider.apk
+          cp dist-apks/Savera-Paradise-Owner.apk public/apk/Savera-Paradise-Owner.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/apk/*.apk
+          git commit -m "chore: update built APKs in public/apk [skip ci]" || echo "No changes to commit"
+          git push origin main || echo "Git push skipped or no changes"
 
       - name: Upload APKs as Workflow Artifacts
         uses: actions/upload-artifact@v4

@@ -245,6 +245,11 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(res.statusCode, 200);
     assert.ok(Array.isArray(res.responseData), 'kitchen_poll must return array of orders');
     assert.match(res.responseHeaders['Cache-Control'], /s-maxage=15/);
+    if (res.responseData.length > 0) {
+      assert.strictEqual(res.responseData[0].delivery_address, undefined, 'kitchen_poll must never expose delivery_address for privacy');
+      assert.strictEqual(res.responseData[0].customer_phone, undefined, 'kitchen_poll must never expose customer_phone');
+      assert.strictEqual(res.responseData[0].tracking_token, undefined, 'kitchen_poll must never expose tracking_token');
+    }
   });
 
   await t.test('13. POST /api/order-action CORS allows trusted domains and rejects arbitrary origins', async () => {

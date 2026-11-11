@@ -52,10 +52,6 @@ public class OrderMonitorService extends Service {
 
     private static final String CLOUDFLARE_ENDPOINT = 
         "https://saveraparadise.foodbliz.in/api/order-action?action=kitchen_poll";
-    private static final String FALLBACK_SUPABASE_ENDPOINT = 
-        "https://zrgkglwqkdxmwrgepnqh.supabase.co/rest/v1/orders?select=id,status,customer_name,total,pickup_code,delivery_address,created_at&order=created_at.desc&limit=8";
-    private static final String SUPABASE_KEY = 
-        "sb_publishable_obyAWrTPc2oIxF3V9Bp23Q_cd_WxEZk";
 
     private static final Set<String> knownOrderIds = Collections.synchronizedSet(new HashSet<>());
     private static final Set<String> notifiedReadyIds = Collections.synchronizedSet(new HashSet<>());
@@ -334,43 +330,11 @@ public class OrderMonitorService extends Service {
                 }
             }
         } catch (Exception e) {
-            Log.w(TAG, "Cloudflare poll error, attempting fallback: " + e.getMessage());
+            Log.w(TAG, "Cloudflare kitchen poll error: " + e.getMessage());
         } finally {
             if (conn != null) {
                 conn.disconnect();
                 conn = null;
-            }
-        }
-
-        // Priority 2: Direct Supabase fallback only if Cloudflare was completely unreachable
-        try {
-            URL url = new URL(FALLBACK_SUPABASE_ENDPOINT);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("apikey", SUPABASE_KEY);
-            conn.setRequestProperty("Authorization", "Bearer " + SUPABASE_KEY);
-            conn.setRequestProperty("Accept", "application/json");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-
-            int responseCode = conn.getResponseCode();
-            if (responseCode == 200) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line);
-                }
-                reader.close();
-
-                JSONArray orders = new JSONArray(sb.toString());
-                processIncomingOrders(orders);
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Fallback Supabase poll exception: " + e.getMessage());
-        } finally {
-            if (conn != null) {
-                conn.disconnect();
             }
         }
     }

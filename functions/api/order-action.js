@@ -251,7 +251,7 @@ export async function onRequest(context) {
 
     if (isTestEnv && action === 'kitchen_poll') {
       const sample = [
-        { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', pickup_code: '1001', delivery_address: 'Main St', created_at: new Date().toISOString() }
+        { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', pickup_code: '1001', created_at: new Date().toISOString() }
       ];
       const pollHeaders = Object.fromEntries(corsHeaders.entries());
       pollHeaders['Cache-Control'] = 'public, s-maxage=15, max-age=10';
@@ -484,7 +484,7 @@ export async function onRequest(context) {
 
         const { data, error } = await sb
           .from('orders')
-          .select('id, status, customer_name, total, pickup_code, delivery_address, created_at')
+          .select('id, status, customer_name, total, pickup_code, created_at')
           .order('created_at', { ascending: false })
           .limit(8);
 
