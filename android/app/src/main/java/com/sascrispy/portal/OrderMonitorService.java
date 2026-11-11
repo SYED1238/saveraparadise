@@ -189,14 +189,14 @@ public class OrderMonitorService extends Service {
         String title;
         String subtitle;
         if ("quiet".equals(mode)) {
-            title = "🌙 " + portalLabel + " (Quiet Hours)";
-            subtitle = "1:00 AM – 9:00 AM IST • Polling paused until morning";
+            title = "🌙 " + portalLabel + " Sleeping";
+            subtitle = "Night quiet hours (1 AM – 9 AM IST)";
         } else if ("foreground".equals(mode)) {
             title = "⚡ " + portalLabel + " Live";
-            subtitle = "App active on screen • Real-time alerts enabled";
+            subtitle = "Screen active • Instant order alerts";
         } else {
             title = "🟢 " + portalLabel + " Active";
-            subtitle = "Scheduled background check every 20s";
+            subtitle = "Listening for new customer orders";
         }
 
         return new NotificationCompat.Builder(this, CHANNEL_ID_SERVICE)
