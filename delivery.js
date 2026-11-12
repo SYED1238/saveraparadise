@@ -77,7 +77,7 @@ const initDeliveryApp = () => {
   let isDutyOn = true;
   let activeConfirmOrder = null;
   let pendingBagOrder = null;
-  const DOORSTEP_UPI_ENABLED = false; // Closed until riders can collect UPI into their own account & transfer to restaurant
+  const DOORSTEP_UPI_ENABLED = true; // Enabled for dynamic PhonePe / UPI QR collection at customer doorstep
   let currentDoorstepPaymentMode = 'cash';
   const miniMapInstances = new Map();
 
@@ -2077,7 +2077,8 @@ const initDeliveryApp = () => {
       throw new Error(data.message || 'QR generation fallback');
     } catch {
       // Local In-Browser Fallback: Generate native Indian UPI intent QR locally (zero 3rd-party data leakage)
-      const merchantVpa = 'saveraparadise@okhdfcbank';
+      const storeSettings = (typeof dataService !== 'undefined' && typeof dataService.getSettings === 'function') ? dataService.getSettings() : {};
+      const merchantVpa = storeSettings.restaurantUpiVpa || storeSettings.upiVpa || 'saveraparadise@okhdfcbank';
       const cleanId = String(order.id).replace(/\D/g, '').slice(-4) || '101';
       const formattedAm = Number(cash).toFixed(2);
       const safeTr = 'QB' + cleanId.replace(/[^a-zA-Z0-9]/g, '');

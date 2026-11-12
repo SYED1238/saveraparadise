@@ -197,19 +197,19 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       assert.ok(deliveryHtml.includes('id="doorstep-qr-img"'), 'Must have QR image element');
     });
 
-    test('Doorstep PhonePe / UPI QR option is closed until rider-account collection & settlement is integrated', () => {
+    test('Doorstep PhonePe / UPI QR option is enabled for rider payment collection at doorstep', () => {
       const deliveryHtml = fs.readFileSync(path.join(rootDir, 'delivery.html'), 'utf8');
       const deliveryJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf8');
       const deliveryCss = fs.readFileSync(path.join(rootDir, 'delivery.css'), 'utf8');
-      const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
 
-      assert.match(deliveryHtml, /id="btn-doorstep-mode-upi"[^>]*\bdisabled\b/, 'UPI mode button must be disabled in delivery.html');
-      assert.ok(deliveryHtml.includes('id="doorstep-upi-closed-note"'), 'Must explain temporary Doorstep UPI closure');
-      assert.ok(deliveryJs.includes('const DOORSTEP_UPI_ENABLED = false;'), 'DOORSTEP_UPI_ENABLED must default to false');
-      assert.ok(deliveryJs.includes('if (!DOORSTEP_UPI_ENABLED || !order) return;'), 'generateAndShowDoorstepQr must short-circuit when closed');
-      assert.ok(deliveryJs.includes('DOORSTEP_UPI_ENABLED && (isCod && currentDoorstepPaymentMode === \'upi\')'), 'Delivery submission must force Cash in Hand when Doorstep UPI is closed');
-      assert.ok(deliveryCss.includes('.pay-option-closed-pill') && deliveryCss.includes('.doorstep-upi-closed-note'), 'Must style closed pill and closure note');
-      assert.ok(!indexHtml.includes("scan delivery partner's UPI QR"), 'Customer checkout COD copy must not promise doorstep UPI QR while closed');
+      assert.ok(deliveryHtml.includes('id="btn-doorstep-mode-upi"'), 'Must have UPI mode button');
+      assert.ok(deliveryHtml.includes('id="doorstep-upi-qr-box"'), 'Must have dynamic QR container');
+      assert.doesNotMatch(deliveryHtml, /id="btn-doorstep-mode-upi"[^>]*\bdisabled\b/, 'UPI mode button must be enabled in delivery.html');
+
+      assert.ok(deliveryJs.includes('const DOORSTEP_UPI_ENABLED = true;'), 'DOORSTEP_UPI_ENABLED must be true');
+      assert.ok(deliveryJs.includes('if (!DOORSTEP_UPI_ENABLED || !order) return;'), 'generateAndShowDoorstepQr must guard on active order');
+      assert.ok(deliveryJs.includes('DOORSTEP_UPI_ENABLED && (isCod && currentDoorstepPaymentMode === \'upi\')'), 'Delivery submission must handle Doorstep UPI');
+      assert.ok(deliveryCss.includes('.btn-pay-option') && deliveryCss.includes('.doorstep-upi-qr-box'), 'Must style pay option and QR box');
     });
 
     test('delivery.css contains styling for doorstep payment options and UPI QR box', () => {

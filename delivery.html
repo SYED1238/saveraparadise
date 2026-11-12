@@ -440,14 +440,14 @@
               <i class="fa-solid fa-money-bill-wave"></i>
               <span>Cash in Hand</span>
             </button>
-            <button type="button" class="btn-pay-option disabled" id="btn-doorstep-mode-upi" data-mode="upi" disabled aria-disabled="true" title="Doorstep UPI collection is temporarily closed until rider-account UPI transfer settlement is integrated">
+            <button type="button" class="btn-pay-option" id="btn-doorstep-mode-upi" data-mode="upi" title="Generate Dynamic PhonePe / UPI QR code for customer to scan and pay">
               <i class="fa-solid fa-qrcode"></i>
               <span>PhonePe / UPI QR</span>
-              <span class="pay-option-closed-pill">Closed</span>
+              <span class="pay-option-instant-pill">Instant QR</span>
             </button>
           </div>
-          <p class="doorstep-upi-closed-note" id="doorstep-upi-closed-note">
-            <i class="fa-solid fa-lock"></i> UPI QR collection is temporarily closed until riders can collect payments to their own account and settle with the restaurant. Please collect <strong>Cash in Hand</strong>.
+          <p class="doorstep-upi-closed-note" id="doorstep-upi-closed-note" style="display: none;">
+            <i class="fa-solid fa-shield-halved"></i> Customer can scan the dynamic UPI QR with PhonePe, Google Pay, or Paytm.
           </p>
         </div>
         
