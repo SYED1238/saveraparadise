@@ -32,7 +32,7 @@ describe('PERMANENT RIDER APK QR & ROUTING SUITE', () => {
     const svgPath = path.join(PUBLIC_DIR, 'savera-rider-apk-qr.svg');
     assert.ok(fs.existsSync(svgPath), 'public/savera-rider-apk-qr.svg must exist');
 
-    const actualSvg = fs.readFileSync(svgPath, 'utf8');
+    const actualSvg = fs.readFileSync(svgPath, 'utf8').replace(/\r\n/g, '\n');
     const expectedSvg = await QRCode.toString(RIDER_APK_DOWNLOAD_URL, {
       ...RIDER_QR_OPTIONS,
       type: 'svg'
@@ -132,7 +132,7 @@ describe('PERMANENT RIDER APK QR & ROUTING SUITE', () => {
     assert.equal(KITCHEN_APK_DOWNLOAD_URL, 'https://saveraparadise.foodbliz.in/apk/Savera-Kitchen-Admin.apk');
     const kitchenQrPath = path.join(PUBLIC_DIR, 'savera-kitchen-apk-qr.svg');
     assert.ok(fs.existsSync(kitchenQrPath), 'public/savera-kitchen-apk-qr.svg must exist');
-    const actualSvg = fs.readFileSync(kitchenQrPath, 'utf8');
+    const actualSvg = fs.readFileSync(kitchenQrPath, 'utf8').replace(/\r\n/g, '\n');
     const expectedSvg = await QRCode.toString(KITCHEN_APK_DOWNLOAD_URL, {
       ...RIDER_QR_OPTIONS,
       type: 'svg'
