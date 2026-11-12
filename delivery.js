@@ -1787,8 +1787,9 @@ const initDeliveryApp = () => {
   }
 
   // Stage 2: Rider arrives at Savera Paradise counter and picks up the parcel
-  function handleConfirmParcelPickup(orderId) {
+  async function handleConfirmParcelPickup(orderId, triggerBtn = null) {
     if (!orderId) return;
+    if (triggerBtn && triggerBtn.disabled) return;
     const cleanId = String(orderId).trim().replace(/^#/, '');
     const allOrders = dataService.getOrders();
     const order = dataService.getOrderById(orderId) ||
@@ -1804,7 +1805,7 @@ const initDeliveryApp = () => {
     }
 
     if (!isRiderGpsSyncedAndFresh()) {
-      requestLiveGpsSyncForPickup(() => handleConfirmParcelPickup(orderId));
+      requestLiveGpsSyncForPickup(() => handleConfirmParcelPickup(orderId, triggerBtn));
       return;
     }
 
@@ -1819,13 +1820,32 @@ const initDeliveryApp = () => {
 
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
     const code = order.pickupCode || String(order.id).replace(/\D/g, '').slice(-4) || cleanId.slice(-4);
-    const res = dataService.confirmOrderParcelPickup(order.id, currentRider.pin, {
-      code,
-      riderLat: riderLiveLocation.lat,
-      riderLng: riderLiveLocation.lng
-    });
+    const origBtnHtml = triggerBtn ? triggerBtn.innerHTML : null;
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      triggerBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Confirming Pickup...';
+    }
 
-    if (res.success) {
+    let finalResult = null;
+    try {
+      const res = dataService.confirmOrderParcelPickup(order.id, currentRider.pin, {
+        code,
+        riderLat: riderLiveLocation.lat,
+        riderLng: riderLiveLocation.lng
+      });
+      if (!res.success) {
+        finalResult = res;
+      } else {
+        finalResult = res.serverPromise ? await res.serverPromise : res;
+      }
+    } finally {
+      if (triggerBtn && origBtnHtml !== null) {
+        triggerBtn.disabled = false;
+        triggerBtn.innerHTML = origBtnHtml;
+      }
+    }
+
+    if (finalResult && finalResult.success) {
       renderPortal();
       showToast(`🚀 Parcel #${code} picked up! Now delivering ${order.id} to ${order.customerName || 'customer'}.`, 'success');
       playNotificationSound('rider_new_task');
@@ -1842,7 +1862,7 @@ const initDeliveryApp = () => {
         });
       } catch {}
     } else {
-      showToast(`❌ ${res.message || 'Cannot pick up parcel ' + order.id}`, 'error');
+      showToast(`❌ ${finalResult?.message || 'Cannot pick up parcel ' + order.id}`, 'error');
       renderPortal();
     }
   }
@@ -2123,7 +2143,7 @@ const initDeliveryApp = () => {
       if (pickupBtn) {
         e.preventDefault();
         const id = pickupBtn.getAttribute('data-id');
-        handleConfirmParcelPickup(id);
+        handleConfirmParcelPickup(id, pickupBtn);
         return;
       }
       const startBtn = e.target.closest('[data-action="start-delivery"]');
@@ -3439,7 +3459,8 @@ const initDeliveryApp = () => {
   }
 
   if (btnConfirmBagClaim) {
-    btnConfirmBagClaim.addEventListener('click', () => {
+    btnConfirmBagClaim.addEventListener('click', async () => {
+      if (btnConfirmBagClaim.disabled) return;
       if (!pendingClaimOrder || !pendingClaimCode) {
         closeBagPreviewModal();
         return;
@@ -3465,15 +3486,30 @@ const initDeliveryApp = () => {
         return;
       }
 
-      closeBagPreviewModal();
+      const origBtnHtml = btnConfirmBagClaim.innerHTML;
+      btnConfirmBagClaim.disabled = true;
+      btnConfirmBagClaim.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Accepting Order...';
 
-      // Execute Stage 1 atomic assignment (Going to Restaurant — allowed from any location)
-      const res = dataService.assignOrderToRider(order.id, currentRider.pin, {
-        code,
-        riderLat: riderLiveLocation.lat,
-        riderLng: riderLiveLocation.lng
-      });
-      if (res.success) {
+      let finalResult = null;
+      try {
+        // Execute Stage 1 atomic assignment (Going to Restaurant — allowed from any location)
+        const res = dataService.assignOrderToRider(order.id, currentRider.pin, {
+          code,
+          riderLat: riderLiveLocation.lat,
+          riderLng: riderLiveLocation.lng
+        });
+        if (!res.success) {
+          finalResult = res;
+        } else {
+          finalResult = res.serverPromise ? await res.serverPromise : res;
+        }
+      } finally {
+        btnConfirmBagClaim.disabled = false;
+        btnConfirmBagClaim.innerHTML = origBtnHtml;
+        closeBagPreviewModal();
+      }
+
+      if (finalResult && finalResult.success) {
         const inputBagCode = document.getElementById('input-bag-code');
         if (inputBagCode) inputBagCode.value = '';
 
@@ -3499,7 +3535,7 @@ const initDeliveryApp = () => {
           });
         } catch {}
       } else {
-        showToast(`❌ ${res.message || 'Cannot accept order ' + order.id}`, 'error');
+        showToast(`❌ ${finalResult?.message || 'Cannot accept order ' + order.id}`, 'error');
         renderPortal();
       }
     });

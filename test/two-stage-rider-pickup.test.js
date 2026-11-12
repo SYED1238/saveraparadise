@@ -306,7 +306,15 @@ test('TWO-STAGE RIDER PICKUP, LIVE GPS TRACKING & PER-RIDER ORDER LIMIT SUITE', 
       }
 
       // F. Stage 2 claim_order outside 3km STILL returns 403 even if Stage 1 assigned to same rider
-      const farStage2Payload = { ...pickupStage2Payload, riderLat: 12.80, riderLng: 77.33 };
+      const farStage2Payload = {
+        ...pickupStage2Payload,
+        riderLat: 12.80,
+        riderLng: 77.33,
+        simulateOrders: [
+          { id: '#QB-801', status: 'on_the_way', assigned_rider_pin: '2233' },
+          { id: '#QB-802', status: 'ready_for_pickup', assigned_rider_pin: '2233', address_details: { riderPickupStage: 'going_to_restaurant', distanceKm: 2.1 } }
+        ]
+      };
       const [cfFarPickup, apiFarPickup] = await Promise.all([
         callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', cfRiderToken, farStage2Payload),
         callNode(apiOrderAction, apiRiderToken, farStage2Payload)
@@ -493,5 +501,240 @@ test('TWO-STAGE RIDER PICKUP, LIVE GPS TRACKING & PER-RIDER ORDER LIMIT SUITE', 
     assert.ok(mig04Sql.includes('max_active_orders INTEGER NOT NULL DEFAULT 1'), 'migration_04 SQL must include max_active_orders');
     assert.ok(hardenSql.includes('max_active_orders INTEGER NOT NULL DEFAULT 1'), 'hardening SQL must include max_active_orders');
     assert.ok(mig13Sql.includes('max_active_orders <= 4'), 'migration_13 constraint must cap max_active_orders at 4');
+    assert.ok(setupSql.includes('rider_assign_or_claim_order'), 'supabase_setup.sql must define atomic rider_assign_or_claim_order RPC');
+    assert.ok(mig13Sql.includes('rider_assign_or_claim_order'), 'migration_13 must define atomic rider_assign_or_claim_order RPC');
+    assert.ok(hardenSql.includes('rider_assign_or_claim_order'), 'hardening SQL must define atomic rider_assign_or_claim_order RPC');
+  });
+
+  await t.test('6. Security & concurrency follow-up fixes (mandatory GPS, atomic withRiderLock, Stage 2 capacity, Stage 1 status, serverPromise rollback)', async () => {
+    const apiOrderAction = (await import('../api/order-action.js')).default;
+    const { onRequest: cfOrderAction } = await import('../functions/api/order-action.js');
+    const { createAdminToken: cfCreateToken } = await import('../functions/api/_auth.js');
+    const { createAdminToken: apiCreateToken } = await import('../api/_auth.js');
+    const { dataService } = await import('../dataService.js');
+
+    const mockEnv = {
+      SESSION_SECRET: 'test_session_secret_32_characters_long_secure_key!',
+      ADMIN_PIN: '8899',
+      OWNER_PIN: '9900'
+    };
+    const prevSecret = process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = mockEnv.SESSION_SECRET;
+
+    const callNode = async (handler, token, payload) => {
+      const resState = { statusCode: 200, body: null };
+      const req = {
+        method: 'POST',
+        headers: { origin: 'https://saveraparadise.com', authorization: `Bearer ${token}` },
+        body: payload
+      };
+      const res = {
+        setHeader: () => {},
+        status: (c) => { resState.statusCode = c; return res; },
+        json: (b) => { resState.body = b; return res; },
+        end: () => res
+      };
+      await handler(req, res);
+      return resState;
+    };
+
+    const callCf = async (handler, url, token, payload) => {
+      const req = new Request(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      const response = await handler({ request: req, env: mockEnv });
+      return { statusCode: response.status, body: await response.json() };
+    };
+
+    const store = new Map();
+    const hadWin = typeof globalThis.window !== 'undefined';
+    const origWin = globalThis.window;
+    const hadLs = typeof globalThis.localStorage !== 'undefined';
+    const origLs = globalThis.localStorage;
+    const hadSs = typeof globalThis.sessionStorage !== 'undefined';
+    const origSs = globalThis.sessionStorage;
+    const origFetch = globalThis.fetch;
+
+    if (!hadWin) globalThis.window = globalThis;
+    if (!hadLs) {
+      globalThis.localStorage = {
+        getItem: (k) => store.get(String(k)) ?? null,
+        setItem: (k, v) => store.set(String(k), String(v)),
+        removeItem: (k) => store.delete(String(k)),
+        clear: () => store.clear(),
+        key: (i) => Array.from(store.keys())[i] ?? null,
+        get length() { return store.size; }
+      };
+    }
+    if (!hadSs) {
+      globalThis.sessionStorage = {
+        getItem: (k) => store.get('sess_' + String(k)) ?? null,
+        setItem: (k, v) => store.set('sess_' + String(k), String(v)),
+        removeItem: (k) => store.delete('sess_' + String(k)),
+        clear: () => {}
+      };
+    }
+
+    try {
+      const cfRiderToken = cfCreateToken(undefined, 'rider', mockEnv, { riderPin: '2233' });
+      const apiRiderToken = apiCreateToken(undefined, 'rider', { riderPin: '2233' });
+
+      // 6a. Mandatory non-(0,0) GPS on Stage 2 claim_order in both api/ and functions/api/
+      for (const gpsOverride of [{}, { riderLat: 0, riderLng: 0 }, { riderLat: 'nan', riderLng: 77.28 }]) {
+        const missingGpsPayload = {
+          action: 'claim_order',
+          orderId: '#QB-901',
+          ...gpsOverride,
+          simulateOrders: [{ id: '#QB-901', status: 'ready_for_pickup', assigned_rider_pin: '2233' }]
+        };
+        const [cfMiss, apiMiss] = await Promise.all([
+          callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', cfRiderToken, missingGpsPayload),
+          callNode(apiOrderAction, apiRiderToken, missingGpsPayload)
+        ]);
+        for (const r of [cfMiss, apiMiss]) {
+          assert.equal(r.statusCode, 400, `claim_order without valid GPS must fail with 400 (${JSON.stringify(gpsOverride)})`);
+          assert.equal(r.body.code, 'MISSING_GPS_COORDINATES');
+        }
+      }
+
+      // 6b. Stage 2 claim_order unconditionally enforces active limit even WITHOUT enforceSingleActiveOrder/maxActiveOrders flags
+      const stealthClaimPayload = {
+        action: 'claim_order',
+        orderId: '#QB-902',
+        riderLat: 12.7210,
+        riderLng: 77.2805,
+        simulateOrders: [
+          { id: '#QB-901', status: 'on_the_way', assigned_rider_pin: '2233' },
+          { id: '#QB-902', status: 'ready_for_pickup', assigned_rider_pin: '2233' }
+        ]
+      };
+      const [cfStealth, apiStealth] = await Promise.all([
+        callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', cfRiderToken, stealthClaimPayload),
+        callNode(apiOrderAction, apiRiderToken, stealthClaimPayload)
+      ]);
+      for (const r of [cfStealth, apiStealth]) {
+        assert.equal(r.statusCode, 409, 'Stage 2 claim_order must unconditionally enforce active order limit');
+        assert.equal(r.body.code, 'ACTIVE_ORDER_LIMIT');
+      }
+
+      // 6c. Concurrent calls for the same rider serialize cleanly & mutate simulateOrders in place
+      const sharedNodeOrders = [
+        { id: '#QB-RACE-1', status: 'ready_for_pickup', assigned_rider_pin: null },
+        { id: '#QB-RACE-2', status: 'ready_for_pickup', assigned_rider_pin: null }
+      ];
+      const [race1, race2] = await Promise.all([
+        callNode(apiOrderAction, apiRiderToken, {
+          action: 'claim_order',
+          orderId: '#QB-RACE-1',
+          riderLat: 12.7210,
+          riderLng: 77.2805,
+          simulateOrders: sharedNodeOrders
+        }),
+        callNode(apiOrderAction, apiRiderToken, {
+          action: 'claim_order',
+          orderId: '#QB-RACE-2',
+          riderLat: 12.7210,
+          riderLng: 77.2805,
+          simulateOrders: sharedNodeOrders
+        })
+      ]);
+      const statuses = [race1.statusCode, race2.statusCode].sort((a, b) => a - b);
+      assert.deepEqual(statuses, [200, 409], 'Concurrent claims by limit-1 rider must allow 1 and reject 2nd with 409');
+
+      // 6d. Stage 1 assign_order rejects cooking / accepted / pending orders (only ready_for_pickup allowed)
+      for (const badStatus of ['pending', 'accepted', 'cooking']) {
+        const badAssignPayload = {
+          action: 'assign_order',
+          orderId: '#QB-NOTREADY',
+          simulateOrders: [{ id: '#QB-NOTREADY', status: badStatus, assigned_rider_pin: null }]
+        };
+        const [cfBad, apiBad] = await Promise.all([
+          callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', cfRiderToken, badAssignPayload),
+          callNode(apiOrderAction, apiRiderToken, badAssignPayload)
+        ]);
+        for (const r of [cfBad, apiBad]) {
+          assert.equal(r.statusCode, 400, `assign_order must reject order in status ${badStatus}`);
+          assert.match(r.body.error, /not ready for pickup/i);
+        }
+      }
+
+      // 6e. Production SQL path source checks: uses RPC and never trusts body.maxActiveOrders
+      const apiSrc = fs.readFileSync(path.join(process.cwd(), 'api/order-action.js'), 'utf8');
+      const cfSrc = fs.readFileSync(path.join(process.cwd(), 'functions/api/order-action.js'), 'utf8');
+      for (const [label, src] of [['api/order-action.js', apiSrc], ['functions/api/order-action.js', cfSrc]]) {
+        assert.ok(src.includes("sb.rpc('rider_assign_or_claim_order'"), `${label} must invoke atomic rider_assign_or_claim_order RPC`);
+        assert.ok(!src.includes('body.enforceSingleActiveOrder === true'), `${label} must unconditionally enforce Stage 2 capacity`);
+      }
+
+      // 6f. Client dataService checks: mandatory GPS, strict ready_for_pickup on Stage 1, serverPromise rollback + deferred broadcast
+      globalThis.localStorage.clear();
+      globalThis.sessionStorage.setItem('quickbite_admin_token', 'test-rider-token');
+      dataService.saveRiders([{ id: 'r1', name: 'Ravi', pin: '2233', phone: '9000000001', vehicle: 'Bike', status: 'online', maxActiveOrders: 1 }]);
+      dataService.saveOrders([
+        { id: '#QB-COOK', status: 'cooking', pickupCode: '1111', createdAt: Date.now() },
+        { id: '#QB-READY', status: 'ready_for_pickup', pickupCode: '2222', createdAt: Date.now() }
+      ]);
+
+      const cookAssign = dataService.assignOrderToRider('#QB-COOK', '2233', { riderLat: 12.7210, riderLng: 77.2805 });
+      assert.equal(cookAssign.success, false);
+      assert.equal(cookAssign.reason, 'not_ready');
+
+      let fetchCalled = false;
+      globalThis.fetch = async () => { fetchCalled = true; return { ok: true, status: 200, json: async () => ({ success: true }) }; };
+      const noGpsPickup = dataService.confirmOrderParcelPickup('#QB-READY', '2233', {});
+      assert.equal(noGpsPickup.success, false);
+      assert.equal(noGpsPickup.reason, 'outside_pickup_radius');
+      assert.equal(fetchCalled, false, 'confirmOrderParcelPickup without GPS must reject locally without server call');
+
+      const zeroGpsBagClaim = dataService.claimOrderByBagCode('2222', '2233', '#QB-READY', { riderLat: 0, riderLng: 0 });
+      assert.equal(zeroGpsBagClaim.success, false);
+      assert.equal(zeroGpsBagClaim.reason, 'outside_pickup_radius');
+      assert.equal(fetchCalled, false, 'claimOrderByBagCode with (0,0) GPS must reject locally');
+
+      // Deferred broadcast & serverPromise rollback when server returns 409
+      const broadcasts = [];
+      const prevChannel = dataService.sharedBroadcastChannel;
+      dataService.sharedBroadcastChannel = {
+        send: async (msg) => { broadcasts.push(msg); }
+      };
+      try {
+        globalThis.fetch = async () => ({
+          ok: false,
+          status: 409,
+          json: async () => ({ error: 'Order is already claimed by another rider' })
+        });
+        const stage1Fail = dataService.assignOrderToRider('#QB-READY', '2233', { riderLat: 12.7210, riderLng: 77.2805 });
+        assert.equal(typeof stage1Fail.serverPromise?.then, 'function', 'assignOrderToRider must expose serverPromise');
+        assert.equal(broadcasts.length, 0, 'Must not broadcast before server acknowledgment');
+        const serverAck1 = await stage1Fail.serverPromise;
+        assert.equal(serverAck1.success, false);
+        assert.equal(broadcasts.length, 0, 'Must not broadcast when server rejects Stage 1');
+        assert.equal(dataService.getOrderById('#QB-READY').assignedRiderPin, null, 'Rejected Stage 1 must roll back assignedRiderPin');
+
+        const stage2Fail = dataService.confirmOrderParcelPickup('#QB-READY', '2233', { riderLat: 12.7210, riderLng: 77.2805 });
+        assert.equal(typeof stage2Fail.serverPromise?.then, 'function', 'confirmOrderParcelPickup must expose serverPromise');
+        const serverAck2 = await stage2Fail.serverPromise;
+        assert.equal(serverAck2.success, false);
+        assert.equal(broadcasts.length, 0, 'Must not broadcast when server rejects Stage 2');
+        assert.equal(dataService.getOrderById('#QB-READY').status, 'ready_for_pickup', 'Rejected Stage 2 must roll back status to ready_for_pickup');
+      } finally {
+        dataService.sharedBroadcastChannel = prevChannel;
+      }
+
+      // delivery.js UI disables buttons & awaits serverPromise before celebrating
+      assert.ok(deliveryJs.includes('async function handleConfirmParcelPickup('), 'delivery.js handleConfirmParcelPickup must be async');
+      assert.ok(deliveryJs.includes('Confirming Pickup...'), 'delivery.js must show loading state on pickup button');
+      assert.ok(deliveryJs.includes('Accepting Order...'), 'delivery.js must show loading state on accept button');
+      assert.ok(deliveryJs.includes('await res.serverPromise'), 'delivery.js must await res.serverPromise before toast/sound');
+    } finally {
+      globalThis.fetch = origFetch;
+      if (hadSs) globalThis.sessionStorage = origSs; else delete globalThis.sessionStorage;
+      if (hadLs) globalThis.localStorage = origLs; else delete globalThis.localStorage;
+      if (hadWin) globalThis.window = origWin; else delete globalThis.window;
+      if (prevSecret === undefined) delete process.env.SESSION_SECRET;
+      else process.env.SESSION_SECRET = prevSecret;
+    }
   });
 });

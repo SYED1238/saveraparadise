@@ -7819,7 +7819,7 @@ class QuickBiteDataService {
       };
     }
 
-    if (!['ready_for_pickup', 'cooking', 'accepted'].includes(order.status)) {
+    if (order.status !== 'ready_for_pickup') {
       return {
         success: false,
         reason: 'not_ready',
@@ -7922,17 +7922,8 @@ class QuickBiteDataService {
     try {
       localStorage.setItem('quickbite_order_status_sync', JSON.stringify(syncPayload));
     } catch {}
-    try {
-      if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'order_status_updated',
-          payload: syncPayload
-        }).catch(() => {});
-      }
-    } catch {}
 
-    this._orderAction('assign_order', {
+    const serverPromise = this._orderAction('assign_order', {
       orderId: order.id,
       riderPin: rider.pin,
       riderName: rider.name,
@@ -7941,24 +7932,40 @@ class QuickBiteDataService {
       eta: order.eta,
       maxActiveOrders: maxAllowed,
       ...(hasValidCoords ? { riderLat: Number(options.riderLat), riderLng: Number(options.riderLng) } : {})
+    }).then((serverRes) => {
+      try {
+        if (this.sharedBroadcastChannel) {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'order_status_updated',
+            payload: syncPayload
+          }).catch(() => {});
+        }
+      } catch {}
+      return { success: true, order: serverRes?.order || order };
     }).catch(async (actionErr) => {
-      if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
-        try {
-          const list = this.getOrders();
-          const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
-          if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
-            Object.assign(list[rIdx], prevStateSnapshot);
-            delete list[rIdx]._optimisticTimestamp;
-            delete list[rIdx].pendingStatusSync;
-            this.saveOrders(list);
-          }
+      try {
+        const list = this.getOrders();
+        const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
+        if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
+          Object.assign(list[rIdx], prevStateSnapshot);
+          delete list[rIdx]._optimisticTimestamp;
+          delete list[rIdx].pendingStatusSync;
+          this.saveOrders(list);
+        }
+        if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
           await this.syncOrdersFromSupabase(true);
-        } catch {}
-        this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr.message });
-      }
+        }
+      } catch {}
+      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr?.message || 'Accept rejected by server' });
+      return {
+        success: false,
+        status: Number(actionErr?.status) || 0,
+        message: actionErr?.message || 'Failed to accept order with server'
+      };
     });
 
-    return { success: true, order, rider };
+    return { success: true, order, rider, serverPromise };
   }
 
   confirmOrderParcelPickup(orderId, riderPin, options = {}) {
@@ -8020,17 +8027,25 @@ class QuickBiteDataService {
       options.riderLng !== undefined && options.riderLng !== null &&
       Number.isFinite(Number(options.riderLat)) &&
       Number.isFinite(Number(options.riderLng));
-    if (hasValidCoords) {
-      const distKm = this.calculateStraightDistance(Number(options.riderLat), Number(options.riderLng));
-      if (distKm === null || distKm > 3.0) {
-        return {
-          success: false,
-          reason: 'outside_pickup_radius',
-          message: distKm === null
-            ? 'Invalid live GPS coordinates. Please sync your live GPS location at the restaurant.'
-            : `You are ${distKm.toFixed(2)} km from Savera Paradise. Move within 3 km of the restaurant counter to pick up the parcel.`
-        };
-      }
+    const rawLat = hasValidCoords ? Number(options.riderLat) : NaN;
+    const rawLng = hasValidCoords ? Number(options.riderLng) : NaN;
+    const nonZeroCoords = hasValidCoords && !(rawLat === 0 && rawLng === 0);
+    if (!nonZeroCoords) {
+      return {
+        success: false,
+        reason: 'outside_pickup_radius',
+        message: 'Live GPS location is required to pick up the parcel at the restaurant.'
+      };
+    }
+    const distKm = this.calculateStraightDistance(rawLat, rawLng);
+    if (distKm === null || distKm > 3.0) {
+      return {
+        success: false,
+        reason: 'outside_pickup_radius',
+        message: distKm === null
+          ? 'Invalid live GPS coordinates. Please sync your live GPS location at the restaurant.'
+          : `You are ${distKm.toFixed(2)} km from Savera Paradise. Move within 3 km of the restaurant counter to pick up the parcel.`
+      };
     }
 
     const prevStateSnapshot = {
@@ -8083,17 +8098,8 @@ class QuickBiteDataService {
     try {
       localStorage.setItem('quickbite_order_status_sync', JSON.stringify(syncPayload));
     } catch {}
-    try {
-      if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'order_status_updated',
-          payload: syncPayload
-        }).catch(() => {});
-      }
-    } catch {}
 
-    this._orderAction('claim_order', {
+    const serverPromise = this._orderAction('claim_order', {
       orderId: order.id,
       riderPin: rider.pin,
       riderName: rider.name,
@@ -8101,25 +8107,42 @@ class QuickBiteDataService {
       riderVehicle: rider.vehicle,
       maxActiveOrders: maxAllowed,
       enforceSingleActiveOrder: maxAllowed === 1,
-      ...(hasValidCoords ? { riderLat: Number(options.riderLat), riderLng: Number(options.riderLng) } : {})
+      riderLat: rawLat,
+      riderLng: rawLng
+    }).then((serverRes) => {
+      try {
+        if (this.sharedBroadcastChannel) {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'order_status_updated',
+            payload: syncPayload
+          }).catch(() => {});
+        }
+      } catch {}
+      return { success: true, order: serverRes?.order || order };
     }).catch(async (actionErr) => {
-      if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
-        try {
-          const list = this.getOrders();
-          const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
-          if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
-            Object.assign(list[rIdx], prevStateSnapshot);
-            delete list[rIdx]._optimisticTimestamp;
-            delete list[rIdx].pendingStatusSync;
-            this.saveOrders(list);
-          }
+      try {
+        const list = this.getOrders();
+        const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
+        if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
+          Object.assign(list[rIdx], prevStateSnapshot);
+          delete list[rIdx]._optimisticTimestamp;
+          delete list[rIdx].pendingStatusSync;
+          this.saveOrders(list);
+        }
+        if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
           await this.syncOrdersFromSupabase(true);
-        } catch {}
-        this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr.message });
-      }
+        }
+      } catch {}
+      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr?.message || 'Pickup rejected by server' });
+      return {
+        success: false,
+        status: Number(actionErr?.status) || 0,
+        message: actionErr?.message || 'Failed to confirm pickup with server'
+      };
     });
 
-    return { success: true, order, rider };
+    return { success: true, order, rider, serverPromise };
   }
 
   claimOrderByBagCode(code, riderPin, explicitOrderId = null, options = {}) {
@@ -8212,23 +8235,31 @@ class QuickBiteDataService {
       };
     }
 
-    // 3 km Restaurant Pickup Radius Guard when live coordinates are supplied
+    // 3 km Restaurant Pickup Radius Guard (mandatory non-zero live GPS coordinates)
     const hasValidCoords = options &&
       options.riderLat !== undefined && options.riderLat !== null &&
       options.riderLng !== undefined && options.riderLng !== null &&
       Number.isFinite(Number(options.riderLat)) &&
       Number.isFinite(Number(options.riderLng));
-    if (hasValidCoords) {
-      const distKm = this.calculateStraightDistance(Number(options.riderLat), Number(options.riderLng));
-      if (distKm === null || distKm > 3.0) {
-        return {
-          success: false,
-          reason: 'outside_pickup_radius',
-          message: distKm === null
-            ? 'Invalid live GPS coordinates. Please sync your live GPS location to pick an order.'
-            : `You are ${distKm.toFixed(2)} km from Savera Paradise. You must be within a 3 km radius of the restaurant to pick an order.`
-        };
-      }
+    const rawLat = hasValidCoords ? Number(options.riderLat) : NaN;
+    const rawLng = hasValidCoords ? Number(options.riderLng) : NaN;
+    const nonZeroCoords = hasValidCoords && !(rawLat === 0 && rawLng === 0);
+    if (!nonZeroCoords) {
+      return {
+        success: false,
+        reason: 'outside_pickup_radius',
+        message: 'Live GPS location is required to pick an order.'
+      };
+    }
+    const distKm = this.calculateStraightDistance(rawLat, rawLng);
+    if (distKm === null || distKm > 3.0) {
+      return {
+        success: false,
+        reason: 'outside_pickup_radius',
+        message: distKm === null
+          ? 'Invalid live GPS coordinates. Please sync your live GPS location to pick an order.'
+          : `You are ${distKm.toFixed(2)} km from Savera Paradise. You must be within a 3 km radius of the restaurant to pick an order.`
+      };
     }
 
     // Ensure pickupCode is firmly set and matches 4 digits
@@ -8237,6 +8268,20 @@ class QuickBiteDataService {
 
     // Assign to this rider and transition to 'on_the_way'
     const prevStatus = order.status || 'ready_for_pickup';
+    const prevStateSnapshot = {
+      status: prevStatus,
+      stepIndex: order.stepIndex,
+      statusLabel: order.statusLabel,
+      eta: order.eta,
+      assignedRiderPin: order.assignedRiderPin || null,
+      assignedRiderName: order.assignedRiderName || null,
+      assignedRiderPhone: order.assignedRiderPhone || null,
+      assignedRiderVehicle: order.assignedRiderVehicle || null,
+      riderPickupStage: order.riderPickupStage || null,
+      pickedUpAt: order.pickedUpAt || null,
+      claimedAt: order.claimedAt || null,
+      addressDetails: order.addressDetails ? { ...order.addressDetails } : null
+    };
     order.status = 'on_the_way';
     order.stepIndex = 3;
     order.statusLabel = 'Dispatched for Delivery';
@@ -8261,123 +8306,120 @@ class QuickBiteDataService {
 
     this.saveOrders(orders, { action: 'rider_claimed_order', orderId: order.id, riderPin: rider.pin, timestamp: Date.now() });
 
+    const syncPayload = {
+      orderId: order.id,
+      status: 'on_the_way',
+      prevStatus: prevStatus,
+      statusLabel: 'Dispatched for Delivery',
+      stepIndex: 3,
+      eta: '5 - 10 Minutes',
+      order: order,
+      source: 'rider',
+      timestamp: Date.now()
+    };
     try {
-      localStorage.setItem('quickbite_order_status_sync', JSON.stringify({
-        orderId: order.id,
-        status: 'on_the_way',
-        prevStatus: prevStatus,
-        statusLabel: 'Dispatched for Delivery',
-        stepIndex: 3,
-        eta: '5 - 10 Minutes',
-        order: order,
-        source: 'rider',
-        timestamp: Date.now()
-      }));
+      localStorage.setItem('quickbite_order_status_sync', JSON.stringify(syncPayload));
     } catch {}
 
-    try {
-      if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'order_status_updated',
-          payload: {
-            orderId: order.id,
-            status: 'on_the_way',
-            prevStatus: prevStatus,
-            statusLabel: 'Dispatched for Delivery',
-            stepIndex: 3,
-            eta: '5 - 10 Minutes',
-            order: order,
-            source: 'rider',
-            timestamp: Date.now()
-          }
-        }).catch(() => {});
-      }
-    } catch {}
+    const rollbackClaim = async (actionErr, shouldSync) => {
+      try {
+        const list = this.getOrders();
+        const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
+        if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
+          Object.assign(list[rIdx], prevStateSnapshot);
+          delete list[rIdx]._optimisticTimestamp;
+          delete list[rIdx].pendingStatusSync;
+          this.saveOrders(list);
+        }
+        if (shouldSync) {
+          await this.syncOrdersFromSupabase(true);
+        }
+      } catch {}
+      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr?.message || 'Claim rejected by server' });
+      return {
+        success: false,
+        status: Number(actionErr?.status) || 0,
+        message: actionErr?.message || 'Failed to claim order with server'
+      };
+    };
+
+    const emitConfirmedBroadcast = () => {
+      try {
+        if (this.sharedBroadcastChannel) {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'order_status_updated',
+            payload: syncPayload
+          }).catch(() => {});
+        }
+      } catch {}
+    };
 
     // Resilient Supabase update: route through authoritative /api/order-action gateway first
-    try {
-      const fullPayload = {
-        status: 'on_the_way',
-        step_index: 3,
-        status_label: 'Dispatched for Delivery',
-        eta: '10 - 15 Minutes',
-        pickup_code: order.pickupCode || String(code || '').trim(),
-        assigned_rider_pin: rider.pin,
-        assigned_rider_name: rider.name,
-        assigned_rider_phone: rider.phone,
-        assigned_rider_vehicle: rider.vehicle || 'Bike',
-        claimed_at: order.claimedAt || Date.now()
-      };
-      const basePayload = {
-        status: 'on_the_way',
-        step_index: 3,
-        status_label: 'Dispatched for Delivery',
-        eta: '10 - 15 Minutes'
-      };
+    const fullPayload = {
+      status: 'on_the_way',
+      step_index: 3,
+      status_label: 'Dispatched for Delivery',
+      eta: '10 - 15 Minutes',
+      pickup_code: order.pickupCode || String(code || '').trim(),
+      assigned_rider_pin: rider.pin,
+      assigned_rider_name: rider.name,
+      assigned_rider_phone: rider.phone,
+      assigned_rider_vehicle: rider.vehicle || 'Bike',
+      claimed_at: order.claimedAt || Date.now()
+    };
+    const basePayload = {
+      status: 'on_the_way',
+      step_index: 3,
+      status_label: 'Dispatched for Delivery',
+      eta: '10 - 15 Minutes'
+    };
 
-      const doUpdate = async (targetId) => {
+    const doUpdate = async (targetId) => {
+      try {
+        const serverRes = await this._orderAction('claim_order', {
+          orderId: targetId,
+          riderPin: rider.pin,
+          riderName: rider.name,
+          riderPhone: rider.phone,
+          riderVehicle: rider.vehicle,
+          maxActiveOrders: maxAllowed,
+          enforceSingleActiveOrder: maxAllowed === 1,
+          riderLat: rawLat,
+          riderLng: rawLng
+        });
+        emitConfirmedBroadcast();
+        return { success: true, order: serverRes?.order || order };
+      } catch (actionErr) {
+        if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
+          // Authoritative server rejection (e.g., race conflict or 3 km geofence): revert optimistic claim
+          return await rollbackClaim(actionErr, true);
+        }
         try {
-          await this._orderAction('claim_order', {
-            orderId: targetId,
-            riderPin: rider.pin,
-            riderName: rider.name,
-            riderPhone: rider.phone,
-            riderVehicle: rider.vehicle,
-            maxActiveOrders: maxAllowed,
-            enforceSingleActiveOrder: maxAllowed === 1,
-            ...(hasValidCoords ? { riderLat: Number(options.riderLat), riderLng: Number(options.riderLng) } : {})
-          });
-        } catch (actionErr) {
-          if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
-            // Authoritative server rejection (e.g., race conflict or 3 km geofence): revert optimistic claim
-            try {
-              const list = this.getOrders();
-              const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
-              if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
-                list[rIdx].status = prevStatus;
-                list[rIdx].assignedRiderPin = null;
-                list[rIdx].assignedRiderName = null;
-                list[rIdx].assignedRiderPhone = null;
-                list[rIdx].assignedRiderVehicle = null;
-                delete list[rIdx]._optimisticTimestamp;
-                delete list[rIdx].pendingStatusSync;
-                this.saveOrders(list);
-              }
-              await this.syncOrdersFromSupabase(true);
-            } catch {}
-            this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr.message });
-            return;
-          }
-          try {
-            const { error } = await supabase.from('orders')
-              .update(fullPayload)
+          const { error } = await supabase.from('orders')
+            .update(fullPayload)
+            .eq('id', targetId)
+            .eq('status', 'ready_for_pickup');
+          if (error) {
+            const { error: baseErr } = await supabase.from('orders')
+              .update(basePayload)
               .eq('id', targetId)
               .eq('status', 'ready_for_pickup');
-            if (error) {
-              const { error: baseErr } = await supabase.from('orders')
-                .update(basePayload)
-                .eq('id', targetId)
-                .eq('status', 'ready_for_pickup');
-              if (baseErr) {
-                order.pendingStatusSync = true;
-                this.saveOrders(this.getOrders());
-              }
+            if (baseErr) {
+              return await rollbackClaim(baseErr, false);
             }
-          } catch (updateErr) {
-            order.pendingStatusSync = true;
-            this.saveOrders(this.getOrders());
           }
+          emitConfirmedBroadcast();
+          return { success: true, order };
+        } catch (updateErr) {
+          return await rollbackClaim(updateErr || actionErr, false);
         }
-      };
+      }
+    };
 
-      doUpdate(order.id).catch(() => {
-        order.pendingStatusSync = true;
-        this.saveOrders(this.getOrders());
-      });
-    } catch {}
+    const serverPromise = doUpdate(order.id).catch(async (err) => await rollbackClaim(err, false));
 
-    return { success: true, order, rider };
+    return { success: true, order, rider, serverPromise };
   }
 
   getRiderCashSummary(riderPin) {

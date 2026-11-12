@@ -800,7 +800,7 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     const { req: claimOkReq, res: claimOkRes } = createMockReqRes({
       method: 'POST',
       headers: { authorization: `Bearer ${riderAToken}` },
-      body: { action: 'claim_order', orderId: '#QB-101', simulateOrders: sampleOrders }
+      body: { action: 'claim_order', orderId: '#QB-101', simulateOrders: sampleOrders, riderLat: 12.7210, riderLng: 77.2805 }
     });
     await orderActionHandler(claimOkReq, claimOkRes);
     assert.equal(claimOkRes.statusCode, 200);
@@ -929,7 +929,9 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
         orderId: '#QB-READY-1',
         status: 'delivered', // Tampered status injection
         stepIndex: 4,
-        simulateOrders: testOrders
+        riderLat: 12.7210,
+        riderLng: 77.2805,
+        simulateOrders: [{ ...testOrders[2] }]
       }
     });
     await orderActionHandler(claimTamperReq, claimTamperRes);
@@ -947,6 +949,8 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
       body: {
         action: 'claim_order',
         orderId: '#QB-READY-1',
+        riderLat: 12.7210,
+        riderLng: 77.2805,
         simulateOrders: testOrders,
         simulateConcurrentClaim: true // Simulates database returning 0 rows due to race condition
       }
@@ -1024,6 +1028,8 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
       body: JSON.stringify({
         action: 'claim_order',
         orderId: '#QB-READY-1',
+        riderLat: 12.7210,
+        riderLng: 77.2805,
         simulateOrders: testOrders,
         simulateConcurrentClaim: true
       })

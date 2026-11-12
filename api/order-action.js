@@ -54,6 +54,25 @@ function calculateStraightDistanceKm(lat1, lng1, lat2, lng2) {
   return Math.round(R * c * 1000) / 1000;
 }
 
+const riderActionLocks = new Map();
+async function withRiderLock(riderPin, fn) {
+  const lockKey = riderPin ? `rider_${String(riderPin).trim()}` : 'rider_global';
+  const prev = riderActionLocks.get(lockKey) || Promise.resolve();
+  let releaseNext;
+  const current = new Promise(resolve => { releaseNext = resolve; });
+  const tail = prev.then(() => current, () => current);
+  riderActionLocks.set(lockKey, tail);
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    releaseNext();
+    if (riderActionLocks.get(lockKey) === tail) {
+      riderActionLocks.delete(lockKey);
+    }
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
@@ -420,6 +439,8 @@ export default async function handler(req, res) {
           ...(status === 'delivered' ? { delivered_at: Date.now() } : {}),
           ...(status === 'undelivered' ? { undelivered_at: Date.now() } : {})
         };
+        const tIdx = testOrders.findIndex(o => o && String(o.id).replace(/^#/, '') === cleanId);
+        if (tIdx !== -1) testOrders[tIdx] = updated;
         return res.status(200).json({ success: true, order: updated });
       }
 
@@ -432,10 +453,6 @@ export default async function handler(req, res) {
         if (!cleanId) {
           return res.status(400).json({ error: 'Invalid orderId format' });
         }
-        const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
-        if (!existing) {
-          return res.status(404).json({ error: 'Order not found' });
-        }
 
         const isRider = auth.payload?.role === 'rider';
         const effectivePin = isRider
@@ -446,83 +463,92 @@ export default async function handler(req, res) {
           return res.status(401).json({ error: 'Unauthorized: Rider session missing authenticated identity' });
         }
 
-        const existingPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
-        if (existingPin && existingPin !== effectivePin) {
-          return res.status(409).json({
-            error: 'Order is already accepted by another rider',
-            claimedBy: existing.assigned_rider_name || existing.assignedRiderName || null
-          });
-        }
-        if (['delivered', 'undelivered', 'cancelled', 'on_the_way'].includes(existing.status)) {
-          return res.status(400).json({
-            error: `Order cannot be accepted in status: ${existing.status}`
-          });
-        }
+        return await withRiderLock(effectivePin, async () => {
+          const existingIdx = testOrders.findIndex(o => o && String(o.id).replace(/^#/, '') === cleanId);
+          const existing = existingIdx >= 0 ? testOrders[existingIdx] : null;
+          if (!existing) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
 
-        const isAlreadyAssignedToSameRider = Boolean(effectivePin && existingPin === effectivePin);
-        const maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
-        if (!isAlreadyAssignedToSameRider && effectivePin) {
-          const riderActive = testOrders.filter(o => {
-            if (!o) return false;
-            if (String(o.id).replace(/^#/, '') === cleanId) return false;
-            const oPin = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
-            if (oPin !== effectivePin) return false;
-            return ['on_the_way', 'ready_for_pickup', 'cooking', 'accepted'].includes(o.status);
-          });
-          const otwOrders = riderActive.filter(o => o.status === 'on_the_way');
-          if (otwOrders.length > 0) {
-            let canBatchAtCounter = false;
-            if (maxAllowed > 1 && riderActive.length < maxAllowed) {
-              const pickupDistKm = (body.riderLat !== undefined || body.riderLng !== undefined)
-                ? calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng)
-                : null;
-              const withinCounterZone = pickupDistKm !== null && pickupDistKm <= MAX_RIDER_PICKUP_RADIUS_KM;
-              const now = Date.now();
-              const allRecentPickup = otwOrders.every(o => {
-                const details = o.address_details || o.addressDetails || {};
-                const pickedAt = Number(details.pickedUpAt || o.pickedUpAt || 0);
-                return pickedAt > 0 && (now - pickedAt) <= 3 * 60 * 1000;
-              });
-              canBatchAtCounter = withinCounterZone || allRecentPickup;
+          const existingPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
+          if (existingPin && existingPin !== effectivePin) {
+            return res.status(409).json({
+              error: 'Order is already accepted by another rider',
+              claimedBy: existing.assigned_rider_name || existing.assignedRiderName || null
+            });
+          }
+          if (existing.status !== 'ready_for_pickup') {
+            return res.status(400).json({
+              error: `Order is not ready for pickup (current status: ${existing.status})`
+            });
+          }
+
+          const isAlreadyAssignedToSameRider = Boolean(effectivePin && existingPin === effectivePin);
+          const maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
+          if (!isAlreadyAssignedToSameRider && effectivePin) {
+            const riderActive = testOrders.filter(o => {
+              if (!o) return false;
+              if (String(o.id).replace(/^#/, '') === cleanId) return false;
+              const oPin = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+              if (oPin !== effectivePin) return false;
+              return ['on_the_way', 'ready_for_pickup', 'cooking', 'accepted'].includes(o.status);
+            });
+            const otwOrders = riderActive.filter(o => o.status === 'on_the_way');
+            if (otwOrders.length > 0) {
+              let canBatchAtCounter = false;
+              if (maxAllowed > 1 && riderActive.length < maxAllowed) {
+                const pickupDistKm = (body.riderLat !== undefined || body.riderLng !== undefined)
+                  ? calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng)
+                  : null;
+                const withinCounterZone = pickupDistKm !== null && pickupDistKm <= MAX_RIDER_PICKUP_RADIUS_KM;
+                const now = Date.now();
+                const allRecentPickup = otwOrders.every(o => {
+                  const details = o.address_details || o.addressDetails || {};
+                  const pickedAt = Number(details.pickedUpAt || o.pickedUpAt || 0);
+                  return pickedAt > 0 && (now - pickedAt) <= 3 * 60 * 1000;
+                });
+                canBatchAtCounter = withinCounterZone || allRecentPickup;
+              }
+              if (!canBatchAtCounter) {
+                return res.status(409).json({
+                  error: `Rider already has an active order (${otwOrders[0].id}) on the way. Complete current delivery before accepting another order.`,
+                  code: 'ACTIVE_ORDER_LIMIT'
+                });
+              }
             }
-            if (!canBatchAtCounter) {
+            if (riderActive.length >= maxAllowed) {
               return res.status(409).json({
-                error: `Rider already has an active order (${otwOrders[0].id}) on the way. Complete current delivery before accepting another order.`,
+                error: `Rider has reached the active order limit (${maxAllowed}). Pick up & deliver existing order(s) first.`,
                 code: 'ACTIVE_ORDER_LIMIT'
               });
             }
           }
-          if (riderActive.length >= maxAllowed) {
+
+          if (body.simulateConcurrentClaim) {
             return res.status(409).json({
-              error: `Rider has reached the active order limit (${maxAllowed}). Pick up & deliver existing order(s) first.`,
-              code: 'ACTIVE_ORDER_LIMIT'
+              error: 'Order is already accepted by another rider'
             });
           }
-        }
 
-        if (body.simulateConcurrentClaim) {
-          return res.status(409).json({
-            error: 'Order is already accepted by another rider'
-          });
-        }
-
-        const mergedDetails = {
-          ...(existing.address_details || existing.addressDetails || {}),
-          riderPickupStage: 'going_to_restaurant',
-          riderAssignedAt: Date.now()
-        };
-        const updated = {
-          ...existing,
-          status: existing.status,
-          status_label: 'Rider Going to Restaurant',
-          eta: body.eta || existing.eta || 'Heading to Restaurant',
-          assigned_rider_pin: effectivePin || null,
-          assigned_rider_name: body.riderName ? String(body.riderName).trim() : null,
-          assigned_rider_phone: body.riderPhone ? String(body.riderPhone).trim() : null,
-          assigned_rider_vehicle: body.riderVehicle ? String(body.riderVehicle).trim() : 'Bike',
-          address_details: mergedDetails
-        };
-        return res.status(200).json({ success: true, order: updated });
+          const mergedDetails = {
+            ...(existing.address_details || existing.addressDetails || {}),
+            riderPickupStage: 'going_to_restaurant',
+            riderAssignedAt: Date.now()
+          };
+          const updated = {
+            ...existing,
+            status: 'ready_for_pickup',
+            status_label: 'Rider Going to Restaurant',
+            eta: body.eta || existing.eta || 'Heading to Restaurant',
+            assigned_rider_pin: effectivePin || null,
+            assigned_rider_name: body.riderName ? String(body.riderName).trim() : null,
+            assigned_rider_phone: body.riderPhone ? String(body.riderPhone).trim() : null,
+            assigned_rider_vehicle: body.riderVehicle ? String(body.riderVehicle).trim() : 'Bike',
+            address_details: mergedDetails
+          };
+          testOrders[existingIdx] = updated;
+          return res.status(200).json({ success: true, order: updated });
+        });
       }
 
       if (action === 'claim_order') {
@@ -534,10 +560,6 @@ export default async function handler(req, res) {
         if (!cleanId) {
           return res.status(400).json({ error: 'Invalid orderId format' });
         }
-        const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
-        if (!existing) {
-          return res.status(404).json({ error: 'Order not found' });
-        }
 
         const isRider = auth.payload?.role === 'rider';
         const effectivePin = isRider
@@ -548,72 +570,88 @@ export default async function handler(req, res) {
           return res.status(401).json({ error: 'Unauthorized: Rider session missing authenticated identity' });
         }
 
-        const existingPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
-        const isAlreadyPickedUpBySameRider = Boolean(effectivePin && existingPin === effectivePin && existing.status === 'on_the_way');
+        return await withRiderLock(effectivePin, async () => {
+          const existingIdx = testOrders.findIndex(o => o && String(o.id).replace(/^#/, '') === cleanId);
+          const existing = existingIdx >= 0 ? testOrders[existingIdx] : null;
+          if (!existing) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
 
-        if (isRider) {
-          if (existingPin && existingPin !== effectivePin) {
-            return res.status(409).json({
-              error: 'Order is already claimed by another rider',
-              claimedBy: existing.assigned_rider_name || existing.assignedRiderName || null
-            });
-          }
-          if (!isAlreadyPickedUpBySameRider && existing.status !== 'ready_for_pickup') {
-            return res.status(400).json({
-              error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
-            });
-          }
-          if (!isAlreadyPickedUpBySameRider && (body.riderLat !== undefined || body.riderLng !== undefined)) {
-            const pickupDistKm = calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng);
-            if (pickupDistKm === null) {
-              return res.status(400).json({ error: 'Invalid live GPS coordinates for pickup verification' });
-            }
-            if (pickupDistKm > MAX_RIDER_PICKUP_RADIUS_KM) {
-              return res.status(403).json({
-                error: `Forbidden: Rider is ${pickupDistKm.toFixed(2)} km away from Savera Paradise (outside the 3 km restaurant pickup radius).`,
-                code: 'OUTSIDE_PICKUP_RADIUS'
-              });
-            }
-          }
-          if (!isAlreadyPickedUpBySameRider && (body.enforceSingleActiveOrder === true || body.maxActiveOrders !== undefined)) {
-            const maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
-            const activeOtwOrders = testOrders.filter(o => {
-              if (!o || o.status !== 'on_the_way') return false;
-              const oPin = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
-              return oPin === effectivePin && String(o.id).replace(/^#/, '') !== cleanId;
-            });
-            if (activeOtwOrders.length >= maxAllowed) {
+          const existingPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
+          const isAlreadyPickedUpBySameRider = Boolean(effectivePin && existingPin === effectivePin && existing.status === 'on_the_way');
+
+          if (isRider) {
+            if (existingPin && existingPin !== effectivePin) {
               return res.status(409).json({
-                error: `Rider already has an active order (${activeOtwOrders[0].id}) on the way. Complete current delivery before claiming another order.`,
-                code: 'ACTIVE_ORDER_LIMIT'
+                error: 'Order is already claimed by another rider',
+                claimedBy: existing.assigned_rider_name || existing.assignedRiderName || null
               });
             }
+            if (!isAlreadyPickedUpBySameRider && existing.status !== 'ready_for_pickup') {
+              return res.status(400).json({
+                error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
+              });
+            }
+            if (!isAlreadyPickedUpBySameRider) {
+              if (body.riderLat === undefined || body.riderLat === null || body.riderLng === undefined || body.riderLng === null) {
+                return res.status(400).json({
+                  error: 'Invalid or missing live GPS coordinates for pickup verification',
+                  code: 'MISSING_GPS_COORDINATES'
+                });
+              }
+              const pickupDistKm = calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng);
+              if (pickupDistKm === null) {
+                return res.status(400).json({
+                  error: 'Invalid or missing live GPS coordinates for pickup verification',
+                  code: 'MISSING_GPS_COORDINATES'
+                });
+              }
+              if (pickupDistKm > MAX_RIDER_PICKUP_RADIUS_KM) {
+                return res.status(403).json({
+                  error: `Forbidden: Rider is ${pickupDistKm.toFixed(2)} km away from Savera Paradise (outside the 3 km restaurant pickup radius).`,
+                  code: 'OUTSIDE_PICKUP_RADIUS'
+                });
+              }
+              const maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
+              const activeOtwOrders = testOrders.filter(o => {
+                if (!o || o.status !== 'on_the_way') return false;
+                const oPin = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+                return oPin === effectivePin && String(o.id).replace(/^#/, '') !== cleanId;
+              });
+              if (activeOtwOrders.length >= maxAllowed) {
+                return res.status(409).json({
+                  error: `Rider already has an active order (${activeOtwOrders[0].id}) on the way. Complete current delivery before claiming another order.`,
+                  code: 'ACTIVE_ORDER_LIMIT'
+                });
+              }
+            }
           }
-        }
 
-        if (body.simulateConcurrentClaim) {
-          return res.status(409).json({
-            error: 'Order is already claimed by another rider or is no longer available for pickup'
-          });
-        }
+          if (body.simulateConcurrentClaim) {
+            return res.status(409).json({
+              error: 'Order is already claimed by another rider or is no longer available for pickup'
+            });
+          }
 
-        const mergedDetails = {
-          ...(existing.address_details || existing.addressDetails || {}),
-          riderPickupStage: 'picked_up',
-          pickedUpAt: Date.now()
-        };
-        const updated = {
-          ...existing,
-          status: 'on_the_way',
-          step_index: 3,
-          status_label: 'Rider is on the Way Towards You',
-          assigned_rider_pin: effectivePin || null,
-          assigned_rider_name: body.riderName ? String(body.riderName).trim() : null,
-          assigned_rider_phone: body.riderPhone ? String(body.riderPhone).trim() : null,
-          assigned_rider_vehicle: body.riderVehicle ? String(body.riderVehicle).trim() : 'Bike',
-          address_details: mergedDetails
-        };
-        return res.status(200).json({ success: true, order: updated });
+          const mergedDetails = {
+            ...(existing.address_details || existing.addressDetails || {}),
+            riderPickupStage: 'picked_up',
+            pickedUpAt: Date.now()
+          };
+          const updated = {
+            ...existing,
+            status: 'on_the_way',
+            step_index: 3,
+            status_label: 'Rider is on the Way Towards You',
+            assigned_rider_pin: effectivePin || null,
+            assigned_rider_name: body.riderName ? String(body.riderName).trim() : null,
+            assigned_rider_phone: body.riderPhone ? String(body.riderPhone).trim() : null,
+            assigned_rider_vehicle: body.riderVehicle ? String(body.riderVehicle).trim() : 'Bike',
+            address_details: mergedDetails
+          };
+          testOrders[existingIdx] = updated;
+          return res.status(200).json({ success: true, order: updated });
+        });
       }
 
       if (action === 'request_cash_handover') {
@@ -912,119 +950,149 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Invalid orderId format' });
         }
 
-        const { data: existing, error: fetchErr } = await sb
-          .from('orders')
-          .select('id, status, step_index, eta, assigned_rider_pin, assigned_rider_name, address_details')
-          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
-          .maybeSingle();
+        return await withRiderLock(effectivePin, async () => {
+          const pickupDistKm = (body.riderLat !== undefined && body.riderLat !== null && body.riderLng !== undefined && body.riderLng !== null)
+            ? calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng)
+            : null;
+          const withinCounterZone = pickupDistKm !== null && pickupDistKm <= MAX_RIDER_PICKUP_RADIUS_KM;
 
-        if (fetchErr) throw fetchErr;
-        if (!existing) {
-          return res.status(404).json({ error: 'Order not found' });
-        }
-
-        const existingPin = String(existing.assigned_rider_pin || '').trim();
-        if (existingPin && existingPin !== effectivePin) {
-          return res.status(409).json({
-            error: 'Order is already accepted by another rider',
-            claimedBy: existing.assigned_rider_name || null
-          });
-        }
-        if (['delivered', 'undelivered', 'cancelled', 'on_the_way'].includes(existing.status)) {
-          return res.status(400).json({
-            error: `Order cannot be accepted in status: ${existing.status}`
-          });
-        }
-
-        const isAlreadyAssignedToSameRider = Boolean(effectivePin && existingPin === effectivePin);
-        if (effectivePin && !isAlreadyAssignedToSameRider) {
-          let maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
-          try {
-            const { data: riderRow, error: rErr } = await sb
-              .from('riders')
-              .select('max_active_orders')
-              .eq('pin', effectivePin)
-              .maybeSingle();
-            if (!rErr && riderRow && riderRow.max_active_orders !== undefined && riderRow.max_active_orders !== null) {
-              maxAllowed = Math.max(1, Math.min(4, Number(riderRow.max_active_orders) || 1));
-            }
-          } catch {}
-
-          const { data: riderOrders, error: roErr } = await sb
-            .from('orders')
-            .select('id, status, address_details')
-            .eq('assigned_rider_pin', effectivePin)
-            .in('status', ['on_the_way', 'ready_for_pickup', 'cooking', 'accepted']);
-          if (roErr) throw roErr;
-
-          const otherOrders = (riderOrders || []).filter(o => String(o.id).replace(/^#/, '') !== cleanId);
-          const otwOrders = otherOrders.filter(o => o.status === 'on_the_way');
-          if (otwOrders.length > 0) {
-            let canBatchAtCounter = false;
-            if (maxAllowed > 1 && otherOrders.length < maxAllowed) {
-              const pickupDistKm = (body.riderLat !== undefined || body.riderLng !== undefined)
-                ? calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng)
-                : null;
-              const withinCounterZone = pickupDistKm !== null && pickupDistKm <= MAX_RIDER_PICKUP_RADIUS_KM;
-              const now = Date.now();
-              const allRecentPickup = otwOrders.every(o => {
-                const details = o.address_details || o.addressDetails || {};
-                const pickedAt = Number(details.pickedUpAt || o.pickedUpAt || 0);
-                return pickedAt > 0 && (now - pickedAt) <= 3 * 60 * 1000;
+          if (typeof sb.rpc === 'function') {
+            try {
+              const { data: rpcRes, error: rpcErr } = await sb.rpc('rider_assign_or_claim_order', {
+                p_action: 'assign_order',
+                p_order_id: cleanId,
+                p_rider_pin: effectivePin || null,
+                p_rider_name: riderName ? String(riderName).trim() : null,
+                p_rider_phone: riderPhone ? String(riderPhone).trim() : null,
+                p_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
+                p_eta: body.eta ? String(body.eta).trim() : null,
+                p_within_counter_zone: Boolean(withinCounterZone),
+                p_is_rider: Boolean(isRider),
+                p_now_ms: Date.now()
               });
-              canBatchAtCounter = withinCounterZone || allRecentPickup;
+              if (!rpcErr && rpcRes && typeof rpcRes.ok === 'boolean') {
+                if (rpcRes.ok) {
+                  return res.status(200).json({ success: true, order: rpcRes.order });
+                }
+                return res.status(Number(rpcRes.http_status) || 409).json({
+                  error: rpcRes.error || 'Cannot accept order',
+                  ...(rpcRes.code ? { code: rpcRes.code } : {}),
+                  ...(rpcRes.claimedBy ? { claimedBy: rpcRes.claimedBy } : {})
+                });
+              }
+            } catch {}
+          }
+
+          const { data: existing, error: fetchErr } = await sb
+            .from('orders')
+            .select('id, status, step_index, eta, assigned_rider_pin, assigned_rider_name, address_details')
+            .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+            .maybeSingle();
+
+          if (fetchErr) throw fetchErr;
+          if (!existing) {
+            return res.status(404).json({ error: 'Order not found' });
+          }
+
+          const existingPin = String(existing.assigned_rider_pin || '').trim();
+          if (existingPin && existingPin !== effectivePin) {
+            return res.status(409).json({
+              error: 'Order is already accepted by another rider',
+              claimedBy: existing.assigned_rider_name || null
+            });
+          }
+          if (existing.status !== 'ready_for_pickup') {
+            return res.status(400).json({
+              error: `Order is not ready for pickup (current status: ${existing.status})`
+            });
+          }
+
+          const isAlreadyAssignedToSameRider = Boolean(effectivePin && existingPin === effectivePin);
+          if (effectivePin && !isAlreadyAssignedToSameRider) {
+            let maxAllowed = 1;
+            try {
+              const { data: riderRow, error: rErr } = await sb
+                .from('riders')
+                .select('max_active_orders')
+                .eq('pin', effectivePin)
+                .maybeSingle();
+              if (!rErr && riderRow && riderRow.max_active_orders !== undefined && riderRow.max_active_orders !== null) {
+                maxAllowed = Math.max(1, Math.min(4, Number(riderRow.max_active_orders) || 1));
+              }
+            } catch {}
+
+            const { data: riderOrders, error: roErr } = await sb
+              .from('orders')
+              .select('id, status, address_details')
+              .eq('assigned_rider_pin', effectivePin)
+              .in('status', ['on_the_way', 'ready_for_pickup', 'cooking', 'accepted']);
+            if (roErr) throw roErr;
+
+            const otherOrders = (riderOrders || []).filter(o => String(o.id).replace(/^#/, '') !== cleanId);
+            const otwOrders = otherOrders.filter(o => o.status === 'on_the_way');
+            if (otwOrders.length > 0) {
+              let canBatchAtCounter = false;
+              if (maxAllowed > 1 && otherOrders.length < maxAllowed) {
+                const now = Date.now();
+                const allRecentPickup = otwOrders.every(o => {
+                  const details = o.address_details || o.addressDetails || {};
+                  const pickedAt = Number(details.pickedUpAt || o.pickedUpAt || 0);
+                  return pickedAt > 0 && (now - pickedAt) <= 3 * 60 * 1000;
+                });
+                canBatchAtCounter = withinCounterZone || allRecentPickup;
+              }
+              if (!canBatchAtCounter) {
+                return res.status(409).json({
+                  error: `Rider already has an active order (${otwOrders[0].id}) on the way. Complete current delivery before accepting another order.`,
+                  code: 'ACTIVE_ORDER_LIMIT'
+                });
+              }
             }
-            if (!canBatchAtCounter) {
+            if (otherOrders.length >= maxAllowed) {
               return res.status(409).json({
-                error: `Rider already has an active order (${otwOrders[0].id}) on the way. Complete current delivery before accepting another order.`,
+                error: `Rider has reached the active order limit (${maxAllowed}). Complete existing order(s) first.`,
                 code: 'ACTIVE_ORDER_LIMIT'
               });
             }
           }
-          if (otherOrders.length >= maxAllowed) {
+
+          const mergedDetails = {
+            ...(existing.address_details || {}),
+            riderPickupStage: 'going_to_restaurant',
+            riderAssignedAt: Date.now()
+          };
+          const updatePayload = {
+            status_label: 'Rider Going to Restaurant',
+            eta: body.eta || existing.eta || 'Heading to Restaurant',
+            assigned_rider_pin: effectivePin || null,
+            assigned_rider_name: riderName ? String(riderName).trim() : null,
+            assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
+            assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
+            address_details: mergedDetails
+          };
+
+          let query = sb
+            .from('orders')
+            .update(updatePayload)
+            .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+            .eq('status', 'ready_for_pickup');
+
+          if (isRider) {
+            const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
+            query = query.or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${safePin}`);
+          }
+
+          const { data: updatedList, error: updateErr } = await query.select();
+          if (updateErr) throw updateErr;
+
+          if (!updatedList || updatedList.length === 0) {
             return res.status(409).json({
-              error: `Rider has reached the active order limit (${maxAllowed}). Complete existing order(s) first.`,
-              code: 'ACTIVE_ORDER_LIMIT'
+              error: 'Order is already accepted by another rider or is no longer available'
             });
           }
-        }
 
-        const mergedDetails = {
-          ...(existing.address_details || {}),
-          riderPickupStage: 'going_to_restaurant',
-          riderAssignedAt: Date.now()
-        };
-        const updatePayload = {
-          status_label: 'Rider Going to Restaurant',
-          eta: body.eta || existing.eta || 'Heading to Restaurant',
-          assigned_rider_pin: effectivePin || null,
-          assigned_rider_name: riderName ? String(riderName).trim() : null,
-          assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
-          assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
-          address_details: mergedDetails
-        };
-
-        let query = sb
-          .from('orders')
-          .update(updatePayload)
-          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
-          .not('status', 'in', '(delivered,undelivered,cancelled,on_the_way)');
-
-        if (isRider) {
-          const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
-          query = query.or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${safePin}`);
-        }
-
-        const { data: updatedList, error: updateErr } = await query.select();
-        if (updateErr) throw updateErr;
-
-        if (!updatedList || updatedList.length === 0) {
-          return res.status(409).json({
-            error: 'Order is already accepted by another rider or is no longer available'
-          });
-        }
-
-        return res.status(200).json({ success: true, order: updatedList[0] });
+          return res.status(200).json({ success: true, order: updatedList[0] });
+        });
       }
 
       // 4. Delivery Rider Claim Order (Atomic & Enforced — Stage 2 Parcel Pickup)
@@ -1053,53 +1121,90 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Invalid orderId format' });
         }
 
-        // 1. Fetch current order state to verify readiness
-        const { data: existing, error: fetchErr } = await sb
-          .from('orders')
-          .select('id, status, assigned_rider_pin, assigned_rider_name, address_details')
-          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
-          .maybeSingle();
+        return await withRiderLock(effectivePin, async () => {
+          // 1. Fetch current order state to verify readiness
+          const { data: existing, error: fetchErr } = await sb
+            .from('orders')
+            .select('id, status, assigned_rider_pin, assigned_rider_name, address_details')
+            .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+            .maybeSingle();
 
-        if (fetchErr) throw fetchErr;
-        if (!existing) {
-          return res.status(404).json({ error: 'Order not found' });
-        }
-
-        const existingPin = String(existing.assigned_rider_pin || '').trim();
-        const isAlreadyPickedUpBySameRider = Boolean(effectivePin && existingPin === effectivePin && existing.status === 'on_the_way');
-
-        if (isRider) {
-          if (existingPin && existingPin !== effectivePin) {
-            return res.status(409).json({
-              error: 'Order is already claimed by another rider',
-              claimedBy: existing.assigned_rider_name || null
-            });
+          if (fetchErr) throw fetchErr;
+          if (!existing) {
+            return res.status(404).json({ error: 'Order not found' });
           }
 
-          // Strictly require ready_for_pickup for pickup transition
-          if (!isAlreadyPickedUpBySameRider && existing.status !== 'ready_for_pickup') {
-            return res.status(400).json({
-              error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
-            });
-          }
+          const existingPin = String(existing.assigned_rider_pin || '').trim();
+          const isAlreadyPickedUpBySameRider = Boolean(effectivePin && existingPin === effectivePin && existing.status === 'on_the_way');
 
-          // Enforce 3 km restaurant pickup radius when live coordinates are provided
-          if (!isAlreadyPickedUpBySameRider && (body.riderLat !== undefined || body.riderLng !== undefined)) {
-            const pickupDistKm = calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng);
-            if (pickupDistKm === null) {
-              return res.status(400).json({ error: 'Invalid live GPS coordinates for pickup verification' });
-            }
-            if (pickupDistKm > MAX_RIDER_PICKUP_RADIUS_KM) {
-              return res.status(403).json({
-                error: `Forbidden: Rider is ${pickupDistKm.toFixed(2)} km away from Savera Paradise (outside the 3 km restaurant pickup radius).`,
-                code: 'OUTSIDE_PICKUP_RADIUS'
+          if (isRider) {
+            if (existingPin && existingPin !== effectivePin) {
+              return res.status(409).json({
+                error: 'Order is already claimed by another rider',
+                claimedBy: existing.assigned_rider_name || null
               });
             }
+
+            // Strictly require ready_for_pickup for pickup transition
+            if (!isAlreadyPickedUpBySameRider && existing.status !== 'ready_for_pickup') {
+              return res.status(400).json({
+                error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
+              });
+            }
+
+            // Unconditionally enforce 3 km restaurant pickup radius for rider Stage 2 pickup
+            if (!isAlreadyPickedUpBySameRider) {
+              if (body.riderLat === undefined || body.riderLat === null || body.riderLng === undefined || body.riderLng === null) {
+                return res.status(400).json({
+                  error: 'Invalid or missing live GPS coordinates for pickup verification',
+                  code: 'MISSING_GPS_COORDINATES'
+                });
+              }
+              const pickupDistKm = calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng);
+              if (pickupDistKm === null) {
+                return res.status(400).json({
+                  error: 'Invalid or missing live GPS coordinates for pickup verification',
+                  code: 'MISSING_GPS_COORDINATES'
+                });
+              }
+              if (pickupDistKm > MAX_RIDER_PICKUP_RADIUS_KM) {
+                return res.status(403).json({
+                  error: `Forbidden: Rider is ${pickupDistKm.toFixed(2)} km away from Savera Paradise (outside the 3 km restaurant pickup radius).`,
+                  code: 'OUTSIDE_PICKUP_RADIUS'
+                });
+              }
+            }
           }
 
-          // Enforce per-rider active order limit when requested
-          if (!isAlreadyPickedUpBySameRider && (body.enforceSingleActiveOrder === true || body.maxActiveOrders !== undefined)) {
-            let maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
+          if (typeof sb.rpc === 'function') {
+            try {
+              const { data: rpcRes, error: rpcErr } = await sb.rpc('rider_assign_or_claim_order', {
+                p_action: 'claim_order',
+                p_order_id: cleanId,
+                p_rider_pin: effectivePin || null,
+                p_rider_name: riderName ? String(riderName).trim() : null,
+                p_rider_phone: riderPhone ? String(riderPhone).trim() : null,
+                p_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
+                p_eta: null,
+                p_within_counter_zone: true,
+                p_is_rider: Boolean(isRider),
+                p_now_ms: Date.now()
+              });
+              if (!rpcErr && rpcRes && typeof rpcRes.ok === 'boolean') {
+                if (rpcRes.ok) {
+                  return res.status(200).json({ success: true, order: rpcRes.order });
+                }
+                return res.status(Number(rpcRes.http_status) || 409).json({
+                  error: rpcRes.error || 'Cannot claim order',
+                  ...(rpcRes.code ? { code: rpcRes.code } : {}),
+                  ...(rpcRes.claimedBy ? { claimedBy: rpcRes.claimedBy } : {})
+                });
+              }
+            } catch {}
+          }
+
+          if (isRider && !isAlreadyPickedUpBySameRider) {
+            let maxAllowed = 1;
             try {
               const { data: riderRow, error: rErr } = await sb
                 .from('riders')
@@ -1125,49 +1230,49 @@ export default async function handler(req, res) {
               });
             }
           }
-        }
 
-        // 2. Server strictly enforces order lifecycle fields
-        const mergedDetails = {
-          ...(existing.address_details || {}),
-          riderPickupStage: 'picked_up',
-          pickedUpAt: Date.now()
-        };
-        const updatePayload = {
-          status: 'on_the_way',
-          step_index: 3,
-          status_label: 'Rider is on the Way Towards You',
-          assigned_rider_pin: effectivePin || null,
-          assigned_rider_name: riderName ? String(riderName).trim() : null,
-          assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
-          assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
-          address_details: mergedDetails
-        };
+          // 2. Server strictly enforces order lifecycle fields
+          const mergedDetails = {
+            ...(existing.address_details || {}),
+            riderPickupStage: 'picked_up',
+            pickedUpAt: Date.now()
+          };
+          const updatePayload = {
+            status: 'on_the_way',
+            step_index: 3,
+            status_label: 'Rider is on the Way Towards You',
+            assigned_rider_pin: effectivePin || null,
+            assigned_rider_name: riderName ? String(riderName).trim() : null,
+            assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
+            assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
+            address_details: mergedDetails
+          };
 
-        // 3. ATOMIC CONDITIONAL UPDATE:
-        let query = sb
-          .from('orders')
-          .update(updatePayload)
-          .or(`id.eq.${cleanId},id.eq.#${cleanId}`);
+          // 3. ATOMIC CONDITIONAL UPDATE:
+          let query = sb
+            .from('orders')
+            .update(updatePayload)
+            .or(`id.eq.${cleanId},id.eq.#${cleanId}`);
 
-        if (isRider) {
-          const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
-          query = query
-            .in('status', ['ready_for_pickup', 'on_the_way'])
-            .or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${safePin}`);
-        }
+          if (isRider) {
+            const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
+            query = query
+              .in('status', ['ready_for_pickup', 'on_the_way'])
+              .or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${safePin}`);
+          }
 
-        const { data: updatedList, error: updateErr } = await query.select();
+          const { data: updatedList, error: updateErr } = await query.select();
 
-        if (updateErr) throw updateErr;
+          if (updateErr) throw updateErr;
 
-        if (!updatedList || updatedList.length === 0) {
-          return res.status(409).json({
-            error: 'Order is already claimed by another rider or is no longer available for pickup'
-          });
-        }
+          if (!updatedList || updatedList.length === 0) {
+            return res.status(409).json({
+              error: 'Order is already claimed by another rider or is no longer available for pickup'
+            });
+          }
 
-        return res.status(200).json({ success: true, order: updatedList[0] });
+          return res.status(200).json({ success: true, order: updatedList[0] });
+        });
       }
 
       // 5. Order Cancellation (Customer or Staff)
