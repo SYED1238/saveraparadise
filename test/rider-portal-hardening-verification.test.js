@@ -196,4 +196,13 @@ describe('RIDER PORTAL HARDENING, 1:00 AM SHIFT RESET & CNR COMPENSATION SUITE',
     // Mobile thumb clearance in delivery.css
     assert.match(deliveryCss, /\.rider-main-container\s*\{\s*padding:\s*12px\s*10px\s*110px\s*10px;/, 'delivery.css must have 110px bottom clearance on mobile');
   });
+
+  test('7. Mobile order card finance badges (.row-payout-badge & .row-price-badge) stay contained inside .row-top-bar without horizontal overflow', () => {
+    const deliveryCss = fs.readFileSync(path.join(rootDir, 'delivery.css'), 'utf8');
+
+    assert.match(deliveryCss, /\.row-top-bar\s*\{[^}]*flex-wrap:\s*wrap;/, '.row-top-bar must allow flex wrapping so finance badges never push out of card bounds');
+    assert.match(deliveryCss, /\.row-finance-badges\s*\{[^}]*max-width:\s*100%;[^}]*min-width:\s*0;/, '.row-finance-badges must enforce max-width: 100% and min-width: 0');
+    assert.match(deliveryCss, /@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?\.row-top-bar\s*\{[^}]*flex-direction:\s*column;/, 'Mobile layout (<= 640px) must stack .row-top-bar vertically so meta pills and finance badges each get full width');
+    assert.match(deliveryCss, /@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?\.row-price-badge,\s*\.row-payout-badge\s*\{[^}]*flex:\s*1\s+1\s+0;[^}]*min-width:\s*0;/, 'Mobile finance badges must share card width evenly with min-width: 0 so Your Payout box never overflows off-screen');
+  });
 });

@@ -57,6 +57,7 @@ body.rider-body {
   background-color: var(--rider-bg);
   color: var(--rider-text-main);
   min-height: 100vh;
+  overflow-x: clip;
   line-height: 1.5;
   padding-bottom: 96px; /* Space for signature bottom floating capsule navigation bar */
   -webkit-font-smoothing: antialiased;
@@ -995,6 +996,8 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .rider-order-row {
@@ -1010,6 +1013,9 @@ input:checked + .slider:before {
     "customer actions";
   align-items: center;
   gap: 14px 24px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
 }
@@ -1041,8 +1047,11 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   width: 100%;
-  gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+  gap: 10px 14px;
   padding-bottom: 12px;
   border-bottom: 1px solid #F1F5F9;
 }
@@ -1052,6 +1061,19 @@ input:checked + .slider:before {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.row-bag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #1E293B;
+  white-space: nowrap;
 }
 
 .row-order-id {
@@ -1850,12 +1872,20 @@ input:checked + .slider:before {
     padding: 14px;
   }
 
-  /* Row 1: Top bar: ID + distance on left, Cash badge on right */
+  /* Row 1: Top bar: ID + distance on left, Cash & Payout badges wrap cleanly */
   .row-top-bar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
+    flex-wrap: wrap;
     width: 100%;
+    min-width: 0;
+    gap: 10px;
+  }
+
+  .row-id-meta-group {
+    flex: 1 1 200px;
+    min-width: 0;
   }
 
   .row-order-id {
@@ -5169,9 +5199,12 @@ input:checked + .slider:before {
 /* Row Finance Badges (Both Cash to Collect + Rider Payout) */
 .row-finance-badges {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .row-payout-badge {
@@ -5183,6 +5216,7 @@ input:checked + .slider:before {
   border-radius: 10px;
   flex-shrink: 0;
   min-width: 90px;
+  max-width: 100%;
   text-align: center;
   background: linear-gradient(135deg, #ECFDF5, #F0FDF4);
   border: 1.5px solid #10B981;
@@ -5482,23 +5516,59 @@ input:checked + .slider:before {
   color: #047857;
 }
 
+@media (max-width: 640px) {
+  .row-top-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .row-id-meta-group {
+    flex: 1 1 auto;
+    width: 100%;
+    gap: 6px;
+  }
+  .row-finance-badges {
+    width: 100%;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .row-price-badge,
+  .row-payout-badge {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
+    padding: 6px 10px;
+  }
+  .price-badge-label,
+  .payout-badge-label {
+    font-size: 0.58rem;
+    line-height: 1.15;
+  }
+  .price-badge-val,
+  .payout-badge-val {
+    font-size: 1.08rem;
+  }
+}
+
 @media (max-width: 600px) {
   .rider-earnings-strip {
     grid-template-columns: 1fr;
     gap: 8px;
   }
+}
+
+@media (max-width: 340px) {
   .row-finance-badges {
-    gap: 5px;
+    gap: 6px;
   }
+  .row-price-badge,
   .row-payout-badge {
-    min-width: 75px;
-    padding: 4px 8px;
+    padding: 5px 6px;
   }
-  .payout-badge-label {
-    font-size: 0.55rem;
-  }
+  .price-badge-val,
   .payout-badge-val {
-    font-size: 1.05rem;
+    font-size: 0.96rem;
   }
 }
 
