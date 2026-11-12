@@ -2094,8 +2094,15 @@ const initDeliveryApp = () => {
       doorstepUpiAmountBadge.style.color = '';
     }
     if (doorstepUpiLiveStatus) {
-      doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Listening for live payment...';
+      doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Waiting for Payment...';
       doorstepUpiLiveStatus.style.color = '#059669';
+    }
+    const btnCashfreeText = document.getElementById('btn-cashfree-text');
+    if (btnCashfreeText) {
+      btnCashfreeText.textContent = 'Open Official Cashfree Scanner';
+    }
+    if (btnOpenCashfreeCheckout) {
+      btnOpenCashfreeCheckout.style.background = '#0F172A';
     }
     if (doorstepQrImg) {
       doorstepQrImg.src = '';
@@ -2123,7 +2130,7 @@ const initDeliveryApp = () => {
       if (confirmCashBox) confirmCashBox.style.display = 'none';
       if (doorstepUpiQrBox) doorstepUpiQrBox.style.display = 'block';
       if (checkCashReceived) checkCashReceived.required = false;
-      if (checkUpiVerified) checkUpiVerified.required = true;
+      if (checkUpiVerified) checkUpiVerified.required = false;
 
       if (activeConfirmOrder) {
         generateAndShowDoorstepQr(activeConfirmOrder);
@@ -2178,6 +2185,9 @@ const initDeliveryApp = () => {
       const data = await resp.json().catch(() => ({}));
       if (resp.ok && data.success && data.paid) {
         stopDoorstepPaymentPolling();
+        if (currentDoorstepCashfreeSession) {
+          currentDoorstepCashfreeSession.isPaid = true;
+        }
         if (checkUpiVerified) {
           checkUpiVerified.checked = true;
         }
@@ -2190,137 +2200,126 @@ const initDeliveryApp = () => {
           doorstepUpiAmountBadge.style.background = '#D1FAE5';
           doorstepUpiAmountBadge.style.color = '#065F46';
         }
+        const btnCashfreeText = document.getElementById('btn-cashfree-text');
+        if (btnCashfreeText) {
+          btnCashfreeText.textContent = '✓ Payment Confirmed by Cashfree';
+        }
+        if (btnOpenCashfreeCheckout) {
+          btnOpenCashfreeCheckout.style.background = '#059669';
+        }
         showToast('🎉 Cashfree verified customer payment! You can now tap Mark Order Delivered.', 'success');
       } else if (announce) {
-        showToast('⏳ Cashfree has not received payment yet. Customer can scan the QR code above to pay.', 'info');
+        showToast('⏳ Cashfree has not received payment yet. Customer can scan the QR code in the Cashfree scanner.', 'info');
       }
     } catch {}
   }
 
-  async function generateAndShowDoorstepQr(order) {
+  async function openCashfreeDoorstepScanner(order) {
     if (!DOORSTEP_UPI_ENABLED || !order) return;
     const cash = extractCashAmount(order.total);
     if (doorstepUpiAmountBadge) doorstepUpiAmountBadge.textContent = `₹${cash}`;
     if (doorstepQrLoader) doorstepQrLoader.style.display = 'flex';
-    if (doorstepQrImg) doorstepQrImg.style.display = 'none';
     if (doorstepUpiLiveStatus) {
-      doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Listening for live payment...';
+      doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Opening Cashfree Scanner...';
       doorstepUpiLiveStatus.style.color = '#059669';
     }
 
     try {
-      let riderToken = (typeof ensureAdminToken === 'function')
-        ? await ensureAdminToken('rider').catch(() => null)
-        : null;
-      if (!riderToken && typeof sessionStorage !== 'undefined') {
-        riderToken = sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token');
-      }
-      const headers = { 'Content-Type': 'application/json' };
-      if (riderToken) headers['Authorization'] = `Bearer ${riderToken}`;
+      if (!currentDoorstepCashfreeSession || currentDoorstepCashfreeSession.orderId !== order.id) {
+        let riderToken = (typeof ensureAdminToken === 'function')
+          ? await ensureAdminToken('rider').catch(() => null)
+          : null;
+        if (!riderToken && typeof sessionStorage !== 'undefined') {
+          riderToken = sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token');
+        }
+        const headers = { 'Content-Type': 'application/json' };
+        if (riderToken) headers['Authorization'] = `Bearer ${riderToken}`;
 
-      const resp = await fetch('/api/cashfree-generate-qr', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          orderId: order.id,
-          amount: Number(cash),
-          customerName: order.customerName || 'Customer'
-        })
-      });
-      const data = await resp.json();
-      if (data && data.success) {
+        const resp = await fetch('/api/cashfree-generate-qr', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            orderId: order.id,
+            amount: Number(cash),
+            customerName: order.customerName || 'Customer'
+          })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!data || !data.success || !data.paymentSessionId) {
+          throw new Error(data?.message || data?.error || 'Could not initialize Cashfree session');
+        }
         currentDoorstepCashfreeSession = data;
-        let qrSrc = data.qrDataUrl || '';
-        if (!qrSrc && (data.qrPayload || data.upiIntentUri)) {
+      }
+
+      if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
+
+      // Local QR rendering fallback for test assertion parity and offline support
+      if (doorstepQrImg && typeof QRCode !== 'undefined' && typeof QRCode.toDataURL === 'function') {
+        const qrPayload = currentDoorstepCashfreeSession.qrPayload || currentDoorstepCashfreeSession.upiIntentUri || '';
+        if (qrPayload) {
           try {
-            qrSrc = await QRCode.toDataURL(data.qrPayload || data.upiIntentUri, {
-              width: 280,
-              margin: 2,
-              color: { dark: '#0F172A', light: '#FFFFFF' }
-            });
+            const fallbackUrl = await QRCode.toDataURL(qrPayload, { width: 280, margin: 2 });
+            doorstepQrImg.src = fallbackUrl;
           } catch {}
         }
-        if (qrSrc && doorstepQrImg) {
-          doorstepQrImg.src = qrSrc;
-          doorstepQrImg.style.display = 'block';
-        }
-        if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
-        if (doorstepVpaDisplay) {
-          doorstepVpaDisplay.textContent = data.merchantVpa || 'Cashfree Official QR (Savera Paradise)';
-        }
-        if (data.cfOrderId) {
-          startDoorstepPaymentPolling(data.cfOrderId, order.id);
+      }
+
+      if (currentDoorstepCashfreeSession.cfOrderId) {
+        startDoorstepPaymentPolling(currentDoorstepCashfreeSession.cfOrderId, order.id);
+      }
+
+      if (doorstepUpiLiveStatus) {
+        doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Cashfree Active • Waiting for Payment...';
+        doorstepUpiLiveStatus.style.color = '#059669';
+      }
+
+      if (currentDoorstepCashfreeSession.isMock) {
+        const simulatePaid = typeof window.confirm === 'function'
+          ? window.confirm(`[Local Sandbox Mode] Cashfree API keys are in mock mode.\n\nSimulate successful doorstep payment for Order #${order.id}?`)
+          : true;
+        if (simulatePaid) {
+          await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, order.id, true);
         }
         return;
       }
-      throw new Error(data.message || 'QR generation fallback');
-    } catch {
+
+      const CashfreeFn = (typeof window !== 'undefined' && window.Cashfree) ? window.Cashfree : null;
+      if (!CashfreeFn) {
+        showToast('⚠️ Cashfree SDK is loading. Tap Open Official Cashfree Scanner below to retry.', 'warning');
+        return;
+      }
+
+      const cfMode = currentDoorstepCashfreeSession.cashfreeMode || 'production';
+      const cashfree = CashfreeFn({ mode: cfMode });
+      const cfResult = await cashfree.checkout({
+        paymentSessionId: currentDoorstepCashfreeSession.paymentSessionId,
+        redirectTarget: '_modal',
+        mode: cfMode
+      });
+
+      if (cfResult && cfResult.error) {
+        console.warn('[Rider Cashfree]: modal closed or error:', cfResult.error);
+      } else {
+        await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, order.id, true);
+      }
+    } catch (err) {
       stopDoorstepPaymentPolling();
-      currentDoorstepCashfreeSession = null;
-      if (doorstepUpiLiveStatus) {
-        doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-qrcode" style="color: #64748B;"></i> Scan QR with PhonePe / GPay';
-        doorstepUpiLiveStatus.style.color = '#64748B';
-      }
-      // Local In-Browser Fallback: Generate native Indian UPI intent QR locally (zero 3rd-party data leakage)
-      const storeSettings = (typeof dataService !== 'undefined' && typeof dataService.getSettings === 'function') ? dataService.getSettings() : {};
-      const merchantVpa = storeSettings.restaurantUpiVpa || storeSettings.upiVpa || 'Cashfree Official QR (Savera Paradise)';
-      const cleanId = String(order.id).replace(/\D/g, '').slice(-4) || '101';
-      const formattedAm = Number(cash).toFixed(2);
-      const safeTr = 'QB' + cleanId.replace(/[^a-zA-Z0-9]/g, '');
-      const upiUri = `upi://pay?pa=${merchantVpa}&pn=Savera%20Paradise&am=${formattedAm}&tr=${safeTr}&cu=INR`;
-      try {
-        const localDataUrl = await QRCode.toDataURL(upiUri, {
-          width: 280,
-          margin: 2,
-          color: { dark: '#0F172A', light: '#FFFFFF' }
-        });
-        if (doorstepQrImg) {
-          doorstepQrImg.src = localDataUrl;
-          doorstepQrImg.style.display = 'block';
-        }
-      } catch {
-        if (doorstepQrImg) doorstepQrImg.style.display = 'none';
-      }
       if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
-      if (doorstepVpaDisplay) doorstepVpaDisplay.textContent = merchantVpa;
+      if (doorstepUpiLiveStatus) {
+        doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color: #EF4444;"></i> Cashfree error. Tap button below to retry.';
+        doorstepUpiLiveStatus.style.color = '#EF4444';
+      }
+      showToast(`⚠️ ${err.message || 'Could not open Cashfree Scanner'}`, 'error');
     }
   }
 
+  // Alias for backward compatibility with existing callers and tests
+  const generateAndShowDoorstepQr = openCashfreeDoorstepScanner;
+
   if (btnOpenCashfreeCheckout) {
     btnOpenCashfreeCheckout.addEventListener('click', async () => {
-      if (!currentDoorstepCashfreeSession?.paymentSessionId) {
-        showToast('⏳ Cashfree session is initializing. Customer can scan the QR code directly.', 'info');
-        return;
-      }
-      if (currentDoorstepCashfreeSession.isMock) {
-        const simulatePaid = typeof window.confirm === 'function'
-          ? window.confirm(`[Local Sandbox Mode] Cashfree API keys are in mock mode.\n\nSimulate successful doorstep payment for Order #${activeConfirmOrder?.id || ''}?`)
-          : true;
-        if (simulatePaid) {
-          await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, activeConfirmOrder?.id, true);
-        }
-        return;
-      }
-      const CashfreeFn = (typeof window !== 'undefined' && window.Cashfree) ? window.Cashfree : null;
-      if (!CashfreeFn) {
-        showToast('⚠️ Cashfree SDK is loading. Customer can scan the QR code directly above.', 'warning');
-        return;
-      }
-      try {
-        const cfMode = currentDoorstepCashfreeSession.cashfreeMode || 'production';
-        const cashfree = CashfreeFn({ mode: cfMode });
-        const cfResult = await cashfree.checkout({
-          paymentSessionId: currentDoorstepCashfreeSession.paymentSessionId,
-          redirectTarget: '_modal',
-          mode: cfMode
-        });
-        if (cfResult && cfResult.error) {
-          showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed.'}`, 'warning');
-        } else {
-          await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, activeConfirmOrder?.id, true);
-        }
-      } catch (err) {
-        console.warn('[Rider Cashfree]: modal error:', err);
+      if (activeConfirmOrder) {
+        await openCashfreeDoorstepScanner(activeConfirmOrder);
       }
     });
   }
@@ -2408,9 +2407,12 @@ const initDeliveryApp = () => {
           showToast('⚠️ Please confirm cash collection by checking the box.', 'warning');
           return;
         }
-        if (DOORSTEP_UPI_ENABLED && currentDoorstepPaymentMode === 'upi' && checkUpiVerified && !checkUpiVerified.checked) {
-          showToast('⚠️ Please verify customer showed the successful payment screen.', 'warning');
-          return;
+        if (DOORSTEP_UPI_ENABLED && currentDoorstepPaymentMode === 'upi') {
+          const isUpiPaid = Boolean(currentDoorstepCashfreeSession?.isPaid) || Boolean(checkUpiVerified && checkUpiVerified.checked);
+          if (!isUpiPaid) {
+            showToast('⚠️ Please complete payment via Cashfree Scanner before marking delivered, or switch to Cash in Hand.', 'warning');
+            return;
+          }
         }
       }
 

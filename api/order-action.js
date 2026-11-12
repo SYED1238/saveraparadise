@@ -34,7 +34,7 @@ const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
 const STORE_SETTINGS_CACHE_TTL_MS = 60000;
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
-const SYNC_ORDERS_CACHE_TTL_MS = 5000;
+const SYNC_ORDERS_CACHE_TTL_MS = 12000;
 
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
@@ -841,20 +841,20 @@ export default async function handler(req, res) {
         return res.status(200).json(kitchenPollCache);
       }
 
-      // 1. Authenticated Staff Sync (Admin, Delivery, Owner — 5s Shared In-Memory Cache)
+      // 1. Authenticated Staff Sync (Admin, Delivery, Owner — 12s Shared In-Memory Cache)
       case 'sync_orders': {
         const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
         if (!auth || !auth.valid) {
           return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff session required' });
         }
-        const limit = Math.min(Number(body.limit) || 250, 500);
+        const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
         const now = Date.now();
 
         let sourceOrders = null;
         if (syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
           sourceOrders = syncOrdersCache.slice(0, limit);
         } else {
-          const fetchLimit = Math.max(limit, 250);
+          const fetchLimit = limit;
           const { data, error } = await sb
             .from('orders')
             .select('*')
