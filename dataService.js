@@ -3567,6 +3567,29 @@ class QuickBiteDataService {
             this.notifyChange('cash_settled', payload);
           }
         })
+        .on('broadcast', { event: 'cash_handover_requested' }, (event) => {
+          const payload = event?.payload || {};
+          if (payload.riderPin) {
+            const cleanPin = String(payload.riderPin).trim();
+            const riders = this.getRiders();
+            const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
+            let riderName = payload.riderName || payload.rider?.name || '';
+            if (idx >= 0) {
+              riderName = riderName || riders[idx].name || '';
+              riders[idx].cashHandoverStatus = 'pending_owner_approval';
+              riders[idx].cashHandoverAmount = Number(payload.amount) || 0;
+              riders[idx].cashHandoverRequestedAt = payload.requestedAt || Date.now();
+              this.saveRiders(riders);
+            }
+            this.notifyChange('cash_handover_requested', {
+              riderPin: cleanPin,
+              riderName,
+              amount: Number(payload.amount) || 0,
+              requestedAt: payload.requestedAt || Date.now(),
+              source: 'supabase_broadcast'
+            });
+          }
+        })
         .on('broadcast', { event: 'payout_config_updated' }, (event) => {
           const payload = event?.payload || {};
           if (payload.payoutConfig && typeof payload.payoutConfig === 'object') {
@@ -4055,6 +4078,14 @@ class QuickBiteDataService {
       try {
         if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
           if (this.isStaffAuthorized()) {
+            const isOpen = typeof this.isStoreOpen === 'function' ? this.isStoreOpen() : true;
+            const orders = this.getOrders();
+            const hasActiveOrders = Array.isArray(orders) && orders.some(
+              o => o && !['delivered', 'cancelled', 'undelivered'].includes(o.status)
+            );
+            if (!isOpen && !hasActiveOrders) {
+              return;
+            }
             // Admin portal uses force=true on 10s heartbeat because Migration 08/12 RLS
             // blocks anon postgres_changes — this fast poll replaces the broken realtime feed
             await this.syncOrdersFromSupabase(this.portalType === 'admin');
@@ -5708,9 +5739,9 @@ class QuickBiteDataService {
   getCustomerActiveOrders(userId = null, userEmail = null, userPhone = null) {
     const customerOrders = this.getCustomerOrders(userId, userEmail, userPhone);
     const now = Date.now();
-    // Exclude delivered, cancelled, undelivered, and stale ghost orders (> 6 hours) so abandoned carts never lock out checkout
+    // Exclude delivered, cancelled, undelivered, pending_payment, and stale ghost orders (> 6 hours) so abandoned carts never lock out checkout
     const activeOrders = customerOrders.filter(o => {
-      if (!o || o.status === 'delivered' || o.status === 'cancelled' || o.status === 'undelivered') return false;
+      if (!o || o.status === 'delivered' || o.status === 'cancelled' || o.status === 'undelivered' || o.status === 'pending_payment') return false;
       const orderAge = now - Number(o.createdAt || 0);
       if (orderAge > 6 * 60 * 60 * 1000) return false;
       return true;
@@ -7532,10 +7563,14 @@ class QuickBiteDataService {
       if (Array.isArray(rawRiders) && rawRiders.length > 0) {
         const localList = this.getRiders();
         const localMap = new Map(localList.map(r => [r.pin, r]));
+        const handoverTransitions = [];
         const mapped = rawRiders.map(r => {
           const pin = String(r.pin).trim();
           const existing = localMap.get(pin);
-          return {
+          const nextHandoverStatus = r.cash_handover_status || r.cashHandoverStatus || existing?.cashHandoverStatus || null;
+          const nextHandoverAmount = Number(r.cash_handover_amount ?? r.cashHandoverAmount ?? existing?.cashHandoverAmount ?? 0);
+          const nextHandoverRequestedAt = r.cash_handover_requested_at || r.cashHandoverRequestedAt || existing?.cashHandoverRequestedAt || null;
+          const mappedRider = {
             ...(existing || {}),
             pin,
             id: r.id || `rider-${pin}`,
@@ -7555,14 +7590,30 @@ class QuickBiteDataService {
             payoutPaidAt: r.payout_paid_at || existing?.payoutPaidAt || null,
             payoutAmountPaid: Number(r.payout_amount_paid || existing?.payoutAmountPaid || 0),
             maxActiveOrders: Math.max(1, Math.min(5, Number(r.max_active_orders ?? r.maxActiveOrders ?? existing?.maxActiveOrders ?? 1))),
-            cashHandoverStatus: r.cash_handover_status || r.cashHandoverStatus || existing?.cashHandoverStatus || null,
-            cashHandoverAmount: Number(r.cash_handover_amount ?? r.cashHandoverAmount ?? existing?.cashHandoverAmount ?? 0),
-            cashHandoverRequestedAt: r.cash_handover_requested_at || r.cashHandoverRequestedAt || existing?.cashHandoverRequestedAt || null
+            cashHandoverStatus: nextHandoverStatus,
+            cashHandoverAmount: nextHandoverAmount,
+            cashHandoverRequestedAt: nextHandoverRequestedAt
           };
+          if (
+            existing &&
+            nextHandoverStatus === 'pending_owner_approval' &&
+            (existing.cashHandoverStatus !== 'pending_owner_approval' ||
+              (nextHandoverRequestedAt && nextHandoverRequestedAt !== existing.cashHandoverRequestedAt))
+          ) {
+            handoverTransitions.push({
+              riderPin: pin,
+              riderName: mappedRider.name,
+              amount: nextHandoverAmount,
+              requestedAt: nextHandoverRequestedAt || Date.now(),
+              source: 'server_sync'
+            });
+          }
+          return mappedRider;
         });
         this.ridersCache = mapped;
         localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
         this.notifyChange('riders', { action: 'sync_riders', source: 'server' });
+        handoverTransitions.forEach(t => this.notifyChange('cash_handover_requested', t));
         return mapped;
       }
     } catch (err) {
@@ -8559,11 +8610,11 @@ class QuickBiteDataService {
           this.sharedBroadcastChannel.send({
             type: 'broadcast',
             event: 'cash_handover_requested',
-            payload: { riderPin: cleanPin, amount, requestedAt, rider: riders[idx] }
+            payload: { riderPin: cleanPin, riderName: riders[idx].name, amount, requestedAt, rider: riders[idx] }
           }).catch(() => {});
         }
       } catch {}
-      this.notifyChange('cash_handover_requested', { riderPin: cleanPin, amount, requestedAt });
+      this.notifyChange('cash_handover_requested', { riderPin: cleanPin, riderName: riders[idx].name, amount, requestedAt });
       return { success: true, amount, requestedAt, rider: riders[idx] };
     }
     return { success: false };

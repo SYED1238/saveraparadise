@@ -1980,21 +1980,22 @@ const initAdminApp = () => {
   // ========================================================
   function calculateOrderKPIs(orders) {
     const list = Array.isArray(orders) ? orders.filter(Boolean) : [];
-    const total = list.length;
-    const accepted = list.filter(o => o.status === 'accepted' || o.status === 'pending').length;
-    const cooking = list.filter(o => o.status === 'cooking').length;
-    const ready = list.filter(o => o.status === 'ready_for_pickup').length;
-    const outForDelivery = list.filter(o => o.status === 'on_the_way').length;
-    const delivered = list.filter(o => o.status === 'delivered').length;
-    const undelivered = list.filter(o => o.status === 'undelivered').length;
-    const cancelled = list.filter(o => o.status === 'cancelled').length;
+    const visibleOrders = list.filter(o => o.status !== 'pending_payment');
+    const total = visibleOrders.length;
+    const accepted = visibleOrders.filter(o => o.status === 'accepted' || o.status === 'pending').length;
+    const cooking = visibleOrders.filter(o => o.status === 'cooking').length;
+    const ready = visibleOrders.filter(o => o.status === 'ready_for_pickup').length;
+    const outForDelivery = visibleOrders.filter(o => o.status === 'on_the_way').length;
+    const delivered = visibleOrders.filter(o => o.status === 'delivered').length;
+    const undelivered = visibleOrders.filter(o => o.status === 'undelivered').length;
+    const cancelled = visibleOrders.filter(o => o.status === 'cancelled').length;
 
     let totalRevenue = 0;
     let todayRevenue = 0;
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
-    list.forEach(o => {
+    visibleOrders.forEach(o => {
       // Exclude cancelled and undelivered returned orders from revenue
       if (o.status !== 'cancelled' && o.status !== 'undelivered') {
         const num = parseFloat(String(o.total ?? '0').replace(/[^0-9.]/g, ''));
@@ -2134,6 +2135,7 @@ const initAdminApp = () => {
     calculateOrderKPIs(orders);
 
     let filtered = Array.isArray(orders) ? orders.filter(Boolean) : [];
+    filtered = filtered.filter(o => o.status !== 'pending_payment');
 
     // Status filter
     if (activeOrderFilter && activeOrderFilter !== 'all') {
@@ -3410,6 +3412,12 @@ const initAdminApp = () => {
       clearInterval(kitchenAlarmInterval);
       kitchenAlarmInterval = null;
     }
+
+    try {
+      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.stopAlarm === 'function') {
+        window.AndroidNative.stopAlarm();
+      }
+    } catch {}
 
     stopFlashingTabTitle();
     ringingOrdersQueue = [];

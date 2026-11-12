@@ -9,7 +9,8 @@ import {
   createPgOrder,
   generateDoorstepUpiQr,
   verifyCashfreeWebhookSignature,
-  initiateRiderPayout
+  initiateRiderPayout,
+  sanitizeCashfreeReturnUrl
 } from '../api/_cashfree.js';
 import { createAdminToken, signPayload } from '../api/_auth.js';
 import cashfreePayoutHandler from '../api/cashfree-payout.js';
@@ -408,6 +409,37 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       const deliveryJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf8');
       assert.strictEqual(deliveryJs.includes('api.qrserver.com'), false, 'delivery.js must never reference api.qrserver.com');
       assert.ok(deliveryJs.includes('QRCode.toDataURL'), 'delivery.js must generate fallback QR locally');
+    });
+
+    test('sanitizeCashfreeReturnUrl defaults to saveraparadise.foodbliz.in and blocks open redirects', () => {
+      const fallbackUrl = sanitizeCashfreeReturnUrl('', 'QB-1001');
+      assert.ok(fallbackUrl.startsWith('https://saveraparadise.foodbliz.in/'), 'Default return URL must target saveraparadise.foodbliz.in');
+      const blockedUrl = sanitizeCashfreeReturnUrl('https://evil.example.com/phish', 'QB-1001');
+      assert.ok(blockedUrl.startsWith('https://saveraparadise.foodbliz.in/'), 'Untrusted redirect origin must fall back safely');
+      const allowedUrl = sanitizeCashfreeReturnUrl('https://saveraparadise.foodbliz.in/?payment_return=1&cf_order_id={order_id}', 'QB-1001');
+      assert.strictEqual(allowedUrl, 'https://saveraparadise.foodbliz.in/?payment_return=1&cf_order_id={order_id}');
+    });
+
+    test('POST /api/cashfree-create-order verify_payment validates cfOrderId and verifies mock payment', async () => {
+      const { req: badReq, res: badRes } = createMockReqRes({
+        body: { action: 'verify_payment' }
+      });
+      await cashfreeCreateOrderHandler(badReq, badRes);
+      assert.strictEqual(badRes.statusCode, 400);
+
+      const { req: okReq, res: okRes } = createMockReqRes({
+        body: { action: 'verify_payment', cfOrderId: 'cf_QB-1001' }
+      });
+      await cashfreeCreateOrderHandler(okReq, okRes);
+      assert.strictEqual(okRes.statusCode, 200);
+      assert.strictEqual(okRes.data.paid, true);
+    });
+
+    test('index.html enables online payment selector and loads Cashfree v3 SDK', () => {
+      const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+      assert.ok(indexHtml.includes('https://sdk.cashfree.com/js/v3/cashfree.js'), 'index.html must load Cashfree v3 SDK');
+      assert.match(indexHtml, /id="payment-card-online"/, 'index.html must include payment-card-online');
+      assert.doesNotMatch(indexHtml, /id="radio-payment-online"[^>]*\bdisabled\b/, 'radio-payment-online must be enabled');
     });
   });
 });

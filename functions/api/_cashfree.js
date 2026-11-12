@@ -36,6 +36,32 @@ export function cleanPhone(phone) {
   return digits.length >= 10 ? digits.slice(-10) : '';
 }
 
+const DEFAULT_SITE_URL = 'https://saveraparadise.foodbliz.in';
+
+export function sanitizeCashfreeReturnUrl(rawUrl, cleanOrderId) {
+  const fallback = `${DEFAULT_SITE_URL}/?payment_return=1&order_id=${encodeURIComponent(cleanOrderId)}&cf_order_id={order_id}`;
+  if (!rawUrl || typeof rawUrl !== 'string') return fallback;
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname.toLowerCase();
+    const isAllowedHost = (
+      host === 'foodbliz.in' ||
+      host.endsWith('.foodbliz.in') ||
+      host === 'saveraparadise.com' ||
+      host.endsWith('.saveraparadise.com') ||
+      host.endsWith('.pages.dev') ||
+      host === 'localhost' ||
+      host === '127.0.0.1'
+    );
+    if (!isAllowedHost || (u.protocol !== 'https:' && host !== 'localhost' && host !== '127.0.0.1')) {
+      return fallback;
+    }
+    return rawUrl;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function createPgOrder({
   orderId,
   amount,
@@ -65,11 +91,13 @@ export async function createPgOrder({
       paymentSessionId: mockSessionId,
       orderAmount: cleanAmount,
       orderCurrency: 'INR',
-      environment: cfg.env
+      environment: cfg.env,
+      cashfreeMode: 'sandbox'
     };
   }
 
   try {
+    const safeReturnUrl = sanitizeCashfreeReturnUrl(returnUrl, cleanOrderId);
     const payload = {
       order_id: `qb_${cleanOrderId}_${Date.now().toString().slice(-4)}`,
       order_amount: cleanAmount,
@@ -81,8 +109,8 @@ export async function createPgOrder({
         customer_email: customerEmail.trim() || 'customer@saveraparadise.com'
       },
       order_meta: {
-        return_url: returnUrl || `https://saveraparadise.com/order-success?order_id=${cleanOrderId}`,
-        notify_url: `https://saveraparadise.com/api/cashfree-webhook`
+        return_url: safeReturnUrl,
+        notify_url: `${DEFAULT_SITE_URL}/api/cashfree-webhook`
       },
       order_note: `Savera Paradise Order #${cleanOrderId}`
     };
@@ -113,7 +141,8 @@ export async function createPgOrder({
       paymentSessionId: data.payment_session_id,
       orderAmount: data.order_amount,
       orderCurrency: data.order_currency,
-      environment: cfg.env
+      environment: cfg.env,
+      cashfreeMode: cfg.isProd ? 'production' : 'sandbox'
     };
   } catch (err) {
     return {
@@ -121,6 +150,191 @@ export async function createPgOrder({
       error: err.message || 'Network error reaching Cashfree PG'
     };
   }
+}
+
+export async function verifyPgOrderPayment({ cfOrderId, env = null }) {
+  const cfg = getCashfreeConfig(env);
+  const cleanCfOrderId = String(cfOrderId || '').trim();
+  if (!cleanCfOrderId) {
+    return { success: false, paid: false, error: 'cfOrderId is required' };
+  }
+
+  if (!cfg.isConfigured) {
+    if (cfg.isProd) {
+      return {
+        success: false,
+        paid: false,
+        error: 'Cashfree Payment Gateway credentials are not configured in production environment'
+      };
+    }
+    return {
+      success: true,
+      isMock: true,
+      paid: true,
+      cfOrderId: cleanCfOrderId,
+      cfPaymentId: `mock_pay_${Date.now()}`,
+      paymentStatus: 'SUCCESS',
+      paymentAmount: null,
+      paymentMethod: 'upi'
+    };
+  }
+
+  try {
+    const resp = await fetch(`${cfg.pgBaseUrl}/orders/${encodeURIComponent(cleanCfOrderId)}/payments`, {
+      method: 'GET',
+      headers: {
+        'x-client-id': cfg.appId,
+        'x-client-secret': cfg.secretKey,
+        'x-api-version': '2023-08-01'
+      }
+    });
+
+    const payments = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      return {
+        success: false,
+        paid: false,
+        error: payments?.message || 'Cashfree payment verification failed'
+      };
+    }
+
+    const list = Array.isArray(payments) ? payments : (Array.isArray(payments?.data) ? payments.data : []);
+    const successTx = list.find(p => String(p?.payment_status || '').toUpperCase() === 'SUCCESS');
+    if (successTx) {
+      return {
+        success: true,
+        paid: true,
+        cfOrderId: cleanCfOrderId,
+        cfPaymentId: String(successTx.cf_payment_id || ''),
+        paymentStatus: 'SUCCESS',
+        paymentAmount: Number(successTx.payment_amount || 0),
+        paymentMethod: successTx.payment_group || 'upi'
+      };
+    }
+
+    const latestTx = list[0] || null;
+    return {
+      success: true,
+      paid: false,
+      cfOrderId: cleanCfOrderId,
+      cfPaymentId: latestTx ? String(latestTx.cf_payment_id || '') : '',
+      paymentStatus: String(latestTx?.payment_status || 'PENDING').toUpperCase(),
+      paymentAmount: latestTx ? Number(latestTx.payment_amount || 0) : 0,
+      paymentMethod: latestTx?.payment_group || ''
+    };
+  } catch (err) {
+    return {
+      success: false,
+      paid: false,
+      error: err.message || 'Network error verifying payment with Cashfree'
+    };
+  }
+}
+
+export function getSupabaseServiceCreds(env = null) {
+  const isTestEnv = Boolean(
+    typeof process !== 'undefined' &&
+    process.env &&
+    (process.env.NODE_ENV === 'test' ||
+      process.env.npm_lifecycle_event === 'test' ||
+      (Array.isArray(process.argv) && process.argv.some(a => a.includes('test'))))
+  );
+  if (isTestEnv) return { supabaseUrl: '', serviceKey: '' };
+  const supabaseUrl = (env && (env.VITE_SUPABASE_URL || env.SUPABASE_URL)) ||
+    (typeof process !== 'undefined' && process.env && (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL)) || '';
+  const serviceKey = (env && env.SUPABASE_SERVICE_ROLE_KEY) ||
+    (typeof process !== 'undefined' && process.env && process.env.SUPABASE_SERVICE_ROLE_KEY) || '';
+  return { supabaseUrl, serviceKey };
+}
+
+export async function recordVerifiedCashfreePayment({
+  cfOrderId,
+  cfPaymentId,
+  paymentAmount,
+  cleanOrderId = '',
+  env = null
+}) {
+  const { supabaseUrl, serviceKey } = getSupabaseServiceCreds(env);
+  if (!supabaseUrl || !serviceKey) {
+    return { updated: false, order: null };
+  }
+
+  const safeCfOrderId = String(cfOrderId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const safeOrderId = String(cleanOrderId || '').replace(/^#+/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeCfOrderId && !safeOrderId) {
+    return { updated: false, order: null };
+  }
+
+  const { createClient } = await import('@supabase/supabase-js');
+  const sb = createClient(supabaseUrl, serviceKey);
+
+  let existingOrder = null;
+  if (safeCfOrderId) {
+    const { data } = await sb
+      .from('orders')
+      .select('*')
+      .eq('cf_order_id', safeCfOrderId)
+      .maybeSingle();
+    existingOrder = data || null;
+  }
+
+  if (!existingOrder && safeOrderId) {
+    const { data } = await sb
+      .from('orders')
+      .select('*')
+      .or(`id.eq.${safeOrderId},id.eq.#${safeOrderId}`)
+      .maybeSingle();
+    existingOrder = data || null;
+  }
+
+  if (!existingOrder) {
+    return { updated: false, order: null };
+  }
+
+  if (existingOrder.payment_status === 'Paid' && cfPaymentId && existingOrder.cf_payment_id === String(cfPaymentId)) {
+    return { updated: false, idempotent: true, order: existingOrder };
+  }
+
+  const orderTotal = parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0;
+  if (orderTotal > 0 && typeof paymentAmount === 'number' && paymentAmount > 0 && paymentAmount < orderTotal) {
+    return {
+      updated: false,
+      amountMismatch: true,
+      orderTotal,
+      paymentAmount,
+      order: existingOrder
+    };
+  }
+
+  const updateFields = {
+    cf_order_id: safeCfOrderId || existingOrder.cf_order_id || null,
+    cf_payment_id: cfPaymentId ? String(cfPaymentId) : (existingOrder.cf_payment_id || null),
+    cf_payment_status: 'SUCCESS',
+    payment_status: 'Paid',
+    payment_method: 'Online',
+    is_paid_online: true,
+    doorstep_upi: String(cfOrderId || '').includes('doorstep_'),
+    cash_collected: 0,
+    payment_gateway: 'cashfree'
+  };
+
+  if (!existingOrder.status || existingOrder.status === 'pending_payment') {
+    updateFields.status = 'accepted';
+    updateFields.status_label = 'Accepted';
+  }
+
+  const { data: savedOrder, error } = await sb
+    .from('orders')
+    .update(updateFields)
+    .eq('id', existingOrder.id)
+    .select('*')
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return { updated: true, order: savedOrder || { ...existingOrder, ...updateFields } };
 }
 
 export async function generateDoorstepUpiQr({

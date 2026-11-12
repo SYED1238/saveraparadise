@@ -7,7 +7,7 @@
  * 3. Payment amount and order ID verification before updating status to 'Paid'.
  * 4. Production protection: Strictly rejects unauthenticated or mismatched callbacks.
  */
-import { verifyCashfreeWebhookSignature } from './_cashfree.js';
+import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment } from './_cashfree.js';
 import { hydrateEnv, jsonResponse } from './_adapter.js';
 
 export async function onRequest(context) {
@@ -86,56 +86,29 @@ export async function onRequest(context) {
 
       // Safe update in Supabase with idempotency and amount validation
       try {
-        const supabaseUrl = (env && (env.VITE_SUPABASE_URL || env.SUPABASE_URL)) ||
-          (typeof process !== 'undefined' && process.env && (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL));
-        const serviceKey = (env && env.SUPABASE_SERVICE_ROLE_KEY) ||
-          (typeof process !== 'undefined' && process.env && process.env.SUPABASE_SERVICE_ROLE_KEY);
+        const recorded = await recordVerifiedCashfreePayment({
+          cfOrderId,
+          cfPaymentId,
+          paymentAmount,
+          cleanOrderId,
+          env
+        });
 
-        if (supabaseUrl && serviceKey) {
-          const { createClient } = await import('@supabase/supabase-js');
-          const sb = createClient(supabaseUrl, serviceKey);
+        if (recorded?.idempotent) {
+          return jsonResponse({
+            success: true,
+            orderId: cleanOrderId,
+            idempotent: true,
+            message: 'Duplicate webhook acknowledged. Payment already recorded.'
+          }, 200);
+        }
 
-          // 1. Fetch current order state to verify idempotency and amount
-          const { data: existingOrder } = await sb
-            .from('orders')
-            .select('id, payment_status, total, cf_payment_id')
-            .or(`id.eq.${cleanOrderId},id.eq.#${cleanOrderId}`)
-            .maybeSingle();
-
-          if (existingOrder) {
-            // Idempotency check: Already processed with this exact payment id
-            if (existingOrder.payment_status === 'Paid' && existingOrder.cf_payment_id === cfPaymentId) {
-              return jsonResponse({
-                success: true,
-                orderId: cleanOrderId,
-                idempotent: true,
-                message: 'Duplicate webhook acknowledged. Payment already recorded.'
-              }, 200);
-            }
-
-            // Amount check: Prevent underpaid orders from being falsely marked as Paid
-            const orderTotal = parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0;
-            if (orderTotal > 0 && paymentAmount < orderTotal) {
-              console.warn(`[Cashfree Webhook] Amount discrepancy for order ${cleanOrderId}: paid ${paymentAmount}, expected ${orderTotal}`);
-              return jsonResponse({
-                error: 'Amount Mismatch',
-                message: `Payment amount (${paymentAmount}) does not match order total (${orderTotal})`
-              }, 400);
-            }
-          }
-
-          // 2. Perform authoritative update
-          await sb.from('orders').update({
-            cf_order_id: cfOrderId,
-            cf_payment_id: cfPaymentId,
-            cf_payment_status: 'SUCCESS',
-            payment_status: 'Paid',
-            payment_method: 'Online',
-            is_paid_online: true,
-            doorstep_upi: cfOrderId.includes('doorstep_'),
-            cash_collected: 0,
-            payment_gateway: 'cashfree'
-          }).or(`id.eq.${cleanOrderId},id.eq.#${cleanOrderId}`);
+        if (recorded?.amountMismatch) {
+          console.warn(`[Cashfree Webhook] Amount discrepancy for order ${cleanOrderId}: paid ${recorded.paymentAmount}, expected ${recorded.orderTotal}`);
+          return jsonResponse({
+            error: 'Amount Mismatch',
+            message: `Payment amount (${recorded.paymentAmount}) does not match order total (${recorded.orderTotal})`
+          }, 400);
         }
       } catch (err) {
         console.warn('[Cashfree Webhook] Supabase sync fallback:', err.message);

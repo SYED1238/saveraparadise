@@ -12,10 +12,14 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.MediaPlayer;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -48,7 +52,16 @@ public class OrderMonitorService extends Service {
     private static final String TAG = "OrderMonitorService";
     public static final String CHANNEL_ID_SERVICE = "sas_service_channel";
     public static final String CHANNEL_ID_ALERTS = "sas_orders_channel_v2";
+    public static final String ACTION_STOP_ALARM = "com.sascrispy.portal.ACTION_STOP_ALARM";
     private static final int SERVICE_NOTIFICATION_ID = 1001;
+    private static final long ALARM_AUTO_STOP_MS = 3 * 60 * 1000L;
+
+    private static final Object alarmLock = new Object();
+    private static MediaPlayer alarmPlayer = null;
+    private static Vibrator activeVibrator = null;
+    private static Handler alarmTimeoutHandler = null;
+    private static Runnable alarmTimeoutRunnable = null;
+    private static volatile int lastAlertNotifId = -1;
 
     private static final String CLOUDFLARE_ENDPOINT = 
         "https://saveraparadise.foodbliz.in/api/order-action?action=kitchen_poll";
@@ -130,10 +143,12 @@ public class OrderMonitorService extends Service {
             // 1. Silent Low-Priority Channel for Foreground Service Status
             NotificationChannel serviceChannel = new NotificationChannel(
                 CHANNEL_ID_SERVICE,
-                "Savera Paradise Kitchen Monitor",
+                isRiderApp ? "Savera Paradise Rider Monitor" : "Savera Paradise Kitchen Monitor",
                 NotificationManager.IMPORTANCE_LOW
             );
-            serviceChannel.setDescription("Receives kitchen order alerts during active operating hours");
+            serviceChannel.setDescription(isRiderApp
+                ? "Receives parcel ready-for-pickup alerts during active operating hours"
+                : "Receives kitchen order alerts during active operating hours");
             serviceChannel.setShowBadge(false);
             manager.createNotificationChannel(serviceChannel);
 
@@ -298,8 +313,9 @@ public class OrderMonitorService extends Service {
 
         pollingThread = new Thread(() -> {
             // Immediately seed known order IDs on service start (even if foreground)
-            // so isInitialCheck is cleared before any real customer order arrives
-            if (isInitialCheck) {
+            // so isInitialCheck is cleared before any real customer order arrives,
+            // except during night quiet hours (1:00 AM - 9:00 AM IST).
+            if (isInitialCheck && !isNightQuietHoursIST()) {
                 try {
                     Log.i(TAG, "Running initial seed poll on service start to clear isInitialCheck");
                     pollKitchenOrders();
@@ -340,7 +356,7 @@ public class OrderMonitorService extends Service {
                 }
 
                 try {
-                    Thread.sleep(6000); // Poll every 6 seconds when minimized for fast notification delivery
+                    Thread.sleep(20000); // Poll every 20 seconds when minimized (aligned with 25s edge cache)
                 } catch (InterruptedException e) {
                     break;
                 }
@@ -495,6 +511,138 @@ public class OrderMonitorService extends Service {
         }
     }
 
+    public static void stopNativeAlarm() {
+        synchronized (alarmLock) {
+            if (alarmTimeoutHandler != null && alarmTimeoutRunnable != null) {
+                try {
+                    alarmTimeoutHandler.removeCallbacks(alarmTimeoutRunnable);
+                } catch (Exception ignored) {}
+                alarmTimeoutRunnable = null;
+            }
+            if (alarmPlayer != null) {
+                try {
+                    if (alarmPlayer.isPlaying()) {
+                        alarmPlayer.stop();
+                    }
+                } catch (Exception ignored) {}
+                try {
+                    alarmPlayer.release();
+                } catch (Exception ignored) {}
+                alarmPlayer = null;
+            }
+            if (activeVibrator != null) {
+                try {
+                    activeVibrator.cancel();
+                } catch (Exception ignored) {}
+                activeVibrator = null;
+            }
+        }
+
+        OrderMonitorService instance = activeInstance;
+        if (instance != null) {
+            try {
+                Vibrator v = (Vibrator) instance.getSystemService(Context.VIBRATOR_SERVICE);
+                if (v != null) {
+                    v.cancel();
+                }
+            } catch (Exception ignored) {}
+
+            int notifToCancel = lastAlertNotifId;
+            if (notifToCancel != -1) {
+                lastAlertNotifId = -1;
+                try {
+                    NotificationManager manager = (NotificationManager) instance.getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (manager != null) {
+                        manager.cancel(notifToCancel);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private void startNativeAlarmLoop() {
+        if (isRiderApp || isOwnerApp) {
+            return;
+        }
+        synchronized (alarmLock) {
+            if (alarmTimeoutHandler != null && alarmTimeoutRunnable != null) {
+                try {
+                    alarmTimeoutHandler.removeCallbacks(alarmTimeoutRunnable);
+                } catch (Exception ignored) {}
+                alarmTimeoutRunnable = null;
+            }
+            if (alarmPlayer != null) {
+                try {
+                    if (alarmPlayer.isPlaying()) alarmPlayer.stop();
+                } catch (Exception ignored) {}
+                try {
+                    alarmPlayer.release();
+                } catch (Exception ignored) {}
+                alarmPlayer = null;
+            }
+
+            try {
+                Uri alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (alarmUri == null) {
+                    alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                }
+                if (alarmUri == null) {
+                    alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                }
+                if (alarmUri != null) {
+                    MediaPlayer player = new MediaPlayer();
+                    try {
+                        player.setDataSource(getApplicationContext(), alarmUri);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            player.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ALARM)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build());
+                        } else {
+                            player.setAudioStreamType(AudioManager.STREAM_ALARM);
+                        }
+                        player.setLooping(true);
+                        player.prepare();
+                        player.start();
+                        alarmPlayer = player;
+                    } catch (Exception innerEx) {
+                        try {
+                            player.release();
+                        } catch (Exception ignored) {}
+                        Log.w(TAG, "Failed to start native alarm MediaPlayer: " + innerEx.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Alarm URI lookup failed: " + e.getMessage());
+            }
+
+            try {
+                Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                if (v != null && v.hasVibrator()) {
+                    activeVibrator = v;
+                    long[] pattern = new long[]{0, 500, 300, 500, 300, 700};
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        v.vibrate(VibrationEffect.createWaveform(pattern, 0));
+                    } else {
+                        v.vibrate(pattern, 0);
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Repeating vibrator start failed: " + e.getMessage());
+            }
+
+            try {
+                if (alarmTimeoutHandler == null) {
+                    alarmTimeoutHandler = new Handler(Looper.getMainLooper());
+                }
+                alarmTimeoutRunnable = OrderMonitorService::stopNativeAlarm;
+                alarmTimeoutHandler.postDelayed(alarmTimeoutRunnable, ALARM_AUTO_STOP_MS);
+            } catch (Exception e) {
+                Log.w(TAG, "Alarm safety timeout scheduling failed: " + e.getMessage());
+            }
+        }
+    }
+
     private void fireHeadsUpNotification(String title, String message, String orderId) {
         try {
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -510,7 +658,18 @@ public class OrderMonitorService extends Service {
             }
             PendingIntent pendingIntent = PendingIntent.getActivity(this, (int) System.currentTimeMillis(), intent, pendingFlags);
 
-            Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            int notifId = orderId != null ? Math.abs(orderId.hashCode()) : (int) System.currentTimeMillis();
+            lastAlertNotifId = notifId;
+
+            Intent stopIntent = new Intent(this, OrderMonitorService.class);
+            stopIntent.setAction(ACTION_STOP_ALARM);
+            stopIntent.putExtra("notif_id", notifId);
+            PendingIntent stopPendingIntent = PendingIntent.getService(this, notifId + 1, stopIntent, pendingFlags);
+
+            Uri soundUri = RingtoneManager.getDefaultUri(!isRiderApp ? RingtoneManager.TYPE_ALARM : RingtoneManager.TYPE_NOTIFICATION);
+            if (soundUri == null) {
+                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID_ALERTS)
                 .setSmallIcon(R.mipmap.ic_launcher)
@@ -524,18 +683,28 @@ public class OrderMonitorService extends Service {
                 .setSound(soundUri)
                 .setVibrate(new long[]{0, 400, 200, 400, 200, 600})
                 .setAutoCancel(true)
+                .setDeleteIntent(stopPendingIntent)
                 .setContentIntent(pendingIntent);
 
-            int notifId = orderId != null ? Math.abs(orderId.hashCode()) : (int) System.currentTimeMillis();
-            manager.notify(notifId, builder.build());
+            if (!isRiderApp) {
+                builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "🛑 Stop Alarm", stopPendingIntent);
+            }
 
-            // Hardware Haptic Vibration
-            Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            if (v != null && v.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    v.vibrate(VibrationEffect.createWaveform(new long[]{0, 400, 200, 400, 200, 600}, -1));
-                } else {
-                    v.vibrate(new long[]{0, 400, 200, 400, 200, 600}, -1);
+            Notification notification = builder.build();
+            notification.flags |= Notification.FLAG_INSISTENT;
+            manager.notify(notifId, notification);
+
+            if (!isRiderApp) {
+                startNativeAlarmLoop();
+            } else {
+                // Hardware Haptic Vibration
+                Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                if (v != null && v.hasVibrator()) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        v.vibrate(VibrationEffect.createWaveform(new long[]{0, 400, 200, 400, 200, 600}, -1));
+                    } else {
+                        v.vibrate(new long[]{0, 400, 200, 400, 200, 600}, -1);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -545,6 +714,19 @@ public class OrderMonitorService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP_ALARM.equals(intent.getAction())) {
+            int notifId = intent.getIntExtra("notif_id", -1);
+            stopNativeAlarm();
+            if (notifId != -1) {
+                try {
+                    NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (manager != null) {
+                        manager.cancel(notifId);
+                    }
+                } catch (Exception ignored) {}
+            }
+            return START_STICKY;
+        }
         startPolling();
         return START_STICKY; // Tell Android to auto-recreate service if killed
     }
@@ -582,6 +764,7 @@ public class OrderMonitorService extends Service {
     @Override
     public void onDestroy() {
         isRunning = false;
+        stopNativeAlarm();
         if (pollingThread != null) {
             pollingThread.interrupt();
         }

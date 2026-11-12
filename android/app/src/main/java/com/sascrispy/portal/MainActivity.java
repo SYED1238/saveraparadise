@@ -51,8 +51,8 @@ public class MainActivity extends AppCompatActivity {
         setupWebView();
         requestAppPermissions();
 
-        // Only Kitchen tablet runs background OrderMonitorService
-        if (getPackageName().contains("kitchen")) {
+        // Kitchen tablet and Rider app run background OrderMonitorService
+        if (shouldRunOrderMonitorService()) {
             startOrderMonitorService();
         }
 
@@ -172,6 +172,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private boolean shouldRunOrderMonitorService() {
+        String pkg = getPackageName().toLowerCase();
+        return pkg.contains("kitchen") || pkg.contains("rider");
+    }
+
     private void startOrderMonitorService() {
         try {
             Intent serviceIntent = new Intent(this, OrderMonitorService.class);
@@ -188,7 +193,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE && getPackageName().contains("kitchen")) {
+        if (requestCode == PERMISSION_REQUEST_CODE && shouldRunOrderMonitorService()) {
             startOrderMonitorService();
         }
     }
@@ -197,6 +202,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         OrderMonitorService.setAppInForeground(true);
+        OrderMonitorService.stopNativeAlarm();
     }
 
     @Override

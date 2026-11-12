@@ -30,8 +30,114 @@ function isOriginAllowed(origin) {
   return false;
 }
 
+const KITCHEN_POLL_CACHE_TTL_MS = 25000;
+const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
+const STORE_SETTINGS_CACHE_TTL_MS = 60000;
+const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
+
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
+let kitchenPollStoreSettingsCache = null;
+let kitchenPollStoreSettingsCachedAt = 0;
+let lastActiveOrderSeenAt = 0;
+
+function invalidateKitchenPollCache() {
+  kitchenPollCachedAt = 0;
+  kitchenPollCache = null;
+}
+
+function parseOrderCreatedAtMs(val) {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (!val) return 0;
+  const str = String(val).trim();
+  if (/^\d+$/.test(str)) return Number(str);
+  const parsed = Date.parse(str);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isOrderStatusActive(status) {
+  const s = String(status || '').trim().toLowerCase();
+  return Boolean(s) && !['delivered', 'cancelled', 'undelivered'].includes(s);
+}
+
+function hasRecentActiveOrderInMemory(now = Date.now()) {
+  if (lastActiveOrderSeenAt > 0 && (now - lastActiveOrderSeenAt) <= ACTIVE_ORDER_LOOKBACK_MS) {
+    return true;
+  }
+  if (Array.isArray(kitchenPollCache)) {
+    return kitchenPollCache.some(o => {
+      if (!o || !isOrderStatusActive(o.status)) return false;
+      const createdAt = parseOrderCreatedAtMs(o.created_at);
+      return createdAt === 0 || (now - createdAt) <= ACTIVE_ORDER_LOOKBACK_MS;
+    });
+  }
+  return false;
+}
+
+function updateActiveOrderTracker(orders, now = Date.now()) {
+  if (!Array.isArray(orders)) return;
+  let newestActiveAt = 0;
+  for (const o of orders) {
+    if (!o || !isOrderStatusActive(o.status)) continue;
+    const createdAt = parseOrderCreatedAtMs(o.created_at) || now;
+    if ((now - createdAt) <= ACTIVE_ORDER_LOOKBACK_MS && createdAt > newestActiveAt) {
+      newestActiveAt = createdAt;
+    }
+  }
+  lastActiveOrderSeenAt = newestActiveAt;
+}
+
+function isKitchenScheduleOpenIST(settings) {
+  if (!settings || typeof settings !== 'object') return true;
+  if (settings.storeOpen === false) return false;
+
+  const parseTimeToMinutes = (str, defaultMins) => {
+    if (!str) return defaultMins;
+    const m = String(str).match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
+    if (!m) return defaultMins;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2] || '0', 10);
+    const mod = (m[3] || '').toUpperCase();
+    if (mod === 'PM' && h < 12) h += 12;
+    if (mod === 'AM' && h === 12) h = 0;
+    return h * 60 + min;
+  };
+
+  const openStr = (settings.openTime || '11:00 AM').trim();
+  const closeStr = (settings.closeTime || '11:00 PM').trim();
+  const openMinutes = parseTimeToMinutes(openStr, 660);
+  const closeMinutes = parseTimeToMinutes(closeStr, 1380);
+
+  const istDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+
+  if (openMinutes < closeMinutes) {
+    return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+  }
+  if (openMinutes > closeMinutes) {
+    return currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+  }
+  return true;
+}
+
+async function getCachedKitchenStoreSettings(sb, now = Date.now()) {
+  if (kitchenPollStoreSettingsCache && (now - kitchenPollStoreSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
+    return kitchenPollStoreSettingsCache;
+  }
+  try {
+    const { data, error } = await sb
+      .from('store_settings')
+      .select('settings')
+      .eq('id', 'restaurant_config')
+      .maybeSingle();
+    if (!error && data?.settings && typeof data.settings === 'object') {
+      kitchenPollStoreSettingsCache = data.settings;
+      kitchenPollStoreSettingsCachedAt = now;
+      return kitchenPollStoreSettingsCache;
+    }
+  } catch {}
+  return kitchenPollStoreSettingsCache;
+}
 
 const RESTAURANT_COORDINATES = { lat: 12.72088913328626, lng: 77.28051033981335 };
 const MAX_RIDER_PICKUP_RADIUS_KM = 3.0;
@@ -301,7 +407,7 @@ export default async function handler(req, res) {
       const sample = [
         { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', pickup_code: '1001', created_at: new Date().toISOString() }
       ];
-      res.setHeader('Cache-Control', 'public, s-maxage=4, max-age=3');
+      res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
       return res.status(200).json(sample);
     }
 
@@ -677,14 +783,23 @@ export default async function handler(req, res) {
       // 0. Lightweight Edge-Cached Kitchen Monitor Poll (Absorbs Android APK Background Loop)
       case 'kitchen_poll': {
         const now = Date.now();
-        if (kitchenPollCache && (now - kitchenPollCachedAt < 4000)) {
-          res.setHeader('Cache-Control', 'public, s-maxage=4, max-age=3');
+        if (kitchenPollCache && (now - kitchenPollCachedAt < KITCHEN_POLL_CACHE_TTL_MS)) {
+          res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
+          return res.status(200).json(kitchenPollCache);
+        }
+
+        const storeSettings = await getCachedKitchenStoreSettings(sb, now);
+        if (storeSettings && !isKitchenScheduleOpenIST(storeSettings) && !hasRecentActiveOrderInMemory(now)) {
+          kitchenPollCache = [];
+          kitchenPollCachedAt = now;
+          res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
           return res.status(200).json(kitchenPollCache);
         }
 
         const { data, error } = await sb
           .from('orders')
           .select('id, status, customer_name, total, pickup_code, created_at')
+          .neq('status', 'pending_payment')
           .order('created_at', { ascending: false })
           .limit(8);
 
@@ -692,8 +807,9 @@ export default async function handler(req, res) {
 
         kitchenPollCache = data || [];
         kitchenPollCachedAt = now;
+        updateActiveOrderTracker(kitchenPollCache, now);
 
-        res.setHeader('Cache-Control', 'public, s-maxage=4, max-age=3');
+        res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
         return res.status(200).json(kitchenPollCache);
       }
 
@@ -741,6 +857,7 @@ export default async function handler(req, res) {
         const { data, error } = await sb
           .from('orders')
           .select('*')
+          .neq('status', 'pending_payment')
           .order('created_at', { ascending: false })
           .limit(limit);
         if (error) throw error;
@@ -921,6 +1038,7 @@ export default async function handler(req, res) {
         }
 
         const updated = updatedList && updatedList.length > 0 ? updatedList[0] : null;
+        invalidateKitchenPollCache();
         return res.status(200).json({ success: true, order: updated });
       }
 
@@ -1091,6 +1209,7 @@ export default async function handler(req, res) {
             });
           }
 
+          invalidateKitchenPollCache();
           return res.status(200).json({ success: true, order: updatedList[0] });
         });
       }
@@ -1271,6 +1390,7 @@ export default async function handler(req, res) {
             });
           }
 
+          invalidateKitchenPollCache();
           return res.status(200).json({ success: true, order: updatedList[0] });
         });
       }
@@ -1329,6 +1449,7 @@ export default async function handler(req, res) {
           .maybeSingle();
 
         if (updateErr) throw updateErr;
+        invalidateKitchenPollCache();
         return res.status(200).json({ success: true, order: updated });
       }
 
@@ -1503,7 +1624,10 @@ export default async function handler(req, res) {
           .single();
 
         if (!insertErr) {
-          kitchenPollCachedAt = 0;
+          invalidateKitchenPollCache();
+          if (isOrderStatusActive(targetStatus)) {
+            lastActiveOrderSeenAt = Date.now();
+          }
         }
 
         if (insertErr) {
@@ -1545,6 +1669,11 @@ export default async function handler(req, res) {
               .single();
 
             if (retryErr) throw retryErr;
+
+            invalidateKitchenPollCache();
+            if (isOrderStatusActive(targetStatus)) {
+              lastActiveOrderSeenAt = Date.now();
+            }
 
             return res.status(200).json({
               success: true,

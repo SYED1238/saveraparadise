@@ -126,6 +126,13 @@ public class WebAppInterface {
     }
 
     @JavascriptInterface
+    public void stopAlarm() {
+        try {
+            OrderMonitorService.stopNativeAlarm();
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
     public boolean isNativeApp() {
         return true;
     }

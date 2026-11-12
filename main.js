@@ -5399,10 +5399,12 @@ function initStorefrontApp() {
     // Reset payment selection to Cash on Delivery
     selectedCheckoutPayment = 'cod';
     if (radioPaymentCod) radioPaymentCod.checked = true;
+    if (radioPaymentOnline) radioPaymentOnline.checked = false;
     if (paymentCardCod) paymentCardCod.classList.add('selected');
     if (paymentCardOnline) paymentCardOnline.classList.remove('selected');
     if (checkoutBillPayment) checkoutBillPayment.textContent = 'Cash on Delivery (COD)';
-    if (btnPlaceOrderLabel) btnPlaceOrderLabel.textContent = 'Place Order • Cash on Delivery';
+    const orderLbl = document.getElementById('btn-place-order-label') || btnPlaceOrderLabel;
+    if (orderLbl) orderLbl.textContent = 'Place Order • Cash on Delivery';
 
     openCheckoutModalInternal();
     backNav.pushStep(
@@ -5463,21 +5465,31 @@ function initStorefrontApp() {
   }
 
   // Payment Selection Handlers
+  function selectCheckoutPaymentMode(mode) {
+    selectedCheckoutPayment = mode === 'online' ? 'online' : 'cod';
+    if (radioPaymentCod) radioPaymentCod.checked = selectedCheckoutPayment === 'cod';
+    if (radioPaymentOnline) radioPaymentOnline.checked = selectedCheckoutPayment === 'online';
+    if (paymentCardCod) paymentCardCod.classList.toggle('selected', selectedCheckoutPayment === 'cod');
+    if (paymentCardOnline) paymentCardOnline.classList.toggle('selected', selectedCheckoutPayment === 'online');
+    if (checkoutBillPayment) {
+      checkoutBillPayment.textContent = selectedCheckoutPayment === 'online'
+        ? 'Online Payment (UPI / Cards / NetBanking)'
+        : 'Cash on Delivery (COD)';
+    }
+    const orderLbl = document.getElementById('btn-place-order-label') || btnPlaceOrderLabel;
+    if (orderLbl) {
+      orderLbl.textContent = selectedCheckoutPayment === 'online'
+        ? 'Place Order • Pay Online'
+        : 'Place Order • Cash on Delivery';
+    }
+  }
+
   if (paymentCardCod) {
-    paymentCardCod.addEventListener('click', () => {
-      selectedCheckoutPayment = 'cod';
-      if (radioPaymentCod) radioPaymentCod.checked = true;
-      paymentCardCod.classList.add('selected');
-      if (paymentCardOnline) paymentCardOnline.classList.remove('selected');
-      if (checkoutBillPayment) checkoutBillPayment.textContent = 'Cash on Delivery (COD)';
-      if (btnPlaceOrderLabel) btnPlaceOrderLabel.textContent = 'Place Order • Cash on Delivery';
-    });
+    paymentCardCod.addEventListener('click', () => selectCheckoutPaymentMode('cod'));
   }
 
   if (paymentCardOnline) {
-    paymentCardOnline.addEventListener('click', () => {
-      showToast('💳 Online payment (UPI, Cards & NetBanking) will be available soon! Please pay via Cash on Delivery (COD).', 'info');
-    });
+    paymentCardOnline.addEventListener('click', () => selectCheckoutPaymentMode('online'));
   }
 
   // 1. "Proceed to Checkout" from Cart Basket Drawer -> Opens Checkout Modal
@@ -5590,7 +5602,140 @@ function initStorefrontApp() {
     });
   }
 
-  // 2. Final "Place Order • Cash on Delivery" Action inside Checkout Modal
+  async function waitForCashfreeSdk(timeoutMs = 3000) {
+    if (typeof window.Cashfree === 'function') return window.Cashfree;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 100));
+      if (typeof window.Cashfree === 'function') return window.Cashfree;
+    }
+    return null;
+  }
+
+  function completeOrderPlacementUI({ finalOrderId, finalTotal, trackingToken = '', isOnline = false }) {
+    recordClientOrderTimestamp();
+    turnstileChallengeForced = false;
+    hideTurnstileCheckoutWidget();
+
+    try {
+      const myIds = JSON.parse(localStorage.getItem('quickbite_my_order_ids') || '[]');
+      if (!myIds.includes(finalOrderId)) {
+        myIds.push(finalOrderId);
+        localStorage.setItem('quickbite_my_order_ids', JSON.stringify(myIds));
+      }
+    } catch {}
+
+    if (trackingToken) {
+      try {
+        const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
+        tokens[finalOrderId] = trackingToken;
+        localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
+      } catch {}
+    }
+
+    try {
+      navigator.serviceWorker?.controller?.postMessage({
+        type: 'TRACK_ORDERS',
+        orderIds: [finalOrderId]
+      });
+    } catch {}
+
+    orders = dataService.getOrders();
+    activeOrderId = finalOrderId;
+
+    closeCheckoutModalInternal();
+    backNav.removeStepDirect('cart-drawer');
+    if (backNav.isTopStep('checkout-modal')) {
+      backNav.replaceTopStep('order-modal', () => closeOrderModalInternal());
+      openOrderModal(finalOrderId, true, true);
+    } else {
+      backNav.removeStepDirect('checkout-modal');
+      openOrderModal(finalOrderId, true);
+    }
+
+    cart = [];
+    saveCart();
+    renderCart();
+
+    playNotificationSound('order_placed');
+    updateAppBadge(1);
+    showToast(
+      isOnline
+        ? '🎉 Payment confirmed! Your order has been sent to the kitchen.'
+        : '🎉 Order placed successfully! Paying via Cash on Delivery.',
+      'success'
+    );
+    sendSystemNotification({
+      title: `🎉 Order ${finalOrderId} Confirmed!`,
+      body: `Total: ${finalTotal} • Kitchen has received your order and is reviewing it.`,
+      tag: `order-${finalOrderId}`,
+      data: { orderId: finalOrderId, url: '/' },
+      onlyIfHidden: true
+    });
+    flashTabTitle(`🎉 ORDER CONFIRMED: ${finalOrderId}`);
+  }
+
+  async function finalizeVerifiedOnlineOrder(serverOrder, fallbackDraft = null) {
+    const draft = fallbackDraft || {};
+    const finalId = serverOrder?.id || draft.id;
+    if (!finalId) return;
+
+    const trackingToken = serverOrder?.tracking_token || draft.trackingToken || '';
+    const localOrder = {
+      ...draft,
+      id: finalId,
+      createdAt: Number(serverOrder?.created_at || draft.createdAt) || Date.now(),
+      customerName: serverOrder?.customer_name || draft.customerName || 'Online Guest',
+      customerPhone: serverOrder?.customer_phone || draft.customerPhone || '',
+      customerEmail: serverOrder?.customer_email || draft.customerEmail || '',
+      userId: serverOrder?.user_id || draft.userId || null,
+      deliveryAddress: serverOrder?.delivery_address || draft.deliveryAddress || '',
+      pickupCode: serverOrder?.pickup_code || draft.pickupCode || '',
+      items: Array.isArray(serverOrder?.items) && serverOrder.items.length > 0 ? serverOrder.items : (draft.items || []),
+      itemsSummary: serverOrder?.items_summary || draft.itemsSummary || '',
+      total: serverOrder?.total || draft.total || '₹0',
+      lat: serverOrder?.lat !== undefined && serverOrder?.lat !== null ? Number(serverOrder.lat) : draft.lat,
+      lng: serverOrder?.lng !== undefined && serverOrder?.lng !== null ? Number(serverOrder.lng) : draft.lng,
+      addressDetails: serverOrder?.address_details || draft.addressDetails || null,
+      paymentMethod: 'Online',
+      paymentStatus: 'Paid',
+      isPaidOnline: true,
+      doorstepUpi: false,
+      cashCollected: 0,
+      cfOrderId: serverOrder?.cf_order_id || draft.cfOrderId || null,
+      cfPaymentId: serverOrder?.cf_payment_id || draft.cfPaymentId || null,
+      status: (!serverOrder?.status || serverOrder.status === 'pending_payment') ? 'accepted' : serverOrder.status,
+      statusLabel: (!serverOrder?.status || serverOrder.status === 'pending_payment') ? 'Accepted' : (serverOrder.status_label || 'Accepted'),
+      stepIndex: typeof serverOrder?.step_index === 'number' ? serverOrder.step_index : 0,
+      eta: serverOrder?.eta || draft.eta || '25 - 35 Minutes',
+      trackingToken
+    };
+
+    try {
+      const existingList = dataService.getOrders().filter(o => o && o.id !== finalId);
+      existingList.unshift(localOrder);
+      dataService.saveOrders(existingList, { action: 'new_order', order: localOrder, timestamp: Date.now() });
+      localStorage.setItem('quickbite_latest_incoming_order', JSON.stringify({
+        ...localOrder,
+        order: localOrder,
+        timestamp: Date.now()
+      }));
+      await dataService._ensureBroadcastSubscribedAndSend('new_order', { order: localOrder, timestamp: Date.now() });
+    } catch {}
+
+    try {
+      sessionStorage.removeItem('savera_pending_online_order');
+    } catch {}
+
+    completeOrderPlacementUI({
+      finalOrderId: finalId,
+      finalTotal: localOrder.total,
+      trackingToken,
+      isOnline: true
+    });
+  }
+
+  // 2. Final "Place Order" Action inside Checkout Modal
   let isSubmittingOrder = false;
   if (btnPlaceOrderFinal) {
     btnPlaceOrderFinal.addEventListener('click', async () => {
@@ -5927,7 +6072,105 @@ function initStorefrontApp() {
           }
         }
 
-        // Add new order to dataService & Supabase Cloud
+        // If Online Payment (Cashfree PG) is selected, create PG order & open Cashfree Checkout BEFORE finalizing order
+        if (selectedCheckoutPayment === 'online') {
+          const verifiedNumericTotal = parseFloat(String(newOrder.total || '0').replace(/[^0-9.]/g, '')) || Math.round(calculatedTotal);
+          newOrder.paymentMethod = 'Online';
+          newOrder.paymentStatus = 'Pending Payment';
+
+          if (btnPlaceOrderFinal) {
+            btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Opening Cashfree Payment...';
+          }
+
+          const CashfreeFn = await waitForCashfreeSdk(3500);
+          if (!CashfreeFn) {
+            showToast('⚠️ Payment gateway is still loading. Please try again in a moment or use Cash on Delivery.', 'error');
+            resetSubmitState();
+            return;
+          }
+
+          try {
+            sessionStorage.setItem('savera_pending_online_order', JSON.stringify(newOrder));
+          } catch {}
+
+          const cleanOrderNum = String(newOrder.id || newOrderId).replace(/^#+/, '');
+          const returnUrl = `${window.location.origin}/?payment_return=1&order_id=${encodeURIComponent(cleanOrderNum)}&cf_order_id={order_id}`;
+
+          const pgResp = await fetch('/api/cashfree-create-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: newOrder.id,
+              amount: verifiedNumericTotal,
+              customerPhone: customerContactPhone,
+              customerName: newOrder.customerName,
+              customerEmail: newOrder.customerEmail || 'customer@saveraparadise.com',
+              returnUrl,
+              checkoutToken: newOrder.checkoutSignature,
+              turnstileToken,
+              order: newOrder
+            })
+          });
+
+          const pgData = await pgResp.json().catch(() => ({}));
+          if (!pgResp.ok || !pgData.success || !pgData.paymentSessionId) {
+            try { sessionStorage.removeItem('savera_pending_online_order'); } catch {}
+            showToast(`❌ ${pgData.message || pgData.error || 'Could not initialize online payment. Please try again or choose COD.'}`, 'error');
+            resetSubmitState();
+            return;
+          }
+
+          if (pgData.orderId) newOrder.id = pgData.orderId;
+          if (pgData.trackingToken) newOrder.trackingToken = pgData.trackingToken;
+          newOrder.cfOrderId = pgData.cfOrderId;
+          try {
+            sessionStorage.setItem('savera_pending_online_order', JSON.stringify(newOrder));
+          } catch {}
+
+          const cashfree = CashfreeFn({ mode: pgData.cashfreeMode || 'production' });
+          const cfResult = await cashfree.checkout({
+            paymentSessionId: pgData.paymentSessionId,
+            redirectTarget: '_modal'
+          });
+
+          if (cfResult && cfResult.error) {
+            showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed. Your basket is still saved.'}`, 'warning');
+            resetSubmitState(true);
+            return;
+          }
+
+          if (cfResult && cfResult.redirect) {
+            // Browser is redirecting to Cashfree/bank/UPI return URL; return_url handler will complete verification.
+            return;
+          }
+
+          if (btnPlaceOrderFinal) {
+            btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Verifying Payment...';
+          }
+
+          const verifyResp = await fetch('/api/cashfree-create-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'verify_payment',
+              cfOrderId: pgData.cfOrderId,
+              orderId: newOrder.id,
+              trackingToken: newOrder.trackingToken || ''
+            })
+          });
+          const verifyData = await verifyResp.json().catch(() => ({}));
+
+          if (verifyResp.ok && verifyData.success && verifyData.paid) {
+            await finalizeVerifiedOnlineOrder(verifyData.order, newOrder);
+            return;
+          }
+
+          showToast('⏳ Payment not confirmed yet. If amount was debited, your order will auto-confirm shortly.', 'warning');
+          resetSubmitState(true);
+          return;
+        }
+
+        // Add new COD order to dataService & Supabase Cloud
         const addResult = await dataService.addOrder(newOrder);
         if (addResult && addResult.success === false) {
           const errMsg = addResult.error?.message || addResult.message || 'Database error';
@@ -5938,58 +6181,12 @@ function initStorefrontApp() {
         }
 
         const finalOrderId = addResult?.id || addResult?.orderId || newOrder.id || newOrderId;
-
-        // Record order timestamp for 1-minute Turnstile velocity check & reset forced challenge state
-        recordClientOrderTimestamp();
-        turnstileChallengeForced = false;
-        hideTurnstileCheckoutWidget();
-
-        // Track order ID in user session & storage
-        try {
-          const myIds = JSON.parse(localStorage.getItem('quickbite_my_order_ids') || '[]');
-          if (!myIds.includes(finalOrderId)) {
-            myIds.push(finalOrderId);
-            localStorage.setItem('quickbite_my_order_ids', JSON.stringify(myIds));
-          }
-        } catch {}
-
-        try {
-          navigator.serviceWorker?.controller?.postMessage({
-            type: 'TRACK_ORDERS',
-            orderIds: [finalOrderId]
-          });
-        } catch {}
-
-        orders = dataService.getOrders();
-        activeOrderId = finalOrderId;
-
-        closeCheckoutModalInternal();
-        backNav.removeStepDirect('cart-drawer');
-        if (backNav.isTopStep('checkout-modal')) {
-          backNav.replaceTopStep('order-modal', () => closeOrderModalInternal());
-          openOrderModal(finalOrderId, true, true);
-        } else {
-          backNav.removeStepDirect('checkout-modal');
-          openOrderModal(finalOrderId, true);
-        }
-
-        // Clear cart after confirmed checkout
-        cart = [];
-        saveCart();
-        renderCart();
-
-        // Audio & Desktop Notification
-        playNotificationSound('order_placed');
-        updateAppBadge(1);
-        showToast('🎉 Order placed successfully! Paying via Cash on Delivery.', 'success');
-        sendSystemNotification({
-          title: `🎉 Order ${finalOrderId} Confirmed!`,
-          body: `Total: ${newOrder.total || totalAmount} • Kitchen has received your order and is reviewing it.`,
-          tag: `order-${finalOrderId}`,
-          data: { orderId: finalOrderId, url: '/' },
-          onlyIfHidden: true
+        completeOrderPlacementUI({
+          finalOrderId,
+          finalTotal: newOrder.total || totalAmount,
+          trackingToken: addResult?.trackingToken || '',
+          isOnline: false
         });
-        flashTabTitle(`🎉 ORDER CONFIRMED: ${finalOrderId}`);
       } catch (submitErr) {
         console.error('[Checkout]: Uncaught error during order placement:', submitErr);
         showToast(`❌ Order submission issue: ${submitErr?.message || 'Please check your connection and try again'}.`, 'error');
@@ -9405,6 +9602,45 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     syncStorefrontCardsWithDataService();
     renderCart();
   });
+
+  // Handle Cashfree full-page redirect return (?payment_return=1&cf_order_id=...)
+  try {
+    const returnParams = new URLSearchParams(window.location.search);
+    if (returnParams.get('payment_return') === '1' && returnParams.get('cf_order_id')) {
+      const cfOrderIdParam = returnParams.get('cf_order_id');
+      const orderIdParam = returnParams.get('order_id') || '';
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      let pendingDraft = null;
+      try {
+        const rawDraft = sessionStorage.getItem('savera_pending_online_order');
+        if (rawDraft) pendingDraft = JSON.parse(rawDraft);
+      } catch {}
+
+      showToast('⏳ Verifying your Cashfree payment...', 'info');
+      fetch('/api/cashfree-create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify_payment',
+          cfOrderId: cfOrderIdParam,
+          orderId: orderIdParam ? `#${orderIdParam.replace(/^#+/, '')}` : '',
+          trackingToken: pendingDraft?.trackingToken || ''
+        })
+      })
+        .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+        .then(async ({ ok, data }) => {
+          if (ok && data?.success && data?.paid) {
+            await finalizeVerifiedOnlineOrder(data.order, pendingDraft);
+          } else {
+            showToast(`⚠️ Payment not completed (${data?.paymentStatus || 'CANCELLED'}). Your basket is still saved.`, 'warning');
+          }
+        })
+        .catch(() => {
+          showToast('⚠️ Could not verify payment status immediately. Check My Orders shortly.', 'warning');
+        });
+    }
+  } catch {}
 }
 
 if (document.readyState === 'loading') {

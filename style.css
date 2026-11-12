@@ -9555,6 +9555,19 @@ body.order-modal-open .unlocked-deals-floating-bar {
   letter-spacing: 0.02em;
 }
 
+.payment-badge-online {
+  font-size: 0.70rem;
+  font-weight: 800;
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  letter-spacing: 0.02em;
+}
+
 .payment-desc, .payment-sub {
   font-size: 0.76rem;
   color: var(--text-muted);

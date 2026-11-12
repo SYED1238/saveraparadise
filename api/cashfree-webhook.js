@@ -3,7 +3,7 @@
  * POST /api/cashfree-webhook
  * Cryptographically verifies and processes Cashfree payment notifications.
  */
-import { verifyCashfreeWebhookSignature } from './_cashfree.js';
+import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment } from './_cashfree.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -79,52 +79,28 @@ export default async function handler(req, res) {
 
       // Safe update in Supabase if server-side client is available
       try {
-        const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const recorded = await recordVerifiedCashfreePayment({
+          cfOrderId,
+          cfPaymentId,
+          paymentAmount,
+          cleanOrderId
+        });
 
-        if (supabaseUrl && serviceKey) {
-          const { createClient } = await import('@supabase/supabase-js');
-          const sb = createClient(supabaseUrl, serviceKey);
+        if (recorded?.idempotent) {
+          return res.status(200).json({
+            success: true,
+            orderId: cleanOrderId,
+            idempotent: true,
+            message: 'Duplicate webhook acknowledged. Payment already recorded.'
+          });
+        }
 
-          // 1. Fetch current order state to verify idempotency and amount
-          const { data: existingOrder } = await sb
-            .from('orders')
-            .select('id, payment_status, total, cf_payment_id')
-            .or(`id.eq.${cleanOrderId},id.eq.#${cleanOrderId}`)
-            .maybeSingle();
-
-          if (existingOrder) {
-            if (existingOrder.payment_status === 'Paid' && existingOrder.cf_payment_id === cfPaymentId) {
-              return res.status(200).json({
-                success: true,
-                orderId: cleanOrderId,
-                idempotent: true,
-                message: 'Duplicate webhook acknowledged. Payment already recorded.'
-              });
-            }
-
-            const orderTotal = parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0;
-            if (orderTotal > 0 && paymentAmount < orderTotal) {
-              console.warn(`[Cashfree Webhook] Amount discrepancy for order ${cleanOrderId}: paid ${paymentAmount}, expected ${orderTotal}`);
-              return res.status(400).json({
-                error: 'Amount Mismatch',
-                message: `Payment amount (${paymentAmount}) does not match order total (${orderTotal})`
-              });
-            }
-          }
-
-          // 2. Perform authoritative update
-          await sb.from('orders').update({
-            cf_order_id: cfOrderId,
-            cf_payment_id: String(cfPaymentId),
-            cf_payment_status: 'SUCCESS',
-            payment_status: 'Paid',
-            payment_method: 'Online',
-            is_paid_online: true,
-            doorstep_upi: cfOrderId.includes('doorstep_'),
-            cash_collected: 0,
-            payment_gateway: 'cashfree'
-          }).or(`id.eq.${cleanOrderId},id.eq.#${cleanOrderId}`);
+        if (recorded?.amountMismatch) {
+          console.warn(`[Cashfree Webhook] Amount discrepancy for order ${cleanOrderId}: paid ${recorded.paymentAmount}, expected ${recorded.orderTotal}`);
+          return res.status(400).json({
+            error: 'Amount Mismatch',
+            message: `Payment amount (${recorded.paymentAmount}) does not match order total (${recorded.orderTotal})`
+          });
         }
       } catch (err) {
         console.warn('[Cashfree Webhook] Supabase sync fallback:', err.message);

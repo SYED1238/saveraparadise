@@ -303,6 +303,9 @@ const initDeliveryApp = () => {
       dataService.setActiveRiderPin(cleanPin);
       updateRiderProfileHeader();
       requestWakeLock();
+      if (getSystemNotificationPermission() === 'default') {
+        requestSystemNotificationPermission().catch(() => {});
+      }
       showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
       Promise.allSettled([
         dataService.syncOrdersFromSupabase(true),
@@ -815,6 +818,9 @@ const initDeliveryApp = () => {
       if (isDutyOn) {
         riderStatusPill.className = 'rider-badge-status online';
         riderStatusText.textContent = 'Online • Active';
+        if (getSystemNotificationPermission() === 'default') {
+          requestSystemNotificationPermission().catch(() => {});
+        }
         showToast('🟢 You are now Online and receiving delivery tasks!', 'success');
       } else {
         riderStatusPill.className = 'rider-badge-status offline';

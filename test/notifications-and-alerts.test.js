@@ -1021,4 +1021,178 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
     assert.match(adminSrc, /playNotificationSound\(['"]kitchen_alarm['"]\)/, 'playKitchenChime must delegate to playNotificationSound');
     assert.match(adminSrc, /stopFlashingTabTitle\(\)/, 'stopKitchenAlarm must call centralized stopFlashingTabTitle');
   });
+
+  await t.test('22. dataService.js listens for cross-device cash_handover_requested broadcasts and sync transitions', () => {
+    const dataServiceSrc = fs.readFileSync(new URL('../dataService.js', import.meta.url), 'utf8');
+    assert.match(
+      dataServiceSrc,
+      /\.on\('broadcast',\s*\{\s*event:\s*'cash_handover_requested'\s*\}/,
+      'setupRealtime must listen for cross-device cash_handover_requested broadcast events'
+    );
+    assert.match(
+      dataServiceSrc,
+      /nextHandoverStatus === 'pending_owner_approval'[\s\S]*?notifyChange\('cash_handover_requested'/,
+      'syncRidersFromSupabase must emit cash_handover_requested when a rider transitions to pending_owner_approval'
+    );
+    assert.match(
+      dataServiceSrc,
+      /this\.notifyChange\('cash_handover_requested',\s*\{\s*riderPin:\s*cleanPin,\s*riderName:\s*riders\[idx\]\.name/,
+      'requestRiderCashHandover must include riderName in cash_handover_requested payload'
+    );
+  });
+
+  await t.test('23. delivery.js prompts for Web/PWA notification permission on login and duty-online toggle', () => {
+    const deliverySrc = fs.readFileSync(new URL('../delivery.js', import.meta.url), 'utf8');
+    const matches = deliverySrc.match(/requestSystemNotificationPermission\(/g) || [];
+    assert.ok(
+      matches.length >= 2,
+      'delivery.js must invoke requestSystemNotificationPermission on both login success and duty-online toggle'
+    );
+    assert.match(
+      deliverySrc,
+      /getSystemNotificationPermission\(\)\s*===\s*'default'/,
+      'delivery.js must guard permission prompts with getSystemNotificationPermission() === default'
+    );
+  });
+
+  await t.test('24. Android Rider APK flavor enables OrderMonitorService in MainActivity and rider AndroidManifest', () => {
+    const mainActivitySrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/MainActivity.java', import.meta.url),
+      'utf8'
+    );
+    const riderManifestSrc = fs.readFileSync(
+      new URL('../android/app/src/rider/AndroidManifest.xml', import.meta.url),
+      'utf8'
+    );
+    assert.match(
+      mainActivitySrc,
+      /shouldRunOrderMonitorService\(\)[\s\S]*?pkg\.contains\("kitchen"\)\s*\|\|\s*pkg\.contains\("rider"\)/,
+      'MainActivity must run OrderMonitorService for both kitchen and rider APK flavors'
+    );
+    assert.match(
+      riderManifestSrc,
+      /android\.permission\.FOREGROUND_SERVICE_DATA_SYNC/,
+      'Rider AndroidManifest must declare FOREGROUND_SERVICE_DATA_SYNC permission'
+    );
+    assert.match(
+      riderManifestSrc,
+      /<service[\s\S]*?android:name="\.OrderMonitorService"[\s\S]*?android:foregroundServiceType="dataSync"/,
+      'Rider AndroidManifest must register OrderMonitorService with dataSync foregroundServiceType'
+    );
+  });
+
+  await t.test('25. dataService.startLiveHeartbeat skips syncOrdersFromSupabase when store is closed and no active orders exist', async () => {
+    const { dataService } = await import('../dataService.js');
+    const origSetInterval = globalThis.setInterval;
+    const origClearInterval = globalThis.clearInterval;
+    const origPortalType = dataService.portalType;
+    const origIsStaffAuthorized = dataService.isStaffAuthorized;
+    const origIsStoreOpen = dataService.isStoreOpen;
+    const origGetOrders = dataService.getOrders;
+    const origSyncOrders = dataService.syncOrdersFromSupabase;
+    const origSyncSettings = dataService.syncSettingsFromSupabase;
+
+    let capturedCallback = null;
+    let capturedIntervalMs = null;
+    let syncOrdersCalls = 0;
+
+    try {
+      globalThis.setInterval = (fn, ms) => {
+        capturedCallback = fn;
+        capturedIntervalMs = ms;
+        return { unref() {} };
+      };
+      globalThis.clearInterval = () => {};
+
+      dataService.portalType = 'admin';
+      dataService.isStaffAuthorized = () => true;
+      dataService.syncOrdersFromSupabase = async () => {
+        syncOrdersCalls++;
+        return [];
+      };
+      dataService.syncSettingsFromSupabase = async () => ({});
+
+      // 1. Store closed & no active orders -> must skip syncOrdersFromSupabase
+      dataService.isStoreOpen = () => false;
+      dataService.getOrders = () => [
+        { id: '#QB-DONE', status: 'delivered' },
+        { id: '#QB-CANC', status: 'cancelled' },
+        { id: '#QB-UNDEL', status: 'undelivered' }
+      ];
+
+      dataService.startLiveHeartbeat();
+      assert.equal(capturedIntervalMs, 10000, 'Admin heartbeat must stay 10s during active hours');
+      assert.ok(typeof capturedCallback === 'function', 'Heartbeat callback must be registered');
+
+      await capturedCallback();
+      assert.equal(syncOrdersCalls, 0, 'Must skip syncOrdersFromSupabase when store is closed and no active orders exist');
+
+      // 2. Store closed BUT active order exists -> must still sync
+      dataService.getOrders = () => [{ id: '#QB-ACTIVE', status: 'cooking' }];
+      await capturedCallback();
+      assert.equal(syncOrdersCalls, 1, 'Must sync when store is closed but an active order exists');
+
+      // 3. Store open & no active orders -> must sync
+      dataService.isStoreOpen = () => true;
+      dataService.getOrders = () => [];
+      await capturedCallback();
+      assert.equal(syncOrdersCalls, 2, 'Must sync when store is open even with no local active orders');
+    } finally {
+      globalThis.setInterval = origSetInterval;
+      globalThis.clearInterval = origClearInterval;
+      dataService.portalType = origPortalType;
+      dataService.isStaffAuthorized = origIsStaffAuthorized;
+      dataService.isStoreOpen = origIsStoreOpen;
+      dataService.getOrders = origGetOrders;
+      dataService.syncOrdersFromSupabase = origSyncOrders;
+      dataService.syncSettingsFromSupabase = origSyncSettings;
+      dataService.heartbeatTimer = null;
+    }
+  });
+
+  await t.test('26. OrderMonitorService.java uses 20s minimized poll and skips cold-start seed poll during quiet hours', () => {
+    const omsSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/OrderMonitorService.java', import.meta.url),
+      'utf8'
+    );
+    assert.match(
+      omsSrc,
+      /if\s*\(\s*isInitialCheck\s*&&\s*!isNightQuietHoursIST\(\)\s*\)/,
+      'Cold-start seed poll must be skipped during night quiet hours'
+    );
+    assert.match(
+      omsSrc,
+      /Thread\.sleep\(\s*20000\s*\)/,
+      'Minimized background poll interval must be 20000ms to fit within 25s edge cache'
+    );
+  });
+
+  await t.test('27. Kitchen APK continuous native alarm loop, Stop Alarm action, and JS/Resume hooks are wired', () => {
+    const omsSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/OrderMonitorService.java', import.meta.url),
+      'utf8'
+    );
+    const mainActivitySrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/MainActivity.java', import.meta.url),
+      'utf8'
+    );
+    const webAppSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/WebAppInterface.java', import.meta.url),
+      'utf8'
+    );
+    const adminSrc = fs.readFileSync(
+      new URL('../admin.js', import.meta.url),
+      'utf8'
+    );
+
+    assert.match(omsSrc, /Notification\.FLAG_INSISTENT/, 'Notification must set FLAG_INSISTENT');
+    assert.match(omsSrc, /AudioAttributes\.USAGE_ALARM/, 'Native alarm MediaPlayer must use USAGE_ALARM');
+    assert.match(omsSrc, /ALARM_AUTO_STOP_MS\s*=\s*3\s*\*\s*60\s*\*\s*1000L/, 'Must enforce 3-minute auto-stop safety timeout');
+    assert.match(omsSrc, /ACTION_STOP_ALARM/, 'Must define and handle ACTION_STOP_ALARM');
+    assert.match(omsSrc, /Stop Alarm/, 'Notification must include Stop Alarm action button');
+    assert.match(omsSrc, /public static void stopNativeAlarm\(\)/, 'Must expose static stopNativeAlarm()');
+    assert.match(mainActivitySrc, /onResume\([\s\S]*?OrderMonitorService\.stopNativeAlarm\(\)/, 'MainActivity.onResume must call stopNativeAlarm()');
+    assert.match(webAppSrc, /@JavascriptInterface[\s\S]*?public void stopAlarm\(\)[\s\S]*?OrderMonitorService\.stopNativeAlarm\(\)/, 'WebAppInterface must expose @JavascriptInterface stopAlarm()');
+    assert.match(adminSrc, /function stopKitchenAlarm[\s\S]*?window\.AndroidNative\.stopAlarm\(\)/, 'stopKitchenAlarm in admin.js must invoke window.AndroidNative.stopAlarm()');
+  });
 });
