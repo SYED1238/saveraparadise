@@ -368,4 +368,45 @@ test('CATEGORY VIEW ALL & KINETIC ROTATION INTEGRATION SUITE', async (t) => {
     );
   });
 
+  // =========================================================================
+  // 12. Performance Tier & Reduced-Motion Invariance (Low / Mid / High)
+  // =========================================================================
+  await t.test('15. Category scrolling and kinetic plate rotation remain identical across perf-tier-lite, balanced, and ultra', () => {
+    const tierCss = fs.readFileSync('performanceTier.css', 'utf8');
+    const styleCss = fs.readFileSync('style.css', 'utf8');
+    const mainJs = fs.readFileSync('main.js', 'utf8');
+
+    // 1. Lite box-shadow rule must NOT hit uncaged .cuisine-circle-item pills
+    assert.ok(
+      tierCss.includes('html.perf-tier-lite .category-pill:not(.cuisine-circle-item)'),
+      'Lite tier simplified box-shadow must exclude .cuisine-circle-item category plates'
+    );
+
+    // 2. All three tiers must preserve scroll-behavior, transparent uncaged pills, and GPU transform hints
+    ['perf-tier-lite', 'perf-tier-balanced', 'perf-tier-ultra'].forEach(tier => {
+      assert.ok(tierCss.includes(`html.${tier} .category-pills-wrap`), `${tier} must preserve .category-pills-wrap scrolling`);
+      assert.ok(tierCss.includes(`html.${tier} .cat-viewall-scroll`), `${tier} must preserve .cat-viewall-scroll scrolling`);
+      assert.ok(tierCss.includes(`html.${tier} .category-pill.cuisine-circle-item`), `${tier} must preserve uncaged .cuisine-circle-item`);
+      assert.ok(tierCss.includes(`html.${tier} .cuisine-circle-img`), `${tier} must preserve .cuisine-circle-img GPU rotation`);
+      assert.ok(tierCss.includes(`html.${tier} .cat-viewall-img`), `${tier} must preserve .cat-viewall-img GPU rotation`);
+    });
+
+    // 3. Reduced motion fallback keeps category scrolling and plate selection transitions intact
+    const reducedMotionMatch = styleCss.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\r?\n\}/);
+    assert.ok(reducedMotionMatch, 'style.css must define @media (prefers-reduced-motion: reduce)');
+    assert.ok(
+      reducedMotionMatch[0].includes('.category-pills-wrap') &&
+      reducedMotionMatch[0].includes('.cat-viewall-scroll') &&
+      reducedMotionMatch[0].includes('scroll-behavior: smooth !important'),
+      'Reduced-motion block must preserve smooth category scrolling'
+    );
+
+    // 4. Kinetic scroll handlers in main.js must not be gated by window.__perfTier
+    const storefrontRotMatch = mainJs.match(/function updateStorefrontPlatesRotation\([\s\S]*?\r?\n  \}/);
+    const modalRotMatch = mainJs.match(/function updatePlatesRotation\([\s\S]*?\r?\n    \}/);
+    assert.ok(storefrontRotMatch && modalRotMatch, 'Kinetic plate rotation functions must exist in main.js');
+    assert.ok(!storefrontRotMatch[0].includes('__perfTier'), 'Storefront category plate rotation must run in all tiers');
+    assert.ok(!modalRotMatch[0].includes('__perfTier'), 'View All modal plate rotation must run in all tiers');
+  });
+
 });

@@ -445,16 +445,6 @@ function initStorefrontApp() {
     if (typeof syncCapsuleNavWithScroll === 'function') {
       syncCapsuleNavWithScroll();
     }
-
-    // 3. Hero Scroll Guide Arrow (Fades out smoothly once user scrolls down)
-    const heroScrollGuide = document.getElementById('hero-scroll-guide');
-    if (heroScrollGuide) {
-      if (currentY > 50) {
-        heroScrollGuide.classList.add('guide-hidden');
-      } else {
-        heroScrollGuide.classList.remove('guide-hidden');
-      }
-    }
   }
 
   window.addEventListener('scroll', () => {
@@ -582,18 +572,6 @@ function initStorefrontApp() {
       if (menuSection) {
         menuSection.scrollIntoView({ behavior: 'smooth' });
         showToast('🔥 Welcome! Explore our freshly prepared restaurant menu below.', 'success');
-      }
-    });
-  }
-
-  // Hero Scroll Guide Click (Smooth scroll to Browse Food Menu)
-  const heroScrollGuideBtn = document.getElementById('hero-scroll-guide');
-  if (heroScrollGuideBtn) {
-    heroScrollGuideBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const menuSection = document.getElementById('menu-section');
-      if (menuSection) {
-        menuSection.scrollIntoView({ behavior: 'smooth' });
       }
     });
   }
@@ -5246,12 +5224,85 @@ function initStorefrontApp() {
 
   // ==========================================
   // CLOUDFLARE TURNSTILE INVISIBLE BOT PROTECTION
+  // (Velocity-gated: only shown/required when 2+ orders are placed within 60s)
   // ==========================================
   let turnstileWidgetId = null;
   let activeTurnstileToken = '';
+  let turnstileChallengeForced = false;
+  const TURNSTILE_VELOCITY_KEY = 'quickbite_recent_order_timestamps';
+  const TURNSTILE_VELOCITY_WINDOW_MS = 60 * 1000;
+  const TURNSTILE_FAST_ORDERS_LIMIT = 1; // 1st order in 60s is fast-lane; 2nd+ order in 60s requires verification
   const TURNSTILE_SITE_KEY = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_TURNSTILE_SITE_KEY)
     ? import.meta.env.VITE_TURNSTILE_SITE_KEY
     : '0x4AAAAAAFvMZe_e-NBz1a8W';
+
+  function getRecentClientOrderCount(phone = '') {
+    const now = Date.now();
+    const cutoff = now - TURNSTILE_VELOCITY_WINDOW_MS;
+    let storedTimestamps = [];
+    try {
+      const raw = JSON.parse(localStorage.getItem(TURNSTILE_VELOCITY_KEY) || '[]');
+      if (Array.isArray(raw)) {
+        storedTimestamps = raw.map(Number).filter(ts => Number.isFinite(ts) && ts > cutoff);
+        if (storedTimestamps.length !== raw.length) {
+          localStorage.setItem(TURNSTILE_VELOCITY_KEY, JSON.stringify(storedTimestamps));
+        }
+      }
+    } catch (_) {}
+
+    let recentOrdersCount = 0;
+    try {
+      const allOrders = (typeof dataService !== 'undefined' && typeof dataService.getOrders === 'function')
+        ? dataService.getOrders()
+        : [];
+      const cleanPhone = String(phone || getCurrentUserPhone() || '').replace(/\D/g, '').slice(-10);
+      recentOrdersCount = allOrders.filter(o => {
+        if (!o) return false;
+        const ts = typeof o.createdAt === 'number' ? o.createdAt : Date.parse(o.createdAt || '');
+        if (!Number.isFinite(ts) || ts <= cutoff) return false;
+        if (typeof isOrderBelongingToCurrentCustomer === 'function' && isOrderBelongingToCurrentCustomer(o)) {
+          return true;
+        }
+        if (cleanPhone) {
+          const orderPhone = String(o.customerPhone || o.phone || o.customer_phone || '').replace(/\D/g, '').slice(-10);
+          if (orderPhone && orderPhone === cleanPhone) return true;
+        }
+        return false;
+      }).length;
+    } catch (_) {}
+
+    return Math.max(storedTimestamps.length, recentOrdersCount);
+  }
+
+  function recordClientOrderTimestamp() {
+    try {
+      const now = Date.now();
+      const cutoff = now - TURNSTILE_VELOCITY_WINDOW_MS;
+      const raw = JSON.parse(localStorage.getItem(TURNSTILE_VELOCITY_KEY) || '[]');
+      const active = Array.isArray(raw) ? raw.map(Number).filter(ts => Number.isFinite(ts) && ts > cutoff) : [];
+      active.push(now);
+      localStorage.setItem(TURNSTILE_VELOCITY_KEY, JSON.stringify(active));
+    } catch (_) {}
+  }
+
+  function isTurnstileChallengeRequired(phone = '') {
+    return Boolean(turnstileChallengeForced || getRecentClientOrderCount(phone) >= TURNSTILE_FAST_ORDERS_LIMIT);
+  }
+
+  function showTurnstileCheckoutWidget() {
+    const container = document.getElementById('turnstile-checkout-widget');
+    if (container) {
+      container.style.display = 'flex';
+    }
+    initTurnstileCheckoutWidget();
+  }
+
+  function hideTurnstileCheckoutWidget() {
+    const container = document.getElementById('turnstile-checkout-widget');
+    if (container) {
+      container.style.display = 'none';
+    }
+  }
 
   function initTurnstileCheckoutWidget() {
     const container = document.getElementById('turnstile-checkout-widget');
@@ -5296,6 +5347,11 @@ function initStorefrontApp() {
   }
 
   function prewarmTurnstile() {
+    if (!isTurnstileChallengeRequired()) {
+      hideTurnstileCheckoutWidget();
+      return;
+    }
+    showTurnstileCheckoutWidget();
     if (activeTurnstileToken) return;
     if (typeof window.turnstile !== 'undefined') {
       initTurnstileCheckoutWidget();
@@ -5310,15 +5366,6 @@ function initStorefrontApp() {
           clearInterval(pollTimer);
         }
       }, 150);
-    }
-  }
-
-  // Pre-warm invisible verification as early as possible on page load
-  if (typeof window !== 'undefined') {
-    if (document.readyState === 'complete') {
-      prewarmTurnstile();
-    } else {
-      window.addEventListener('load', prewarmTurnstile, { once: true });
     }
   }
 
@@ -5372,8 +5419,11 @@ function initStorefrontApp() {
 
   function openCheckoutModalInternal() {
     renderCheckoutAddresses();
-    prewarmTurnstile();
-    initTurnstileCheckoutWidget();
+    if (isTurnstileChallengeRequired(getCurrentUserPhone())) {
+      showTurnstileCheckoutWidget();
+    } else {
+      hideTurnstileCheckoutWidget();
+    }
     if (modalCheckoutBackdrop) {
       modalCheckoutBackdrop.classList.add('open');
       document.body.style.overflow = 'hidden';
@@ -5845,15 +5895,20 @@ function initStorefrontApp() {
           } catch {}
         }
 
-        // Retrieve invisible Cloudflare Turnstile bot verification token
-        if (!activeTurnstileToken && btnPlaceOrderFinal) {
-          btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Securing your order...';
-        }
-        const turnstileToken = await getTurnstileToken(3500);
-        if (!turnstileToken) {
-          showToast('🔒 Please complete the security verification challenge before placing your order.', 'warning');
-          resetSubmitState();
-          return;
+        // Retrieve Cloudflare Turnstile bot verification token only when 2+ orders are placed within 60s
+        let turnstileToken = activeTurnstileToken || '';
+        const requiresTurnstile = isTurnstileChallengeRequired(customerContactPhone);
+        if (requiresTurnstile) {
+          showTurnstileCheckoutWidget();
+          if (!activeTurnstileToken && btnPlaceOrderFinal) {
+            btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Securing your order...';
+          }
+          turnstileToken = await getTurnstileToken(3500);
+          if (!turnstileToken) {
+            showToast('🔒 Please complete the security verification challenge before placing your order.', 'warning');
+            resetSubmitState();
+            return;
+          }
         }
         if (btnPlaceOrderFinal) {
           btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting Order...';
@@ -5879,10 +5934,11 @@ function initStorefrontApp() {
           if (checkoutRes.status === 403) {
             const checkoutErr = await checkoutRes.json().catch(() => ({}));
             if (checkoutErr.challengeRequired) {
-              showToast('🔒 Rapid orders detected (3+ in 1 min). Please complete the Cloudflare check above.', 'warning');
+              turnstileChallengeForced = true;
+              showToast('🔒 Rapid orders detected (2+ in 1 min). Please complete the Cloudflare check above.', 'warning');
+              showTurnstileCheckoutWidget();
               const widget = document.getElementById('turnstile-checkout-widget');
               if (widget) {
-                widget.style.display = 'flex';
                 widget.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }
               resetSubmitState(false);
@@ -5945,6 +6001,11 @@ function initStorefrontApp() {
         }
 
         const finalOrderId = addResult?.id || addResult?.orderId || newOrder.id || newOrderId;
+
+        // Record order timestamp for 1-minute Turnstile velocity check & reset forced challenge state
+        recordClientOrderTimestamp();
+        turnstileChallengeForced = false;
+        hideTurnstileCheckoutWidget();
 
         // Track order ID in user session & storage
         try {
@@ -8981,12 +9042,14 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         ? `${hrs}h ${mins}m`
         : `${mins}m`;
 
+      const hoursRangeText = `Open from ${openTimeStr} to ${closeTimeStr}`;
+      const safeOpenHtml = escapeHtml(openTimeStr);
+
       // 1. Daytime / Before opening hours
       if (isClockClosed && currentMinutes < openMinutes && (openMinutes < closeMinutes || currentMinutes >= closeMinutes)) {
         headline = 'Kitchen Opening Soon';
         emoji = '☀️';
-        bannerText = `The kitchen is preparing fresh food! Reopening today at ${openTimeStr} (in ${humanStr}). You can customize your basket now!`;
-        pillText = `<strong>☀️ Opening Soon:</strong> Reopens in <strong>${humanStr}</strong> (${openTimeStr}) • Browsing Only`;
+        pillText = `<strong>☀️ Opening Soon:</strong> Reopens in <strong>${humanStr}</strong> (${safeOpenHtml}) • Browsing Only`;
         buttonText = `⏳ Opens in ${humanStr} (${openTimeStr})`;
         toastText = `⏳ The kitchen opens today at ${openTimeStr} (in ${humanShort}). Your items will stay saved in your basket!`;
       }
@@ -8994,8 +9057,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       else if (isClockClosed) {
         headline = 'Kitchen Closed for the Night';
         emoji = '🌙';
-        bannerText = `The kitchen is currently closed for the night. We will reopen tomorrow at ${openTimeStr} (in ${humanStr})! You can still browse our menu.`;
-        pillText = `<strong>🌙 Closed for the Night:</strong> Reopens Tomorrow at ${openTimeStr} (in ${humanShort}) • Browsing Only`;
+        pillText = `<strong>🌙 Closed for the Night:</strong> Reopens Tomorrow at ${safeOpenHtml} (in ${humanShort}) • Browsing Only`;
         buttonText = `⏳ Reopens Tomorrow at ${openTimeStr} (${humanShort})`;
         toastText = `🌙 The kitchen reopens tomorrow at ${openTimeStr} (in ${humanShort}). You can customize your basket!`;
       }
@@ -9003,15 +9065,26 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       else {
         headline = 'Kitchen Temporarily Closed';
         emoji = '🕒';
-        bannerText = settings.storeClosedReason || `Orders are temporarily paused by kitchen management. We will resume taking orders shortly!`;
         pillText = `<strong>🕒 Currently Closed:</strong> Resuming Shortly • Browsing Only`;
         buttonText = `⏸️ Orders Temporarily Paused`;
         toastText = settings.storeClosedReason || `Orders are temporarily paused. Our kitchen will resume taking orders shortly!`;
         hasTimer = false;
       }
 
-      if (settings.storeClosedReason && !settings.storeClosedReason.includes('closed for the night') && !settings.storeClosedReason.includes('reopen tomorrow')) {
-        bannerText = settings.storeClosedReason;
+      const rawClosedReason = (settings.storeClosedReason || '').trim();
+      const hasCustomReason = Boolean(
+        rawClosedReason &&
+        !/^the kitchen is currently closed for orders\.?$/i.test(rawClosedReason) &&
+        !rawClosedReason.toLowerCase().includes('closed for the night') &&
+        !rawClosedReason.toLowerCase().includes('reopen tomorrow')
+      );
+
+      if (hasCustomReason) {
+        bannerText = rawClosedReason.includes(openTimeStr) && rawClosedReason.includes(closeTimeStr)
+          ? rawClosedReason
+          : `${rawClosedReason} • ${hoursRangeText}.`;
+      } else {
+        bannerText = `The kitchen is currently closed for orders. ${hoursRangeText}.`;
       }
 
       return {
@@ -9024,6 +9097,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         openTimeStr,
         closeTimeStr,
         hasTimer,
+        showBannerTimer: false,
         clockStr,
         humanStr,
         humanShort,
@@ -9031,13 +9105,18 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       };
     }
 
-    return { headline, emoji, bannerText, pillText, buttonText, toastText, openTimeStr, closeTimeStr, hasTimer: false };
+    return { headline, emoji, bannerText, pillText, buttonText, toastText, openTimeStr, closeTimeStr, hasTimer: false, showBannerTimer: false };
   }
 
   function updateStoreStatusUI() {
     const settings = dataService.getSettings();
     const isClosed = settings.storeOpen === false || (typeof dataService.isStoreOpen === 'function' && !dataService.isStoreOpen());
     const isPaused = !isClosed && settings.isRushPaused && settings.pauseUntil && Date.now() < settings.pauseUntil;
+
+    const activeHeroSection = heroSection || document.getElementById('hero-section');
+    if (activeHeroSection) {
+      activeHeroSection.classList.toggle('is-kitchen-closed', Boolean(isClosed));
+    }
 
     // Toast customer when kitchen automatically flips from Closed -> Open
     if (wasStoreClosedOnPreviousTick === true && !isClosed && !isPaused) {
@@ -9059,7 +9138,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         if (headline) headline.textContent = closedInfo.headline;
         if (flame) flame.textContent = closedInfo.emoji;
         if (countdown) {
-          if (closedInfo.hasTimer) {
+          if (closedInfo.showBannerTimer) {
             countdown.style.display = 'flex';
             if (rushBannerTimer) rushBannerTimer.textContent = closedInfo.clockStr;
           } else {

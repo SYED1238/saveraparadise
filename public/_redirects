@@ -2,3 +2,5 @@
 # Note: Clean URLs like /admin, /delivery, /owner are served automatically by Cloudflare Pages.
 # Only custom aliases (like /poster -> /qr-standee.html) belong here to avoid 307 redirect loops.
 /poster         /qr-standee.html        200
+/rider-qr       /rider-qr-standee.html  200
+/rider-apk      /rider-qr-standee.html  200

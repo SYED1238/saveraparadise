@@ -67,7 +67,9 @@ function r2DevMiddlewarePlugin() {
           '/privacy': '/privacy.html',
           '/refund': '/refund.html',
           '/shipping': '/shipping.html',
-          '/poster': '/qr-standee.html'
+          '/poster': '/qr-standee.html',
+          '/rider-qr': '/rider-qr-standee.html',
+          '/rider-apk': '/rider-qr-standee.html'
         };
         const normalized = url.replace(/\/+$/, '') || '/';
         if (cleanUrlMap[normalized]) {

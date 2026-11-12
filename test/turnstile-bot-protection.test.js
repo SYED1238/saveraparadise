@@ -133,11 +133,16 @@ test('CLOUDFLARE TURNSTILE INVISIBLE BOT PROTECTION SUITE', async (t) => {
     assert.ok(indexHtml.includes('id="turnstile-checkout-widget"'), 'Includes turnstile widget container element');
   });
 
-  await t.test('10. Velocity-Based Verification: Fast lane permits 1st & 2nd order without token', async () => {
+  await t.test('10. Velocity-Based Verification: Fast lane permits 1st order in <60s without token and hides widget by default', async () => {
+    const indexHtml = fs.readFileSync(path.resolve('index.html'), 'utf8');
+    const mainJs = fs.readFileSync(path.resolve('main.js'), 'utf8');
+    assert.match(indexHtml, /id="turnstile-checkout-widget"[^>]*display:\s*none/, 'Turnstile widget container is hidden by default');
+    assert.match(mainJs, /function isTurnstileChallengeRequired/, 'main.js gates Turnstile widget behind isTurnstileChallengeRequired');
+
     const testIp = '198.51.100.42';
     const testPhone = '9876543299';
 
-    // Order 1 (Fast Lane)
+    // Order 1 (Fast Lane - no Turnstile token required)
     const { req: req1, res: res1 } = createMockReqRes({
       headers: { 'x-forwarded-for': testIp },
       body: {
@@ -147,8 +152,13 @@ test('CLOUDFLARE TURNSTILE INVISIBLE BOT PROTECTION SUITE', async (t) => {
     });
     await checkoutHandler(req1, res1);
     assert.equal(res1.statusCode, 200, 'Order 1 passes fast lane with 200 OK without token');
+  });
 
-    // Order 2 (Fast Lane)
+  await t.test('11. Velocity-Based Verification: 2nd or more orders in <60s triggers Turnstile challenge', async () => {
+    const testIp = '198.51.100.42';
+    const testPhone = '9876543299';
+
+    // Order 2 without token -> Blocked by Velocity Engine (2+ orders in 1 min)
     const { req: req2, res: res2 } = createMockReqRes({
       headers: { 'x-forwarded-for': testIp },
       body: {
@@ -157,27 +167,11 @@ test('CLOUDFLARE TURNSTILE INVISIBLE BOT PROTECTION SUITE', async (t) => {
       }
     });
     await checkoutHandler(req2, res2);
-    assert.equal(res2.statusCode, 200, 'Order 2 passes fast lane with 200 OK without token');
-  });
+    assert.equal(res2.statusCode, 403, 'Order 2 in <60s without token is rejected with 403 Forbidden');
+    assert.equal(res2.bodyData?.challengeRequired, true, 'Flags challengeRequired: true when 2+ orders placed in <60s');
 
-  await t.test('11. Velocity-Based Verification: 3rd order in <60s triggers Turnstile challenge', async () => {
-    const testIp = '198.51.100.42';
-    const testPhone = '9876543299';
-
-    // Order 3 without token -> Blocked by Velocity Engine
-    const { req: req3, res: res3 } = createMockReqRes({
-      headers: { 'x-forwarded-for': testIp },
-      body: {
-        items: [{ id: 'dish-chicken-biryani-half', name: 'Chicken Biryani (Half)', quantity: 1, price: 130 }],
-        customerPhone: testPhone
-      }
-    });
-    await checkoutHandler(req3, res3);
-    assert.equal(res3.statusCode, 403, 'Order 3 without token is rejected with 403 Forbidden');
-    assert.equal(res3.bodyData?.challengeRequired, true, 'Flags challengeRequired: true for rapid order burst');
-
-    // Order 3 with valid token -> Human verified, passes successfully!
-    const { req: req3Verified, res: res3Verified } = createMockReqRes({
+    // Order 2 with valid token -> Human verified, passes successfully!
+    const { req: req2Verified, res: res2Verified } = createMockReqRes({
       headers: { 'x-forwarded-for': testIp },
       body: {
         items: [{ id: 'dish-chicken-biryani-half', name: 'Chicken Biryani (Half)', quantity: 1, price: 130 }],
@@ -185,8 +179,8 @@ test('CLOUDFLARE TURNSTILE INVISIBLE BOT PROTECTION SUITE', async (t) => {
         turnstileToken: 'valid-test-client-token'
       }
     });
-    await checkoutHandler(req3Verified, res3Verified);
-    assert.equal(res3Verified.statusCode, 200, 'Order 3 with valid Turnstile token passes with 200 OK');
+    await checkoutHandler(req2Verified, res2Verified);
+    assert.equal(res2Verified.statusCode, 200, 'Order 2 with valid Turnstile token passes with 200 OK');
   });
 
 });

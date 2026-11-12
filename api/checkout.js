@@ -189,8 +189,8 @@ export default async function handler(req, res) {
     ? String(rawPhone).replace(/\D/g, '').slice(-10)
     : '';
 
-  // Adaptive Velocity: Allow 2 fast orders per 60s without token.
-  // Trigger Turnstile verification requirement on 3rd rapid order within 60s.
+  // Adaptive Velocity: Allow 1st order per 60s without token.
+  // Trigger Turnstile verification requirement when 2 or more orders are placed within 60s.
   const isTestLocalhost = isTestEnv && (clientIp === '127.0.0.1' || clientIp === '');
   const ipVelocity = isTestLocalhost ? { allowedWithoutToken: true } : checkOrderVelocity('ip:' + (clientIp || 'unknown'));
   const phoneVelocity = (isTestLocalhost || !phoneDigits) ? { allowedWithoutToken: true } : checkOrderVelocity('phone:' + phoneDigits);
@@ -206,7 +206,7 @@ export default async function handler(req, res) {
     }
   } else if (isRapidOrderBurst) {
     return res.status(403).json({
-      error: 'Rapid orders detected (3+ orders in under a minute). Please complete the Cloudflare security verification challenge.',
+      error: 'Rapid orders detected (2+ orders in under a minute). Please complete the Cloudflare security verification challenge.',
       challengeRequired: true,
       botBlocked: true
     });

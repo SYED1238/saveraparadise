@@ -183,4 +183,14 @@ describe('STORE HOURS & DELIVERY ACCORDION DROPDOWNS SUITE', () => {
     assert.ok(adminJs.includes("Scheduled Closed (Opens"), 'admin.js must show Scheduled Closed with opening time');
     assert.ok(adminJs.includes("dataService.isStoreOpen"), 'admin.js must check dataService.isStoreOpen');
   });
+
+  it('16. main.js hides top closed banner timer and shows Open from X to Y hours while keeping hero status pill countdown', () => {
+    const mainJsPath = fs.existsSync(path.resolve('main.js')) ? path.resolve('main.js') : path.resolve('savera-cloudflare-migration/main.js');
+    const mainJs = fs.readFileSync(mainJsPath, 'utf8');
+
+    assert.ok(mainJs.includes('const hoursRangeText = `Open from ${openTimeStr} to ${closeTimeStr}`;'), 'Storefront top closed banner must display configured openTime to closeTime from settings');
+    assert.ok(mainJs.includes('showBannerTimer: false') && mainJs.includes('if (closedInfo.showBannerTimer)'), 'Top closed banner countdown box must stay hidden when closed');
+    assert.ok(mainJs.includes('hasTimer = remainingSeconds > 0'), 'Live countdown ticker must remain enabled for the hero status pill');
+    assert.ok(mainJs.includes('Reopens in <strong>${humanStr}</strong>'), 'Hero status pill must keep live closed countdown timer');
+  });
 });

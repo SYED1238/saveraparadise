@@ -120,11 +120,11 @@ export async function verifyTurnstileToken(token, clientIp = '', customSecret = 
 
 // ==========================================
 // ADAPTIVE ORDER VELOCITY TRACKER (SMART RATE LIMITING)
-// Fast lane for normal customers (orders 1 & 2 in 60s).
-// Triggers Turnstile verification on 3rd rapid order within 60s.
+// Fast lane for normal customers (1st order in 60s).
+// Triggers Turnstile verification when 2 or more orders are placed within 60s.
 // ==========================================
 const RECENT_ORDERS_WINDOW_MS = 60 * 1000;
-const MAX_FAST_ORDERS_PER_WINDOW = 2;
+const MAX_FAST_ORDERS_PER_WINDOW = 1;
 const velocityHistory = new Map();
 
 export function checkOrderVelocity(identifier) {

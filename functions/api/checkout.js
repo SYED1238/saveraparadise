@@ -169,8 +169,8 @@ export async function onRequest(context) {
       ? String(rawPhone).replace(/\D/g, '').slice(-10)
       : '';
 
-    // Adaptive Velocity: Allow 2 fast orders per 60s without token.
-    // Trigger Turnstile verification requirement on 3rd rapid order within 60s.
+    // Adaptive Velocity: Allow 1st order per 60s without token.
+    // Trigger Turnstile verification requirement when 2 or more orders are placed within 60s.
     const isTestLocalhost = isTestEnv && (clientIp === '127.0.0.1' || clientIp === '');
     const ipVelocity = isTestLocalhost ? { allowedWithoutToken: true } : checkOrderVelocity('ip:' + (clientIp || 'unknown'));
     const phoneVelocity = (isTestLocalhost || !phoneDigits) ? { allowedWithoutToken: true } : checkOrderVelocity('phone:' + phoneDigits);
@@ -186,7 +186,7 @@ export async function onRequest(context) {
       }
     } else if (isRapidOrderBurst) {
       return jsonResponse({
-        error: 'Rapid orders detected (3+ orders in under a minute). Please complete the Cloudflare security verification challenge.',
+        error: 'Rapid orders detected (2+ orders in under a minute). Please complete the Cloudflare security verification challenge.',
         challengeRequired: true,
         botBlocked: true
       }, 403, Object.fromEntries(corsHeaders.entries()));
@@ -244,103 +244,6 @@ export async function onRequest(context) {
         }
       }
       Object.assign(storeSettings, DEFAULT_SETTINGS_FALLBACK);
-    }
-
-    // Authoritative Kitchen Availability Verification
-    if (!allowTestOverrides) {
-      if (storeSettings.storeOpen === false) {
-        const reason = storeSettings.storeClosedReason || 'The restaurant is currently closed for orders.';
-        return jsonResponse({
-          error: 'Store Closed',
-          message: reason,
-          storeClosed: true
-        }, 400, Object.fromEntries(corsHeaders.entries()));
-      }
-
-      // Validate operating hours schedule against IST
-      const parseTimeToMinutes = (str, defaultMins) => {
-        if (!str) return defaultMins;
-        const m = String(str).match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
-        if (!m) return defaultMins;
-        let h = parseInt(m[1], 10);
-        const min = parseInt(m[2] || '0', 10);
-        const mod = (m[3] || '').toUpperCase();
-        if (mod === 'PM' && h < 12) h += 12;
-        if (mod === 'AM' && h === 12) h = 0;
-        return h * 60 + min;
-      };
-
-      const openStr = (storeSettings.openTime || '11:00 AM').trim();
-      const closeStr = (storeSettings.closeTime || '11:00 PM').trim();
-      const openMinutes = parseTimeToMinutes(openStr, 660);
-      const closeMinutes = parseTimeToMinutes(closeStr, 1380);
-
-      // Convert current time to Asia/Kolkata (UTC+5:30)
-      const istDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-      const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
-
-      let isClockOpen = true;
-      if (openMinutes < closeMinutes) {
-        isClockOpen = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
-      } else if (openMinutes > closeMinutes) {
-        isClockOpen = currentMinutes >= openMinutes || currentMinutes < closeMinutes;
-      }
-
-      if (!isClockOpen) {
-        return jsonResponse({
-          error: 'Store Closed',
-          message: `The kitchen is currently closed for orders. Operating hours are ${openStr} to ${closeStr}.`,
-          storeClosed: true,
-          scheduledClosed: true,
-          openTime: openStr,
-          closeTime: closeStr
-        }, 400, Object.fromEntries(corsHeaders.entries()));
-      }
-
-      const pauseUntil = Number(storeSettings.pauseUntil || 0);
-      if (storeSettings.isRushPaused && pauseUntil > Date.now()) {
-        const remainingMins = Math.max(1, Math.ceil((pauseUntil - Date.now()) / 60000));
-        const reason = storeSettings.pauseReason || `Orders temporarily paused due to high kitchen rush. Please try again in ${remainingMins} minute${remainingMins > 1 ? 's' : ''}.`;
-        return jsonResponse({
-          error: 'Kitchen Rush Pause',
-          message: reason,
-          rushPaused: true,
-          remainingMinutes: remainingMins
-        }, 400, Object.fromEntries(corsHeaders.entries()));
-      }
-    }
-
-
-
-
-    // Geofence Delivery Availability Validation
-    if (lat !== undefined || lng !== undefined || body?.lat !== undefined || body?.lng !== undefined) {
-      const rawLat = Number(lat ?? body?.lat);
-      const rawLng = Number(lng ?? body?.lng);
-  
-      if (!Number.isFinite(rawLat) || !Number.isFinite(rawLng) || (rawLat === 0 && rawLng === 0)) {
-        return jsonResponse({ error: 'Delivery pin coordinates are required to verify delivery distance' }, 400, Object.fromEntries(corsHeaders.entries()));
-      }
-
-    const maxRadiusKm = Number(storeSettings?.deliveryRadiusKm || storeSettings?.deliveryRadius || 7);
-
-      const REST_LAT = 12.7208891;
-      const REST_LNG = 77.2805103;
-      const R = 6371;
-      const dLat = (rawLat - REST_LAT) * (Math.PI / 180);
-      const dLng = (rawLng - REST_LNG) * (Math.PI / 180);
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(REST_LAT * (Math.PI / 180)) *
-        Math.cos(rawLat * (Math.PI / 180)) *
-        Math.sin(dLng / 2) * Math.sin(dLng / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const roadDist = Math.round(R * c * 1.55 * 10) / 10;
-      if (roadDist > maxRadiusKm) {
-        return jsonResponse({
-          error: `Address is outside our delivery area (${roadDist} km exceeds our ${maxRadiusKm} km limit)`
-        }, 400, Object.fromEntries(corsHeaders.entries()));
-      }
     }
 
     const catalogMap = new Map();
@@ -433,6 +336,100 @@ export async function onRequest(context) {
         quantity,
         total: itemTotal
       });
+    }
+
+    // Authoritative Kitchen Availability Verification
+    if (!allowTestOverrides) {
+      if (storeSettings.storeOpen === false) {
+        const reason = storeSettings.storeClosedReason || 'The restaurant is currently closed for orders.';
+        return jsonResponse({
+          error: 'Store Closed',
+          message: reason,
+          storeClosed: true
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      // Validate operating hours schedule against IST
+      const parseTimeToMinutes = (str, defaultMins) => {
+        if (!str) return defaultMins;
+        const m = String(str).match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
+        if (!m) return defaultMins;
+        let h = parseInt(m[1], 10);
+        const min = parseInt(m[2] || '0', 10);
+        const mod = (m[3] || '').toUpperCase();
+        if (mod === 'PM' && h < 12) h += 12;
+        if (mod === 'AM' && h === 12) h = 0;
+        return h * 60 + min;
+      };
+
+      const openStr = (storeSettings.openTime || '11:00 AM').trim();
+      const closeStr = (storeSettings.closeTime || '11:00 PM').trim();
+      const openMinutes = parseTimeToMinutes(openStr, 660);
+      const closeMinutes = parseTimeToMinutes(closeStr, 1380);
+
+      // Convert current time to Asia/Kolkata (UTC+5:30)
+      const istDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+
+      let isClockOpen = true;
+      if (openMinutes < closeMinutes) {
+        isClockOpen = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+      } else if (openMinutes > closeMinutes) {
+        isClockOpen = currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+      }
+
+      if (!isClockOpen) {
+        return jsonResponse({
+          error: 'Store Closed',
+          message: `The kitchen is currently closed for orders. Operating hours are ${openStr} to ${closeStr}.`,
+          storeClosed: true,
+          scheduledClosed: true,
+          openTime: openStr,
+          closeTime: closeStr
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      const pauseUntil = Number(storeSettings.pauseUntil || 0);
+      if (storeSettings.isRushPaused && pauseUntil > Date.now()) {
+        const remainingMins = Math.max(1, Math.ceil((pauseUntil - Date.now()) / 60000));
+        const reason = storeSettings.pauseReason || `Orders temporarily paused due to high kitchen rush. Please try again in ${remainingMins} minute${remainingMins > 1 ? 's' : ''}.`;
+        return jsonResponse({
+          error: 'Kitchen Rush Pause',
+          message: reason,
+          rushPaused: true,
+          remainingMinutes: remainingMins
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+    }
+
+    // Geofence Delivery Availability Validation
+    if (lat !== undefined || lng !== undefined || body?.lat !== undefined || body?.lng !== undefined) {
+      const rawLat = Number(lat ?? body?.lat);
+      const rawLng = Number(lng ?? body?.lng);
+  
+      if (!Number.isFinite(rawLat) || !Number.isFinite(rawLng) || (rawLat === 0 && rawLng === 0)) {
+        return jsonResponse({ error: 'Delivery pin coordinates are required to verify delivery distance' }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+
+    const maxRadiusKm = Number(storeSettings?.deliveryRadiusKm || storeSettings?.deliveryRadius || 7);
+
+      const REST_LAT = 12.7208891;
+      const REST_LNG = 77.2805103;
+      const R = 6371;
+      const dLat = (rawLat - REST_LAT) * (Math.PI / 180);
+      const dLng = (rawLng - REST_LNG) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(REST_LAT * (Math.PI / 180)) *
+        Math.cos(rawLat * (Math.PI / 180)) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const roadDist = Math.round(R * c * 1.55 * 10) / 10;
+      if (roadDist > maxRadiusKm) {
+        return jsonResponse({
+          error: `Address is outside our delivery area (${roadDist} km exceeds our ${maxRadiusKm} km limit)`
+        }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
     }
 
     const minOrderValue = typeof storeSettings?.minOrderValue === 'number'

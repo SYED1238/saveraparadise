@@ -37,7 +37,9 @@ const ROUTES = {
 
 // Clean URL Aliases for Static Assets (Cloudflare Workers Static Assets does not evaluate _redirects)
 const CUSTOM_REWRITES = {
-  '/poster': '/qr-standee.html'
+  '/poster': '/qr-standee.html',
+  '/rider-qr': '/rider-qr-standee.html',
+  '/rider-apk': '/rider-qr-standee.html'
 };
 
 export default {

@@ -2,6 +2,8 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/poster", "destination": "/qr-standee.html" },
+    { "source": "/rider-qr", "destination": "/rider-qr-standee.html" },
+    { "source": "/rider-apk", "destination": "/rider-qr-standee.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/delivery", "destination": "/delivery.html" },
     { "source": "/owner", "destination": "/owner.html" },

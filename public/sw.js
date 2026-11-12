@@ -93,10 +93,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Avoid caching Supabase REST, live APIs, Cloudflare storage, or tokens
+  // Avoid caching Supabase REST, live APIs, Cloudflare storage, APK binaries, or tokens
   if (url.origin.includes('supabase.co') || 
       url.origin.includes('cloudflarestorage.com') || 
       url.pathname.startsWith('/api/') ||
+      url.pathname.startsWith('/apk/') ||
       url.searchParams.has('tracking_token') ||
       url.searchParams.has('access_token')) {
     return;

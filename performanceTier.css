@@ -66,9 +66,41 @@ html.perf-tier-lite .fly-container {
 
 /* 5. Simplified flat box shadows (prevents multiple Gaussian blur filter passes on shadow layers) */
 html.perf-tier-lite .dish-card,
-html.perf-tier-lite .category-pill,
+html.perf-tier-lite .category-pill:not(.cuisine-circle-item),
 html.perf-tier-lite .btn-primary {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 6. Tier-invariant Category scrolling & kinetic floating plates (identical across Low, Mid & High) */
+html.perf-tier-lite .category-pills-wrap,
+html.perf-tier-balanced .category-pills-wrap,
+html.perf-tier-ultra .category-pills-wrap,
+html.perf-tier-lite .cat-viewall-scroll,
+html.perf-tier-balanced .cat-viewall-scroll,
+html.perf-tier-ultra .cat-viewall-scroll {
+  -webkit-overflow-scrolling: touch !important;
+  scroll-behavior: smooth !important;
+}
+
+html.perf-tier-lite .category-pill.cuisine-circle-item,
+html.perf-tier-lite .category-pill.cuisine-circle-item.active,
+html.perf-tier-balanced .category-pill.cuisine-circle-item,
+html.perf-tier-balanced .category-pill.cuisine-circle-item.active,
+html.perf-tier-ultra .category-pill.cuisine-circle-item,
+html.perf-tier-ultra .category-pill.cuisine-circle-item.active {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+html.perf-tier-lite .cuisine-circle-img,
+html.perf-tier-balanced .cuisine-circle-img,
+html.perf-tier-ultra .cuisine-circle-img,
+html.perf-tier-lite .cat-viewall-img,
+html.perf-tier-balanced .cat-viewall-img,
+html.perf-tier-ultra .cat-viewall-img {
+  transform-origin: 50% 50% !important;
+  will-change: transform !important;
 }
 
 /* ==========================================================================
