@@ -15,6 +15,9 @@
   <link rel="stylesheet" href="/delivery.css">
   <link rel="stylesheet" href="/passcodeLock.css">
 
+  <!-- Cashfree JS SDK v3 -->
+  <script src="https://sdk.cashfree.com/js/v3/cashfree.js" defer></script>
+
   <!-- PWA & Mobile Web App Meta -->
   <link rel="manifest" href="/manifest-delivery.json">
   <link rel="icon" type="image/x-icon" href="/favicon-rider.ico">
@@ -486,7 +489,13 @@
             </div>
             <div class="upi-qr-info">
               <span class="upi-scan-hint"><i class="fa-solid fa-qrcode"></i> Ask customer to scan with PhonePe, GPay, or Paytm</span>
-              <strong class="upi-vpa-text" id="doorstep-vpa-display">saveraparadise@okhdfcbank</strong>
+              <strong class="upi-vpa-text" id="doorstep-vpa-display">Cashfree Verified Merchant (Savera Paradise)</strong>
+              <div class="upi-live-status-pill" id="doorstep-upi-live-status" style="margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700; color: #059669;">
+                <i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Listening for live payment...
+              </div>
+              <button type="button" class="btn-open-cashfree-checkout" id="btn-open-cashfree-checkout" style="margin-top: 8px; width: 100%; padding: 10px 14px; background: #0F172A; color: #FFF; border: none; border-radius: 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+                <i class="fa-solid fa-expand"></i> Open Full Cashfree Scanner
+              </button>
               <div class="upi-security-note">
                 <i class="fa-solid fa-shield-halved"></i> Money deposits directly to Restaurant Bank Account. Rider Cash Liability remains <strong>₹0</strong>.
               </div>

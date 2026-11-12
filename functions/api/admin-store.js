@@ -8,7 +8,17 @@
  * Strictly prevents unauthenticated (anon) clients from modifying dishes, categories, or settings.
  */
 import { verifyAdminToken } from './_auth.js';
+import { invalidateOrderActionMemoryCache } from './order-action.js';
 import { hydrateEnv, jsonResponse, isOriginAllowed } from './_adapter.js';
+
+const RIDERS_CACHE_TTL_MS = 30000;
+let ridersListCache = null;
+let ridersListCachedAt = 0;
+
+export function invalidateRidersListCache() {
+  ridersListCache = null;
+  ridersListCachedAt = 0;
+}
 
 const ALLOWED_DISH_FIELDS = [
   'id', 'name', 'category', 'category_name', 'price', 'original_price',
@@ -361,12 +371,18 @@ export async function onRequest(context) {
       }
 
       case 'list_riders': {
+        const now = Date.now();
+        if (ridersListCache && (now - ridersListCachedAt < RIDERS_CACHE_TTL_MS)) {
+          return jsonResponse({ success: true, riders: ridersListCache }, 200, Object.fromEntries(corsHeaders.entries()));
+        }
         const { data, error } = await sb
           .from('riders')
           .select('*')
           .order('created_at', { ascending: true });
         if (error) throw error;
-        return jsonResponse({ success: true, riders: data || [] }, 200, Object.fromEntries(corsHeaders.entries()));
+        ridersListCache = data || [];
+        ridersListCachedAt = now;
+        return jsonResponse({ success: true, riders: ridersListCache }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       case 'save_rider': {
@@ -480,6 +496,7 @@ export async function onRequest(context) {
           cashHandoverAmount: sanitizedRider.cash_handover_amount,
           cashHandoverRequestedAt: sanitizedRider.cash_handover_requested_at
         };
+        invalidateRidersListCache();
         return jsonResponse({ success: true, rider: returnRider }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
@@ -490,6 +507,7 @@ export async function onRequest(context) {
         }
         const { error } = await sb.from('riders').delete().eq('pin', pin);
         if (error) throw error;
+        invalidateRidersListCache();
         return jsonResponse({ success: true, pin }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
@@ -501,6 +519,7 @@ export async function onRequest(context) {
         }
         const { data, error } = await sb.from('riders').update({ status }).eq('pin', pin).select();
         if (error) throw error;
+        invalidateRidersListCache();
         return jsonResponse({ success: true, rider: data && data.length > 0 ? data[0] : null }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
@@ -515,6 +534,7 @@ export async function onRequest(context) {
             cancellation_reason: 'Cleared by restaurant owner'
           }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
         }
+        invalidateOrderActionMemoryCache();
         return jsonResponse({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 

@@ -34,16 +34,42 @@ const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
 const STORE_SETTINGS_CACHE_TTL_MS = 60000;
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
+const SYNC_ORDERS_CACHE_TTL_MS = 5000;
 
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
 let kitchenPollStoreSettingsCache = null;
 let kitchenPollStoreSettingsCachedAt = 0;
 let lastActiveOrderSeenAt = 0;
+let syncOrdersCache = null;
+let syncOrdersCachedAt = 0;
+let syncOrdersCachedLimit = 0;
 
-function invalidateKitchenPollCache() {
+export function invalidateKitchenPollCache() {
   kitchenPollCachedAt = 0;
   kitchenPollCache = null;
+  syncOrdersCachedAt = 0;
+  syncOrdersCache = null;
+  syncOrdersCachedLimit = 0;
+}
+
+function filterOrdersForRider(orders, riderPin) {
+  const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending'];
+  return (orders || [])
+    .filter(o => {
+      if (!o) return false;
+      const assigned = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+      if (assigned) {
+        return Boolean(riderPin && assigned === riderPin);
+      }
+      return claimableStatuses.includes(o.status);
+    })
+    .map(o => {
+      const copy = { ...o };
+      delete copy.tracking_token;
+      delete copy.trackingToken;
+      return copy;
+    });
 }
 
 function parseOrderCreatedAtMs(val) {
@@ -813,55 +839,40 @@ export default async function handler(req, res) {
         return res.status(200).json(kitchenPollCache);
       }
 
-      // 1. Authenticated Staff Sync (Admin, Delivery, Owner)
+      // 1. Authenticated Staff Sync (Admin, Delivery, Owner — 5s Shared In-Memory Cache)
       case 'sync_orders': {
         const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
         if (!auth || !auth.valid) {
           return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff session required' });
         }
         const limit = Math.min(Number(body.limit) || 250, 500);
+        const now = Date.now();
+
+        let sourceOrders = null;
+        if (syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
+          sourceOrders = syncOrdersCache.slice(0, limit);
+        } else {
+          const fetchLimit = Math.max(limit, 250);
+          const { data, error } = await sb
+            .from('orders')
+            .select('*')
+            .neq('status', 'pending_payment')
+            .order('created_at', { ascending: false })
+            .limit(fetchLimit);
+          if (error) throw error;
+          syncOrdersCache = data || [];
+          syncOrdersCachedAt = now;
+          syncOrdersCachedLimit = fetchLimit;
+          updateActiveOrderTracker(syncOrdersCache, now);
+          sourceOrders = syncOrdersCache.slice(0, limit);
+        }
 
         if (auth.payload?.role === 'rider') {
           const riderPin = String(auth.payload.riderPin || '').trim();
-          let query = sb.from('orders').select('*');
-          if (riderPin) {
-            query = query.or(`assigned_rider_pin.eq.${riderPin},assigned_rider_pin.is.null,assigned_rider_pin.eq.''`);
-          } else {
-            query = query.or('assigned_rider_pin.is.null,assigned_rider_pin.eq.\'\'');
-          }
-          const { data, error } = await query
-            .order('created_at', { ascending: false })
-            .limit(limit);
-          if (error) throw error;
-
-          const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending'];
-          const filteredOrders = (data || [])
-            .filter(o => {
-              if (!o) return false;
-              const assigned = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
-              if (assigned) {
-                return Boolean(riderPin && assigned === riderPin);
-              }
-              return claimableStatuses.includes(o.status);
-            })
-            .map(o => {
-              const copy = { ...o };
-              delete copy.tracking_token;
-              delete copy.trackingToken;
-              return copy;
-            });
-
-          return res.status(200).json({ success: true, orders: filteredOrders });
+          return res.status(200).json({ success: true, orders: filterOrdersForRider(sourceOrders, riderPin) });
         }
 
-        const { data, error } = await sb
-          .from('orders')
-          .select('*')
-          .neq('status', 'pending_payment')
-          .order('created_at', { ascending: false })
-          .limit(limit);
-        if (error) throw error;
-        return res.status(200).json({ success: true, orders: data || [] });
+        return res.status(200).json({ success: true, orders: sourceOrders });
       }
 
       // 2. Verified Guest Customer Order Tracking (Requires Order ID + Tracking Token)
@@ -1090,6 +1101,7 @@ export default async function handler(req, res) {
               });
               if (!rpcErr && rpcRes && typeof rpcRes.ok === 'boolean') {
                 if (rpcRes.ok) {
+                  invalidateKitchenPollCache();
                   return res.status(200).json({ success: true, order: rpcRes.order });
                 }
                 return res.status(Number(rpcRes.http_status) || 409).json({
@@ -1311,6 +1323,7 @@ export default async function handler(req, res) {
               });
               if (!rpcErr && rpcRes && typeof rpcRes.ok === 'boolean') {
                 if (rpcRes.ok) {
+                  invalidateKitchenPollCache();
                   return res.status(200).json({ success: true, order: rpcRes.order });
                 }
                 return res.status(Number(rpcRes.http_status) || 409).json({

@@ -402,10 +402,11 @@ export async function generateDoorstepUpiQr({
       success: true,
       orderId: cleanId,
       amount: cleanAmount,
-      merchantVpa,
+      merchantVpa: 'Cashfree Official QR (Savera Paradise)',
       upiIntentUri,
       cfOrderId: pgRes.cfOrderId,
       paymentSessionId: pgRes.paymentSessionId,
+      cashfreeMode: cfg.isProd ? 'production' : 'sandbox',
       expiresAt: Date.now() + (expiryMinutes * 60 * 1000)
     };
   } catch {

@@ -185,6 +185,10 @@ const initDeliveryApp = () => {
   const doorstepQrLoader = document.getElementById('doorstep-qr-loader');
   const doorstepVpaDisplay = document.getElementById('doorstep-vpa-display');
   const checkUpiVerified = document.getElementById('check-upi-verified');
+  const btnOpenCashfreeCheckout = document.getElementById('btn-open-cashfree-checkout');
+  const doorstepUpiLiveStatus = document.getElementById('doorstep-upi-live-status');
+  let currentDoorstepCashfreeSession = null;
+  let doorstepPollTimer = null;
 
   // Cash Summary Modal Elements
   const modalCashBackdrop = document.getElementById('modal-cash-summary-backdrop');
@@ -726,16 +730,17 @@ const initDeliveryApp = () => {
   }
 
   // Auto refresh GPS fix on tab visibility resume (e.g. returning from Google Maps)
+  // Uses force=false so the 4s client throttle in dataService deduplicates simultaneous visibilitychange + focus events
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && isStaffSessionActive('rider')) {
       initRiderLiveGeolocation(true);
-      try { dataService.syncOrdersFromSupabase(true); } catch {}
+      try { dataService.syncOrdersFromSupabase(false); } catch {}
     }
   });
   window.addEventListener('focus', () => {
     if (isStaffSessionActive('rider')) {
       initRiderLiveGeolocation(true);
-      try { dataService.syncOrdersFromSupabase(true); } catch {}
+      try { dataService.syncOrdersFromSupabase(false); } catch {}
     }
   });
 
@@ -2030,6 +2035,7 @@ const initDeliveryApp = () => {
         generateAndShowDoorstepQr(activeConfirmOrder);
       }
     } else {
+      stopDoorstepPaymentPolling();
       if (btnDoorstepModeCash) btnDoorstepModeCash.classList.add('active');
       if (btnDoorstepModeUpi) btnDoorstepModeUpi.classList.remove('active');
       if (confirmCashBox) confirmCashBox.style.display = 'block';
@@ -2039,12 +2045,74 @@ const initDeliveryApp = () => {
     }
   }
 
+  function stopDoorstepPaymentPolling() {
+    if (doorstepPollTimer) {
+      clearInterval(doorstepPollTimer);
+      doorstepPollTimer = null;
+    }
+  }
+
+  function startDoorstepPaymentPolling(cfOrderId, orderId) {
+    stopDoorstepPaymentPolling();
+    if (!cfOrderId) return;
+    const pollStart = Date.now();
+    doorstepPollTimer = setInterval(async () => {
+      if (!activeConfirmOrder || currentDoorstepPaymentMode !== 'upi') {
+        stopDoorstepPaymentPolling();
+        return;
+      }
+      if (Date.now() - pollStart > 180000) {
+        stopDoorstepPaymentPolling();
+        return;
+      }
+      await verifyDoorstepPaymentStatus(cfOrderId, orderId, false);
+    }, 3500);
+  }
+
+  async function verifyDoorstepPaymentStatus(cfOrderId, orderId, announce = false) {
+    if (!cfOrderId) return;
+    try {
+      const resp = await fetch('/api/cashfree-create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify_payment',
+          cfOrderId: cfOrderId,
+          orderId: orderId
+        })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.success && data.paid) {
+        stopDoorstepPaymentPolling();
+        if (checkUpiVerified) {
+          checkUpiVerified.checked = true;
+        }
+        if (doorstepUpiLiveStatus) {
+          doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-check" style="color: #10B981;"></i> Payment Confirmed by Cashfree!';
+          doorstepUpiLiveStatus.style.color = '#065F46';
+        }
+        if (doorstepUpiAmountBadge) {
+          doorstepUpiAmountBadge.textContent = '✓ Paid';
+          doorstepUpiAmountBadge.style.background = '#D1FAE5';
+          doorstepUpiAmountBadge.style.color = '#065F46';
+        }
+        showToast('🎉 Cashfree verified customer payment! You can now tap Mark Order Delivered.', 'success');
+      } else if (announce) {
+        showToast('⏳ Cashfree has not received payment yet. Customer can scan the QR code above to pay.', 'info');
+      }
+    } catch {}
+  }
+
   async function generateAndShowDoorstepQr(order) {
     if (!DOORSTEP_UPI_ENABLED || !order) return;
     const cash = extractCashAmount(order.total);
     if (doorstepUpiAmountBadge) doorstepUpiAmountBadge.textContent = `₹${cash}`;
     if (doorstepQrLoader) doorstepQrLoader.style.display = 'flex';
     if (doorstepQrImg) doorstepQrImg.style.display = 'none';
+    if (doorstepUpiLiveStatus) {
+      doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Listening for live payment...';
+      doorstepUpiLiveStatus.style.color = '#059669';
+    }
 
     try {
       const riderToken = typeof sessionStorage !== 'undefined'
@@ -2063,14 +2131,18 @@ const initDeliveryApp = () => {
         })
       });
       const data = await resp.json();
-      if (data && data.success && data.qrDataUrl) {
-        if (doorstepQrImg) {
+      if (data && data.success) {
+        currentDoorstepCashfreeSession = data;
+        if (data.qrDataUrl && doorstepQrImg) {
           doorstepQrImg.src = data.qrDataUrl;
           doorstepQrImg.style.display = 'block';
         }
         if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
-        if (doorstepVpaDisplay && data.merchantVpa) {
-          doorstepVpaDisplay.textContent = data.merchantVpa;
+        if (doorstepVpaDisplay) {
+          doorstepVpaDisplay.textContent = data.merchantVpa || 'Cashfree Official QR (Savera Paradise)';
+        }
+        if (data.cfOrderId) {
+          startDoorstepPaymentPolling(data.cfOrderId, order.id);
         }
         return;
       }
@@ -2078,7 +2150,7 @@ const initDeliveryApp = () => {
     } catch {
       // Local In-Browser Fallback: Generate native Indian UPI intent QR locally (zero 3rd-party data leakage)
       const storeSettings = (typeof dataService !== 'undefined' && typeof dataService.getSettings === 'function') ? dataService.getSettings() : {};
-      const merchantVpa = storeSettings.restaurantUpiVpa || storeSettings.upiVpa || 'saveraparadise@okhdfcbank';
+      const merchantVpa = storeSettings.restaurantUpiVpa || storeSettings.upiVpa || 'Cashfree Official QR (Savera Paradise)';
       const cleanId = String(order.id).replace(/\D/g, '').slice(-4) || '101';
       const formattedAm = Number(cash).toFixed(2);
       const safeTr = 'QB' + cleanId.replace(/[^a-zA-Z0-9]/g, '');
@@ -2101,6 +2173,34 @@ const initDeliveryApp = () => {
     }
   }
 
+  if (btnOpenCashfreeCheckout) {
+    btnOpenCashfreeCheckout.addEventListener('click', async () => {
+      if (!currentDoorstepCashfreeSession?.paymentSessionId) {
+        showToast('⏳ Cashfree session is initializing. Customer can scan the QR code directly.', 'info');
+        return;
+      }
+      const CashfreeFn = (typeof window !== 'undefined' && window.Cashfree) ? window.Cashfree : null;
+      if (!CashfreeFn) {
+        showToast('⚠️ Cashfree SDK is loading. Customer can scan the QR code directly above.', 'warning');
+        return;
+      }
+      try {
+        const cashfree = CashfreeFn({ mode: currentDoorstepCashfreeSession.cashfreeMode || 'production' });
+        const cfResult = await cashfree.checkout({
+          paymentSessionId: currentDoorstepCashfreeSession.paymentSessionId,
+          redirectTarget: '_modal'
+        });
+        if (cfResult && cfResult.error) {
+          showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed.'}`, 'warning');
+        } else {
+          await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, activeConfirmOrder?.id, true);
+        }
+      } catch (err) {
+        console.warn('[Rider Cashfree]: modal error:', err);
+      }
+    });
+  }
+
   if (btnDoorstepModeCash) {
     btnDoorstepModeCash.addEventListener('click', () => setDoorstepPaymentMode('cash'));
   }
@@ -2116,6 +2216,7 @@ const initDeliveryApp = () => {
   }
 
   function closeConfirmModal() {
+    stopDoorstepPaymentPolling();
     modalConfirmBackdrop.classList.remove('open');
     activeConfirmOrder = null;
     backNav.removeStep('modal-delivery-confirm');
@@ -2681,7 +2782,7 @@ const initDeliveryApp = () => {
     try {
       await Promise.allSettled([
         dataService.syncRidersFromSupabase(),
-        dataService.syncOrdersFromSupabase(true)
+        dataService.syncOrdersFromSupabase(false)
       ]);
     } catch {}
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
@@ -2811,7 +2912,7 @@ const initDeliveryApp = () => {
     try {
       await Promise.allSettled([
         dataService.syncRidersFromSupabase(),
-        dataService.syncOrdersFromSupabase(true)
+        dataService.syncOrdersFromSupabase(false)
       ]);
     } catch {}
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };

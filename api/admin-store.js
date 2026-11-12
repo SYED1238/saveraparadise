@@ -3,7 +3,17 @@
  * POST /api/admin-store
  */
 import { verifyAdminToken } from './_auth.js';
+import { invalidateKitchenPollCache } from './order-action.js';
 import { createClient } from '@supabase/supabase-js';
+
+const RIDERS_CACHE_TTL_MS = 30000;
+let ridersListCache = null;
+let ridersListCachedAt = 0;
+
+export function invalidateRidersListCache() {
+  ridersListCache = null;
+  ridersListCachedAt = 0;
+}
 
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
@@ -353,12 +363,18 @@ export default async function handler(req, res) {
       }
 
       case 'list_riders': {
+        const now = Date.now();
+        if (ridersListCache && (now - ridersListCachedAt < RIDERS_CACHE_TTL_MS)) {
+          return res.status(200).json({ success: true, riders: ridersListCache });
+        }
         const { data, error } = await sb
           .from('riders')
           .select('*')
           .order('created_at', { ascending: true });
         if (error) throw error;
-        return res.status(200).json({ success: true, riders: data || [] });
+        ridersListCache = data || [];
+        ridersListCachedAt = now;
+        return res.status(200).json({ success: true, riders: ridersListCache });
       }
 
       case 'save_rider': {
@@ -472,6 +488,7 @@ export default async function handler(req, res) {
           cashHandoverAmount: sanitizedRider.cash_handover_amount,
           cashHandoverRequestedAt: sanitizedRider.cash_handover_requested_at
         };
+        invalidateRidersListCache();
         return res.status(200).json({ success: true, rider: returnRider });
       }
 
@@ -482,6 +499,7 @@ export default async function handler(req, res) {
         }
         const { error } = await sb.from('riders').delete().eq('pin', pin);
         if (error) throw error;
+        invalidateRidersListCache();
         return res.status(200).json({ success: true, pin });
       }
 
@@ -493,6 +511,7 @@ export default async function handler(req, res) {
         }
         const { data, error } = await sb.from('riders').update({ status }).eq('pin', pin).select();
         if (error) throw error;
+        invalidateRidersListCache();
         return res.status(200).json({ success: true, rider: data && data.length > 0 ? data[0] : null });
       }
 
@@ -507,6 +526,7 @@ export default async function handler(req, res) {
             cancellation_reason: 'Cleared by restaurant owner'
           }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
         }
+        invalidateKitchenPollCache();
         return res.status(200).json({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 });
       }
 
