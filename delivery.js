@@ -620,8 +620,9 @@ const initDeliveryApp = () => {
     // Broadcast live rider location for customer map tracking sync
     try {
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
-      const activeOrders = dataService.getOrders().filter(o => 
-        o.status === 'on_the_way' && (o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin)
+      const activeOrders = dataService.getOrders().filter(o =>
+        (o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o)) &&
+        (o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin)
       );
       if (activeOrders.length === 0) return;
       const orderIds = activeOrders.map(o => o.id);
@@ -749,9 +750,27 @@ const initDeliveryApp = () => {
     const activeRows = document.querySelectorAll('.rider-order-row.row-active');
     activeRows.forEach(row => {
       try {
+        const cleanId = row.getAttribute('data-cleanid');
+        const stage = row.getAttribute('data-stage');
+        if (stage === 'going_to_restaurant') {
+          const distToRest = calculateDistanceKm(
+            riderLiveLocation.lat,
+            riderLiveLocation.lng,
+            RESTAURANT_COORDINATES.lat,
+            RESTAURANT_COORDINATES.lng
+          );
+          const distEl = document.getElementById(`dist-badge-${cleanId}`);
+          if (distEl) {
+            distEl.innerHTML = `<i class="fa-solid fa-store"></i> ${distToRest} km to restaurant`;
+          }
+          const navBtn = document.getElementById(`btn-nav-${cleanId}`);
+          if (navBtn) {
+            navBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(RESTAURANT_COORDINATES.lat)},${encodeURIComponent(RESTAURANT_COORDINATES.lng)}&travelmode=driving&dir_action=navigate`;
+          }
+          return;
+        }
         const dropLat = parseFloat(row.getAttribute('data-droplat'));
         const dropLng = parseFloat(row.getAttribute('data-droplng'));
-        const cleanId = row.getAttribute('data-cleanid');
         if (!isNaN(dropLat) && !isNaN(dropLng)) {
           const d = calculateDistanceKm(riderLiveLocation.lat, riderLiveLocation.lng, dropLat, dropLng);
           const distEl = document.getElementById(`dist-badge-${cleanId}`);
@@ -885,12 +904,28 @@ const initDeliveryApp = () => {
     return Number.isFinite(distMeters) && distMeters <= MAX_RESTAURANT_PICKUP_RADIUS_METERS;
   }
 
-  function getRiderCurrentActiveOrder() {
+  function getRiderActiveOrdersList() {
+    const currentRider = dataService.getActiveRider();
+    if (!currentRider || !currentRider.pin) return [];
+    const pin = String(currentRider.pin).trim();
+    return dataService.getOrders().filter(o => {
+      if (!o || String(o.assignedRiderPin || '').trim() !== pin) return false;
+      return o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o);
+    });
+  }
+
+  function getRiderCurrentActiveOrder(excludeOrderId = null) {
     const currentRider = dataService.getActiveRider();
     if (!currentRider || !currentRider.pin) return null;
-    return dataService.getOrders().find(
-      o => o && o.status === 'on_the_way' && String(o.assignedRiderPin || '').trim() === String(currentRider.pin).trim()
-    ) || null;
+    const cleanExclude = excludeOrderId ? String(excludeOrderId).trim().replace(/^#/, '') : '';
+    const maxOrders = dataService.getRiderMaxActiveOrders(currentRider.pin);
+    const activeList = getRiderActiveOrdersList().filter(
+      o => !cleanExclude || String(o.id || '').trim().replace(/^#/, '') !== cleanExclude
+    );
+    const otwOrder = activeList.find(o => o.status === 'on_the_way');
+    if (otwOrder) return otwOrder;
+    if (activeList.length >= maxOrders) return activeList[0];
+    return null;
   }
 
   function updatePickupGpsGateUI() {
@@ -899,26 +934,26 @@ const initDeliveryApp = () => {
     const gateBtnLabel = document.getElementById('btn-sync-live-gps-label');
     if (!gateBar || !gateText) return;
 
+    const currentRider = dataService.getActiveRider();
+    const maxOrders = dataService.getRiderMaxActiveOrders(currentRider?.pin);
+
     const gpsReady = isRiderGpsSyncedAndFresh();
     if (!gpsReady) {
       gateBar.className = 'pickup-gps-gate-bar gps-required';
-      gateText.textContent = '📍 Location Required to Pick Order — Turn on device location and tap "Turn On & Sync GPS" (must be within 3 km of restaurant).';
+      gateText.textContent = '📍 Turn on Live GPS to accept orders & share your live route with customers.';
       if (gateBtnLabel) gateBtnLabel.textContent = 'Turn On & Sync GPS';
       return;
     }
 
     const distMeters = getRiderDistanceFromRestaurantMeters();
+    const distLabel = Number.isFinite(distMeters)
+      ? (distMeters >= 1000 ? `${(distMeters / 1000).toFixed(2)} km` : `${distMeters}m`)
+      : 'synced';
     const withinZone = Number.isFinite(distMeters) && distMeters <= MAX_RESTAURANT_PICKUP_RADIUS_METERS;
-    if (!withinZone) {
-      gateBar.className = 'pickup-gps-gate-bar gps-out-of-zone';
-      gateText.textContent = `🚫 Outside 3 km Pickup Zone (${(distMeters / 1000).toFixed(2)} km from Savera Paradise) — Move within 3.0 km of the restaurant to pick an order.`;
-      if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
-      return;
-    }
-
-    const distLabel = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(2)} km` : `${distMeters}m`;
     gateBar.className = 'pickup-gps-gate-bar gps-synced';
-    gateText.textContent = `✅ Live GPS Synced (${distLabel} from restaurant • Within 3 km zone) — Ready to pick 1 order!`;
+    gateText.textContent = withinZone
+      ? `✅ Live GPS Synced (${distLabel} from restaurant • Limit: ${maxOrders} order${maxOrders > 1 ? 's' : ''}) — Ready to accept & pick up!`
+      : `✅ Live GPS Synced (${distLabel} from restaurant • Limit: ${maxOrders} order${maxOrders > 1 ? 's' : ''}) — Accept an order & ride to Savera Paradise!`;
     if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
   }
 
@@ -1048,17 +1083,21 @@ const initDeliveryApp = () => {
     // readyForPickup: Only orders packed and waiting on kitchen counter
     // active: Out for delivery tasks assigned to this specific rider or awaiting fleet claim
     // delivered: Delivered orders completed by this specific rider
-    const readyOrders = orders.filter(o => 
-      (o.status === 'ready_for_pickup' || o.status === 'cooking' || o.status === 'accepted' || o.status === 'pending') &&
-      (!o.assignedRiderPin || o.assignedRiderPin === currentRider.pin)
-    );
-    const readyForPickupOrders = orders.filter(o => 
+    const readyOrders = orders.filter(o => {
+      const assignedPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      if (assignedPin) return false;
+      return (o.status === 'ready_for_pickup' || o.status === 'cooking' || o.status === 'accepted' || o.status === 'pending');
+    });
+    const readyForPickupOrders = orders.filter(o =>
       o.status === 'ready_for_pickup' &&
-      (!o.assignedRiderPin || o.assignedRiderPin === currentRider.pin)
+      !String(o.assignedRiderPin || o.assigned_rider_pin || '').trim()
     );
     const activeOrders = orders.filter(o => {
-      if (o.status !== 'on_the_way') return false;
-      return o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin;
+      const assignedPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      if (o.status === 'on_the_way') {
+        return assignedPin === currentRider.pin || !assignedPin;
+      }
+      return assignedPin === currentRider.pin && dataService.isOrderGoingToRestaurant(o);
     });
     const shiftStartMs = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
     const deliveredOrders = orders.filter(o => {
@@ -1218,6 +1257,7 @@ const initDeliveryApp = () => {
           prepBadgeHtml = '<span class="row-prep-badge status-cooking">🍳 Cooking in Kitchen</span>';
         }
 
+        const maxRiderOrders = dataService.getRiderMaxActiveOrders(currentRider?.pin);
         let actionHtml = '';
         if (!isReady) {
           actionHtml = `
@@ -1231,27 +1271,18 @@ const initDeliveryApp = () => {
         } else if (existingActiveOrder) {
           actionHtml = `
             <div class="row-kitchen-action">
-              <button type="button" class="btn-row-pickup btn-row-pickup-locked" data-action="start-delivery" data-id="${safeId}" title="Complete your current active order before picking another">
+              <button type="button" class="btn-row-pickup btn-row-pickup-locked" data-action="start-delivery" data-id="${safeId}" title="Complete or deliver your active order(s) before accepting another">
                 <i class="fa-solid fa-lock"></i>
-                <span>1 Order Limit (Active: ${escapeHtml(existingActiveOrder.id)})</span>
-              </button>
-            </div>
-          `;
-        } else if (gpsReady && !within3KmZone) {
-          actionHtml = `
-            <div class="row-kitchen-action">
-              <button type="button" class="btn-row-pickup btn-row-pickup-out-of-range" data-action="start-delivery" data-id="${safeId}" title="Move within 3 km of Savera Paradise to pick this order">
-                <i class="fa-solid fa-location-pin-lock"></i>
-                <span>Outside 3 km Zone (${(distFromRestMeters / 1000).toFixed(1)} km away)</span>
+                <span>Limit ${maxRiderOrders} Order${maxRiderOrders > 1 ? 's' : ''} (Active: ${escapeHtml(existingActiveOrder.id)})</span>
               </button>
             </div>
           `;
         } else {
           actionHtml = `
             <div class="row-kitchen-action">
-              <button type="button" class="btn-row-pickup ${!gpsReady ? 'needs-gps-sync' : ''}" data-action="start-delivery" data-id="${safeId}" title="${gpsReady ? 'Preview Route & Pick Up Order' : 'Tap to Sync Live GPS & Pick Up Order'}">
+              <button type="button" class="btn-row-pickup ${!gpsReady ? 'needs-gps-sync' : ''}" data-action="start-delivery" data-id="${safeId}" title="${gpsReady ? 'Preview Route & Accept Order to Go to Restaurant' : 'Tap to Sync Live GPS & Accept Order'}">
                 <i class="fa-solid ${gpsReady ? 'fa-motorcycle' : 'fa-location-crosshairs'}"></i>
-                <span>${gpsReady ? 'Pick Up Order' : 'Sync GPS & Pick Order'}</span>
+                <span>${gpsReady ? 'Accept & Go to Restaurant' : 'Sync GPS & Accept Order'}</span>
               </button>
             </div>
           `;
@@ -1394,6 +1425,78 @@ const initDeliveryApp = () => {
           ? `<span class="parcel-step-pill"><i class="fa-solid fa-box"></i> Parcel ${orderIdx + 1} of ${displayList.length}</span>`
           : '';
 
+        const orderPayout = dataService.calculateOrderPayout(order, deliveredOrders.length + 1 + orderIdx, payoutCfg);
+
+        // Stage 1: Rider accepted order and is heading to Savera Paradise to pick up parcel
+        if (dataService.isOrderGoingToRestaurant(order)) {
+          const restDistKm = (riderLiveLocation.lat && riderLiveLocation.lng)
+            ? calculateDistanceKm(riderLiveLocation.lat, riderLiveLocation.lng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng)
+            : 1.5;
+          const restEtaMins = Math.max(3, Math.round((Number(restDistKm) || 1.5) * 3.5));
+          const restNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(RESTAURANT_COORDINATES.lat)},${encodeURIComponent(RESTAURANT_COORDINATES.lng)}&travelmode=driving&dir_action=navigate`;
+
+          return `
+            <article class="rider-order-row row-active row-going-to-restaurant" data-order-id="${safeId}" data-stage="going_to_restaurant" data-droplat="${dropLat}" data-droplng="${dropLng}" data-hascustomercoords="${dropCoords.hasCustomerCoords}" data-dropaddr="${safeDropAddress}" data-cleanid="${cleanId}">
+              <div class="row-top-bar">
+                <div class="row-id-meta-group">
+                  <span class="row-order-id active">${displayId}</span>
+                  ${parcelBadge}
+                  <span class="row-bag-badge"><i class="fa-solid fa-box"></i> Bag <strong>#${bagCode}</strong></span>
+                  <span class="row-live-dist" id="dist-badge-${cleanId}" title="Rider live GPS distance to Savera Paradise">
+                    <i class="fa-solid fa-store"></i> ${restDistKm} km to restaurant
+                  </span>
+                </div>
+                <div class="row-finance-badges">
+                  <div class="row-price-badge ${isCod ? 'cod' : 'prepaid'}">
+                    <span class="price-badge-label">${isCod ? 'Cash on Delivery' : 'Paid Online'}</span>
+                    <strong class="price-badge-val">${isCod ? `₹${cashAmount}` : '₹0'}</strong>
+                  </div>
+                  <div class="row-payout-badge" title="${escapeHtml(orderPayout.formula)}">
+                    <span class="payout-badge-label">Your Payout</span>
+                    <strong class="payout-badge-val">₹${orderPayout.amount.toFixed(2)}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row-going-store-banner" style="background:#FFF7ED; border:1px solid #FDBA74; border-radius:10px; padding:10px 12px; margin:8px 0; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                <div>
+                  <div style="font-weight:700; color:#9A3412; font-size:0.92rem;">🏪 Heading to Restaurant to Pick Up Parcel</div>
+                  <div style="font-size:0.8rem; color:#7C2D12; margin-top:2px;">Savera Paradise Restaurant • ~${restEtaMins} mins ride to counter • Live GPS shared with customer</div>
+                </div>
+              </div>
+
+              <div class="row-customer-info">
+                <div class="row-customer-name-bar">
+                  <h4 class="row-customer-name">Drop: ${safeCustomerName}</h4>
+                </div>
+                <div class="row-addr-text" style="display:flex; align-items:flex-start; gap:8px;">
+                  <i class="fa-solid fa-location-dot" style="color: var(--brand-primary, #FF5A26); margin-top: 3px;"></i>
+                  <span>${safeDropAddress}</span>
+                </div>
+                <div class="row-payout-calc-strip">
+                  <span class="payout-calc-icon">🏍️</span>
+                  <span class="payout-calc-text"><strong>Payout: ₹${orderPayout.amount.toFixed(2)}</strong> (Trip: ${orderPayout.distanceKm.toFixed(2)} km • ${escapeHtml(orderPayout.formula)})</span>
+                </div>
+              </div>
+
+              <div class="row-actions-group">
+                <div class="row-actions-comms">
+                  <a href="${restNavUrl}" id="btn-nav-${cleanId}" target="_blank" rel="noopener noreferrer" class="btn-action-pill btn-action-nav" title="Navigate to Savera Paradise Restaurant" aria-label="Navigate to Restaurant" style="display:inline-flex; align-items:center; gap:6px; padding:10px 14px; text-decoration:none;">
+                    <i class="fa-solid fa-route"></i>
+                    <span>Navigate to Restaurant</span>
+                  </a>
+                </div>
+                <div class="row-actions-resolution">
+                  <button type="button" class="btn-action-pill btn-action-deliver" data-action="pickup-parcel" data-id="${safeId}" title="Tap once you collect food bag #${bagCode} from Savera Paradise counter">
+                    <i class="fa-solid fa-bag-shopping" style="margin-right: 6px; pointer-events: none;"></i>
+                    <span style="pointer-events: none;">Pick Up Parcel (Bag #${bagCode})</span>
+                  </button>
+                </div>
+              </div>
+            </article>
+          `;
+        }
+
         const cnrKey = `quickbite_cnr_start_${cleanId}`;
         const cnrStartTime = localStorage.getItem(cnrKey);
         let isWaiting = false;
@@ -1406,8 +1509,6 @@ const initDeliveryApp = () => {
           const s = remSecs % 60;
           formattedTimer = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
         }
-
-        const orderPayout = dataService.calculateOrderPayout(order, deliveredOrders.length + 1 + orderIdx, payoutCfg);
 
         return `
           <article class="rider-order-row row-active" data-order-id="${safeId}" data-droplat="${dropLat}" data-droplng="${dropLng}" data-hascustomercoords="${dropCoords.hasCustomerCoords}" data-dropaddr="${safeDropAddress}" data-cleanid="${cleanId}">
@@ -1631,7 +1732,7 @@ const initDeliveryApp = () => {
   // STATUS TRANSITION ACTIONS
   // ========================================================
 
-  // Rider picks up food & starts delivery
+  // Stage 1: Rider accepts order (from any location) & heads to Savera Paradise
   function handleStartDelivery(orderId) {
     if (!orderId) return;
     const cleanId = String(orderId).trim().replace(/^#/, '');
@@ -1643,40 +1744,96 @@ const initDeliveryApp = () => {
       return;
     }
 
-    // Gate 1: Order must be ready for pickup
+    // Gate 1: Order must be ready for pickup and not already accepted by another rider
     if (order.status !== 'ready_for_pickup') {
-      showToast(`⏳ Order ${order.id} is still being prepared in the kitchen. You can pick it once marked Ready for Pickup.`, 'warning');
+      showToast(`⏳ Order ${order.id} is still being prepared in the kitchen. You can accept it once marked Ready for Pickup.`, 'warning');
+      return;
+    }
+    const currentRider = dataService.getActiveRider() || { pin: '0000' };
+    if (order.assignedRiderPin && String(order.assignedRiderPin).trim() !== String(currentRider.pin || '').trim()) {
+      showToast(`⚠️ Order ${order.id} was already accepted by ${order.assignedRiderName || 'another rider'}.`, 'warning');
+      renderPortal();
       return;
     }
 
-    // Gate 2: Single Active Order Limit ("can pick only one")
-    const existingActive = getRiderCurrentActiveOrder();
-    if (existingActive && String(existingActive.id || '').trim().replace(/^#/, '') !== cleanId) {
-      showToast(`⚠️ You can only pick 1 order at a time! Please complete your active delivery (${existingActive.id}) before picking another order.`, 'warning');
+    // Gate 2: Per-rider active order limit (Owner-configurable 1-4)
+    const existingActive = getRiderCurrentActiveOrder(order.id);
+    if (existingActive) {
+      const maxOrders = dataService.getRiderMaxActiveOrders(currentRider?.pin);
+      showToast(`⚠️ Active Order Limit (${maxOrders}): Complete or deliver ${existingActive.id} before accepting another order.`, 'warning');
       return;
     }
 
     const code = order.pickupCode || String(order.id).replace(/\D/g, '').slice(-4) || cleanId.slice(-4);
-    const verifyZoneAndOpenModal = () => {
-      const distFromRestMeters = getRiderDistanceFromRestaurantMeters();
-      if (!Number.isFinite(distFromRestMeters) || distFromRestMeters > MAX_RESTAURANT_PICKUP_RADIUS_METERS) {
-        const kmAway = Number.isFinite(distFromRestMeters) ? (distFromRestMeters / 1000).toFixed(2) : 'unknown';
-        showToast(`📍 Pickup Geofence: You are ${kmAway} km away from Savera Paradise. You can only pick an order when within a 3 km radius of the restaurant.`, 'error');
-        updatePickupGpsGateUI();
-        renderPortal();
-        return;
-      }
-      openBagPreviewModal(order, code);
-    };
 
-    // Gate 3: Mandatory Live GPS Location Turn-On & Sync before picking
+    // Gate 3: Mandatory Live GPS Location Turn-On & Sync before accepting (works from any distance)
     if (!isRiderGpsSyncedAndFresh()) {
-      requestLiveGpsSyncForPickup(verifyZoneAndOpenModal);
+      requestLiveGpsSyncForPickup(() => openBagPreviewModal(order, code));
       return;
     }
 
-    // Gate 4: 3 km Restaurant Pickup Radius Geofence
-    verifyZoneAndOpenModal();
+    openBagPreviewModal(order, code);
+  }
+
+  // Stage 2: Rider arrives at Savera Paradise counter and picks up the parcel
+  function handleConfirmParcelPickup(orderId) {
+    if (!orderId) return;
+    const cleanId = String(orderId).trim().replace(/^#/, '');
+    const allOrders = dataService.getOrders();
+    const order = dataService.getOrderById(orderId) ||
+      allOrders.find(o => o && String(o.id || '').trim().replace(/^#/, '') === cleanId);
+    if (!order) {
+      showToast('❌ Order details not found.', 'error');
+      return;
+    }
+    if (order.status === 'on_the_way') {
+      showToast(`🛵 Order ${order.id} is already picked up and on the way!`, 'info');
+      renderPortal();
+      return;
+    }
+
+    if (!isRiderGpsSyncedAndFresh()) {
+      requestLiveGpsSyncForPickup(() => handleConfirmParcelPickup(orderId));
+      return;
+    }
+
+    if (!isRiderWithinRestaurantPickupRadius()) {
+      const distMeters = getRiderDistanceFromRestaurantMeters();
+      const kmAway = Number.isFinite(distMeters) ? (distMeters / 1000).toFixed(2) : 'unknown';
+      showToast(`📍 Arrive at Restaurant to Pick Up Parcel: You are ${kmAway} km away from Savera Paradise (must be within 3 km).`, 'error');
+      updatePickupGpsGateUI();
+      renderPortal();
+      return;
+    }
+
+    const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
+    const code = order.pickupCode || String(order.id).replace(/\D/g, '').slice(-4) || cleanId.slice(-4);
+    const res = dataService.confirmOrderParcelPickup(order.id, currentRider.pin, {
+      code,
+      riderLat: riderLiveLocation.lat,
+      riderLng: riderLiveLocation.lng
+    });
+
+    if (res.success) {
+      renderPortal();
+      showToast(`🚀 Parcel #${code} picked up! Now delivering ${order.id} to ${order.customerName || 'customer'}.`, 'success');
+      playNotificationSound('rider_new_task');
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      try {
+        dataService.broadcastRiderLocation({
+          orderId: order.id,
+          riderPin: currentRider.pin,
+          riderName: currentRider.name,
+          lat: riderLiveLocation.lat,
+          lng: riderLiveLocation.lng,
+          accuracy: riderLiveLocation.accuracy,
+          timestamp: Date.now()
+        });
+      } catch {}
+    } else {
+      showToast(`❌ ${res.message || 'Cannot pick up parcel ' + order.id}`, 'error');
+      renderPortal();
+    }
   }
 
   // Open confirmation modal for delivery & cash collection
@@ -1949,6 +2106,13 @@ const initDeliveryApp = () => {
         e.preventDefault();
         const id = unreachableBtn.getAttribute('data-id');
         openUnreachableModal(id);
+        return;
+      }
+      const pickupBtn = e.target.closest('[data-action="pickup-parcel"]');
+      if (pickupBtn) {
+        e.preventDefault();
+        const id = pickupBtn.getAttribute('data-id');
+        handleConfirmParcelPickup(id);
         return;
       }
       const startBtn = e.target.closest('[data-action="start-delivery"]');
@@ -2900,9 +3064,9 @@ const initDeliveryApp = () => {
     const cleanId = normalizeId(orderId);
     const order = payload.order || allOrders.find(o => normalizeId(o.id) === cleanId);
 
-    // If order has already been claimed (on_the_way) or delivered, NEVER regress or alert as ready!
+    // If order has already been accepted/claimed (assignedRiderPin/on_the_way) or delivered, NEVER re-alert as ready!
     const currentOrder = allOrders.find(o => normalizeId(o.id) === cleanId);
-    if (currentOrder && (currentOrder.status === 'on_the_way' || currentOrder.status === 'delivered')) {
+    if (currentOrder && (currentOrder.status === 'on_the_way' || currentOrder.status === 'delivered' || String(currentOrder.assignedRiderPin || '').trim())) {
       renderPortal();
       return;
     }
@@ -3128,6 +3292,16 @@ const initDeliveryApp = () => {
         return;
       }
 
+      // Stage 2: If order is already accepted by this rider (Going to Restaurant), bag scan confirms parcel pickup!
+      if (order && dataService.isOrderGoingToRestaurant(order) && (!order.assignedRiderPin || order.assignedRiderPin === currentRider.pin)) {
+        if (inputBagCode) inputBagCode.value = '';
+        activeTab = 'active';
+        persistRiderTab('active');
+        updateActiveTabUI();
+        handleConfirmParcelPickup(order.id);
+        return;
+      }
+
       // 4. Open Route & Distance Preview Modal - Rider reviews route details and presses "Accept"
       openBagPreviewModal(order, code);
     } finally {
@@ -3217,6 +3391,9 @@ const initDeliveryApp = () => {
     if (previewPaymentPill) previewPaymentPill.textContent = paymentText;
     if (previewPayoutPill) previewPayoutPill.textContent = `+₹${payout.amount.toFixed(2)}`;
     if (previewPayoutFormula) previewPayoutFormula.textContent = payout.formula || 'Base pay + distance';
+    if (btnConfirmBagClaim) {
+      btnConfirmBagClaim.innerHTML = '<i class="fa-solid fa-motorcycle"></i> <span>Accept & Go to Restaurant</span>';
+    }
 
     if (modalBagPreviewBackdrop) {
       modalBagPreviewBackdrop.classList.add('open');
@@ -3260,36 +3437,28 @@ const initDeliveryApp = () => {
       const order = pendingClaimOrder;
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
 
-      // Re-verify Single-Order Limit, Live GPS Sync, and 3 km Pickup Radius before claiming
-      const existingActive = getRiderCurrentActiveOrder();
-      if (existingActive && String(existingActive.id || '').trim().replace(/^#/, '') !== String(order.id || '').trim().replace(/^#/, '')) {
+      // Re-verify Per-Rider Active Order Limit and Live GPS Sync before accepting (Stage 1)
+      const existingActive = getRiderCurrentActiveOrder(order.id);
+      if (existingActive) {
+        const maxOrders = dataService.getRiderMaxActiveOrders(currentRider.pin);
         closeBagPreviewModal();
-        showToast(`⚠️ You can only pick 1 order at a time! Complete active order ${existingActive.id} first.`, 'warning');
+        showToast(`⚠️ Active Order Limit (${maxOrders}): Complete or deliver ${existingActive.id} before accepting another order.`, 'warning');
         renderPortal();
         return;
       }
 
       if (!isRiderGpsSyncedAndFresh()) {
         closeBagPreviewModal();
-        showToast('⚠️ Location Required: Please turn on and sync your Live GPS Location to pick an order.', 'error');
+        showToast('⚠️ Location Required: Please turn on and sync your Live GPS Location to accept an order.', 'error');
         requestLiveGpsSyncForPickup();
-        return;
-      }
-
-      const distFromRestMeters = getRiderDistanceFromRestaurantMeters();
-      if (!Number.isFinite(distFromRestMeters) || distFromRestMeters > MAX_RESTAURANT_PICKUP_RADIUS_METERS) {
-        closeBagPreviewModal();
-        const kmAway = Number.isFinite(distFromRestMeters) ? (distFromRestMeters / 1000).toFixed(2) : 'unknown';
-        showToast(`⚠️ Pickup Blocked: You are ${kmAway} km from the restaurant (outside the 3 km pickup zone).`, 'error');
-        updatePickupGpsGateUI();
-        renderPortal();
         return;
       }
 
       closeBagPreviewModal();
 
-      // Execute atomic claim in dataService with explicit orderId and synced GPS coordinates
-      const res = dataService.claimOrderByBagCode(code, currentRider.pin, order.id, {
+      // Execute Stage 1 atomic assignment (Going to Restaurant — allowed from any location)
+      const res = dataService.assignOrderToRider(order.id, currentRider.pin, {
+        code,
         riderLat: riderLiveLocation.lat,
         riderLng: riderLiveLocation.lng
       });
@@ -3302,11 +3471,11 @@ const initDeliveryApp = () => {
         updateActiveTabUI();
         renderPortal();
 
-        showToast(`🚀 Order ${order.id} (Bag #${code}) picked! Head to Savera Paradise Counter 1 & deliver.`, 'success');
+        showToast(`🏪 Order ${order.id} (Bag #${code}) accepted! Head to Savera Paradise to pick up your parcel.`, 'success');
         playNotificationSound('rider_new_task');
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 
-        // Immediately broadcast synced live rider location
+        // Immediately broadcast synced live rider location so customer sees rider heading to restaurant
         try {
           dataService.broadcastRiderLocation({
             orderId: order.id,
@@ -3319,7 +3488,7 @@ const initDeliveryApp = () => {
           });
         } catch {}
       } else {
-        showToast(`❌ ${res.message || 'Cannot pick order ' + order.id}`, 'error');
+        showToast(`❌ ${res.message || 'Cannot accept order ' + order.id}`, 'error');
         renderPortal();
       }
     });
@@ -3329,20 +3498,23 @@ const initDeliveryApp = () => {
     const container = document.getElementById('parcel-ready-chips-container');
     if (!container) return;
 
+    const currentRider = dataService.getActiveRider();
+    const maxOrders = dataService.getRiderMaxActiveOrders(currentRider?.pin);
+    const activeCount = getRiderActiveOrdersList().length;
     const existingActive = getRiderCurrentActiveOrder();
     if (existingActive) {
       container.innerHTML = `
         <div class="kitchen-waiting-notice active">
           <div class="kitchen-waiting-badge">
             <i class="fa-solid fa-lock"></i>
-            <span>1</span>
+            <span>${activeCount}/${maxOrders}</span>
           </div>
           <div class="kitchen-waiting-content">
             <div class="kitchen-waiting-title">
-              <strong>Active Delivery In Progress (${escapeHtml(existingActive.id)})</strong>
+              <strong>Active Order Limit Reached (${escapeHtml(existingActive.id)})</strong>
             </div>
             <div class="kitchen-waiting-sub">
-              You can view all orders, distances, and payouts below, but only 1 order can be picked at a time. Complete ${escapeHtml(existingActive.id)} in the Active tab to unlock picking.
+              Your limit is ${maxOrders} active order${maxOrders > 1 ? 's' : ''} at a time. Complete ${escapeHtml(existingActive.id)} in the Active tab to unlock accepting more.
             </div>
           </div>
         </div>

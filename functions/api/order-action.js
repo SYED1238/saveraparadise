@@ -78,7 +78,7 @@ export async function onRequest(context) {
   }
 
   // 1. Role Gate: Enforce authentication for staff-restricted actions
-  if (['sync_orders', 'update_status', 'claim_order', 'request_cash_handover'].includes(action)) {
+  if (['sync_orders', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
     const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
     if (!auth || !auth.valid) {
       return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -279,7 +279,7 @@ export async function onRequest(context) {
       return jsonResponse(sample, 200, pollHeaders);
     }
 
-    if (isTestEnv && ['sync_orders', 'update_status', 'claim_order', 'request_cash_handover'].includes(action)) {
+    if (isTestEnv && ['sync_orders', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
       const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
         return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -416,6 +416,92 @@ export async function onRequest(context) {
         return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
+      if (action === 'assign_order') {
+        const { orderId } = body;
+        if (!orderId) {
+          return jsonResponse({ error: 'orderId is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return jsonResponse({ error: 'Invalid orderId format' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
+        if (!existing) {
+          return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const isRider = auth.payload?.role === 'rider';
+        const effectivePin = isRider
+          ? String(auth.payload?.riderPin || '').trim()
+          : (body.riderPin ? String(body.riderPin).trim() : null);
+
+        if (isRider && !effectivePin) {
+          return jsonResponse({ error: 'Unauthorized: Rider session missing authenticated identity' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const existingPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
+        if (existingPin && existingPin !== effectivePin) {
+          return jsonResponse({
+            error: 'Order is already accepted by another rider',
+            claimedBy: existing.assigned_rider_name || existing.assignedRiderName || null
+          }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (['delivered', 'undelivered', 'cancelled', 'on_the_way'].includes(existing.status)) {
+          return jsonResponse({
+            error: `Order cannot be accepted in status: ${existing.status}`
+          }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const isAlreadyAssignedToSameRider = Boolean(effectivePin && existingPin === effectivePin);
+        const maxAllowed = Math.max(1, Math.min(5, Number(body.maxActiveOrders) || 1));
+        if (!isAlreadyAssignedToSameRider && effectivePin) {
+          const riderActive = testOrders.filter(o => {
+            if (!o) return false;
+            if (String(o.id).replace(/^#/, '') === cleanId) return false;
+            const oPin = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+            if (oPin !== effectivePin) return false;
+            return ['on_the_way', 'ready_for_pickup', 'cooking', 'accepted'].includes(o.status);
+          });
+          const otwOrder = riderActive.find(o => o.status === 'on_the_way');
+          if (otwOrder) {
+            return jsonResponse({
+              error: `Rider already has an active order (${otwOrder.id}) on the way. Complete current delivery before accepting another order.`,
+              code: 'ACTIVE_ORDER_LIMIT'
+            }, 409, Object.fromEntries(corsHeaders.entries()));
+          }
+          if (riderActive.length >= maxAllowed) {
+            return jsonResponse({
+              error: `Rider has reached the active order limit (${maxAllowed}). Pick up & deliver existing order(s) first.`,
+              code: 'ACTIVE_ORDER_LIMIT'
+            }, 409, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
+
+        if (body.simulateConcurrentClaim) {
+          return jsonResponse({
+            error: 'Order is already accepted by another rider'
+          }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const mergedDetails = {
+          ...(existing.address_details || existing.addressDetails || {}),
+          riderPickupStage: 'going_to_restaurant',
+          riderAssignedAt: Date.now()
+        };
+        const updated = {
+          ...existing,
+          status: existing.status,
+          status_label: 'Rider Going to Restaurant',
+          eta: body.eta || existing.eta || 'Heading to Restaurant',
+          assigned_rider_pin: effectivePin || null,
+          assigned_rider_name: body.riderName ? String(body.riderName).trim() : null,
+          assigned_rider_phone: body.riderPhone ? String(body.riderPhone).trim() : null,
+          assigned_rider_vehicle: body.riderVehicle ? String(body.riderVehicle).trim() : 'Bike',
+          address_details: mergedDetails
+        };
+        return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
       if (action === 'claim_order') {
         const { orderId } = body;
         if (!orderId) {
@@ -440,7 +526,7 @@ export async function onRequest(context) {
         }
 
         const existingPin = String(existing.assigned_rider_pin || existing.assignedRiderPin || '').trim();
-        const isRetryBySameRider = Boolean(effectivePin && existingPin === effectivePin);
+        const isAlreadyPickedUpBySameRider = Boolean(effectivePin && existingPin === effectivePin && existing.status === 'on_the_way');
 
         if (isRider) {
           if (existingPin && existingPin !== effectivePin) {
@@ -449,12 +535,12 @@ export async function onRequest(context) {
               claimedBy: existing.assigned_rider_name || existing.assignedRiderName || null
             }, 409, Object.fromEntries(corsHeaders.entries()));
           }
-          if (!isRetryBySameRider && existing.status !== 'ready_for_pickup') {
+          if (!isAlreadyPickedUpBySameRider && existing.status !== 'ready_for_pickup') {
             return jsonResponse({
               error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
             }, 400, Object.fromEntries(corsHeaders.entries()));
           }
-          if (!isRetryBySameRider && (body.riderLat !== undefined || body.riderLng !== undefined)) {
+          if (!isAlreadyPickedUpBySameRider && (body.riderLat !== undefined || body.riderLng !== undefined)) {
             const pickupDistKm = calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng);
             if (pickupDistKm === null) {
               return jsonResponse({ error: 'Invalid live GPS coordinates for pickup verification' }, 400, Object.fromEntries(corsHeaders.entries()));
@@ -466,15 +552,16 @@ export async function onRequest(context) {
               }, 403, Object.fromEntries(corsHeaders.entries()));
             }
           }
-          if (!isRetryBySameRider && body.enforceSingleActiveOrder === true) {
-            const activeOrder = testOrders.find(o => {
+          if (!isAlreadyPickedUpBySameRider && (body.enforceSingleActiveOrder === true || body.maxActiveOrders !== undefined)) {
+            const maxAllowed = Math.max(1, Math.min(5, Number(body.maxActiveOrders) || 1));
+            const activeOtwOrders = testOrders.filter(o => {
               if (!o || o.status !== 'on_the_way') return false;
               const oPin = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
               return oPin === effectivePin && String(o.id).replace(/^#/, '') !== cleanId;
             });
-            if (activeOrder) {
+            if (activeOtwOrders.length >= maxAllowed) {
               return jsonResponse({
-                error: `Rider already has an active order (${activeOrder.id}) on the way. Complete current delivery before claiming another order.`,
+                error: `Rider already has an active order (${activeOtwOrders[0].id}) on the way. Complete current delivery before claiming another order.`,
                 code: 'ACTIVE_ORDER_LIMIT'
               }, 409, Object.fromEntries(corsHeaders.entries()));
             }
@@ -487,15 +574,21 @@ export async function onRequest(context) {
           }, 409, Object.fromEntries(corsHeaders.entries()));
         }
 
+        const mergedDetails = {
+          ...(existing.address_details || existing.addressDetails || {}),
+          riderPickupStage: 'picked_up',
+          pickedUpAt: Date.now()
+        };
         const updated = {
           ...existing,
           status: 'on_the_way',
           step_index: 3,
-          status_label: 'Dispatched for Delivery',
+          status_label: 'Rider is on the Way Towards You',
           assigned_rider_pin: effectivePin || null,
           assigned_rider_name: body.riderName ? String(body.riderName).trim() : null,
           assigned_rider_phone: body.riderPhone ? String(body.riderPhone).trim() : null,
-          assigned_rider_vehicle: body.riderVehicle ? String(body.riderVehicle).trim() : 'Bike'
+          assigned_rider_vehicle: body.riderVehicle ? String(body.riderVehicle).trim() : 'Bike',
+          address_details: mergedDetails
         };
         return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
       }
@@ -774,7 +867,132 @@ export async function onRequest(context) {
         return jsonResponse({ success: true, order: updated }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
-      // 4. Delivery Rider Claim Order (Atomic & Enforced)
+      // 3b. Delivery Rider Stage 1 Accept Order (Heading to Restaurant)
+      case 'assign_order': {
+        const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+        if (!auth || !auth.valid) {
+          return jsonResponse({ error: auth?.error || 'Unauthorized: Rider or Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const isRider = auth.payload?.role === 'rider';
+        const effectivePin = isRider
+          ? String(auth.payload?.riderPin || '').trim()
+          : (body.riderPin ? String(body.riderPin).trim() : null);
+
+        if (isRider && !effectivePin) {
+          return jsonResponse({ error: 'Unauthorized: Rider session missing authenticated identity' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { orderId, riderName, riderPhone, riderVehicle } = body;
+        if (!orderId) {
+          return jsonResponse({ error: 'orderId is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return jsonResponse({ error: 'Invalid orderId format' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { data: existing, error: fetchErr } = await sb
+          .from('orders')
+          .select('id, status, step_index, eta, assigned_rider_pin, assigned_rider_name, address_details')
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+          .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+        if (!existing) {
+          return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const existingPin = String(existing.assigned_rider_pin || '').trim();
+        if (existingPin && existingPin !== effectivePin) {
+          return jsonResponse({
+            error: 'Order is already accepted by another rider',
+            claimedBy: existing.assigned_rider_name || null
+          }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (['delivered', 'undelivered', 'cancelled', 'on_the_way'].includes(existing.status)) {
+          return jsonResponse({
+            error: `Order cannot be accepted in status: ${existing.status}`
+          }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const isAlreadyAssignedToSameRider = Boolean(effectivePin && existingPin === effectivePin);
+        if (effectivePin && !isAlreadyAssignedToSameRider) {
+          let maxAllowed = Math.max(1, Math.min(5, Number(body.maxActiveOrders) || 1));
+          try {
+            const { data: riderRow, error: rErr } = await sb
+              .from('riders')
+              .select('max_active_orders')
+              .eq('pin', effectivePin)
+              .maybeSingle();
+            if (!rErr && riderRow && riderRow.max_active_orders !== undefined && riderRow.max_active_orders !== null) {
+              maxAllowed = Math.max(1, Math.min(5, Number(riderRow.max_active_orders) || 1));
+            }
+          } catch {}
+
+          const { data: riderOrders, error: roErr } = await sb
+            .from('orders')
+            .select('id, status')
+            .eq('assigned_rider_pin', effectivePin)
+            .in('status', ['on_the_way', 'ready_for_pickup', 'cooking', 'accepted']);
+          if (roErr) throw roErr;
+
+          const otherOrders = (riderOrders || []).filter(o => String(o.id).replace(/^#/, '') !== cleanId);
+          const otwOrder = otherOrders.find(o => o.status === 'on_the_way');
+          if (otwOrder) {
+            return jsonResponse({
+              error: `Rider already has an active order (${otwOrder.id}) on the way. Complete current delivery before accepting another order.`,
+              code: 'ACTIVE_ORDER_LIMIT'
+            }, 409, Object.fromEntries(corsHeaders.entries()));
+          }
+          if (otherOrders.length >= maxAllowed) {
+            return jsonResponse({
+              error: `Rider has reached the active order limit (${maxAllowed}). Complete existing order(s) first.`,
+              code: 'ACTIVE_ORDER_LIMIT'
+            }, 409, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
+
+        const mergedDetails = {
+          ...(existing.address_details || {}),
+          riderPickupStage: 'going_to_restaurant',
+          riderAssignedAt: Date.now()
+        };
+        const updatePayload = {
+          status_label: 'Rider Going to Restaurant',
+          eta: body.eta || existing.eta || 'Heading to Restaurant',
+          assigned_rider_pin: effectivePin || null,
+          assigned_rider_name: riderName ? String(riderName).trim() : null,
+          assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
+          assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
+          address_details: mergedDetails
+        };
+
+        let query = sb
+          .from('orders')
+          .update(updatePayload)
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+          .not('status', 'in', '(delivered,undelivered,cancelled,on_the_way)');
+
+        if (isRider) {
+          const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
+          query = query.or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${safePin}`);
+        }
+
+        const { data: updatedList, error: updateErr } = await query.select();
+        if (updateErr) throw updateErr;
+
+        if (!updatedList || updatedList.length === 0) {
+          return jsonResponse({
+            error: 'Order is already accepted by another rider or is no longer available'
+          }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        return jsonResponse({ success: true, order: updatedList[0] }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      // 4. Delivery Rider Claim Order (Atomic & Enforced — Stage 2 Parcel Pickup)
       case 'claim_order': {
         const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
         if (!auth || !auth.valid) {
@@ -803,7 +1021,7 @@ export async function onRequest(context) {
         // 1. Fetch current order state to verify readiness
         const { data: existing, error: fetchErr } = await sb
           .from('orders')
-          .select('id, status, assigned_rider_pin, assigned_rider_name')
+          .select('id, status, assigned_rider_pin, assigned_rider_name, address_details')
           .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
           .maybeSingle();
 
@@ -813,7 +1031,7 @@ export async function onRequest(context) {
         }
 
         const existingPin = String(existing.assigned_rider_pin || '').trim();
-        const isRetryBySameRider = Boolean(effectivePin && existingPin === effectivePin);
+        const isAlreadyPickedUpBySameRider = Boolean(effectivePin && existingPin === effectivePin && existing.status === 'on_the_way');
 
         if (isRider) {
           if (existingPin && existingPin !== effectivePin) {
@@ -823,15 +1041,15 @@ export async function onRequest(context) {
             }, 409, Object.fromEntries(corsHeaders.entries()));
           }
 
-          // Strictly require ready_for_pickup for initial claim
-          if (!isRetryBySameRider && existing.status !== 'ready_for_pickup') {
+          // Strictly require ready_for_pickup for pickup transition
+          if (!isAlreadyPickedUpBySameRider && existing.status !== 'ready_for_pickup') {
             return jsonResponse({
               error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
             }, 400, Object.fromEntries(corsHeaders.entries()));
           }
 
           // Enforce 3 km restaurant pickup radius when live coordinates are provided
-          if (!isRetryBySameRider && (body.riderLat !== undefined || body.riderLng !== undefined)) {
+          if (!isAlreadyPickedUpBySameRider && (body.riderLat !== undefined || body.riderLng !== undefined)) {
             const pickupDistKm = calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng);
             if (pickupDistKm === null) {
               return jsonResponse({ error: 'Invalid live GPS coordinates for pickup verification' }, 400, Object.fromEntries(corsHeaders.entries()));
@@ -844,18 +1062,30 @@ export async function onRequest(context) {
             }
           }
 
-          // Enforce single active order per rider when requested
-          if (!isRetryBySameRider && body.enforceSingleActiveOrder === true) {
+          // Enforce per-rider active order limit when requested
+          if (!isAlreadyPickedUpBySameRider && (body.enforceSingleActiveOrder === true || body.maxActiveOrders !== undefined)) {
+            let maxAllowed = Math.max(1, Math.min(5, Number(body.maxActiveOrders) || 1));
+            try {
+              const { data: riderRow, error: rErr } = await sb
+                .from('riders')
+                .select('max_active_orders')
+                .eq('pin', effectivePin)
+                .maybeSingle();
+              if (!rErr && riderRow && riderRow.max_active_orders !== undefined && riderRow.max_active_orders !== null) {
+                maxAllowed = Math.max(1, Math.min(5, Number(riderRow.max_active_orders) || 1));
+              }
+            } catch {}
+
             const { data: activeOrders, error: activeErr } = await sb
               .from('orders')
               .select('id')
               .eq('assigned_rider_pin', effectivePin)
-              .eq('status', 'on_the_way')
-              .limit(1);
+              .eq('status', 'on_the_way');
             if (activeErr) throw activeErr;
-            if (activeOrders && activeOrders.length > 0 && String(activeOrders[0].id).replace(/^#/, '') !== cleanId) {
+            const otherActive = (activeOrders || []).filter(o => String(o.id).replace(/^#/, '') !== cleanId);
+            if (otherActive.length >= maxAllowed) {
               return jsonResponse({
-                error: `Rider already has an active order (${activeOrders[0].id}) on the way. Complete current delivery before claiming another order.`,
+                error: `Rider already has an active order (${otherActive[0].id}) on the way. Complete current delivery before claiming another order.`,
                 code: 'ACTIVE_ORDER_LIMIT'
               }, 409, Object.fromEntries(corsHeaders.entries()));
             }
@@ -863,14 +1093,20 @@ export async function onRequest(context) {
         }
 
         // 2. Server strictly enforces order lifecycle fields
+        const mergedDetails = {
+          ...(existing.address_details || {}),
+          riderPickupStage: 'picked_up',
+          pickedUpAt: Date.now()
+        };
         const updatePayload = {
           status: 'on_the_way',
           step_index: 3,
-          status_label: 'Dispatched for Delivery',
+          status_label: 'Rider is on the Way Towards You',
           assigned_rider_pin: effectivePin || null,
           assigned_rider_name: riderName ? String(riderName).trim() : null,
           assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
-          assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike'
+          assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
+          address_details: mergedDetails
         };
 
         // 3. ATOMIC CONDITIONAL UPDATE:

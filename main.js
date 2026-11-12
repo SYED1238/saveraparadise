@@ -3572,20 +3572,41 @@ function initStorefrontApp() {
     lastRouteFetchPos = null;
   }
 
+  let trackerIsGoingToStore = false;
+
+  function isOrderRiderGoingToStore(order) {
+    if (!order || order.status === 'on_the_way' || order.status === 'delivered' || order.status === 'cancelled' || order.status === 'undelivered') {
+      return false;
+    }
+    if (typeof dataService.isOrderGoingToRestaurant === 'function') {
+      return dataService.isOrderGoingToRestaurant(order);
+    }
+    const stage = String(order.riderPickupStage || order.addressDetails?.riderPickupStage || '').trim();
+    return Boolean(order.assignedRiderPin) && stage === 'going_to_restaurant';
+  }
+
   function updateTrackerDistanceAndEta(distKm, estMins, isLiveGps = true) {
     const distBadge = document.getElementById('tracker-map-distance-badge');
     if (distBadge) {
-      distBadge.innerHTML = `<i class="fa-solid fa-route"></i> ${distKm} km away (~${estMins} mins)`;
+      distBadge.innerHTML = trackerIsGoingToStore
+        ? `<i class="fa-solid fa-store"></i> ${distKm} km to restaurant (~${estMins} mins)`
+        : `<i class="fa-solid fa-route"></i> ${distKm} km away (~${estMins} mins)`;
     }
 
     const etaTimeEl = document.getElementById('tracker-eta-time');
     if (etaTimeEl) {
-      etaTimeEl.textContent = `${estMins} - ${estMins + 4} Minutes`;
+      etaTimeEl.textContent = trackerIsGoingToStore
+        ? `Picking up parcel (~${estMins} - ${estMins + 5} mins)`
+        : `${estMins} - ${estMins + 4} Minutes`;
     }
 
     const statusText = document.getElementById('tracker-map-status-text');
     if (statusText) {
-      statusText.textContent = isLiveGps ? `Rider on the way • Live GPS` : `Rider on the way • In Transit`;
+      if (trackerIsGoingToStore) {
+        statusText.textContent = isLiveGps ? `Rider going to restaurant • Live GPS` : `Rider heading to restaurant`;
+      } else {
+        statusText.textContent = isLiveGps ? `Rider on the way • Live GPS` : `Rider on the way • In Transit`;
+      }
     }
   }
 
@@ -3626,7 +3647,12 @@ function initStorefrontApp() {
     const newLat = Number(payload.lat);
     const newLng = Number(payload.lng);
 
-    const dropCoords = trackerHomeMarker ? trackerHomeMarker.getLatLng() : { lat: 12.7275, lng: 77.2740 };
+    const restCoords = (typeof dataService.getRestaurantCoordinates === 'function')
+      ? dataService.getRestaurantCoordinates()
+      : RESTAURANT_COORDINATES;
+    const dropCoords = trackerIsGoingToStore
+      ? { lat: restCoords.lat, lng: restCoords.lng }
+      : (trackerHomeMarker ? trackerHomeMarker.getLatLng() : { lat: 12.7275, lng: 77.2740 });
 
     // Smoothly glide marker from previous coordinates to new coordinates (no jumping across blocks)
     if (lastRiderCoords && (lastRiderCoords.lat !== newLat || lastRiderCoords.lng !== newLng)) {
@@ -3646,8 +3672,18 @@ function initStorefrontApp() {
     if (!payload || !payload.lat || !payload.lng) return;
     if (!activeTrackingOrderId) return;
 
-    const isMatch = !payload.orderId || payload.orderId === activeTrackingOrderId ||
-      (Array.isArray(payload.orderIds) && payload.orderIds.includes(activeTrackingOrderId));
+    const norm = (val) => String(val || '').trim().replace(/^#/, '');
+    const cleanActive = norm(activeTrackingOrderId);
+    const activeOrder = dataService.getOrderById(activeTrackingOrderId);
+    const matchesOrder = !payload.orderId ||
+      norm(payload.orderId) === cleanActive ||
+      (Array.isArray(payload.orderIds) && payload.orderIds.some(id => norm(id) === cleanActive));
+    const matchesRider = Boolean(
+      payload.riderPin &&
+      activeOrder?.assignedRiderPin &&
+      String(payload.riderPin).trim() === String(activeOrder.assignedRiderPin).trim()
+    );
+    const isMatch = matchesOrder || matchesRider;
 
     if (isMatch) {
       if (trackerSimulationInterval) {
@@ -3688,7 +3724,11 @@ function initStorefrontApp() {
     const mapView = document.getElementById('tracker-live-map-view');
     if (!mapCard || !mapView) return;
 
-    if (order.status !== 'on_the_way') {
+    const goingToStore = isOrderRiderGoingToStore(order);
+    trackerIsGoingToStore = goingToStore;
+
+    if (order.status !== 'on_the_way' && !goingToStore) {
+      trackerIsGoingToStore = false;
       destroyTrackerLiveMap();
       return;
     }
@@ -3700,11 +3740,13 @@ function initStorefrontApp() {
     const restLat = RESTAURANT_COORDINATES.lat;
     const restLng = RESTAURANT_COORDINATES.lng;
     const dropCoords = resolveOrderCustomerCoords(order);
-    precacheNearbyMapTiles(dropCoords.lat, dropCoords.lng);
+    const routeTargetLat = goingToStore ? restLat : dropCoords.lat;
+    const routeTargetLng = goingToStore ? restLng : dropCoords.lng;
+    precacheNearbyMapTiles(routeTargetLat, routeTargetLng);
 
     const liveRider = dataService.getRiderLiveLocation(order.id, order.assignedRiderPin);
-    let riderLat = liveRider?.lat ?? (restLat + (dropCoords.lat - restLat) * 0.55);
-    let riderLng = liveRider?.lng ?? (restLng + (dropCoords.lng - restLng) * 0.55);
+    let riderLat = liveRider?.lat ?? (goingToStore ? (restLat - 0.008) : (restLat + (dropCoords.lat - restLat) * 0.55));
+    let riderLng = liveRider?.lng ?? (goingToStore ? (restLng - 0.006) : (restLng + (dropCoords.lng - restLng) * 0.55));
     lastRiderCoords = { lat: riderLat, lng: riderLng };
 
     if (trackerLiveMap) {
@@ -3724,9 +3766,9 @@ function initStorefrontApp() {
         isLiveGps: Boolean(liveRider)
       });
       setTimeout(() => {
-        if (trackerLiveMap && trackerRiderMarker && trackerHomeMarker) {
+        if (trackerLiveMap && trackerRiderMarker) {
           trackerLiveMap.invalidateSize();
-          const b = L.latLngBounds([[riderLat, riderLng], [dropCoords.lat, dropCoords.lng]]);
+          const b = L.latLngBounds([[riderLat, riderLng], [routeTargetLat, routeTargetLng]]);
           trackerLiveMap.fitBounds(b, { padding: [45, 45], maxZoom: 17 });
         }
       }, 200);
@@ -3801,7 +3843,7 @@ function initStorefrontApp() {
       trackerRiderMarker = L.marker([riderLat, riderLng], { icon: riderIcon, zIndexOffset: 1000 }).addTo(trackerLiveMap);
 
       // 3. Real Road Route Polyline (Following actual streets & turns)
-      const routeKey = `${riderLat.toFixed(4)},${riderLng.toFixed(4)}->${dropCoords.lat.toFixed(4)},${dropCoords.lng.toFixed(4)}`;
+      const routeKey = `${riderLat.toFixed(4)},${riderLng.toFixed(4)}->${routeTargetLat.toFixed(4)},${routeTargetLng.toFixed(4)}`;
       const cachedRoute = getCachedRoadRoute(routeKey);
 
       // Never draw a crude zigzag across houses before road data arrives!
@@ -3827,13 +3869,13 @@ function initStorefrontApp() {
         const estMins = Math.max(2, Math.ceil(cachedRoute.durationSeconds / 60));
         updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider));
       } else {
-        const initDistKm = calculateDistanceKm(riderLat, riderLng, dropCoords.lat, dropCoords.lng);
+        const initDistKm = calculateDistanceKm(riderLat, riderLng, routeTargetLat, routeTargetLng);
         const initMins = Math.max(3, Math.ceil(initDistKm * 3.2 + 2));
         updateTrackerDistanceAndEta(initDistKm, initMins, Boolean(liveRider));
       }
 
       // Fetch turn-by-turn road route and fade in smoothly
-      fetchRoadRoute(riderLat, riderLng, dropCoords.lat, dropCoords.lng).then(routeData => {
+      fetchRoadRoute(riderLat, riderLng, routeTargetLat, routeTargetLng).then(routeData => {
         if (!trackerLiveMap) return;
         if (trackerLoadingPill) {
           trackerLoadingPill.classList.add('is-hidden');
@@ -3853,10 +3895,10 @@ function initStorefrontApp() {
         }
       });
 
-      // Fit bounds between Rider and Delivery Location
+      // Fit bounds between Rider and current Target (Restaurant in Stage 1, Customer in Stage 2)
       const initialBounds = L.latLngBounds([
         [riderLat, riderLng],
-        [dropCoords.lat, dropCoords.lng]
+        [routeTargetLat, routeTargetLng]
       ]);
       trackerLiveMap.fitBounds(initialBounds, { padding: [45, 45], maxZoom: 17 });
 
@@ -3884,9 +3926,10 @@ function initStorefrontApp() {
         btnRecenter.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (trackerLiveMap && trackerRiderMarker && trackerHomeMarker) {
+          const targetMarker = trackerIsGoingToStore ? trackerKitchenMarker : trackerHomeMarker;
+          if (trackerLiveMap && trackerRiderMarker && targetMarker) {
             const rPos = trackerRiderMarker.getLatLng();
-            const hPos = trackerHomeMarker.getLatLng();
+            const hPos = targetMarker.getLatLng();
             const b = L.latLngBounds([
               [rPos.lat, rPos.lng],
               [hPos.lat, hPos.lng]
@@ -3898,23 +3941,25 @@ function initStorefrontApp() {
 
       // If no live rider GPS has arrived yet, simulate rider moving along actual street network
       if (!liveRider) {
-        fetchRoadRoute(restLat, restLng, dropCoords.lat, dropCoords.lng).then(fullRoute => {
+        const simOriginLat = goingToStore ? riderLat : restLat;
+        const simOriginLng = goingToStore ? riderLng : restLng;
+        fetchRoadRoute(simOriginLat, simOriginLng, routeTargetLat, routeTargetLng).then(fullRoute => {
           if (!fullRoute || !fullRoute.coords || fullRoute.coords.length < 2) return;
           const roadPts = fullRoute.coords;
-          let currentIdx = Math.max(1, Math.floor(roadPts.length * 0.45));
+          let currentIdx = Math.max(1, Math.floor(roadPts.length * (goingToStore ? 0.15 : 0.45)));
 
           trackerSimulationInterval = setInterval(() => {
             if (!trackerLiveMap || activeTrackingOrderId !== order.id) return;
             currentIdx++;
             if (currentIdx >= roadPts.length - 1) {
-              currentIdx = Math.max(1, Math.floor(roadPts.length * 0.45));
+              currentIdx = Math.max(1, Math.floor(roadPts.length * (goingToStore ? 0.15 : 0.45)));
             }
             const [sLat, sLng] = roadPts[currentIdx];
             const remainingRoad = roadPts.slice(currentIdx);
             if (trackerRemainingLine) {
               trackerRemainingLine.setLatLngs(remainingRoad);
             }
-            const distKm = calculateDistanceKm(sLat, sLng, dropCoords.lat, dropCoords.lng);
+            const distKm = calculateDistanceKm(sLat, sLng, routeTargetLat, routeTargetLng);
             const estMins = Math.max(2, Math.ceil(distKm * 3.2));
             updateTrackerDistanceAndEta(distKm, estMins, false);
 
@@ -4024,11 +4069,12 @@ function initStorefrontApp() {
     if (orderIdEl) orderIdEl.textContent = order.id;
 
     // Update title & icon based on status
+    const goingToStore = isOrderRiderGoingToStore(order);
     const successIcon = document.getElementById('order-success-icon');
     const modalTitle = document.getElementById('order-modal-title');
     const modalCard = document.querySelector('.order-modal-card');
     if (modalCard) {
-      if (order.status === 'on_the_way') modalCard.classList.add('is-dispatched');
+      if (order.status === 'on_the_way' || goingToStore) modalCard.classList.add('is-dispatched');
       else modalCard.classList.remove('is-dispatched');
     }
 
@@ -4041,6 +4087,9 @@ function initStorefrontApp() {
     } else if (order.status === 'on_the_way') {
       if (successIcon) successIcon.textContent = '🛵';
       if (modalTitle) modalTitle.textContent = 'Out for Delivery!';
+    } else if (goingToStore) {
+      if (successIcon) successIcon.textContent = '🏍️';
+      if (modalTitle) modalTitle.textContent = 'Rider Going to Restaurant!';
     } else if (order.status === 'delivered') {
       if (successIcon) successIcon.textContent = '🎉';
       if (modalTitle) modalTitle.textContent = 'Order Delivered!';
@@ -4065,6 +4114,9 @@ function initStorefrontApp() {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> has been accepted by our kitchen.`;
       } else if (order.status === 'cooking') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is being freshly prepared in our kitchen.`;
+      } else if (goingToStore) {
+        const rName = escapeHtml(order.assignedRiderName || 'Delivery partner');
+        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> accepted by ${rName} — heading to Savera Paradise to pick up your parcel!`;
       } else if (order.status === 'ready_for_pickup') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is packed and ready to dispatch!`;
       } else if (order.status === 'on_the_way') {
@@ -4080,15 +4132,17 @@ function initStorefrontApp() {
     // Update ETA Time
     const etaEl = document.getElementById('tracker-eta-time');
     if (etaEl) {
-      etaEl.textContent = order.status === 'cancelled' ? 'Order Cancelled' : (order.eta || '30 - 40 Minutes');
+      etaEl.textContent = order.status === 'cancelled'
+        ? 'Order Cancelled'
+        : (goingToStore ? 'Rider Going to Restaurant' : (order.eta || '30 - 40 Minutes'));
     }
 
     // Update Dynamic Contextual Calling Card:
     // Before or while preparing: Call Restaurant Kitchen
-    // After dispatch: Call Delivery Boy
+    // After rider assignment or dispatch: Call Delivery Boy
     const contactCardEl = document.getElementById('tracker-contact-card');
     if (contactCardEl) {
-      const isDispatched = order.status === 'on_the_way';
+      const isDispatched = order.status === 'on_the_way' || goingToStore;
       const isDelivered = order.status === 'delivered';
       const settings = dataService.getSettings();
       const restaurantPhone = settings?.restaurantPhone || settings?.helpline || '+91 98450 12345';
@@ -4149,11 +4203,11 @@ function initStorefrontApp() {
               </div>
               <div class="tracker-contact-details">
                 <h4>${escapeHtml(riderName)}</h4>
-                <p><i class="fa-solid fa-route"></i> ${escapeHtml(riderVehicle)} • Dispatched for Delivery</p>
+                <p><i class="fa-solid fa-route"></i> ${escapeHtml(riderVehicle)} • ${goingToStore ? 'Going to Restaurant to Pick Up' : 'Dispatched for Delivery'}</p>
               </div>
             </div>
             <span class="tracker-contact-badge rider">
-              <i class="fa-solid fa-person-biking"></i> On Delivery
+              <i class="fa-solid fa-person-biking"></i> ${goingToStore ? 'Heading to Store' : 'On Delivery'}
             </span>
           </div>
 
@@ -4369,6 +4423,8 @@ function initStorefrontApp() {
         liveBadgeTextEl.textContent = 'Order Cancelled';
       } else if (isUndelivered) {
         liveBadgeTextEl.textContent = 'Delivery Attempt Failed — Returned to Kitchen';
+      } else if (goingToStore) {
+        liveBadgeTextEl.textContent = 'Rider Going to Restaurant to Pick Up Parcel';
       } else {
         liveBadgeTextEl.textContent = STATUS_BADGE_MESSAGES[stepIndex] || 'Order in Progress';
       }
@@ -4435,8 +4491,8 @@ function initStorefrontApp() {
     // Synchronize live preparation background video with current order status
     syncTrackerVideoBackground(order);
 
-    // Live interactive map for dispatched orders
-    if (order.status === 'on_the_way') {
+    // Live interactive map for accepted/going-to-store & dispatched orders
+    if (order.status === 'on_the_way' || goingToStore) {
       initTrackerLiveMap(order);
     } else {
       destroyTrackerLiveMap();

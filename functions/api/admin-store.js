@@ -112,6 +112,7 @@ export async function onRequest(context) {
         if (!/^\d{4,6}$/.test(pin)) {
           return jsonResponse({ error: 'PIN must be 4 to 6 digits' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
+        const maxActiveOrders = Math.max(1, Math.min(5, Number(rawRider.maxActiveOrders ?? rawRider.max_active_orders) || 1));
         const mappedRider = {
           ...rawRider,
           pin,
@@ -120,6 +121,8 @@ export async function onRequest(context) {
           bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
           bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
           payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
+          max_active_orders: maxActiveOrders,
+          maxActiveOrders,
           cash_handover_status: rawRider.cashHandoverStatus ?? rawRider.cash_handover_status ?? null,
           cash_handover_amount: Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount) || 0,
           cash_handover_requested_at: rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at ?? null
@@ -350,6 +353,7 @@ export async function onRequest(context) {
           await sb.from('riders').delete().eq('pin', originalPin);
         }
 
+        const maxActiveOrders = Math.max(1, Math.min(5, Number(rawRider.maxActiveOrders ?? rawRider.max_active_orders) || 1));
         const sanitizedRider = {
           pin,
           id: rawRider.id || `rider-${pin}`,
@@ -365,6 +369,7 @@ export async function onRequest(context) {
           bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
           bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
           payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
+          max_active_orders: maxActiveOrders,
           cash_settled_at: rawRider.cashSettledAt ?? rawRider.cash_settled_at ?? null,
           payout_paid_at: rawRider.payoutPaidAt ?? rawRider.payout_paid_at ?? null,
           payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid) || 0,
@@ -373,13 +378,24 @@ export async function onRequest(context) {
           cash_handover_requested_at: rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at ?? null
         };
 
-        const { data, error } = await sb
+        let { data, error } = await sb
           .from('riders')
           .upsert([sanitizedRider], { onConflict: 'pin' })
           .select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('max_active_orders') || String(error.message || '').includes('column'))) {
+          const { max_active_orders: _omit, ...fallbackRider } = sanitizedRider;
+          const retryRes = await sb
+            .from('riders')
+            .upsert([fallbackRider], { onConflict: 'pin' })
+            .select();
+          data = retryRes.data;
+          error = retryRes.error;
+        }
         if (error) throw error;
         const returnRider = {
           ...(data && data.length > 0 ? data[0] : sanitizedRider),
+          max_active_orders: (data && data[0]?.max_active_orders) ?? maxActiveOrders,
+          maxActiveOrders: (data && data[0]?.max_active_orders) ?? maxActiveOrders,
           cashHandoverStatus: sanitizedRider.cash_handover_status,
           cashHandoverAmount: sanitizedRider.cash_handover_amount,
           cashHandoverRequestedAt: sanitizedRider.cash_handover_requested_at

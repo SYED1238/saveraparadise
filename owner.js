@@ -913,6 +913,7 @@ function renderRiderFleetTable(orders) {
       name: r.name || 'Unnamed Rider',
       phone: r.phone || '',
       vehicle: r.vehicle || '🏍️ Bike',
+      maxActiveOrders: Math.max(1, Math.min(5, Number(r.maxActiveOrders ?? r.max_active_orders ?? 1) || 1)),
       deliveredOrders: [],
       totalKms: 0,
       cashInHand: 0,
@@ -1033,6 +1034,7 @@ function renderRiderFleetTable(orders) {
         </td>
         <td>
           <span style="font-size: 0.8rem; color: var(--owner-text-muted);">${escapeHtml(st.vehicle || '🏍️ Bike')}</span>
+          <div style="font-size: 0.7rem; color: #2563EB; font-weight: 600; margin-top: 2px;">Max ${st.maxActiveOrders || 1} order${(st.maxActiveOrders || 1) > 1 ? 's' : ''}/trip</div>
         </td>
         <td>
           <span class="badge-rider-pin-table" title="Secret Login PIN">${escapeHtml(st.pin || '----')}</span>
@@ -1144,7 +1146,7 @@ function renderRiderFleetTable(orders) {
                 <div class="rider-avatar-bubble">${escapeHtml(getRiderInitial(st.name))}</div>
                 <div>
                   <h4 class="rc-name">${escapeHtml(st.name || 'Delivery Partner')}</h4>
-                  <span class="rc-vehicle">${escapeHtml(st.vehicle || '🏍️ Bike')}</span>
+                  <span class="rc-vehicle">${escapeHtml(st.vehicle || '🏍️ Bike')} • Max ${st.maxActiveOrders || 1} order${(st.maxActiveOrders || 1) > 1 ? 's' : ''}</span>
                 </div>
               </div>
               ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rc-call-btn" title="Call ${escapeHtml(st.name)}"><i class="fa-solid fa-phone"></i> Call</a>` : ''}
@@ -2119,6 +2121,7 @@ function openOwnerRiderModal(pin = null) {
   const phoneInput = document.getElementById('owner-rider-phone');
   const vehicleSelect = document.getElementById('owner-rider-vehicle');
   const vehicleNameInput = document.getElementById('owner-rider-vehicle-name');
+  const maxOrdersSelect = document.getElementById('owner-rider-max-orders');
 
   if (pin) {
     const rider = dataService.getRiderByPin(pin);
@@ -2133,6 +2136,7 @@ function openOwnerRiderModal(pin = null) {
     const parsed = parseRiderVehicle(rider.vehicle);
     if (vehicleSelect) vehicleSelect.value = rider.vehicleType || parsed.type;
     if (vehicleNameInput) vehicleNameInput.value = rider.vehicleName || parsed.name;
+    if (maxOrdersSelect) maxOrdersSelect.value = String(rider.maxActiveOrders || rider.max_active_orders || 1);
   } else {
     const generatedPin = dataService.generateUniqueRiderPin();
     if (modalTitle) modalTitle.textContent = 'Add Delivery Boy';
@@ -2143,6 +2147,7 @@ function openOwnerRiderModal(pin = null) {
     if (phoneInput) phoneInput.value = '';
     if (vehicleSelect) vehicleSelect.value = '🏍️ Bike';
     if (vehicleNameInput) vehicleNameInput.value = '';
+    if (maxOrdersSelect) maxOrdersSelect.value = '1';
   }
 
   modal.style.display = 'flex';
@@ -2178,6 +2183,7 @@ async function handleOwnerRiderSubmit(e) {
   const phoneInput = document.getElementById('owner-rider-phone');
   const vehicleSelect = document.getElementById('owner-rider-vehicle');
   const vehicleNameInput = document.getElementById('owner-rider-vehicle-name');
+  const maxOrdersSelect = document.getElementById('owner-rider-max-orders');
 
   const originalPin = (origPinInput?.value || '').trim();
   let pin = (pinInput?.value || '').trim();
@@ -2185,6 +2191,7 @@ async function handleOwnerRiderSubmit(e) {
   const phone = (phoneInput?.value || '').trim();
   const vehicleType = (vehicleSelect?.value || '🏍️ Bike').trim();
   const vehicleName = (vehicleNameInput?.value || '').trim();
+  const maxActiveOrders = Math.max(1, Math.min(5, parseInt(maxOrdersSelect?.value || '1', 10) || 1));
 
   // Combine Type emoji and Vehicle Name (e.g., "🏍️ Honda Activa", "🛵 TVS Jupiter", or "🏍️ Bike" if name is blank)
   const emoji = vehicleType.split(' ')[0] || '🏍️';
@@ -2223,7 +2230,9 @@ async function handleOwnerRiderSubmit(e) {
         phone: formattedPhone,
         vehicle,
         vehicleType,
-        vehicleName
+        vehicleName,
+        maxActiveOrders,
+        max_active_orders: maxActiveOrders
       };
 
       const allOrders = dataService.getOrders();
@@ -2241,7 +2250,18 @@ async function handleOwnerRiderSubmit(e) {
 
       saved = await dataService.saveOrUpdateRiderAsync(updatedRider, originalPin);
     } else {
-      saved = await dataService.saveOrUpdateRiderAsync({ pin, name, phone: formattedPhone, vehicle, vehicleType, vehicleName });
+      const existingRider = dataService.getRiderByPin(pin) || {};
+      saved = await dataService.saveOrUpdateRiderAsync({
+        ...existingRider,
+        pin,
+        name,
+        phone: formattedPhone,
+        vehicle,
+        vehicleType,
+        vehicleName,
+        maxActiveOrders,
+        max_active_orders: maxActiveOrders
+      });
     }
 
     closeOwnerRiderModal();

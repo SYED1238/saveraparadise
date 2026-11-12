@@ -2273,10 +2273,14 @@ const initAdminApp = () => {
 
       let riderTagHtml = '';
       if (order.assignedRiderName) {
+        const isGoingToStore = typeof dataService.isOrderGoingToRestaurant === 'function' && dataService.isOrderGoingToRestaurant(order);
+        const stageText = isGoingToStore
+          ? `Going to Restaurant to Pick Up Bag #${escapeHtml(bagCode)}`
+          : (order.status === 'on_the_way' ? 'On the Way to Customer' : 'Assigned Rider');
         riderTagHtml = `
           <div class="order-rider-status-bar">
-            <span class="rider-assigned-chip" title="Claimed by ${escapeHtml(order.assignedRiderName)}">
-              <i class="fa-solid fa-motorcycle"></i> Assigned Rider: <strong>${escapeHtml(order.assignedRiderName)}</strong>
+            <span class="rider-assigned-chip ${isGoingToStore ? 'going-to-restaurant' : ''}" title="${stageText} — ${escapeHtml(order.assignedRiderName)}">
+              <i class="fa-solid ${isGoingToStore ? 'fa-store' : 'fa-motorcycle'}"></i> <strong>${escapeHtml(order.assignedRiderName)}</strong> • ${stageText}
             </span>
           </div>
         `;

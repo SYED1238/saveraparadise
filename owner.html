@@ -1662,8 +1662,17 @@
             <label for="owner-rider-vehicle-name" class="owner-form-label"><i class="fa-solid fa-motorcycle"></i> Vehicle Name / Model</label>
             <input type="text" id="owner-rider-vehicle-name" class="owner-form-input" placeholder="e.g. Honda Activa, Splendor" maxlength="50" />
           </div>
+          <div class="owner-form-group">
+            <label for="owner-rider-max-orders" class="owner-form-label"><i class="fa-solid fa-boxes-stacked"></i> Max Orders at a Time</label>
+            <select id="owner-rider-max-orders" class="owner-form-select">
+              <option value="1">1 Order at a Time (Default)</option>
+              <option value="2">2 Orders at a Time</option>
+              <option value="3">3 Orders at a Time</option>
+              <option value="4">4 Orders at a Time</option>
+            </select>
+          </div>
         </div>
-        <span class="owner-field-hint" style="margin-top: -6px; margin-bottom: 8px;">Vehicle type and model appear on customer order tracking and kitchen dispatch.</span>
+        <span class="owner-field-hint" style="margin-top: -6px; margin-bottom: 8px;">Vehicle details appear on live order tracking. Max Orders controls how many active orders this rider can pick at once.</span>
 
         <div class="owner-form-group">
           <label class="owner-form-label"><i class="fa-solid fa-key"></i> Secret 4-Digit Login PIN</label>

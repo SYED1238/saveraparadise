@@ -240,7 +240,8 @@ export const DEFAULT_RIDERS = [
     vehicle: '🏍️ Honda Activa 6G',
     avatar: '🏍️',
     avatarImg: '/avatars/rider-1.svg',
-    status: 'online'
+    status: 'online',
+    maxActiveOrders: 1
   },
   {
     id: 'rider-4422',
@@ -250,7 +251,8 @@ export const DEFAULT_RIDERS = [
     vehicle: '🏍️ Bajaj Pulsar 150',
     avatar: '🏍️',
     avatarImg: '/avatars/rider-2.svg',
-    status: 'online'
+    status: 'online',
+    maxActiveOrders: 1
   },
   {
     id: 'rider-4455',
@@ -260,7 +262,8 @@ export const DEFAULT_RIDERS = [
     vehicle: '🛵 TVS Jupiter',
     avatar: '🛵',
     avatarImg: '/avatars/rider-1.svg',
-    status: 'online'
+    status: 'online',
+    maxActiveOrders: 1
   },
   {
     id: 'rider-8811',
@@ -270,7 +273,8 @@ export const DEFAULT_RIDERS = [
     vehicle: '⚡ Ather 450X EV',
     avatar: '⚡',
     avatarImg: '/avatars/rider-2.svg',
-    status: 'online'
+    status: 'online',
+    maxActiveOrders: 1
   }
 ];
 
@@ -3104,10 +3108,29 @@ class QuickBiteDataService {
             const effectiveStepIndex = (preserveLocalStatus && local && typeof local.stepIndex === 'number')
               ? local.stepIndex
               : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : 0));
+            const isOptimisticStage1 = Boolean(
+              isOptimistic &&
+              local?.riderPickupStage === 'going_to_restaurant' &&
+              local?.assignedRiderPin &&
+              !remote.assigned_rider_pin &&
+              effectiveStatus !== 'on_the_way' && effectiveStatus !== 'delivered' && effectiveStatus !== 'undelivered' && effectiveStatus !== 'cancelled'
+            );
+            const remotePickupStage = remote.address_details?.riderPickupStage ||
+              (effectiveStatus === 'on_the_way' ? 'picked_up' : (remote.assigned_rider_pin && effectiveStatus === 'ready_for_pickup' ? 'going_to_restaurant' : null));
+            const effectivePickupStage = isOptimisticStage1
+              ? local.riderPickupStage
+              : (remotePickupStage || (effectiveStatus === 'on_the_way' ? 'picked_up' : null));
+            const isRemoteGoingToStore = Boolean(
+              (remote.assigned_rider_pin || isOptimisticStage1) &&
+              effectivePickupStage === 'going_to_restaurant' &&
+              effectiveStatus !== 'on_the_way' && effectiveStatus !== 'delivered' && effectiveStatus !== 'undelivered' && effectiveStatus !== 'cancelled'
+            );
             const effectiveStatusLabel = (preserveLocalStatus && local?.statusLabel)
               ? local.statusLabel
-              : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted');
-            const effectiveEta = (preserveLocalStatus && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
+              : (isRemoteGoingToStore
+                ? (remote.status_label || local?.statusLabel || 'Rider Going to Restaurant')
+                : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted'));
+            const effectiveEta = ((preserveLocalStatus || isOptimisticStage1) && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
 
             const mergedOrder = {
               ...(local || {}),
@@ -3138,10 +3161,11 @@ class QuickBiteDataService {
               lng: remote.lng ? Number(remote.lng) : (local?.lng || local?.addressDetails?.lng || null),
               addressDetails: remote.address_details || local?.addressDetails || null,
               pickupCode: remote.pickup_code || local?.pickupCode || fallbackPickupCode,
-              assignedRiderPin: remote.assigned_rider_pin || local?.assignedRiderPin || null,
-              assignedRiderName: remote.assigned_rider_name || local?.assignedRiderName || null,
-              assignedRiderPhone: remote.assigned_rider_phone || local?.assignedRiderPhone || null,
-              assignedRiderVehicle: remote.assigned_rider_vehicle || local?.assignedRiderVehicle || null,
+              assignedRiderPin: remote.assigned_rider_pin || (isOptimisticStage1 ? local?.assignedRiderPin : null) || null,
+              assignedRiderName: remote.assigned_rider_name || (isOptimisticStage1 ? local?.assignedRiderName : null) || null,
+              assignedRiderPhone: remote.assigned_rider_phone || (isOptimisticStage1 ? local?.assignedRiderPhone : null) || null,
+              assignedRiderVehicle: remote.assigned_rider_vehicle || (isOptimisticStage1 ? local?.assignedRiderVehicle : null) || null,
+              riderPickupStage: effectivePickupStage,
               cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
               trackingToken: remote.tracking_token || local?.trackingToken || null,
               alarmAcknowledged: local?.alarmAcknowledged || false,
@@ -3165,7 +3189,8 @@ class QuickBiteDataService {
                                     local.eta !== effectiveEta ||
                                     local.stepIndex !== effectiveStepIndex ||
                                     local.assignedRiderPin !== mergedOrder.assignedRiderPin ||
-                                    local.assignedRiderName !== mergedOrder.assignedRiderName;
+                                    local.assignedRiderName !== mergedOrder.assignedRiderName ||
+                                    local.riderPickupStage !== mergedOrder.riderPickupStage;
               localList[localIdx] = mergedOrder;
               if (hasDifference) {
                 const prevStatus = local.status;
@@ -3423,9 +3448,15 @@ class QuickBiteDataService {
               orders[idx].eta = payload.eta || orders[idx].eta;
               // Security Hardening: Never allow unauthenticated broadcast to mutate financial, total, or payment invariants
               if (payload.order && typeof payload.order === 'object') {
-                const safeAllowedProps = ['status', 'statusLabel', 'stepIndex', 'eta', 'cancellationReason', 'deliveredAt'];
+                const safeAllowedProps = ['status', 'statusLabel', 'stepIndex', 'eta', 'cancellationReason', 'deliveredAt', 'assignedRiderPin', 'assignedRiderName', 'assignedRiderPhone', 'assignedRiderVehicle', 'riderPickupStage', 'pickedUpAt'];
                 for (const key of safeAllowedProps) {
                   if (payload.order[key] !== undefined) orders[idx][key] = payload.order[key];
+                }
+                if (payload.order.riderPickupStage !== undefined) {
+                  orders[idx].addressDetails = {
+                    ...(orders[idx].addressDetails || {}),
+                    riderPickupStage: payload.order.riderPickupStage
+                  };
                 }
               }
               this.saveOrders(orders, { action: 'status_updated', orderId: payload.orderId, order: orders[idx], prevStatus, source: 'supabase_broadcast', timestamp: payload.timestamp || Date.now() });
@@ -3617,9 +3648,18 @@ class QuickBiteDataService {
       const effectiveStepIndex = (preserveLocalStatus && local && typeof local.stepIndex === 'number')
         ? local.stepIndex
         : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : 0));
+      const remotePickupStage = remote.address_details?.riderPickupStage ||
+        (effectiveStatus === 'on_the_way' ? 'picked_up' : (remote.assigned_rider_pin && effectiveStatus === 'ready_for_pickup' ? 'going_to_restaurant' : null));
+      const isRemoteGoingToStore = Boolean(
+        remote.assigned_rider_pin &&
+        remotePickupStage === 'going_to_restaurant' &&
+        effectiveStatus !== 'on_the_way' && effectiveStatus !== 'delivered' && effectiveStatus !== 'undelivered' && effectiveStatus !== 'cancelled'
+      );
       const effectiveStatusLabel = (preserveLocalStatus && local?.statusLabel)
         ? local.statusLabel
-        : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted');
+        : (isRemoteGoingToStore
+          ? (remote.status_label || local?.statusLabel || 'Rider Going to Restaurant')
+          : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted'));
       const effectiveEta = (preserveLocalStatus && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
 
       const rawAddrs = this.getAllAddressesRaw();
@@ -3660,6 +3700,7 @@ class QuickBiteDataService {
         assignedRiderName: remote.assigned_rider_name || local?.assignedRiderName || null,
         assignedRiderPhone: remote.assigned_rider_phone || local?.assignedRiderPhone || null,
         assignedRiderVehicle: remote.assigned_rider_vehicle || local?.assignedRiderVehicle || null,
+        riderPickupStage: remotePickupStage || (effectiveStatus === 'on_the_way' ? 'picked_up' : null),
         cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
         trackingToken: remote.tracking_token || local?.trackingToken || null,
         alarmAcknowledged: local?.alarmAcknowledged || false,
@@ -3671,7 +3712,8 @@ class QuickBiteDataService {
         const hasDiff = local.status !== effectiveStatus ||
                         local.eta !== effectiveEta ||
                         local.stepIndex !== effectiveStepIndex ||
-                        local.assignedRiderPin !== mergedOrder.assignedRiderPin;
+                        local.assignedRiderPin !== mergedOrder.assignedRiderPin ||
+                        local.riderPickupStage !== mergedOrder.riderPickupStage;
         orders[localIdx] = mergedOrder;
         this.ordersCache = orders;
         try { localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders)); } catch {}
@@ -4199,9 +4241,18 @@ class QuickBiteDataService {
             const effectiveStepIndex = (isOptimisticLo && loLocalRank > loRemoteRank && typeof lo.stepIndex === 'number')
               ? lo.stepIndex
               : (STATUS_TO_STEP_INDEX[effectiveStatus] !== undefined ? STATUS_TO_STEP_INDEX[effectiveStatus] : (typeof remote.step_index === 'number' ? remote.step_index : lo.stepIndex));
+            const loRemoteStage = remote.address_details?.riderPickupStage ||
+              (effectiveStatus === 'on_the_way' ? 'picked_up' : (remote.assigned_rider_pin && effectiveStatus === 'ready_for_pickup' ? 'going_to_restaurant' : null));
+            const isLoGoingToStore = Boolean(
+              remote.assigned_rider_pin &&
+              loRemoteStage === 'going_to_restaurant' &&
+              effectiveStatus !== 'on_the_way' && effectiveStatus !== 'delivered' && effectiveStatus !== 'undelivered' && effectiveStatus !== 'cancelled'
+            );
             const effectiveStatusLabel = (isOptimisticLo && loLocalRank > loRemoteRank && lo.statusLabel)
               ? lo.statusLabel
-              : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || lo.statusLabel || 'Accepted');
+              : (isLoGoingToStore
+                ? (remote.status_label || lo.statusLabel || 'Rider Going to Restaurant')
+                : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || lo.statusLabel || 'Accepted'));
             const effectiveEta = (isOptimisticLo && loLocalRank > loRemoteRank && lo.eta) ? lo.eta : (remote.eta || lo.eta);
 
             const mappedRemote = {
@@ -4221,6 +4272,8 @@ class QuickBiteDataService {
               assignedRiderName: remote.assigned_rider_name || lo.assignedRiderName,
               assignedRiderPhone: remote.assigned_rider_phone || lo.assignedRiderPhone,
               assignedRiderVehicle: remote.assigned_rider_vehicle || lo.assignedRiderVehicle,
+              addressDetails: remote.address_details || lo.addressDetails || null,
+              riderPickupStage: loRemoteStage || (effectiveStatus === 'on_the_way' ? 'picked_up' : null),
               claimedAt: remote.claimed_at || lo.claimedAt,
               deliveredAt: remote.delivered_at || lo.deliveredAt,
               paymentMethod: remote.payment_method || lo.paymentMethod,
@@ -4234,7 +4287,8 @@ class QuickBiteDataService {
                                 lo.eta !== mappedRemote.eta || 
                                 lo.statusLabel !== mappedRemote.statusLabel ||
                                 lo.stepIndex !== mappedRemote.stepIndex ||
-                                lo.assignedRiderPin !== mappedRemote.assignedRiderPin;
+                                lo.assignedRiderPin !== mappedRemote.assignedRiderPin ||
+                                lo.riderPickupStage !== mappedRemote.riderPickupStage;
             if (isDifferent) {
               const prevStatus = lo.status;
               Object.assign(lo, mappedRemote);
@@ -4281,6 +4335,7 @@ class QuickBiteDataService {
               lat: remote.lat ? Number(remote.lat) : null,
               lng: remote.lng ? Number(remote.lng) : null,
               addressDetails: remote.address_details || null,
+              riderPickupStage: remote.address_details?.riderPickupStage || (remote.status === 'on_the_way' ? 'picked_up' : (remote.assigned_rider_pin && remote.status === 'ready_for_pickup' ? 'going_to_restaurant' : null)),
               cancellationReason: remote.cancellation_reason || null,
               riderWaitingAtDoorstep: Boolean(remote.cancellation_reason && remote.cancellation_reason.includes('[DOORSTEP_WAIT]') && remote.status === 'on_the_way')
             };
@@ -7453,6 +7508,7 @@ class QuickBiteDataService {
             cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null,
             payoutPaidAt: r.payout_paid_at || existing?.payoutPaidAt || null,
             payoutAmountPaid: Number(r.payout_amount_paid || existing?.payoutAmountPaid || 0),
+            maxActiveOrders: Math.max(1, Math.min(5, Number(r.max_active_orders ?? r.maxActiveOrders ?? existing?.maxActiveOrders ?? 1))),
             cashHandoverStatus: r.cash_handover_status || r.cashHandoverStatus || existing?.cashHandoverStatus || null,
             cashHandoverAmount: Number(r.cash_handover_amount ?? r.cashHandoverAmount ?? existing?.cashHandoverAmount ?? 0),
             cashHandoverRequestedAt: r.cash_handover_requested_at || r.cashHandoverRequestedAt || existing?.cashHandoverRequestedAt || null
@@ -7572,7 +7628,8 @@ class QuickBiteDataService {
       avatarImg: riderData.avatarImg || existing?.avatarImg || '/avatars/rider-1.svg',
       cashSettledAt: riderData.cashSettledAt !== undefined ? riderData.cashSettledAt : (riderData.cash_settled_at !== undefined ? riderData.cash_settled_at : (existing?.cashSettledAt || null)),
       payoutPaidAt: riderData.payoutPaidAt !== undefined ? riderData.payoutPaidAt : (riderData.payout_paid_at !== undefined ? riderData.payout_paid_at : (existing?.payoutPaidAt || null)),
-      payoutAmountPaid: riderData.payoutAmountPaid !== undefined ? Number(riderData.payoutAmountPaid) : (riderData.payout_amount_paid !== undefined ? Number(riderData.payout_amount_paid) : (existing?.payoutAmountPaid || 0))
+      payoutAmountPaid: riderData.payoutAmountPaid !== undefined ? Number(riderData.payoutAmountPaid) : (riderData.payout_amount_paid !== undefined ? Number(riderData.payout_amount_paid) : (existing?.payoutAmountPaid || 0)),
+      maxActiveOrders: Math.max(1, Math.min(5, Number(riderData.maxActiveOrders ?? riderData.max_active_orders ?? existing?.maxActiveOrders ?? 1)))
     };
 
     if (idx >= 0) {
@@ -7715,6 +7772,350 @@ class QuickBiteDataService {
     return orders.find(isMatch) || null;
   }
 
+  getRiderMaxActiveOrders(riderPin) {
+    const cleanPin = String(riderPin || '').trim();
+    const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider();
+    const limit = Number(rider?.maxActiveOrders ?? rider?.max_active_orders ?? 1);
+    return Number.isFinite(limit) && limit >= 1 ? Math.min(5, Math.round(limit)) : 1;
+  }
+
+  isOrderGoingToRestaurant(order) {
+    if (!order) return false;
+    const hasRider = Boolean(String(order.assignedRiderPin || order.assigned_rider_pin || '').trim());
+    if (!hasRider) return false;
+    const stage = order.riderPickupStage || order.addressDetails?.riderPickupStage || order.address_details?.riderPickupStage;
+    if (stage === 'going_to_restaurant') {
+      return order.status !== 'on_the_way' && order.status !== 'delivered' && order.status !== 'undelivered' && order.status !== 'cancelled';
+    }
+    return order.status === 'ready_for_pickup' && hasRider;
+  }
+
+  assignOrderToRider(orderId, riderPin, options = {}) {
+    const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
+    const cleanOrderNorm = normalizeId(orderId);
+    if (!cleanOrderNorm) {
+      return { success: false, reason: 'not_found', message: 'Invalid order ID.' };
+    }
+    const orders = this.getOrders();
+    const order = orders.find(o => o && normalizeId(o.id) === cleanOrderNorm) || null;
+    if (!order) {
+      return { success: false, reason: 'not_found', message: `Order ${orderId} not found.` };
+    }
+
+    const cleanPin = riderPin ? String(riderPin).trim() : null;
+    const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider() || DEFAULT_RIDERS[0];
+    if (!rider) {
+      return { success: false, reason: 'no_rider', message: 'No active delivery rider session found. Please log in with your Rider PIN.' };
+    }
+
+    if (['delivered', 'undelivered', 'cancelled'].includes(order.status)) {
+      return { success: false, reason: 'terminal_status', message: `Order ${order.id} is already ${order.status}.` };
+    }
+
+    const existingPin = String(order.assignedRiderPin || order.assigned_rider_pin || '').trim();
+    if (existingPin && existingPin !== String(rider.pin).trim()) {
+      return {
+        success: false,
+        reason: 'already_claimed',
+        message: `Order ${order.id} is already assigned ${order.assignedRiderName ? `to ${order.assignedRiderName}` : 'to another rider'}.`
+      };
+    }
+
+    if (!['ready_for_pickup', 'cooking', 'accepted'].includes(order.status)) {
+      return {
+        success: false,
+        reason: 'not_ready',
+        message: `Order ${order.id} is in status "${order.status}" and cannot be accepted right now.`
+      };
+    }
+
+    const maxAllowed = this.getRiderMaxActiveOrders(rider.pin);
+    const activeOrdersForRider = orders.filter(o => {
+      if (!o || normalizeId(o.id) === cleanOrderNorm) return false;
+      const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      if (oPin !== String(rider.pin).trim()) return false;
+      return o.status === 'on_the_way' || this.isOrderGoingToRestaurant(o);
+    });
+
+    if (activeOrdersForRider.some(o => o.status === 'on_the_way')) {
+      const roadOrder = activeOrdersForRider.find(o => o.status === 'on_the_way');
+      return {
+        success: false,
+        reason: 'active_order_limit',
+        message: `Complete your active delivery (${roadOrder.id}) on the road before accepting a new order.`
+      };
+    }
+
+    if (activeOrdersForRider.length >= maxAllowed) {
+      return {
+        success: false,
+        reason: 'active_order_limit',
+        message: `You can only accept up to ${maxAllowed} order${maxAllowed > 1 ? 's' : ''} at a time. Complete or pick up your active orders first.`
+      };
+    }
+
+    const hasValidCoords = options &&
+      options.riderLat !== undefined && options.riderLat !== null &&
+      options.riderLng !== undefined && options.riderLng !== null &&
+      Number.isFinite(Number(options.riderLat)) &&
+      Number.isFinite(Number(options.riderLng));
+
+    const distToRestKm = (hasValidCoords ? this.calculateStraightDistance(Number(options.riderLat), Number(options.riderLng)) : null) || 1.2;
+    const minsToRest = Math.max(3, Math.round(distToRestKm * 3.2));
+
+    const prevStatus = order.status || 'ready_for_pickup';
+    const prevStateSnapshot = {
+      status: order.status,
+      statusLabel: order.statusLabel,
+      eta: order.eta,
+      assignedRiderPin: order.assignedRiderPin || null,
+      assignedRiderName: order.assignedRiderName || null,
+      assignedRiderPhone: order.assignedRiderPhone || null,
+      assignedRiderVehicle: order.assignedRiderVehicle || null,
+      riderPickupStage: order.riderPickupStage || null,
+      addressDetails: order.addressDetails ? { ...order.addressDetails } : null
+    };
+
+    if (options.code) {
+      const cleanCode = String(options.code).trim().replace(/\D/g, '');
+      order.pickupCode = order.pickupCode || (cleanCode.length === 4 ? cleanCode : String(order.id).replace(/\D/g, '').slice(-4));
+    }
+
+    order.status = order.status || 'ready_for_pickup';
+    order.statusLabel = 'Rider Going to Restaurant';
+    order.eta = `${minsToRest} mins to reach restaurant`;
+    order.assignedRiderPin = rider.pin;
+    order.assignedRiderName = rider.name;
+    order.assignedRiderPhone = rider.phone;
+    order.assignedRiderVehicle = rider.vehicle;
+    order.riderPickupStage = 'going_to_restaurant';
+    order.addressDetails = {
+      ...(order.addressDetails || {}),
+      riderPickupStage: 'going_to_restaurant',
+      riderAssignedAt: Date.now()
+    };
+    order._optimisticTimestamp = Date.now();
+
+    const idx = orders.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
+    if (idx >= 0) orders[idx] = order;
+    else orders.unshift(order);
+
+    this.saveOrders(orders, { action: 'rider_assigned_order', orderId: order.id, riderPin: rider.pin, timestamp: Date.now() });
+
+    const syncPayload = {
+      orderId: order.id,
+      status: order.status,
+      prevStatus,
+      statusLabel: order.statusLabel,
+      stepIndex: order.stepIndex,
+      eta: order.eta,
+      order,
+      source: 'rider',
+      timestamp: Date.now()
+    };
+    try {
+      localStorage.setItem('quickbite_order_status_sync', JSON.stringify(syncPayload));
+    } catch {}
+    try {
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'order_status_updated',
+          payload: syncPayload
+        }).catch(() => {});
+      }
+    } catch {}
+
+    this._orderAction('assign_order', {
+      orderId: order.id,
+      riderPin: rider.pin,
+      riderName: rider.name,
+      riderPhone: rider.phone,
+      riderVehicle: rider.vehicle,
+      eta: order.eta,
+      maxActiveOrders: maxAllowed,
+      ...(hasValidCoords ? { riderLat: Number(options.riderLat), riderLng: Number(options.riderLng) } : {})
+    }).catch(async (actionErr) => {
+      if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
+        try {
+          const list = this.getOrders();
+          const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
+          if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
+            Object.assign(list[rIdx], prevStateSnapshot);
+            delete list[rIdx]._optimisticTimestamp;
+            delete list[rIdx].pendingStatusSync;
+            this.saveOrders(list);
+          }
+          await this.syncOrdersFromSupabase(true);
+        } catch {}
+        this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr.message });
+      }
+    });
+
+    return { success: true, order, rider };
+  }
+
+  confirmOrderParcelPickup(orderId, riderPin, options = {}) {
+    const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
+    const cleanOrderNorm = normalizeId(orderId);
+    if (!cleanOrderNorm) {
+      return { success: false, reason: 'not_found', message: 'Invalid order ID.' };
+    }
+    const orders = this.getOrders();
+    const order = orders.find(o => o && normalizeId(o.id) === cleanOrderNorm) || null;
+    if (!order) {
+      return { success: false, reason: 'not_found', message: `Order ${orderId} not found.` };
+    }
+
+    const cleanPin = riderPin ? String(riderPin).trim() : null;
+    const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider() || DEFAULT_RIDERS[0];
+    if (!rider) {
+      return { success: false, reason: 'no_rider', message: 'No active delivery rider session found. Please log in with your Rider PIN.' };
+    }
+
+    const existingPin = String(order.assignedRiderPin || order.assigned_rider_pin || '').trim();
+    if (existingPin && existingPin !== String(rider.pin).trim()) {
+      return {
+        success: false,
+        reason: 'already_claimed',
+        message: `Order ${order.id} is assigned to another rider.`
+      };
+    }
+
+    if (['delivered', 'undelivered', 'cancelled'].includes(order.status)) {
+      return { success: false, reason: 'terminal_status', message: `Order ${order.id} is already ${order.status}.` };
+    }
+
+    if (order.status !== 'ready_for_pickup' && order.status !== 'on_the_way') {
+      return {
+        success: false,
+        reason: 'not_ready',
+        message: `Order ${order.id} is still "${order.status}" in kitchen and not packed for parcel pickup yet.`
+      };
+    }
+
+    const maxAllowed = this.getRiderMaxActiveOrders(rider.pin);
+    const activeOnTheWay = orders.filter(o =>
+      o &&
+      o.status === 'on_the_way' &&
+      String(o.assignedRiderPin || o.assigned_rider_pin || '').trim() === String(rider.pin || '').trim() &&
+      normalizeId(o.id) !== cleanOrderNorm
+    );
+    if (activeOnTheWay.length >= maxAllowed) {
+      return {
+        success: false,
+        reason: 'active_order_limit',
+        message: `You already have ${activeOnTheWay.length} active order${activeOnTheWay.length > 1 ? 's' : ''} out for delivery (max ${maxAllowed}).`
+      };
+    }
+
+    const hasValidCoords = options &&
+      options.riderLat !== undefined && options.riderLat !== null &&
+      options.riderLng !== undefined && options.riderLng !== null &&
+      Number.isFinite(Number(options.riderLat)) &&
+      Number.isFinite(Number(options.riderLng));
+    if (hasValidCoords) {
+      const distKm = this.calculateStraightDistance(Number(options.riderLat), Number(options.riderLng));
+      if (distKm === null || distKm > 3.0) {
+        return {
+          success: false,
+          reason: 'outside_pickup_radius',
+          message: distKm === null
+            ? 'Invalid live GPS coordinates. Please sync your live GPS location at the restaurant.'
+            : `You are ${distKm.toFixed(2)} km from Savera Paradise. Move within 3 km of the restaurant counter to pick up the parcel.`
+        };
+      }
+    }
+
+    const prevStateSnapshot = {
+      status: order.status,
+      stepIndex: order.stepIndex,
+      statusLabel: order.statusLabel,
+      eta: order.eta,
+      riderPickupStage: order.riderPickupStage || null,
+      pickedUpAt: order.pickedUpAt || null,
+      addressDetails: order.addressDetails ? { ...order.addressDetails } : null
+    };
+
+    const prevStatus = order.status || 'ready_for_pickup';
+    const pickedUpAt = Date.now();
+    order.status = 'on_the_way';
+    order.stepIndex = 3;
+    order.statusLabel = 'Rider is on the Way Towards You';
+    order.eta = '10 - 15 Minutes';
+    order.assignedRiderPin = rider.pin;
+    order.assignedRiderName = rider.name;
+    order.assignedRiderPhone = rider.phone;
+    order.assignedRiderVehicle = rider.vehicle;
+    order.riderPickupStage = 'picked_up';
+    order.pickedUpAt = pickedUpAt;
+    order.claimedAt = order.claimedAt || pickedUpAt;
+    order.addressDetails = {
+      ...(order.addressDetails || {}),
+      riderPickupStage: 'picked_up',
+      pickedUpAt
+    };
+    order._optimisticTimestamp = Date.now();
+
+    const idx = orders.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
+    if (idx >= 0) orders[idx] = order;
+    else orders.unshift(order);
+
+    this.saveOrders(orders, { action: 'rider_claimed_order', orderId: order.id, riderPin: rider.pin, timestamp: Date.now() });
+
+    const syncPayload = {
+      orderId: order.id,
+      status: 'on_the_way',
+      prevStatus,
+      statusLabel: order.statusLabel,
+      stepIndex: 3,
+      eta: order.eta,
+      order,
+      source: 'rider',
+      timestamp: Date.now()
+    };
+    try {
+      localStorage.setItem('quickbite_order_status_sync', JSON.stringify(syncPayload));
+    } catch {}
+    try {
+      if (this.sharedBroadcastChannel) {
+        this.sharedBroadcastChannel.send({
+          type: 'broadcast',
+          event: 'order_status_updated',
+          payload: syncPayload
+        }).catch(() => {});
+      }
+    } catch {}
+
+    this._orderAction('claim_order', {
+      orderId: order.id,
+      riderPin: rider.pin,
+      riderName: rider.name,
+      riderPhone: rider.phone,
+      riderVehicle: rider.vehicle,
+      maxActiveOrders: maxAllowed,
+      enforceSingleActiveOrder: maxAllowed === 1,
+      ...(hasValidCoords ? { riderLat: Number(options.riderLat), riderLng: Number(options.riderLng) } : {})
+    }).catch(async (actionErr) => {
+      if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
+        try {
+          const list = this.getOrders();
+          const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
+          if (rIdx >= 0 && list[rIdx].assignedRiderPin === rider.pin) {
+            Object.assign(list[rIdx], prevStateSnapshot);
+            delete list[rIdx]._optimisticTimestamp;
+            delete list[rIdx].pendingStatusSync;
+            this.saveOrders(list);
+          }
+          await this.syncOrdersFromSupabase(true);
+        } catch {}
+        this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr.message });
+      }
+    });
+
+    return { success: true, order, rider };
+  }
+
   claimOrderByBagCode(code, riderPin, explicitOrderId = null, options = {}) {
     const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
     const currentOrders = this.getOrders();
@@ -7787,15 +8188,17 @@ class QuickBiteDataService {
       return { success: false, reason: 'no_rider', message: 'No active delivery rider session found. Please log in with your Rider PIN.' };
     }
 
-    // Single Active Order Guard: Rider can only pick 1 active order at a time
+    // Active Order Limit Guard: Respect owner-configured maxActiveOrders (default 1)
+    const maxAllowed = this.getRiderMaxActiveOrders(rider.pin);
     const cleanOrderNorm = normalizeId(order.id);
-    const alreadyActiveOrder = this.getOrders().find(o =>
+    const activeOnTheWayOrders = this.getOrders().filter(o =>
       o &&
       o.status === 'on_the_way' &&
       String(o.assignedRiderPin || '').trim() === String(rider.pin || '').trim() &&
       normalizeId(o.id) !== cleanOrderNorm
     );
-    if (alreadyActiveOrder) {
+    if (activeOnTheWayOrders.length >= maxAllowed) {
+      const alreadyActiveOrder = activeOnTheWayOrders[0];
       return {
         success: false,
         reason: 'active_order_limit',
@@ -7836,6 +8239,9 @@ class QuickBiteDataService {
     order.assignedRiderName = rider.name;
     order.assignedRiderPhone = rider.phone;
     order.assignedRiderVehicle = rider.vehicle;
+    order.riderPickupStage = 'picked_up';
+    order.pickedUpAt = Date.now();
+    order.addressDetails = { ...(order.addressDetails || {}), riderPickupStage: 'picked_up', pickedUpAt: order.pickedUpAt };
     order.claimedAt = Date.now();
     order._optimisticTimestamp = Date.now();
 
@@ -7912,7 +8318,8 @@ class QuickBiteDataService {
             riderName: rider.name,
             riderPhone: rider.phone,
             riderVehicle: rider.vehicle,
-            enforceSingleActiveOrder: true,
+            maxActiveOrders: maxAllowed,
+            enforceSingleActiveOrder: maxAllowed === 1,
             ...(hasValidCoords ? { riderLat: Number(options.riderLat), riderLng: Number(options.riderLng) } : {})
           });
         } catch (actionErr) {
