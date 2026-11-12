@@ -16,6 +16,8 @@ describe('STOREFRONT CLOSED HERO & WHATSAPP OFFERS CTA SUITE', () => {
   it('1. index.html removes #hero-scroll-guide and includes WhatsApp Best Offers links', () => {
     assert.doesNotMatch(indexHtml, /id="hero-scroll-guide"/);
     assert.doesNotMatch(indexHtml, /Scroll to Browse Menu/);
+    assert.doesNotMatch(indexHtml, /food-blob-item|blob-chicken|doodle-canvas/);
+    assert.match(indexHtml, /id="hero-visual"[\s\S]*id="hero-collage-scene"/);
     assert.match(indexHtml, /href="https:\/\/chat\.whatsapp\.com\/CiASaHQH0A9D0s2m2jedzb"[^>]*id="hero-whatsapp-cta"/);
     assert.match(indexHtml, /Join WhatsApp for Best Offers/);
     assert.match(indexHtml, /href="https:\/\/chat\.whatsapp\.com\/CiASaHQH0A9D0s2m2jedzb"[^>]*id="offers-modal-wa-btn"/);
@@ -23,8 +25,9 @@ describe('STOREFRONT CLOSED HERO & WHATSAPP OFFERS CTA SUITE', () => {
     assert.match(indexHtml, /href="https:\/\/chat\.whatsapp\.com\/CiASaHQH0A9D0s2m2jedzb"[^>]*id="footer-wa-btn"/);
   });
 
-  it('2. main.js removes #hero-scroll-guide listeners and toggles is-kitchen-closed inside updateStoreStatusUI', () => {
+  it('2. main.js removes #hero-scroll-guide and floating hero blob handlers, and toggles is-kitchen-closed inside updateStoreStatusUI', () => {
     assert.doesNotMatch(mainJs, /hero-scroll-guide/);
+    assert.doesNotMatch(mainJs, /food-blob-item|heroDishMappings|heroCollageScene/);
     assert.match(
       mainJs,
       /function\s+updateStoreStatusUI\s*\(\)\s*\{[\s\S]*?activeHeroSection\.classList\.toggle\(\s*'is-kitchen-closed'\s*,\s*Boolean\(isClosed\)\s*\)/

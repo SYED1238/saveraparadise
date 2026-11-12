@@ -301,84 +301,9 @@
           </div>
         </div>
 
-        <!-- Right Hero Visual Showcase (Collage with Organic Shapes & Doodle Animations) -->
-        <div class="hero-visual" id="hero-visual">
-          <div class="hero-collage-scene" id="hero-collage-scene">
-            
-            <!-- Animated SVG Doodle Paths & Arrows -->
-            <svg class="doodle-canvas" viewBox="0 0 600 600" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <!-- Curved dashed trail 1: top ramen down to pizza -->
-              <path class="animated-dash-trail trail-1" d="M 450 140 C 530 180, 520 280, 480 340 C 450 380, 380 370, 360 410" stroke="#1F2937" stroke-width="2" stroke-linecap="round" stroke-dasharray="6 6"/>
-              
-              <!-- Curved dashed trail 2: pizza over to burger -->
-              <path class="animated-dash-trail trail-2" d="M 270 500 C 310 540, 380 540, 420 490" stroke="#1F2937" stroke-width="2" stroke-linecap="round" stroke-dasharray="6 6"/>
-              
-              <!-- Doodle arrow head pointing to burger -->
-              <path class="arrow-head" d="M 412 478 L 424 492 L 406 498" stroke="#1F2937" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              
-              <!-- Doodle arrow head pointing to ramen -->
-              <path class="arrow-head" d="M 462 132 L 450 140 L 452 155" stroke="#1F2937" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-
-            <!-- Floating Twinkle Stars & Doodle Elements -->
-            <div class="doodle-star star-1">
-              <svg viewBox="0 0 24 24" fill="#F59E0B" stroke="#1F2937" stroke-width="1.5">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-              </svg>
-            </div>
-            
-            <div class="doodle-star star-2">
-              <svg viewBox="0 0 24 24" fill="#F97316" stroke="#1F2937" stroke-width="1.5">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-              </svg>
-            </div>
-
-            <div class="doodle-sparkle sparkle-1">✦</div>
-            <div class="doodle-sparkle sparkle-2">★</div>
-            <div class="doodle-burst burst-1"></div>
-
-                        <!-- Food Blob 1: Hyderabadi Biryani (Top) -->
-            <div class="food-blob-item blob-ramen" id="blob-chicken" data-id="dish-chicken-biryani-full" data-dish="Chicken Biryani (Full)" data-price="210">
-              <div class="blob-frame frame-ramen">
-                <img src="/biryani-plate-2.png" alt="Hyderabadi Chicken Biryani" class="food-img" fetchpriority="high" decoding="async" onload="this.classList.add('img-is-ready'); this.closest('.blob-frame')?.classList.add('is-img-loaded');"/>
-                <div class="blob-steam-emitter">
-                  <span class="steam-wisp wisp-1"></span>
-                  <span class="steam-wisp wisp-2"></span>
-                  <span class="steam-wisp wisp-3"></span>
-                </div>
-              </div>
-              <div class="blob-label-tag tag-top">
-                <span class="tag-emoji">🍚</span>
-                <span class="tag-text">Hyderabadi Biryani • ₹240</span>
-                <button class="quick-add-blob-btn" aria-label="Quick Add Hyderabadi Biryani" title="Quick Add to Cart">+</button>
-              </div>
-            </div>
-
-            <!-- Food Blob 2: Arabian Mandi (Bottom Left) -->
-            <div class="food-blob-item blob-pizza" id="blob-pizza" data-id="dish-grilled-chicken-full" data-dish="Grilled Chicken (Full)" data-price="499">
-              <div class="blob-frame frame-pizza">
-                <img src="https://images.unsplash.com/photo-1544025162-d76694265947?w=500&auto=format&fit=crop&q=80" alt="Arabian Mandi Platter" class="food-img" fetchpriority="high" decoding="async" onload="this.classList.add('img-is-ready'); this.closest('.blob-frame')?.classList.add('is-img-loaded');"/>
-              </div>
-              <div class="blob-label-tag tag-bottom-left">
-                <span class="tag-emoji">🍗</span>
-                <span class="tag-text">Grill Mandi • ₹600</span>
-                <button class="quick-add-blob-btn" aria-label="Quick Add Grill Mandi" title="Quick Add to Cart">+</button>
-              </div>
-            </div>
-
-            <!-- Food Blob 3: Tandoori Chicken (Bottom Right) -->
-            <div class="food-blob-item blob-burger" id="blob-burger" data-id="dish-tandoori-chicken-half" data-dish="Tandoori Chicken (Half)" data-price="249">
-              <div class="blob-frame frame-burger">
-                <img src="https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=500&auto=format&fit=crop&q=80" alt="Clay Oven Tandoori Chicken" class="food-img" fetchpriority="high" decoding="async" onload="this.classList.add('img-is-ready'); this.closest('.blob-frame')?.classList.add('is-img-loaded');"/>
-              </div>
-              <div class="blob-label-tag tag-bottom-right">
-                <span class="tag-emoji">🔥</span>
-                <span class="tag-text">Tandoori Chicken • ₹240</span>
-                <button class="quick-add-blob-btn" aria-label="Quick Add Tandoori Chicken" title="Quick Add to Cart">+</button>
-              </div>
-            </div>
-
-          </div>
+        <!-- Blank Hero Lower Spacer (Floating dishes removed cleanly while preserving button placement) -->
+        <div class="hero-visual" id="hero-visual" aria-hidden="true">
+          <div class="hero-collage-scene hero-collage-spacer" id="hero-collage-scene"></div>
         </div>
 
       </div>

@@ -73,8 +73,7 @@ function initStorefrontApp() {
   // ==========================================
   function setupImageSkeleton(img) {
     if (!img) return;
-    const container = img.closest('.blob-frame') ||
-                      img.closest('.recipe-card-inner') ||
+    const container = img.closest('.recipe-card-inner') ||
                       img.closest('.dish-thumb-box') ||
                       img.closest('.food-modal-hero') ||
                       img.closest('.cart-item-img-wrap') ||
@@ -157,7 +156,7 @@ function initStorefrontApp() {
 
   // Developer & Tester Helper to simulate/demo skeleton loading anytime
   window.showSkeletonDemo = function(durationMs = 4000) {
-    const containers = document.querySelectorAll('.blob-frame, .dish-thumb-box, .food-modal-hero');
+    const containers = document.querySelectorAll('.dish-thumb-box, .food-modal-hero');
     const imgs = document.querySelectorAll('.food-img, .recipe-img, .food-modal-img');
     
     containers.forEach(c => {
@@ -376,10 +375,6 @@ function initStorefrontApp() {
   // Hero & Interactive elements
   const btnHeroOrder = document.getElementById('btn-hero-order');
   const heroSection = document.getElementById('hero-section');
-  const heroCollageScene = document.getElementById('hero-collage-scene');
-  const blobRamen = document.getElementById('blob-chicken') || document.getElementById('blob-ramen');
-  const blobPizza = document.getElementById('blob-pizza');
-  const blobBurger = document.getElementById('blob-burger');
 
   // Carousel
   const catTrack = document.getElementById('category-track');
@@ -493,60 +488,7 @@ function initStorefrontApp() {
     });
   }
 
-  // ==========================================
-  // HERO 3D PARALLAX TILT EFFECT (Ultra Low CPU & Auto-Sleeping RAF)
-  // ==========================================
-  const supportsHover = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: hover)').matches;
-  if (heroSection && heroCollageScene && supportsHover) {
-    let mouseX = 0;
-    let mouseY = 0;
-    let currentX = 0;
-    let currentY = 0;
-    let isParallaxLoopRunning = false;
-
-    function stepParallax() {
-      // Smooth lerp
-      currentX += (mouseX - currentX) * 0.08;
-      currentY += (mouseY - currentY) * 0.08;
-
-      if (blobRamen && blobPizza && blobBurger) {
-        blobRamen.style.transform = `translate3d(${currentX * -18}px, ${currentY * -14}px, 0)`;
-        blobPizza.style.transform = `translate3d(${currentX * 16}px, ${currentY * 18}px, 0)`;
-        blobBurger.style.transform = `translate3d(${currentX * -14}px, ${currentY * 20}px, 0)`;
-      }
-
-      // Automatically terminate RAF loop when settled to save 100% idle CPU
-      const diffX = Math.abs(mouseX - currentX);
-      const diffY = Math.abs(mouseY - currentY);
-      if (diffX > 0.001 || diffY > 0.001) {
-        requestAnimationFrame(stepParallax);
-      } else {
-        isParallaxLoopRunning = false;
-      }
-    }
-
-    function triggerParallax() {
-      if (!isParallaxLoopRunning && !document.hidden && !heroSection.classList.contains('hero-paused')) {
-        isParallaxLoopRunning = true;
-        requestAnimationFrame(stepParallax);
-      }
-    }
-
-    heroSection.addEventListener('mousemove', (e) => {
-      const rect = heroSection.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      mouseX = (e.clientX - centerX) / (rect.width / 2);
-      mouseY = (e.clientY - centerY) / (rect.height / 2);
-      triggerParallax();
-    }, { passive: true });
-
-    heroSection.addEventListener('mouseleave', () => {
-      mouseX = 0;
-      mouseY = 0;
-      triggerParallax();
-    });
-  }
+  // (3D hero blob parallax removed along with floating dish collage)
 
   // Pause offscreen hero animations when scrolled down
   if (heroSection && typeof IntersectionObserver !== 'undefined') {
@@ -2645,31 +2587,6 @@ function initStorefrontApp() {
       }
     });
 
-    // 7. Live Sync Hero Floating Bubbles with Catalog Dishes
-    const heroDishMappings = [
-      { blobId: 'blob-chicken', dishId: 'dish-chicken-biryani-full' },
-      { blobId: 'blob-pizza', dishId: 'dish-grilled-chicken-full' },
-      { blobId: 'blob-burger', dishId: 'dish-tandoori-chicken-half' }
-    ];
-
-    heroDishMappings.forEach(({ blobId, dishId }) => {
-      const blob = document.getElementById(blobId);
-      const dish = dishes.find(d => d.id === dishId);
-      if (blob && dish) {
-        blob.setAttribute('data-dish', dish.name);
-        blob.setAttribute('data-price', dish.price);
-        blob.setAttribute('data-id', dish.id);
-        const img = blob.querySelector('.food-img') || blob.querySelector('img');
-        if (img && dish.image && img.getAttribute('src') !== dish.image) {
-          img.src = dish.image;
-        }
-        const tagText = blob.querySelector('.tag-text');
-        if (tagText) {
-          const cleanDisplayName = String(dish.name || '').replace(/\s*\([Ss]tarts[^)]*\)/gi, '').trim();
-          tagText.textContent = `${cleanDisplayName} • ₹${Math.round(dish.price)}`;
-        }
-      }
-    });
   }
   try {
     syncStorefrontCardsWithDataService();
@@ -2681,51 +2598,6 @@ function initStorefrontApp() {
   } catch (err) {
     console.warn('syncStorefrontCardsWithDataService error:', err);
   }
-
-  // Quick add from Hero Blobs (Both '+' buttons AND tapping the food bubble directly)
-  document.querySelectorAll('.food-blob-item').forEach(blob => {
-    blob.addEventListener('click', (e) => {
-      const dish = blob.getAttribute('data-dish');
-      const price = parseFloat(blob.getAttribute('data-price'));
-      const img = blob.querySelector('img')?.src || '';
-
-      const dishId = blob.getAttribute('data-id') || ('hero-' + dish.toLowerCase().replace(/\s+/g, '-'));
-
-      const allDishes = (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function') ? dataService.getDishes() : [];
-      const liveDish = (typeof dataService !== 'undefined' && typeof dataService.getDishById === 'function' ? dataService.getDishById(dishId) : null) ||
-                       allDishes.find(d => d.id === dishId || (dish && d.name && d.name.toLowerCase() === dish.toLowerCase()));
-
-      if (liveDish) {
-        if (liveDish.inStock === false) {
-          showToast(`Sorry, "${liveDish.name || dish}" will be back soon! ⏳`, 'info');
-          return;
-        }
-        const sched = getDishScheduleStatus(liveDish, new Date());
-        if (!sched.isAvailable) {
-          if (sched.status === 'countdown') {
-            showToast(`🕒 "${liveDish.name}" serving starts in ${sched.countdownText.replace('Starts in ', '')} (at ${formatTime12h(liveDish.availableFrom)}).`, 'info');
-          } else if (sched.status === 'ended_today') {
-            showToast(`⛔ "${liveDish.name}" serving ended for today.`, 'info');
-          } else if (sched.status === 'day_inactive') {
-            showToast(`📅 "${liveDish.name}" is ${sched.message}.`, 'info');
-          } else {
-            showToast(`Sorry, "${liveDish.name}" is not currently available.`, 'info');
-          }
-          return;
-        }
-      }
-
-      const item = {
-        id: liveDish ? liveDish.id : dishId,
-        name: liveDish ? liveDish.name : dish,
-        price: liveDish ? liveDish.price : price,
-        image: liveDish ? liveDish.image : img
-      };
-
-      const triggerEl = e.target.closest('.quick-add-blob-btn, .bubble-direct-add-btn') || blob;
-      addToCart(item, triggerEl);
-    });
-  });
 
 
   // Update Floating Unlocking Deals Progress Bar (Blinkit / Zepto Style)

@@ -1826,7 +1826,7 @@ body.pwa-customer-installed .header-pwa-dock {
 }
 
 /* ==========================================================================
-   Hero Visual Collage (Real Organic Shapes & Float Parallax)
+   Hero Blank Visual Spacer (Preserves Exact Button Positions & Spacing)
    ========================================================================== */
 .hero-visual {
   position: relative;
@@ -1835,296 +1835,15 @@ body.pwa-customer-installed .header-pwa-dock {
   justify-content: center;
   min-height: 480px;
   width: 100%;
+  pointer-events: none;
+  user-select: none;
 }
 
 .hero-collage-scene {
   position: relative;
   width: 520px;
   height: 480px;
-}
-
-/* SVG Canvas for Doodles & Arrows */
-.doodle-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
   pointer-events: none;
-  z-index: 2;
-}
-
-.animated-dash-trail {
-  animation: dash-flow 20s linear infinite;
-}
-
-@keyframes dash-flow {
-  to {
-    stroke-dashoffset: -200;
-  }
-}
-
-.arrow-head {
-  animation: arrow-nudge 2.5s ease-in-out infinite;
-}
-
-@keyframes arrow-nudge {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(3px, -3px); }
-}
-
-/* Twinkle Stars and Sparkles */
-.doodle-star {
-  position: absolute;
-  z-index: 4;
-  pointer-events: none;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
-}
-
-.star-1 {
-  top: 40px;
-  right: 80px;
-  width: 28px;
-  height: 28px;
-  animation: star-twinkle 3s ease-in-out infinite;
-}
-
-.star-2 {
-  top: 240px;
-  right: 10px;
-  width: 24px;
-  height: 24px;
-  animation: star-twinkle 3.6s ease-in-out infinite 0.8s;
-}
-
-.doodle-sparkle {
-  position: absolute;
-  font-size: 1.5rem;
-  color: #1F2937;
-  font-weight: 900;
-  z-index: 4;
-  pointer-events: none;
-}
-
-.sparkle-1 {
-  top: 140px;
-  right: 210px;
-  animation: sparkle-float 4s ease-in-out infinite;
-}
-
-.sparkle-2 {
-  bottom: 110px;
-  left: 20px;
-  animation: sparkle-float 3.5s ease-in-out infinite 1s;
-}
-
-@keyframes star-twinkle {
-  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.9; }
-  50% { transform: scale(1.3) rotate(15deg); opacity: 1; }
-}
-
-@keyframes sparkle-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px) rotate(10deg); }
-}
-
-/* Food Blobs */
-.food-blob-item {
-  position: absolute;
-  transition: transform 0.4s var(--ease-spring), filter 0.4s ease;
-  cursor: pointer;
-  z-index: 3;
-}
-
-.food-blob-item:hover {
-  z-index: 10;
-  transform: scale(1.04) translateY(-6px) !important;
-}
-
-.blob-frame {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(135deg, #F9F4EB 0%, #EFE8DC 100%);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: box-shadow 0.3s ease;
-}
-
-.food-blob-item:hover .blob-frame {
-  box-shadow: 0 22px 50px rgba(255, 90, 38, 0.25);
-}
-
-.blob-frame:not(.is-img-loaded)::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: linear-gradient(
-    90deg,
-    #F3EBE1 0%,
-    #FFF8F0 35%,
-    #FFFFFF 50%,
-    #FFF8F0 65%,
-    #F3EBE1 100%
-  );
-  background-size: 200% 100%;
-  animation: imgSkeletonShimmerWarm 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  border-radius: inherit;
-  pointer-events: none;
-  transition: opacity 0.4s ease, visibility 0.4s ease;
-}
-
-.blob-frame:not(.is-img-loaded) .blob-steam-emitter {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.blob-frame.is-img-loaded::after {
-  opacity: 0;
-  visibility: hidden;
-  animation: none;
-}
-
-.food-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s ease;
-}
-
-.food-blob-item:hover .food-img {
-  transform: scale(1.08);
-}
-
-/* Blob 1: Asian Ramen (Top Circle/Pebble) */
-.blob-ramen {
-  top: 10px;
-  left: 120px;
-  animation: float-ramen 6s ease-in-out infinite;
-}
-
-.frame-ramen {
-  width: 250px;
-  height: 250px;
-  border-radius: 50% 50% 48% 52% / 52% 48% 52% 48%;
-  border: 5px solid #FFFFFF;
-}
-
-@keyframes float-ramen {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  50% { transform: translate(-4px, -12px) rotate(-1.5deg); }
-}
-
-/* Blob 2: Artisan Pizza (Bottom Left Organic Pebble) */
-.blob-pizza {
-  bottom: 25px;
-  left: 20px;
-  animation: float-pizza 6.5s ease-in-out infinite 0.6s;
-}
-
-.frame-pizza {
-  width: 240px;
-  height: 240px;
-  border-radius: 54% 46% 42% 58% / 48% 53% 47% 52%;
-  border: 5px solid #FFFFFF;
-}
-
-@keyframes float-pizza {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  50% { transform: translate(6px, -10px) rotate(1.2deg); }
-}
-
-/* Blob 3: Loaded Burger (Bottom Right Organic Pebble) */
-.blob-burger {
-  bottom: 40px;
-  right: 15px;
-  animation: float-burger 7s ease-in-out infinite 1.2s;
-}
-
-.frame-burger {
-  width: 250px;
-  height: 240px;
-  border-radius: 46% 54% 58% 42% / 54% 46% 54% 46%;
-  border: 5px solid #FFFFFF;
-}
-
-@keyframes float-burger {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  50% { transform: translate(-5px, -14px) rotate(-1deg); }
-}
-
-/* Floating Blob Tags with Quick Add Buttons (Softmorphism Micro-Shaded) */
-.blob-label-tag {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #FFFFFF;
-  padding: 6px 14px 6px 10px;
-  border-radius: var(--radius-full);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  font-size: 0.82rem;
-  font-weight: 750;
-  color: var(--text-heading);
-  white-space: nowrap;
-  pointer-events: auto;
-  transition: transform 0.25s var(--ease-spring), box-shadow 0.25s ease;
-}
-
-.blob-label-tag .tag-text {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.blob-label-tag:hover {
-  transform: scale(1.06) translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 90, 38, 0.2), 0 2px 6px rgba(0, 0, 0, 0.06);
-}
-
-.tag-top {
-  top: -12px;
-  left: 40px;
-}
-
-.tag-bottom-left {
-  bottom: -10px;
-  left: 20px;
-}
-
-.tag-bottom-right {
-  bottom: -10px;
-  right: 20px;
-}
-
-.tag-emoji {
-  font-size: 1rem;
-}
-
-.quick-add-blob-btn {
-  background: linear-gradient(135deg, #FF6A00 0%, #FF5A26 100%);
-  color: #FFF;
-  border: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(255, 90, 38, 0.45);
-  transition: transform 0.2s var(--ease-spring);
-}
-
-.quick-add-blob-btn:hover {
-  transform: scale(1.2);
-}
-
-.food-blob-item {
-  cursor: pointer;
 }
 
 /* Order Notification Opt-In Banner in Live Tracker Modal */
@@ -2176,36 +1895,6 @@ body.pwa-customer-installed .header-pwa-dock {
 .btn-enable-order-notifs:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(255, 90, 38, 0.45);
-}
-
-/* Steam Wisps on Ramen */
-.blob-steam-emitter {
-  position: absolute;
-  top: 15%;
-  left: 50%;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.steam-wisp {
-  position: absolute;
-  width: 8px;
-  height: 35px;
-  background: linear-gradient(to top, rgba(255, 255, 255, 0.5), transparent);
-  border-radius: 50%;
-  filter: blur(4px);
-  opacity: 0;
-  animation: steam-rise 3s infinite ease-out;
-}
-
-.wisp-1 { left: -10px; animation-delay: 0s; }
-.wisp-2 { left: 5px; animation-delay: 1s; }
-.wisp-3 { left: 20px; animation-delay: 2s; }
-
-@keyframes steam-rise {
-  0% { transform: translateY(0) scaleX(1); opacity: 0; }
-  30% { opacity: 0.6; }
-  100% { transform: translateY(-40px) scaleX(2.5); opacity: 0; }
 }
 
 /* ==========================================================================
@@ -7310,13 +6999,15 @@ body.order-modal-open .unlocked-deals-floating-bar {
     display: none;
   }
 
-  /* Balanced Hero Food Collage Scene */
+  /* Preserved Blank Lower Hero Spacer on Mobile (keeps buttons in exact same position) */
   .hero-visual {
     min-height: auto;
     width: 100%;
     display: flex;
     justify-content: center;
     margin: 12px auto 0;
+    pointer-events: none;
+    user-select: none;
   }
 
   .hero-collage-scene {
@@ -7324,128 +7015,7 @@ body.order-modal-open .unlocked-deals-floating-bar {
     height: 268px;
     margin: 10px auto 28px auto;
     position: relative;
-  }
-
-  .frame-ramen {
-    width: 134px;
-    height: 134px;
-    border-width: 3.5px;
-  }
-
-  .blob-ramen {
-    top: 10px;
-    left: 93px;
-  }
-
-  .frame-pizza {
-    width: 124px;
-    height: 124px;
-    border-width: 3.5px;
-  }
-
-  .blob-pizza {
-    bottom: 5px;
-    left: 4px;
-  }
-
-  .frame-burger {
-    width: 128px;
-    height: 124px;
-    border-width: 3.5px;
-  }
-
-  .blob-burger {
-    bottom: 8px;
-    right: 4px;
-  }
-
-  /* Mobile Floating Blob Tags & Quick Add Buttons */
-  .blob-label-tag {
-    display: flex !important;
-    padding: 5px 10px 5px 8px;
-    font-size: 0.74rem;
-    gap: 5px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
-    background: #FFFFFF;
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    white-space: nowrap;
-    border-radius: var(--radius-full);
-  }
-
-  .blob-label-tag .tag-text {
-    max-width: 195px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 750;
-    letter-spacing: -0.2px;
-  }
-
-  .tag-top {
-    top: -14px;
-    bottom: auto;
-    left: 50%;
-    transform: translateX(-50%);
-  }
-
-  .tag-bottom-left {
-    bottom: -16px;
-    top: auto;
-    left: -4px;
-    right: auto;
-    transform: none;
-  }
-
-  .tag-bottom-right {
-    top: 2px;
-    bottom: auto;
-    right: -8px;
-    left: auto;
-    transform: none;
-  }
-
-  .quick-add-blob-btn {
-    width: 22px;
-    height: 22px;
-    min-width: 22px;
-    min-height: 22px;
-    font-size: 0.95rem;
-    line-height: 1;
-    border-radius: 50%;
-    background: var(--brand-primary);
-    color: #FFF;
-    border: none;
-    box-shadow: 0 2px 6px rgba(255, 90, 38, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
-
-  .doodle-star.star-1 {
-    right: 25px;
-    top: 15px;
-    width: 20px;
-    height: 20px;
-  }
-
-  .doodle-star.star-2 {
-    right: 5px;
-    top: 120px;
-    width: 18px;
-    height: 18px;
-  }
-
-  .sparkle-1 {
-    right: 95px;
-    top: 60px;
-    font-size: 1.1rem;
-  }
-
-  .sparkle-2 {
-    left: 10px;
-    bottom: 60px;
-    font-size: 1.1rem;
+    pointer-events: none;
   }
 
   /* Compact Popular Near You Section (Directly visible in 1st screen) */
@@ -10704,13 +10274,8 @@ body.order-modal-open .unlocked-deals-floating-bar {
    ========================================================================== */
 
 /* 1. Pause continuous GPU/CPU keyframe animations when hero is offscreen */
-.hero-paused .blob-ramen,
-.hero-paused .blob-pizza,
-.hero-paused .blob-burger,
 .hero-paused .jelly-shape,
-.hero-paused .hero-badge-tag,
-.hero-paused .steam-wisp,
-.hero-paused .doodle-sparkle {
+.hero-paused .hero-badge-tag {
   animation-play-state: paused !important;
 }
 
@@ -10721,14 +10286,7 @@ body.order-modal-open .unlocked-deals-floating-bar {
   contain-intrinsic-size: auto 450px;
 }
 
-/* 3. Hardware layer promotion for fluid compositing */
-.blob-ramen,
-.blob-pizza,
-.blob-burger {
-  will-change: transform;
-}
-
-/* 4. Honor user/system low motion & battery saver preference */
+/* 3. Honor user/system low motion & battery saver preference */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
