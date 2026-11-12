@@ -294,14 +294,15 @@ export async function recordVerifiedCashfreePayment({
     };
   }
 
+  const isDoorstep = String(cfOrderId || '').includes('doorstep_') || existingOrder.doorstep_upi === true;
   const updateFields = {
     cf_order_id: safeCfOrderId || existingOrder.cf_order_id || null,
     cf_payment_id: cfPaymentId ? String(cfPaymentId) : (existingOrder.cf_payment_id || null),
     cf_payment_status: 'SUCCESS',
     payment_status: 'Paid',
-    payment_method: 'Online',
+    payment_method: isDoorstep ? 'doorstep_upi' : 'Online',
     is_paid_online: true,
-    doorstep_upi: String(cfOrderId || '').includes('doorstep_'),
+    doorstep_upi: isDoorstep,
     cash_collected: 0,
     payment_gateway: 'cashfree'
   };
@@ -345,6 +346,13 @@ export async function generateDoorstepUpiQr({
   const upiIntentUri = `upi://pay?pa=${merchantVpa}&pn=${merchantName}&am=${cleanAmount.toFixed(2)}&tr=QB${cleanId}&tn=${encodeURIComponent(`Order #${cleanId}`)}&cu=INR`;
 
   if (!cfg.isConfigured) {
+    if (cfg.isProd) {
+      return {
+        success: false,
+        error: 'Cashfree Doorstep UPI is not configured in production environment'
+      };
+    }
+    const mockSessionId = `session_mock_doorstep_${cleanId}_${Date.now()}`;
     return {
       success: true,
       isMock: true,
@@ -352,6 +360,9 @@ export async function generateDoorstepUpiQr({
       amount: cleanAmount,
       merchantVpa,
       upiIntentUri,
+      cfOrderId: `doorstep_${cleanId}`,
+      paymentSessionId: mockSessionId,
+      cashfreeMode: 'sandbox',
       expiresAt: Date.now() + (expiryMinutes * 60 * 1000)
     };
   }
@@ -383,18 +394,29 @@ export async function generateDoorstepUpiQr({
       };
     }
 
+    const cashfreePaymentUrl = cfg.isProd
+      ? `https://payments.cashfree.com/order/#${pgRes.paymentSessionId}`
+      : `https://sandbox.cashfree.com/order/#${pgRes.paymentSessionId}`;
+
     return {
       success: true,
       orderId: cleanId,
       amount: cleanAmount,
       merchantVpa: 'Cashfree Official QR (Savera Paradise)',
-      upiIntentUri,
+      upiIntentUri: cashfreePaymentUrl,
+      paymentUrl: cashfreePaymentUrl,
       cfOrderId: pgRes.cfOrderId,
       paymentSessionId: pgRes.paymentSessionId,
       cashfreeMode: cfg.isProd ? 'production' : 'sandbox',
       expiresAt: Date.now() + (expiryMinutes * 60 * 1000)
     };
   } catch {
+    if (cfg.isProd) {
+      return {
+        success: false,
+        error: 'Cashfree Doorstep QR generation failed in production environment'
+      };
+    }
     return {
       success: true,
       isFallback: true,

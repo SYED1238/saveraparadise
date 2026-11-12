@@ -10,11 +10,13 @@ import {
   generateDoorstepUpiQr,
   verifyCashfreeWebhookSignature,
   initiateRiderPayout,
-  sanitizeCashfreeReturnUrl
+  sanitizeCashfreeReturnUrl,
+  recordVerifiedCashfreePayment
 } from '../api/_cashfree.js';
 import { createAdminToken, signPayload } from '../api/_auth.js';
 import cashfreePayoutHandler from '../api/cashfree-payout.js';
 import cashfreeCreateOrderHandler from '../api/cashfree-create-order.js';
+import cashfreeGenerateQrHandler from '../api/cashfree-generate-qr.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -448,6 +450,55 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       const checkoutIdx = mainJs.indexOf('cashfree.checkout({');
       assert.ok(mockIdx > 0, 'main.js must explicitly handle pgData.isMock');
       assert.ok(checkoutIdx > mockIdx, 'main.js must branch on pgData.isMock before calling cashfree.checkout');
+    });
+
+    test('POST /api/cashfree-generate-qr strictly rejects unauthenticated requests with 401', async () => {
+      const { req, res } = createMockReqRes({
+        body: { orderId: '1004', amount: 350 }
+      });
+      await cashfreeGenerateQrHandler(req, res);
+      assert.strictEqual(res.statusCode, 401);
+      assert.ok(res.data.error.includes('Unauthorized') || res.data.message.includes('authorization'));
+    });
+
+    test('POST /api/cashfree-generate-qr succeeds with valid rider authorization token and mock session', async () => {
+      const riderToken = createAdminToken(3600000, 'rider');
+      const { req, res } = createMockReqRes({
+        headers: { authorization: `Bearer ${riderToken}` },
+        body: { orderId: '1005', amount: 260, customerName: 'Zabi' }
+      });
+      await cashfreeGenerateQrHandler(req, res);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data.success, true);
+      assert.strictEqual(res.data.isMock, true);
+      assert.strictEqual(res.data.cfOrderId, 'doorstep_1005');
+      assert.ok(res.data.paymentSessionId.startsWith('session_mock_doorstep_1005_'));
+      assert.ok(res.data.qrDataUrl.startsWith('data:image/png;base64,'));
+    });
+
+    test('generateDoorstepUpiQr provides paymentSessionId and cfOrderId even in unconfigured mode', async () => {
+      const res = await generateDoorstepUpiQr({
+        orderId: '5566',
+        amount: 320
+      });
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.isMock, true);
+      assert.strictEqual(res.cfOrderId, 'doorstep_5566');
+      assert.ok(res.paymentSessionId.startsWith('session_mock_doorstep_5566_'));
+    });
+
+    test('delivery.js implements resetDoorstepModalState and stops polling on back navigation', () => {
+      const deliveryJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf8');
+      assert.ok(deliveryJs.includes('function resetDoorstepModalState()'), 'Must declare resetDoorstepModalState');
+      assert.ok(deliveryJs.includes('resetDoorstepModalState();'), 'Must invoke resetDoorstepModalState');
+      assert.ok(deliveryJs.includes('currentDoorstepCashfreeSession.isMock'), 'btnOpenCashfreeCheckout must handle isMock');
+    });
+
+    test('api/order-action.js and functions/api/order-action.js never write non-existent upi_manual_verified column', () => {
+      const nodeOrderAction = fs.readFileSync(path.join(rootDir, 'api', 'order-action.js'), 'utf8');
+      const cfOrderAction = fs.readFileSync(path.join(rootDir, 'functions', 'api', 'order-action.js'), 'utf8');
+      assert.strictEqual(nodeOrderAction.includes('upi_manual_verified'), false, 'Node api/order-action.js must not reference upi_manual_verified');
+      assert.strictEqual(cfOrderAction.includes('upi_manual_verified'), false, 'Cloudflare functions/api/order-action.js must not reference upi_manual_verified');
     });
   });
 });

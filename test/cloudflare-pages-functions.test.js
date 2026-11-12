@@ -314,9 +314,13 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
     });
 
     it('generates doorstep dynamic UPI QR and high-res Data URL', async () => {
+      const riderToken = createAdminToken(3600000, 'rider', mockEnv);
       const req = new Request('https://saveraparadise.com/api/cashfree-generate-qr', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${riderToken}`
+        },
         body: JSON.stringify({
           orderId: '1003',
           amount: 350,
@@ -329,6 +333,19 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       assert.equal(data.success, true);
       assert.ok(data.upiIntentUri.startsWith('upi://pay?pa='));
       assert.ok(data.qrDataUrl.startsWith('data:image/png;base64,'));
+    });
+
+    it('strictly rejects unauthenticated requests to cashfree-generate-qr with 401', async () => {
+      const req = new Request('https://saveraparadise.com/api/cashfree-generate-qr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: '1003',
+          amount: 350
+        })
+      });
+      const res = await cashfreeGenerateQrHandler({ request: req, env: mockEnv });
+      assert.equal(res.status, 401);
     });
 
     it('strictly gates nighttime rider payout to Owner role and rejects Kitchen Admin', async () => {

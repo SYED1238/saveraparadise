@@ -82,6 +82,7 @@ const initDeliveryApp = () => {
   const miniMapInstances = new Map();
 
   // Rider Live GPS Coordinates (Default to Crispy Chicken Central Hub until phone GPS fix)
+  const RIDER_GPS_STORAGE_KEY = 'quickbite_rider_gps_state';
   const riderLiveLocation = {
     lat: RESTAURANT_COORDINATES.lat,
     lng: RESTAURANT_COORDINATES.lng,
@@ -89,6 +90,51 @@ const initDeliveryApp = () => {
     hasGps: false,
     lastUpdated: 0
   };
+
+  function persistRiderGpsState() {
+    try {
+      if (typeof localStorage !== 'undefined' && riderLiveLocation.hasGps) {
+        localStorage.setItem(RIDER_GPS_STORAGE_KEY, JSON.stringify({
+          lat: riderLiveLocation.lat,
+          lng: riderLiveLocation.lng,
+          accuracy: riderLiveLocation.accuracy,
+          hasGps: true,
+          lastUpdated: riderLiveLocation.lastUpdated || Date.now()
+        }));
+      }
+    } catch {}
+  }
+
+  function clearPersistedRiderGpsState() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(RIDER_GPS_STORAGE_KEY);
+      }
+    } catch {}
+  }
+
+  function restoreRiderGpsState() {
+    try {
+      if (typeof localStorage === 'undefined') return false;
+      const raw = localStorage.getItem(RIDER_GPS_STORAGE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.hasGps && Number.isFinite(Number(parsed.lat)) && Number.isFinite(Number(parsed.lng))) {
+        const savedTime = Number(parsed.lastUpdated) || 0;
+        const isFresh = (Date.now() - savedTime) <= 30 * 60 * 1000; // 30-minute freshness safeguard
+        if (isFresh) {
+          riderLiveLocation.lat = Number(parsed.lat);
+          riderLiveLocation.lng = Number(parsed.lng);
+          riderLiveLocation.accuracy = Math.round(Number(parsed.accuracy) || 15);
+          riderLiveLocation.hasGps = true;
+          // Keep restored fix valid while background watchPosition acquires a fresh satellite lock
+          riderLiveLocation.lastUpdated = Date.now();
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
 
   // ========================================================
   // ALL DOM ELEMENTS (DECLARED FIRST TO PREVENT TDZ ERRORS)
@@ -307,6 +353,8 @@ const initDeliveryApp = () => {
       dataService.setActiveRiderPin(cleanPin);
       updateRiderProfileHeader();
       requestWakeLock();
+      restoreRiderGpsState();
+      initRiderLiveGeolocation(true);
       if (getSystemNotificationPermission() === 'default') {
         requestSystemNotificationPermission().catch(() => {});
       }
@@ -333,6 +381,10 @@ const initDeliveryApp = () => {
       if (riderLockOverlay) { riderLockOverlay.classList.add('unlocked'); riderLockOverlay.style.display = 'none'; }
       updateRiderProfileHeader();
       requestWakeLock();
+      if (restoreRiderGpsState()) {
+        updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
+      }
+      initRiderLiveGeolocation(true);
       renderPortal();
       Promise.allSettled([
         dataService.syncOrdersFromSupabase(true),
@@ -351,6 +403,13 @@ const initDeliveryApp = () => {
 
   if (btnRiderLogout) {
     btnRiderLogout.addEventListener('click', () => {
+      if (activeGpsWatchId !== null && 'geolocation' in navigator) {
+        try { navigator.geolocation.clearWatch(activeGpsWatchId); } catch {}
+        activeGpsWatchId = null;
+      }
+      riderLiveLocation.hasGps = false;
+      riderLiveLocation.lastUpdated = 0;
+      clearPersistedRiderGpsState();
       clearStaffSession('rider');
       releaseWakeLock();
       if (riderLockOverlay) riderLockOverlay.classList.remove('unlocked');
@@ -592,6 +651,7 @@ const initDeliveryApp = () => {
     riderLiveLocation.accuracy = Math.round(pos.coords.accuracy || 10);
     riderLiveLocation.hasGps = true;
     riderLiveLocation.lastUpdated = Date.now();
+    persistRiderGpsState();
 
     updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
     updatePickupGpsGateUI();
@@ -664,7 +724,7 @@ const initDeliveryApp = () => {
       activeGpsWatchId = null;
     }
 
-    if (riderLiveLocation.hasGps && riderLiveLocation.accuracy <= 20) {
+    if (riderLiveLocation.hasGps) {
       updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
     } else {
       updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
@@ -689,6 +749,7 @@ const initDeliveryApp = () => {
         if (err && err.code === 1) {
           clearTimeout(gpsFallbackTimeout);
           riderLiveLocation.hasGps = false;
+          clearPersistedRiderGpsState();
           updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
           return;
         }
@@ -700,10 +761,11 @@ const initDeliveryApp = () => {
           },
           (fallbackErr) => {
             clearTimeout(gpsFallbackTimeout);
-            riderLiveLocation.hasGps = false;
             if (fallbackErr && fallbackErr.code === 1) {
+              riderLiveLocation.hasGps = false;
+              clearPersistedRiderGpsState();
               updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
-            } else {
+            } else if (!riderLiveLocation.hasGps) {
               updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
             }
           },
@@ -996,9 +1058,13 @@ const initDeliveryApp = () => {
           riderLiveLocation.accuracy = Math.round(pos.coords.accuracy);
           riderLiveLocation.hasGps = true;
           riderLiveLocation.lastUpdated = Date.now();
+          persistRiderGpsState();
           updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
           updatePickupGpsGateUI();
         }
+      }
+      if (activeGpsWatchId === null) {
+        initRiderLiveGeolocation(false);
       }
       renderPortal();
       if (typeof onSynced === 'function') {
@@ -1921,6 +1987,7 @@ const initDeliveryApp = () => {
       }
     }
 
+    resetDoorstepModalState();
     activeConfirmOrder = order;
     confirmOrderId.value = order.id;
 
@@ -2011,9 +2078,35 @@ const initDeliveryApp = () => {
 
     modalConfirmBackdrop.classList.add('open');
     backNav.pushStep('modal-delivery-confirm', () => {
+      resetDoorstepModalState();
       modalConfirmBackdrop.classList.remove('open');
       activeConfirmOrder = null;
     });
+  }
+
+  function resetDoorstepModalState() {
+    stopDoorstepPaymentPolling();
+    currentDoorstepCashfreeSession = null;
+    if (doorstepUpiAmountBadge) {
+      doorstepUpiAmountBadge.textContent = '';
+      doorstepUpiAmountBadge.style.background = '';
+      doorstepUpiAmountBadge.style.color = '';
+    }
+    if (doorstepUpiLiveStatus) {
+      doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Listening for live payment...';
+      doorstepUpiLiveStatus.style.color = '#059669';
+    }
+    if (doorstepQrImg) {
+      doorstepQrImg.src = '';
+      doorstepQrImg.style.display = 'none';
+    }
+    if (doorstepQrLoader) {
+      doorstepQrLoader.style.display = 'none';
+    }
+    if (checkUpiVerified) {
+      checkUpiVerified.checked = false;
+      checkUpiVerified.required = false;
+    }
   }
 
   // Switch between Cash and PhonePe/UPI Doorstep Modes
@@ -2148,6 +2241,12 @@ const initDeliveryApp = () => {
       }
       throw new Error(data.message || 'QR generation fallback');
     } catch {
+      stopDoorstepPaymentPolling();
+      currentDoorstepCashfreeSession = null;
+      if (doorstepUpiLiveStatus) {
+        doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-qrcode" style="color: #64748B;"></i> Scan QR with PhonePe / GPay';
+        doorstepUpiLiveStatus.style.color = '#64748B';
+      }
       // Local In-Browser Fallback: Generate native Indian UPI intent QR locally (zero 3rd-party data leakage)
       const storeSettings = (typeof dataService !== 'undefined' && typeof dataService.getSettings === 'function') ? dataService.getSettings() : {};
       const merchantVpa = storeSettings.restaurantUpiVpa || storeSettings.upiVpa || 'Cashfree Official QR (Savera Paradise)';
@@ -2177,6 +2276,15 @@ const initDeliveryApp = () => {
     btnOpenCashfreeCheckout.addEventListener('click', async () => {
       if (!currentDoorstepCashfreeSession?.paymentSessionId) {
         showToast('⏳ Cashfree session is initializing. Customer can scan the QR code directly.', 'info');
+        return;
+      }
+      if (currentDoorstepCashfreeSession.isMock) {
+        const simulatePaid = typeof window.confirm === 'function'
+          ? window.confirm(`[Local Sandbox Mode] Cashfree API keys are in mock mode.\n\nSimulate successful doorstep payment for Order #${activeConfirmOrder?.id || ''}?`)
+          : true;
+        if (simulatePaid) {
+          await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, activeConfirmOrder?.id, true);
+        }
         return;
       }
       const CashfreeFn = (typeof window !== 'undefined' && window.Cashfree) ? window.Cashfree : null;
@@ -2216,7 +2324,7 @@ const initDeliveryApp = () => {
   }
 
   function closeConfirmModal() {
-    stopDoorstepPaymentPolling();
+    resetDoorstepModalState();
     modalConfirmBackdrop.classList.remove('open');
     activeConfirmOrder = null;
     backNav.removeStep('modal-delivery-confirm');

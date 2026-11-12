@@ -1048,7 +1048,7 @@ export async function onRequest(context) {
               updatePayload.doorstep_upi = true;
               updatePayload.payment_method = 'doorstep_upi';
               if (existing.cf_payment_status !== 'SUCCESS') {
-                updatePayload.upi_manual_verified = true;
+                updatePayload.cf_payment_status = existing.cf_payment_status || 'MANUAL_VERIFIED';
               }
             }
           } else {
