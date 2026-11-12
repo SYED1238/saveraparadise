@@ -182,9 +182,18 @@
                 </div>
               </button>
 
+              <!-- 6. Download Latest Kitchen APK -->
+              <button type="button" class="owner-dropdown-item" id="btn-owner-download-kitchen-apk" role="menuitem" title="Download latest Kitchen Admin Android APK">
+                <div class="odi-icon odi-orange"><i class="fa-solid fa-download"></i></div>
+                <div class="odi-text">
+                  <span class="odi-title">Download Kitchen APK</span>
+                  <span class="odi-desc">Get latest Kitchen Admin app</span>
+                </div>
+              </button>
+
               <div class="owner-dropdown-divider"></div>
 
-              <!-- 6. Lock Owner Portal -->
+              <!-- 7. Lock Owner Portal -->
               <button type="button" class="owner-dropdown-item odi-danger" id="btn-owner-lock" role="menuitem" title="Lock Owner Dashboard">
                 <div class="odi-icon odi-rose"><i class="fa-solid fa-arrow-right-from-bracket"></i></div>
                 <div class="odi-text">
@@ -1692,6 +1701,43 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- KITCHEN APK DOWNLOAD / SHARE MODAL (Fallback for In-App WebView)-->
+  <!-- ============================================================== -->
+  <div class="owner-modal-backdrop" id="owner-kitchen-apk-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="owner-kitchen-apk-title">
+    <div class="owner-modal-card" style="max-width: 420px;">
+      <div class="owner-modal-header">
+        <div class="modal-header-brand">
+          <i class="fa-solid fa-kitchen-set" style="color: #EA580C;"></i>
+          <div>
+            <h3 class="modal-order-id" id="owner-kitchen-apk-title" style="font-family: inherit; font-size: 1.05rem; color: var(--owner-text, #0F172A);">Kitchen Admin APK (Latest)</h3>
+            <span class="modal-order-time">Permanent link — always installs newest build</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" id="btn-close-kitchen-apk-modal" aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="owner-modal-body kitchen-apk-modal-body">
+        <p class="kitchen-apk-desc">Scan this permanent QR from your kitchen phone/tablet, or tap below to send or copy the direct APK link.</p>
+        <div class="kitchen-apk-qr-box">
+          <img src="/savera-kitchen-apk-qr.svg" alt="Permanent QR Code to Download Savera Kitchen Admin APK" width="180" height="180" />
+        </div>
+        <div class="kitchen-apk-url-pill">https://saveraparadise.foodbliz.in/apk/Savera-Kitchen-Admin.apk</div>
+        <div class="kitchen-apk-actions">
+          <a href="https://saveraparadise.foodbliz.in/apk/Savera-Kitchen-Admin.apk" download="Savera-Kitchen-Admin.apk" target="_blank" rel="noopener noreferrer" class="btn-kitchen-apk-primary" id="btn-kitchen-apk-direct">
+            <i class="fa-solid fa-download"></i> Download APK
+          </a>
+          <a href="https://wa.me/?text=Download%20latest%20Savera%20Kitchen%20Admin%20APK%3A%20https%3A%2F%2Fsaveraparadise.foodbliz.in%2Fapk%2FSavera-Kitchen-Admin.apk" target="_blank" rel="noopener noreferrer" class="btn-kitchen-apk-whatsapp" id="btn-kitchen-apk-whatsapp">
+            <i class="fa-brands fa-whatsapp"></i> Send via WhatsApp
+          </a>
+          <button type="button" class="btn-kitchen-apk-copy" id="btn-kitchen-apk-copy">
+            <i class="fa-regular fa-copy"></i> Copy Permanent Link
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 

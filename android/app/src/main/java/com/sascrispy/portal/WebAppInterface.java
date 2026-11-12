@@ -136,4 +136,18 @@ public class WebAppInterface {
     public boolean isNativeApp() {
         return true;
     }
+
+    @JavascriptInterface
+    public void openExternalUrl(String url) {
+        if (url == null) return;
+        String trimmed = url.trim();
+        if (!trimmed.startsWith("https://") && !trimmed.startsWith("http://")) return;
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(trimmed));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }

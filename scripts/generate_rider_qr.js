@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const RIDER_APK_DOWNLOAD_URL = 'https://saveraparadise.foodbliz.in/apk/Savera-Paradise-Rider.apk';
+export const KITCHEN_APK_DOWNLOAD_URL = 'https://saveraparadise.foodbliz.in/apk/Savera-Kitchen-Admin.apk';
 export const RIDER_QR_OPTIONS = {
   errorCorrectionLevel: 'H',
   margin: 2,
@@ -399,7 +400,15 @@ export async function generateRiderQrAssets({
   fs.writeFileSync(standeePath, buildRiderStandeeHtml(), 'utf8');
   console.log(`✓ Print-Ready Rider QR Poster generated: ${standeePath}`);
 
-  return { svgPath, pngPath, standeePath, targetUrl: RIDER_APK_DOWNLOAD_URL };
+  const kitchenSvgString = await QRCode.toString(KITCHEN_APK_DOWNLOAD_URL, {
+    ...RIDER_QR_OPTIONS,
+    type: 'svg'
+  });
+  const kitchenSvgPath = path.join(publicDir, 'savera-kitchen-apk-qr.svg');
+  fs.writeFileSync(kitchenSvgPath, kitchenSvgString, 'utf8');
+  console.log(`✓ Vector SVG Kitchen APK QR generated: ${kitchenSvgPath}`);
+
+  return { svgPath, pngPath, standeePath, kitchenSvgPath, targetUrl: RIDER_APK_DOWNLOAD_URL, kitchenTargetUrl: KITCHEN_APK_DOWNLOAD_URL };
 }
 
 const isDirectExecution = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;

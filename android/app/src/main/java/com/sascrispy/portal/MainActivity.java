@@ -94,10 +94,12 @@ public class MainActivity extends AppCompatActivity {
                 Uri uri = request.getUrl();
                 String urlStr = uri.toString();
 
-                // Open external links (Google Maps, WhatsApp, Phone calls) in native apps
+                // Open external links (Google Maps, WhatsApp, Phone calls, APK downloads) in native apps / browser
+                String lowerPath = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
                 if (urlStr.startsWith("tel:") || urlStr.startsWith("mailto:") ||
                     urlStr.startsWith("sms:") || urlStr.contains("wa.me") ||
-                    urlStr.contains("maps.google.com") || urlStr.contains("google.com/maps")) {
+                    urlStr.contains("maps.google.com") || urlStr.contains("google.com/maps") ||
+                    lowerPath.endsWith(".apk")) {
                     try {
                         Intent intent = new Intent(Intent.ACTION_VIEW, uri);
                         startActivity(intent);
@@ -114,6 +116,18 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 progressBar.setVisibility(View.GONE);
                 swipeRefresh.setRefreshing(false);
+            }
+        });
+
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            if (url == null) return;
+            String trimmed = url.trim();
+            if (!trimmed.startsWith("https://") && !trimmed.startsWith("http://")) return;
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(trimmed));
+                startActivity(intent);
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         });
 

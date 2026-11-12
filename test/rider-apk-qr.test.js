@@ -5,6 +5,7 @@ import path from 'node:path';
 import QRCode from 'qrcode';
 import {
   RIDER_APK_DOWNLOAD_URL,
+  KITCHEN_APK_DOWNLOAD_URL,
   RIDER_QR_OPTIONS
 } from '../scripts/generate_rider_qr.js';
 
@@ -114,5 +115,67 @@ describe('PERMANENT RIDER APK QR & ROUTING SUITE', () => {
     const ownerHtml = fs.readFileSync(path.join(ROOT_DIR, 'owner.html'), 'utf8');
     assert.ok(ownerHtml.includes('id="btn-owner-rider-qr"'));
     assert.ok(ownerHtml.includes('href="/rider-qr"'));
+  });
+
+  it('8. Permanent Kitchen APK binary and matching Kitchen QR SVG exist and CI workflow updates the APK in place', async () => {
+    const kitchenApkPath = path.join(PUBLIC_DIR, 'apk', 'Savera-Kitchen-Admin.apk');
+    assert.ok(fs.existsSync(kitchenApkPath), 'public/apk/Savera-Kitchen-Admin.apk must exist');
+    const stat = fs.statSync(kitchenApkPath);
+    assert.ok(stat.size > 100000, 'Kitchen APK binary must be non-empty');
+
+    const workflow = fs.readFileSync(path.join(ROOT_DIR, '.github', 'workflows', 'build-apk.yml'), 'utf8');
+    assert.ok(
+      workflow.includes('public/apk/Savera-Kitchen-Admin.apk'),
+      'CI workflow must update public/apk/Savera-Kitchen-Admin.apk in place'
+    );
+
+    assert.equal(KITCHEN_APK_DOWNLOAD_URL, 'https://saveraparadise.foodbliz.in/apk/Savera-Kitchen-Admin.apk');
+    const kitchenQrPath = path.join(PUBLIC_DIR, 'savera-kitchen-apk-qr.svg');
+    assert.ok(fs.existsSync(kitchenQrPath), 'public/savera-kitchen-apk-qr.svg must exist');
+    const actualSvg = fs.readFileSync(kitchenQrPath, 'utf8');
+    const expectedSvg = await QRCode.toString(KITCHEN_APK_DOWNLOAD_URL, {
+      ...RIDER_QR_OPTIONS,
+      type: 'svg'
+    });
+    assert.equal(actualSvg, expectedSvg, 'Kitchen QR SVG must match QRCode encoding of permanent Kitchen APK URL');
+  });
+
+  it('9. Owner Portal Executive Actions dropdown exposes Download Kitchen APK and fallback share/QR modal', () => {
+    const ownerHtml = fs.readFileSync(path.join(ROOT_DIR, 'owner.html'), 'utf8');
+    assert.ok(ownerHtml.includes('id="owner-menu-dropdown"'));
+    assert.ok(ownerHtml.includes('id="btn-owner-download-kitchen-apk"'));
+    assert.ok(ownerHtml.includes('id="owner-kitchen-apk-modal"'));
+    assert.ok(ownerHtml.includes('id="btn-close-kitchen-apk-modal"'));
+    assert.ok(ownerHtml.includes('id="btn-kitchen-apk-direct"'));
+    assert.ok(ownerHtml.includes('id="btn-kitchen-apk-whatsapp"'));
+    assert.ok(ownerHtml.includes('id="btn-kitchen-apk-copy"'));
+    assert.ok(ownerHtml.includes('/savera-kitchen-apk-qr.svg'));
+    assert.ok(ownerHtml.includes('/apk/Savera-Kitchen-Admin.apk'));
+  });
+
+  it('10. owner.js wires #btn-owner-download-kitchen-apk across AndroidNative bridge, native fallback modal, and browser download', () => {
+    const ownerJs = fs.readFileSync(path.join(ROOT_DIR, 'owner.js'), 'utf8');
+    assert.ok(ownerJs.includes('btn-owner-download-kitchen-apk'));
+    assert.ok(ownerJs.includes('/apk/Savera-Kitchen-Admin.apk'));
+    assert.ok(ownerJs.includes('AndroidNative.openExternalUrl'));
+    assert.ok(ownerJs.includes('openKitchenApkModal'));
+    assert.ok(ownerJs.includes('closeKitchenApkModal'));
+  });
+
+  it('11. Android WebView wrapper supports external .apk downloads via DownloadListener, shouldOverrideUrlLoading, and openExternalUrl', () => {
+    const mainActivity = fs.readFileSync(
+      path.join(ROOT_DIR, 'android', 'app', 'src', 'main', 'java', 'com', 'sascrispy', 'portal', 'MainActivity.java'),
+      'utf8'
+    );
+    assert.ok(mainActivity.includes('setDownloadListener'));
+    assert.ok(mainActivity.includes('endsWith(".apk")'));
+    assert.ok(mainActivity.includes('Intent.ACTION_VIEW'));
+
+    const webInterface = fs.readFileSync(
+      path.join(ROOT_DIR, 'android', 'app', 'src', 'main', 'java', 'com', 'sascrispy', 'portal', 'WebAppInterface.java'),
+      'utf8'
+    );
+    assert.ok(webInterface.includes('@JavascriptInterface'));
+    assert.ok(webInterface.includes('public void openExternalUrl(String url)'));
   });
 });

@@ -1834,6 +1834,66 @@ function initActions() {
     btnExport.addEventListener('click', () => exportOrdersToCSV());
   }
 
+  // Download Latest Kitchen APK
+  const KITCHEN_APK_URL = 'https://saveraparadise.foodbliz.in/apk/Savera-Kitchen-Admin.apk';
+  const btnDownloadKitchenApk = document.getElementById('btn-owner-download-kitchen-apk');
+  const kitchenApkModal = document.getElementById('owner-kitchen-apk-modal');
+  const btnCloseKitchenApkModal = document.getElementById('btn-close-kitchen-apk-modal');
+  const btnCopyKitchenApk = document.getElementById('btn-kitchen-apk-copy');
+
+  function openKitchenApkModal() {
+    if (!kitchenApkModal) return;
+    kitchenApkModal.style.display = 'flex';
+  }
+
+  function closeKitchenApkModal() {
+    if (!kitchenApkModal) return;
+    kitchenApkModal.style.display = 'none';
+  }
+
+  if (btnCloseKitchenApkModal) {
+    btnCloseKitchenApkModal.addEventListener('click', closeKitchenApkModal);
+  }
+  if (kitchenApkModal) {
+    kitchenApkModal.addEventListener('click', (e) => {
+      if (e.target === kitchenApkModal) closeKitchenApkModal();
+    });
+  }
+  if (btnCopyKitchenApk) {
+    btnCopyKitchenApk.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(KITCHEN_APK_URL);
+        showToast('✓ Kitchen APK permanent link copied', 'success');
+      } catch {
+        window.prompt('Copy permanent Kitchen APK link:', KITCHEN_APK_URL);
+      }
+    });
+  }
+
+  if (btnDownloadKitchenApk) {
+    btnDownloadKitchenApk.addEventListener('click', () => {
+      const hasNativeBridge = Boolean(window.AndroidNative) || /SaveraParadiseNativeApp/i.test(navigator.userAgent || '');
+      if (window.AndroidNative && typeof window.AndroidNative.openExternalUrl === 'function') {
+        window.AndroidNative.openExternalUrl(KITCHEN_APK_URL);
+        showToast('📲 Opening latest Kitchen Admin APK download...', 'success');
+        return;
+      }
+      if (hasNativeBridge) {
+        // Older Owner APK WebView builds do not have a native DownloadListener yet:
+        // show QR + WhatsApp + Copy Link modal so it always works immediately.
+        openKitchenApkModal();
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = '/apk/Savera-Kitchen-Admin.apk';
+      link.setAttribute('download', 'Savera-Kitchen-Admin.apk');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showToast('📲 Downloading latest Kitchen Admin APK...', 'success');
+    });
+  }
+
   // Lock Dashboard
   const btnLock = document.getElementById('btn-owner-lock');
   if (btnLock) {
