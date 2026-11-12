@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS public.riders (
   bank_ifsc VARCHAR(16) DEFAULT NULL,
   payout_method_pref VARCHAR(16) DEFAULT 'cash',
   cash_settled_at BIGINT,
+  max_active_orders INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -71,7 +72,8 @@ ALTER TABLE public.riders
   ADD COLUMN IF NOT EXISTS trips INTEGER DEFAULT 0,
   ADD COLUMN IF NOT EXISTS cash_settled_at BIGINT,
   ADD COLUMN IF NOT EXISTS payout_paid_at BIGINT,
-  ADD COLUMN IF NOT EXISTS payout_amount_paid NUMERIC DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS payout_amount_paid NUMERIC DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS max_active_orders INTEGER NOT NULL DEFAULT 1;
 
 ALTER TABLE public.riders ENABLE ROW LEVEL SECURITY;
 

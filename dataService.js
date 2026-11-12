@@ -3026,21 +3026,19 @@ class QuickBiteDataService {
 
         let data = null;
         let error = null;
+        let fromAuthoritativeApi = false;
         try {
           const actionRes = await this._orderAction('sync_orders', { limit: 100 });
           if (actionRes && Array.isArray(actionRes.orders)) {
             data = actionRes.orders;
+            fromAuthoritativeApi = true;
           }
         } catch {}
 
-        if (!data && supabase) {
-          const sbRes = await supabase
-            .from('orders')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(30);
-          data = sbRes.data;
-          error = sbRes.error;
+        if (!fromAuthoritativeApi) {
+          // Migration 08 revokes/blocks anon SELECT on public.orders via RLS (returns []).
+          // Never fall back to direct anon SELECT or wipe local orders cache on transient API failure.
+          return this.getOrders();
         }
 
         if (!error && Array.isArray(data)) {
@@ -7776,7 +7774,7 @@ class QuickBiteDataService {
     const cleanPin = String(riderPin || '').trim();
     const rider = (cleanPin ? this.getRiderByPin(cleanPin) : null) || this.getActiveRider();
     const limit = Number(rider?.maxActiveOrders ?? rider?.max_active_orders ?? 1);
-    return Number.isFinite(limit) && limit >= 1 ? Math.min(5, Math.round(limit)) : 1;
+    return Number.isFinite(limit) && limit >= 1 ? Math.min(4, Math.round(limit)) : 1;
   }
 
   isOrderGoingToRestaurant(order) {
@@ -7829,6 +7827,12 @@ class QuickBiteDataService {
       };
     }
 
+    const hasValidCoords = options &&
+      options.riderLat !== undefined && options.riderLat !== null &&
+      options.riderLng !== undefined && options.riderLng !== null &&
+      Number.isFinite(Number(options.riderLat)) &&
+      Number.isFinite(Number(options.riderLng));
+
     const maxAllowed = this.getRiderMaxActiveOrders(rider.pin);
     const activeOrdersForRider = orders.filter(o => {
       if (!o || normalizeId(o.id) === cleanOrderNorm) return false;
@@ -7836,15 +7840,6 @@ class QuickBiteDataService {
       if (oPin !== String(rider.pin).trim()) return false;
       return o.status === 'on_the_way' || this.isOrderGoingToRestaurant(o);
     });
-
-    if (activeOrdersForRider.some(o => o.status === 'on_the_way')) {
-      const roadOrder = activeOrdersForRider.find(o => o.status === 'on_the_way');
-      return {
-        success: false,
-        reason: 'active_order_limit',
-        message: `Complete your active delivery (${roadOrder.id}) on the road before accepting a new order.`
-      };
-    }
 
     if (activeOrdersForRider.length >= maxAllowed) {
       return {
@@ -7854,11 +7849,22 @@ class QuickBiteDataService {
       };
     }
 
-    const hasValidCoords = options &&
-      options.riderLat !== undefined && options.riderLat !== null &&
-      options.riderLng !== undefined && options.riderLng !== null &&
-      Number.isFinite(Number(options.riderLat)) &&
-      Number.isFinite(Number(options.riderLng));
+    const onWayOrders = activeOrdersForRider.filter(o => o.status === 'on_the_way');
+    if (onWayOrders.length > 0) {
+      const distKm = hasValidCoords ? this.calculateStraightDistance(Number(options.riderLat), Number(options.riderLng)) : null;
+      const withinCounterZone = distKm !== null && distKm <= 3.0;
+      const allRecentPickup = onWayOrders.every(o => {
+        const pickedTs = Number(o.pickedUpAt || o.addressDetails?.pickedUpAt || o.claimedAt || 0);
+        return pickedTs > 0 && (Date.now() - pickedTs) <= 3 * 60 * 1000;
+      });
+      if (!(maxAllowed > 1 && (withinCounterZone || allRecentPickup))) {
+        return {
+          success: false,
+          reason: 'active_order_limit',
+          message: `Complete your active delivery (${onWayOrders[0].id}) on the road before accepting a new order.`
+        };
+      }
+    }
 
     const distToRestKm = (hasValidCoords ? this.calculateStraightDistance(Number(options.riderLat), Number(options.riderLng)) : null) || 1.2;
     const minsToRest = Math.max(3, Math.round(distToRestKm * 3.2));

@@ -922,8 +922,19 @@ const initDeliveryApp = () => {
     const activeList = getRiderActiveOrdersList().filter(
       o => !cleanExclude || String(o.id || '').trim().replace(/^#/, '') !== cleanExclude
     );
-    const otwOrder = activeList.find(o => o.status === 'on_the_way');
-    if (otwOrder) return otwOrder;
+    const otwOrders = activeList.filter(o => o.status === 'on_the_way');
+    if (otwOrders.length > 0) {
+      const withinCounterZone = isRiderGpsSyncedAndFresh() && isRiderWithinRestaurantPickupRadius();
+      const now = Date.now();
+      const allRecentPickup = otwOrders.every(o => {
+        const pickedAt = Number(o?.addressDetails?.pickedUpAt || o?.pickedUpAt || 0);
+        return pickedAt > 0 && (now - pickedAt) <= 3 * 60 * 1000;
+      });
+      if (maxOrders > 1 && activeList.length < maxOrders && (withinCounterZone || allRecentPickup)) {
+        return null;
+      }
+      return otwOrders[0];
+    }
     if (activeList.length >= maxOrders) return activeList[0];
     return null;
   }

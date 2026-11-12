@@ -2191,7 +2191,7 @@ async function handleOwnerRiderSubmit(e) {
   const phone = (phoneInput?.value || '').trim();
   const vehicleType = (vehicleSelect?.value || '🏍️ Bike').trim();
   const vehicleName = (vehicleNameInput?.value || '').trim();
-  const maxActiveOrders = Math.max(1, Math.min(5, parseInt(maxOrdersSelect?.value || '1', 10) || 1));
+  const maxActiveOrders = Math.max(1, Math.min(4, parseInt(maxOrdersSelect?.value || '1', 10) || 1));
 
   // Combine Type emoji and Vehicle Name (e.g., "🏍️ Honda Activa", "🛵 TVS Jupiter", or "🏍️ Bike" if name is blank)
   const emoji = vehicleType.split(' ')[0] || '🏍️';

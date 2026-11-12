@@ -315,9 +315,183 @@ test('TWO-STAGE RIDER PICKUP, LIVE GPS TRACKING & PER-RIDER ORDER LIMIT SUITE', 
         assert.equal(r.statusCode, 403);
         assert.equal(r.body.code, 'OUTSIDE_PICKUP_RADIUS');
       }
+
+      // G. Counter batching for multi-order riders (Bug #3) + limit cap at 4 (Bug #5)
+      const oldPickedAt = Date.now() - (10 * 60 * 1000);
+      const recentPickedAt = Date.now() - (30 * 1000);
+      const batchAtCounterPayload = {
+        action: 'assign_order',
+        orderId: '#QB-804',
+        maxActiveOrders: 5,
+        riderLat: 12.7250,
+        riderLng: 77.2810,
+        simulateOrders: [
+          { id: '#QB-801', status: 'on_the_way', assigned_rider_pin: '2233', address_details: { pickedUpAt: oldPickedAt } },
+          { id: '#QB-804', status: 'ready_for_pickup', assigned_rider_pin: null }
+        ]
+      };
+      const [cfCounterBatch, apiCounterBatch] = await Promise.all([
+        callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', cfRiderToken, batchAtCounterPayload),
+        callNode(apiOrderAction, apiRiderToken, batchAtCounterPayload)
+      ]);
+      for (const r of [cfCounterBatch, apiCounterBatch]) {
+        assert.equal(r.statusCode, 200, 'Rider with maxActiveOrders>1 inside 3km counter zone should batch another order');
+      }
+
+      const recentPickupBatchPayload = {
+        action: 'assign_order',
+        orderId: '#QB-805',
+        maxActiveOrders: 2,
+        riderLat: 12.80,
+        riderLng: 77.33,
+        simulateOrders: [
+          { id: '#QB-801', status: 'on_the_way', assigned_rider_pin: '2233', address_details: { pickedUpAt: recentPickedAt } },
+          { id: '#QB-805', status: 'ready_for_pickup', assigned_rider_pin: null }
+        ]
+      };
+      const [cfRecentBatch, apiRecentBatch] = await Promise.all([
+        callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', cfRiderToken, recentPickupBatchPayload),
+        callNode(apiOrderAction, apiRiderToken, recentPickupBatchPayload)
+      ]);
+      for (const r of [cfRecentBatch, apiRecentBatch]) {
+        assert.equal(r.statusCode, 200, 'Rider within 3m of pickup should still batch up to maxActiveOrders');
+      }
+
+      const farLateBlockedPayload = {
+        ...recentPickupBatchPayload,
+        simulateOrders: [
+          { id: '#QB-801', status: 'on_the_way', assigned_rider_pin: '2233', address_details: { pickedUpAt: oldPickedAt } },
+          { id: '#QB-805', status: 'ready_for_pickup', assigned_rider_pin: null }
+        ]
+      };
+      const [cfLateBlock, apiLateBlock] = await Promise.all([
+        callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', cfRiderToken, farLateBlockedPayload),
+        callNode(apiOrderAction, apiRiderToken, farLateBlockedPayload)
+      ]);
+      for (const r of [cfLateBlock, apiLateBlock]) {
+        assert.equal(r.statusCode, 409);
+        assert.equal(r.body.code, 'ACTIVE_ORDER_LIMIT');
+      }
+
+      // H. Bug #2 & #5: Rider role is blocked (401) on admin-store save_rider; owner clamps maxActiveOrders at 4 & preserves omitted ledger fields
+      const ownerCapPayload = { action: 'save_rider', rider: { pin: '2233', name: 'Test Rider', maxActiveOrders: 5 } };
+      const [cfOwnerCap, apiOwnerCap] = await Promise.all([
+        callCf(cfAdminStore, 'https://saveraparadise.com/api/admin-store', cfOwnerToken, ownerCapPayload),
+        callNode(apiAdminStore, apiOwnerToken, ownerCapPayload)
+      ]);
+      for (const r of [cfOwnerCap, apiOwnerCap]) {
+        assert.equal(r.statusCode, 200);
+        assert.equal(r.body.rider.maxActiveOrders, 4, 'Owner save_rider must cap maxActiveOrders at 4');
+        assert.equal(r.body.rider.max_active_orders, 4);
+      }
+
+      const ownerPartialPayload = {
+        action: 'save_rider',
+        rider: { pin: '2233', name: 'Updated Name' },
+        simulateExistingRider: {
+          id: 'rider-2233',
+          pin: '2233',
+          name: 'Old Name',
+          earnings: 1250,
+          trips: 18,
+          cash_settled_at: 1700000000000,
+          payout_paid_at: 1700000005000,
+          payout_amount_paid: 400,
+          max_active_orders: 3
+        }
+      };
+      const [cfPartial, apiPartial] = await Promise.all([
+        callCf(cfAdminStore, 'https://saveraparadise.com/api/admin-store', cfOwnerToken, ownerPartialPayload),
+        callNode(apiAdminStore, apiOwnerToken, ownerPartialPayload)
+      ]);
+      for (const r of [cfPartial, apiPartial]) {
+        assert.equal(r.statusCode, 200);
+        assert.equal(r.body.rider.earnings, 1250, 'Partial owner save_rider must preserve earnings');
+        assert.equal(r.body.rider.trips, 18, 'Partial owner save_rider must preserve trips');
+        assert.equal(r.body.rider.cash_settled_at, 1700000000000, 'Partial owner save_rider must preserve cash_settled_at');
+        assert.equal(r.body.rider.payout_amount_paid, 400, 'Partial owner save_rider must preserve payout_amount_paid');
+        assert.equal(r.body.rider.max_active_orders, 3, 'Partial owner save_rider must preserve existing max_active_orders');
+      }
+
+      const riderEscalatePayload = {
+        action: 'save_rider',
+        rider: {
+          pin: '2233',
+          name: 'Rider One',
+          status: 'offline',
+          maxActiveOrders: 4,
+          earnings: 99999,
+          trips: 500,
+          cash_settled_at: Date.now(),
+          payout_amount_paid: 5000
+        }
+      };
+      const [cfEscalate, apiEscalate] = await Promise.all([
+        callCf(cfAdminStore, 'https://saveraparadise.com/api/admin-store', cfRiderToken, riderEscalatePayload),
+        callNode(apiAdminStore, apiRiderToken, riderEscalatePayload)
+      ]);
+      for (const r of [cfEscalate, apiEscalate]) {
+        assert.equal(r.statusCode, 401, 'Rider token must be rejected at admin-store auth boundary');
+      }
     } finally {
       if (prevSecret === undefined) delete process.env.SESSION_SECRET;
       else process.env.SESSION_SECRET = prevSecret;
     }
+  });
+
+  await t.test('5. Regression checks: sync_orders cache safety (Bug #1), stateless tracker map (Bug #4), and SQL schema cap/parity (Bug #5)', async () => {
+    const store = new Map();
+    if (typeof globalThis.localStorage === 'undefined') {
+      globalThis.localStorage = {
+        getItem: (k) => store.get(String(k)) ?? null,
+        setItem: (k, v) => store.set(String(k), String(v)),
+        removeItem: (k) => store.delete(String(k)),
+        clear: () => store.clear(),
+        key: (i) => Array.from(store.keys())[i] ?? null,
+        get length() { return store.size; }
+      };
+    }
+    if (typeof globalThis.sessionStorage === 'undefined') {
+      globalThis.sessionStorage = {
+        getItem: (k) => store.get('sess_' + String(k)) ?? null,
+        setItem: (k, v) => store.set('sess_' + String(k), String(v)),
+        removeItem: (k) => store.delete('sess_' + String(k)),
+        clear: () => {}
+      };
+    }
+
+    const { dataService } = await import('../dataService.js');
+    const origFetch = globalThis.fetch;
+    try {
+      globalThis.localStorage.clear();
+      globalThis.sessionStorage.setItem('quickbite_admin_token', 'test-admin-token');
+      dataService.saveOrders([{ id: '#QB-999', status: 'ready_for_pickup', createdAt: Date.now() }]);
+      globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({ error: 'Unavailable' }) });
+      const synced = await dataService.syncOrdersFromSupabase(true);
+      assert.equal(synced.length, 1, 'syncOrdersFromSupabase must preserve local orders cache when sync_orders fails');
+      assert.equal(dataService.getOrders().length, 1);
+
+      // Verify maxActiveOrders cap = 4 in dataService
+      dataService.saveRiders([{ id: 'r-cap', name: 'Cap Rider', pin: '7777', maxActiveOrders: 5 }]);
+      assert.equal(dataService.getRiderMaxActiveOrders('7777'), 4);
+    } finally {
+      globalThis.fetch = origFetch;
+      globalThis.sessionStorage.removeItem('quickbite_admin_token');
+      globalThis.localStorage.clear();
+    }
+
+    assert.ok(!mainJs.includes('trackerIsGoingToStore'), 'main.js must not rely on shared mutable trackerIsGoingToStore global');
+    assert.ok(mainJs.includes('function updateTrackerDistanceAndEta(distKm, estMins, isLiveGps = true, goingToStore = false)'), 'main.js updateTrackerDistanceAndEta must take explicit goingToStore');
+    assert.ok(mainJs.includes('if (!trackerLiveMap || activeTrackingOrderId !== order.id) return;'), 'main.js fetchRoadRoute callback must guard activeTrackingOrderId');
+
+    const setupSql = fs.readFileSync(path.join(process.cwd(), 'supabase_setup.sql'), 'utf8');
+    const mig04Sql = fs.readFileSync(path.join(process.cwd(), 'supabase_migration_04_cashfree_and_rls_alignment.sql'), 'utf8');
+    const hardenSql = fs.readFileSync(path.join(process.cwd(), 'supabase_production_security_hardening.sql'), 'utf8');
+    const mig13Sql = fs.readFileSync(path.join(process.cwd(), 'supabase_migration_13_rider_max_active_orders.sql'), 'utf8');
+
+    assert.ok(setupSql.includes('max_active_orders INTEGER NOT NULL DEFAULT 1'), 'supabase_setup.sql must define max_active_orders');
+    assert.ok(mig04Sql.includes('max_active_orders INTEGER NOT NULL DEFAULT 1'), 'migration_04 SQL must include max_active_orders');
+    assert.ok(hardenSql.includes('max_active_orders INTEGER NOT NULL DEFAULT 1'), 'hardening SQL must include max_active_orders');
+    assert.ok(mig13Sql.includes('max_active_orders <= 4'), 'migration_13 constraint must cap max_active_orders at 4');
   });
 });

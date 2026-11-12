@@ -3572,8 +3572,6 @@ function initStorefrontApp() {
     lastRouteFetchPos = null;
   }
 
-  let trackerIsGoingToStore = false;
-
   function isOrderRiderGoingToStore(order) {
     if (!order || order.status === 'on_the_way' || order.status === 'delivered' || order.status === 'cancelled' || order.status === 'undelivered') {
       return false;
@@ -3585,24 +3583,24 @@ function initStorefrontApp() {
     return Boolean(order.assignedRiderPin) && stage === 'going_to_restaurant';
   }
 
-  function updateTrackerDistanceAndEta(distKm, estMins, isLiveGps = true) {
+  function updateTrackerDistanceAndEta(distKm, estMins, isLiveGps = true, goingToStore = false) {
     const distBadge = document.getElementById('tracker-map-distance-badge');
     if (distBadge) {
-      distBadge.innerHTML = trackerIsGoingToStore
+      distBadge.innerHTML = goingToStore
         ? `<i class="fa-solid fa-store"></i> ${distKm} km to restaurant (~${estMins} mins)`
         : `<i class="fa-solid fa-route"></i> ${distKm} km away (~${estMins} mins)`;
     }
 
     const etaTimeEl = document.getElementById('tracker-eta-time');
     if (etaTimeEl) {
-      etaTimeEl.textContent = trackerIsGoingToStore
+      etaTimeEl.textContent = goingToStore
         ? `Picking up parcel (~${estMins} - ${estMins + 5} mins)`
         : `${estMins} - ${estMins + 4} Minutes`;
     }
 
     const statusText = document.getElementById('tracker-map-status-text');
     if (statusText) {
-      if (trackerIsGoingToStore) {
+      if (goingToStore) {
         statusText.textContent = isLiveGps ? `Rider going to restaurant • Live GPS` : `Rider heading to restaurant`;
       } else {
         statusText.textContent = isLiveGps ? `Rider on the way • Live GPS` : `Rider on the way • In Transit`;
@@ -3613,7 +3611,7 @@ function initStorefrontApp() {
   let lastRouteFetchTime = 0;
   let lastRouteFetchPos = null;
 
-  async function updateTrackerRouteLine(riderLat, riderLng, dropLat, dropLng, isLiveGps = true, force = false) {
+  async function updateTrackerRouteLine(riderLat, riderLng, dropLat, dropLng, isLiveGps = true, force = false, goingToStore = false) {
     const now = Date.now();
     let movedMeters = 999;
     if (lastRouteFetchPos) {
@@ -3624,7 +3622,7 @@ function initStorefrontApp() {
     if (!force && lastRouteFetchTime > 0 && (now - lastRouteFetchTime < 10000) && movedMeters < 40) {
       const distKm = calculateDistanceKm(riderLat, riderLng, dropLat, dropLng);
       const estMins = Math.max(2, Math.ceil(distKm * 3.2));
-      updateTrackerDistanceAndEta(distKm, estMins, isLiveGps);
+      updateTrackerDistanceAndEta(distKm, estMins, isLiveGps, goingToStore);
       return;
     }
     lastRouteFetchTime = now;
@@ -3639,7 +3637,7 @@ function initStorefrontApp() {
 
     const distKm = Math.round((routeData.distanceMeters / 1000) * 10) / 10;
     const estMins = Math.max(2, Math.ceil(routeData.durationSeconds / 60));
-    updateTrackerDistanceAndEta(distKm, estMins, isLiveGps);
+    updateTrackerDistanceAndEta(distKm, estMins, isLiveGps, goingToStore);
   }
 
   function updateTrackerRiderPosition(payload) {
@@ -3647,10 +3645,15 @@ function initStorefrontApp() {
     const newLat = Number(payload.lat);
     const newLng = Number(payload.lng);
 
+    const activeOrd = payload.order || (activeTrackingOrderId ? dataService.getOrderById(activeTrackingOrderId) : null);
+    const goingToStore = typeof payload.isGoingToStore === 'boolean'
+      ? payload.isGoingToStore
+      : isOrderRiderGoingToStore(activeOrd);
+
     const restCoords = (typeof dataService.getRestaurantCoordinates === 'function')
       ? dataService.getRestaurantCoordinates()
       : RESTAURANT_COORDINATES;
-    const dropCoords = trackerIsGoingToStore
+    const dropCoords = goingToStore
       ? { lat: restCoords.lat, lng: restCoords.lng }
       : (trackerHomeMarker ? trackerHomeMarker.getLatLng() : { lat: 12.7275, lng: 77.2740 });
 
@@ -3664,7 +3667,7 @@ function initStorefrontApp() {
 
     // Update real road route line along the street network if not already custom-sliced
     if (!payload.hasCustomRoute) {
-      updateTrackerRouteLine(newLat, newLng, dropCoords.lat, dropCoords.lng, payload.isLiveGps !== false);
+      updateTrackerRouteLine(newLat, newLng, dropCoords.lat, dropCoords.lng, payload.isLiveGps !== false, false, goingToStore);
     }
   }
 
@@ -3694,7 +3697,9 @@ function initStorefrontApp() {
         lat: Number(payload.lat),
         lng: Number(payload.lng),
         riderName: payload.riderName || 'Delivery Partner',
-        isLiveGps: true
+        isLiveGps: true,
+        order: activeOrder,
+        isGoingToStore: isOrderRiderGoingToStore(activeOrder)
       });
     }
   }
@@ -3725,10 +3730,8 @@ function initStorefrontApp() {
     if (!mapCard || !mapView) return;
 
     const goingToStore = isOrderRiderGoingToStore(order);
-    trackerIsGoingToStore = goingToStore;
 
     if (order.status !== 'on_the_way' && !goingToStore) {
-      trackerIsGoingToStore = false;
       destroyTrackerLiveMap();
       return;
     }
@@ -3763,7 +3766,9 @@ function initStorefrontApp() {
         lat: riderLat,
         lng: riderLng,
         riderName: order.assignedRiderName || 'Delivery Partner',
-        isLiveGps: Boolean(liveRider)
+        isLiveGps: Boolean(liveRider),
+        order,
+        isGoingToStore: goingToStore
       });
       setTimeout(() => {
         if (trackerLiveMap && trackerRiderMarker) {
@@ -3867,16 +3872,16 @@ function initStorefrontApp() {
       if (cachedRoute) {
         const distKm = Math.round((cachedRoute.distanceMeters / 1000) * 10) / 10;
         const estMins = Math.max(2, Math.ceil(cachedRoute.durationSeconds / 60));
-        updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider));
+        updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider), goingToStore);
       } else {
         const initDistKm = calculateDistanceKm(riderLat, riderLng, routeTargetLat, routeTargetLng);
         const initMins = Math.max(3, Math.ceil(initDistKm * 3.2 + 2));
-        updateTrackerDistanceAndEta(initDistKm, initMins, Boolean(liveRider));
+        updateTrackerDistanceAndEta(initDistKm, initMins, Boolean(liveRider), goingToStore);
       }
 
       // Fetch turn-by-turn road route and fade in smoothly
       fetchRoadRoute(riderLat, riderLng, routeTargetLat, routeTargetLng).then(routeData => {
-        if (!trackerLiveMap) return;
+        if (!trackerLiveMap || activeTrackingOrderId !== order.id) return;
         if (trackerLoadingPill) {
           trackerLoadingPill.classList.add('is-hidden');
           setTimeout(() => { trackerLoadingPill.style.display = 'none'; }, 400);
@@ -3891,7 +3896,7 @@ function initStorefrontApp() {
 
           const distKm = Math.round((routeData.distanceMeters / 1000) * 10) / 10;
           const estMins = Math.max(2, Math.ceil(routeData.durationSeconds / 60));
-          updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider));
+          updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider), goingToStore);
         }
       });
 
@@ -3926,7 +3931,8 @@ function initStorefrontApp() {
         btnRecenter.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const targetMarker = trackerIsGoingToStore ? trackerKitchenMarker : trackerHomeMarker;
+          const currentTracked = activeTrackingOrderId ? dataService.getOrderById(activeTrackingOrderId) : null;
+          const targetMarker = isOrderRiderGoingToStore(currentTracked) ? trackerKitchenMarker : trackerHomeMarker;
           if (trackerLiveMap && trackerRiderMarker && targetMarker) {
             const rPos = trackerRiderMarker.getLatLng();
             const hPos = targetMarker.getLatLng();
@@ -3944,6 +3950,7 @@ function initStorefrontApp() {
         const simOriginLat = goingToStore ? riderLat : restLat;
         const simOriginLng = goingToStore ? riderLng : restLng;
         fetchRoadRoute(simOriginLat, simOriginLng, routeTargetLat, routeTargetLng).then(fullRoute => {
+          if (!trackerLiveMap || activeTrackingOrderId !== order.id) return;
           if (!fullRoute || !fullRoute.coords || fullRoute.coords.length < 2) return;
           const roadPts = fullRoute.coords;
           let currentIdx = Math.max(1, Math.floor(roadPts.length * (goingToStore ? 0.15 : 0.45)));
@@ -3961,14 +3968,16 @@ function initStorefrontApp() {
             }
             const distKm = calculateDistanceKm(sLat, sLng, routeTargetLat, routeTargetLng);
             const estMins = Math.max(2, Math.ceil(distKm * 3.2));
-            updateTrackerDistanceAndEta(distKm, estMins, false);
+            updateTrackerDistanceAndEta(distKm, estMins, false, goingToStore);
 
             updateTrackerRiderPosition({
               lat: sLat,
               lng: sLng,
               riderName: order.assignedRiderName || 'Delivery Partner',
               isLiveGps: false,
-              hasCustomRoute: true
+              hasCustomRoute: true,
+              order,
+              isGoingToStore: goingToStore
             });
           }, 3500);
         });

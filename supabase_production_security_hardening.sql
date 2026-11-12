@@ -297,6 +297,7 @@ ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS payout_amount_paid NUMERIC DE
 ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_handover_status TEXT DEFAULT NULL;
 ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_handover_amount NUMERIC DEFAULT 0;
 ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS cash_handover_requested_at BIGINT DEFAULT NULL;
+ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS max_active_orders INTEGER NOT NULL DEFAULT 1;
 
 
 -- ------------------------------------------------------------------------------

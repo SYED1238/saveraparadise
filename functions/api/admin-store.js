@@ -112,20 +112,60 @@ export async function onRequest(context) {
         if (!/^\d{4,6}$/.test(pin)) {
           return jsonResponse({ error: 'PIN must be 4 to 6 digits' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        const maxActiveOrders = Math.max(1, Math.min(5, Number(rawRider.maxActiveOrders ?? rawRider.max_active_orders) || 1));
+        const simExisting = body.simulateExistingRider || {};
+        if (userRole === 'rider') {
+          const authPin = String(auth.payload?.riderPin || '').trim();
+          const originalPin = body.originalPin ? String(body.originalPin).trim() : null;
+          if (!authPin || authPin !== pin || (originalPin && originalPin !== pin)) {
+            return jsonResponse({ error: 'Forbidden: Riders can only update their own profile and cash handover state' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+          const preservedLimit = Math.max(1, Math.min(4, Number(simExisting.max_active_orders ?? simExisting.maxActiveOrders) || 1));
+          const mappedRider = {
+            pin,
+            id: simExisting.id || `rider-${pin}`,
+            name: simExisting.name || String(rawRider.name).trim(),
+            phone: rawRider.phone ? String(rawRider.phone).trim() : (simExisting.phone || ''),
+            vehicle: rawRider.vehicle ? String(rawRider.vehicle).trim() : (simExisting.vehicle || 'Bike'),
+            status: simExisting.status === 'inactive' ? 'inactive' : (['online', 'offline'].includes(rawRider.status) ? rawRider.status : (simExisting.status || 'online')),
+            avatar: rawRider.avatar || simExisting.avatar || '🏍️',
+            avatar_img: rawRider.avatarImg || rawRider.avatar_img || simExisting.avatar_img || '/avatars/rider-1.svg',
+            upi_vpa: rawRider.upiVpa || rawRider.upi_vpa || null,
+            bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
+            bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
+            payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
+            max_active_orders: preservedLimit,
+            maxActiveOrders: preservedLimit,
+            earnings: Number(simExisting.earnings) || 0,
+            trips: Number(simExisting.trips) || 0,
+            cash_settled_at: simExisting.cash_settled_at ?? null,
+            payout_paid_at: simExisting.payout_paid_at ?? null,
+            payout_amount_paid: Number(simExisting.payout_amount_paid) || 0,
+            cash_handover_status: rawRider.cashHandoverStatus ?? rawRider.cash_handover_status ?? null,
+            cash_handover_amount: Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount) || 0,
+            cash_handover_requested_at: rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at ?? null
+          };
+          return jsonResponse({ success: true, rider: mappedRider }, 200, Object.fromEntries(corsHeaders.entries()));
+        }
+        const maxActiveOrders = Math.max(1, Math.min(4, Number(rawRider.maxActiveOrders ?? rawRider.max_active_orders ?? simExisting.max_active_orders) || 1));
         const mappedRider = {
+          ...simExisting,
           ...rawRider,
           pin,
-          avatar_img: rawRider.avatarImg || rawRider.avatar_img || '/avatars/rider-1.svg',
-          upi_vpa: rawRider.upiVpa || rawRider.upi_vpa || null,
-          bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
-          bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
-          payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
+          avatar_img: rawRider.avatarImg || rawRider.avatar_img || simExisting.avatar_img || '/avatars/rider-1.svg',
+          upi_vpa: rawRider.upiVpa ?? rawRider.upi_vpa ?? simExisting.upi_vpa ?? null,
+          bank_account_no: rawRider.bankAccountNo ?? rawRider.bank_account_no ?? simExisting.bank_account_no ?? null,
+          bank_ifsc: rawRider.bankIfsc ?? rawRider.bank_ifsc ?? simExisting.bank_ifsc ?? null,
+          payout_method_pref: rawRider.payoutMethodPref ?? rawRider.payout_method_pref ?? simExisting.payout_method_pref ?? 'cash',
+          earnings: Number(rawRider.earnings ?? simExisting.earnings ?? 0) || 0,
+          trips: Number(rawRider.trips ?? simExisting.trips ?? 0) || 0,
+          cash_settled_at: (rawRider.cashSettledAt ?? rawRider.cash_settled_at) !== undefined ? (rawRider.cashSettledAt ?? rawRider.cash_settled_at ?? null) : (simExisting.cash_settled_at ?? null),
+          payout_paid_at: (rawRider.payoutPaidAt ?? rawRider.payout_paid_at) !== undefined ? (rawRider.payoutPaidAt ?? rawRider.payout_paid_at ?? null) : (simExisting.payout_paid_at ?? null),
+          payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid ?? simExisting.payout_amount_paid ?? 0) || 0,
           max_active_orders: maxActiveOrders,
           maxActiveOrders,
-          cash_handover_status: rawRider.cashHandoverStatus ?? rawRider.cash_handover_status ?? null,
-          cash_handover_amount: Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount) || 0,
-          cash_handover_requested_at: rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at ?? null
+          cash_handover_status: (rawRider.cashHandoverStatus ?? rawRider.cash_handover_status) !== undefined ? (rawRider.cashHandoverStatus ?? rawRider.cash_handover_status ?? null) : (simExisting.cash_handover_status ?? null),
+          cash_handover_amount: Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount ?? simExisting.cash_handover_amount ?? 0) || 0,
+          cash_handover_requested_at: (rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at) !== undefined ? (rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at ?? null) : (simExisting.cash_handover_requested_at ?? null)
         };
         return jsonResponse({ success: true, rider: mappedRider }, 200, Object.fromEntries(corsHeaders.entries()));
       }
@@ -340,43 +380,83 @@ export async function onRequest(context) {
           return jsonResponse({ error: 'PIN must be 4 to 6 digits' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
 
+        const originalPin = body.originalPin ? String(body.originalPin).trim() : null;
         if (userRole === 'rider') {
           const authPin = String(auth.payload?.riderPin || '').trim();
-          if (!authPin || authPin !== pin) {
+          if (!authPin || authPin !== pin || (originalPin && originalPin !== pin)) {
             return jsonResponse({ error: 'Forbidden: Riders can only update their own profile and cash handover state' }, 403, Object.fromEntries(corsHeaders.entries()));
           }
         }
 
-        const originalPin = body.originalPin ? String(body.originalPin).trim() : null;
+        const lookupPin = (originalPin && originalPin !== pin) ? originalPin : pin;
+        const { data: existingRow } = await sb
+          .from('riders')
+          .select('*')
+          .eq('pin', lookupPin)
+          .maybeSingle();
 
-        if (originalPin && originalPin !== pin) {
+        if (userRole === 'rider' && !existingRow) {
+          return jsonResponse({ error: 'Rider profile not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        if (userRole !== 'rider' && originalPin && originalPin !== pin) {
           await sb.from('riders').delete().eq('pin', originalPin);
         }
 
-        const maxActiveOrders = Math.max(1, Math.min(5, Number(rawRider.maxActiveOrders ?? rawRider.max_active_orders) || 1));
-        const sanitizedRider = {
-          pin,
-          id: rawRider.id || `rider-${pin}`,
-          name,
-          phone: rawRider.phone ? String(rawRider.phone).trim() : '',
-          vehicle: rawRider.vehicle ? String(rawRider.vehicle).trim() : 'Bike',
-          status: ['online', 'offline', 'inactive'].includes(rawRider.status) ? rawRider.status : 'online',
-          avatar: rawRider.avatar || '🏍️',
-          avatar_img: rawRider.avatarImg || rawRider.avatar_img || '/avatars/rider-1.svg',
-          earnings: Number(rawRider.earnings) || 0,
-          trips: Number(rawRider.trips) || 0,
-          upi_vpa: rawRider.upiVpa || rawRider.upi_vpa || null,
-          bank_account_no: rawRider.bankAccountNo || rawRider.bank_account_no || null,
-          bank_ifsc: rawRider.bankIfsc || rawRider.bank_ifsc || null,
-          payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || 'cash',
-          max_active_orders: maxActiveOrders,
-          cash_settled_at: rawRider.cashSettledAt ?? rawRider.cash_settled_at ?? null,
-          payout_paid_at: rawRider.payoutPaidAt ?? rawRider.payout_paid_at ?? null,
-          payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid) || 0,
-          cash_handover_status: rawRider.cashHandoverStatus ?? rawRider.cash_handover_status ?? null,
-          cash_handover_amount: Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount) || 0,
-          cash_handover_requested_at: rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at ?? null
-        };
+        let maxActiveOrders;
+        let sanitizedRider;
+        if (userRole === 'rider') {
+          // Strict least-privilege: riders can only edit personal contact/vehicle/payout-destination & handover request fields
+          maxActiveOrders = Math.max(1, Math.min(4, Number(existingRow.max_active_orders) || 1));
+          sanitizedRider = {
+            pin,
+            id: existingRow.id || `rider-${pin}`,
+            name: existingRow.name || name,
+            phone: rawRider.phone ? String(rawRider.phone).trim() : (existingRow.phone || ''),
+            vehicle: rawRider.vehicle ? String(rawRider.vehicle).trim() : (existingRow.vehicle || 'Bike'),
+            status: existingRow.status === 'inactive' ? 'inactive' : (['online', 'offline'].includes(rawRider.status) ? rawRider.status : (existingRow.status || 'online')),
+            avatar: rawRider.avatar || existingRow.avatar || '🏍️',
+            avatar_img: rawRider.avatarImg || rawRider.avatar_img || existingRow.avatar_img || '/avatars/rider-1.svg',
+            earnings: Number(existingRow.earnings) || 0,
+            trips: Number(existingRow.trips) || 0,
+            upi_vpa: (rawRider.upiVpa !== undefined || rawRider.upi_vpa !== undefined) ? (rawRider.upiVpa || rawRider.upi_vpa || null) : (existingRow.upi_vpa ?? null),
+            bank_account_no: (rawRider.bankAccountNo !== undefined || rawRider.bank_account_no !== undefined) ? (rawRider.bankAccountNo || rawRider.bank_account_no || null) : (existingRow.bank_account_no ?? null),
+            bank_ifsc: (rawRider.bankIfsc !== undefined || rawRider.bank_ifsc !== undefined) ? (rawRider.bankIfsc || rawRider.bank_ifsc || null) : (existingRow.bank_ifsc ?? null),
+            payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || existingRow.payout_method_pref || 'cash',
+            max_active_orders: maxActiveOrders,
+            cash_settled_at: existingRow.cash_settled_at ?? null,
+            payout_paid_at: existingRow.payout_paid_at ?? null,
+            payout_amount_paid: Number(existingRow.payout_amount_paid) || 0,
+            cash_handover_status: (rawRider.cashHandoverStatus !== undefined || rawRider.cash_handover_status !== undefined) ? (rawRider.cashHandoverStatus ?? rawRider.cash_handover_status) : (existingRow.cash_handover_status ?? null),
+            cash_handover_amount: (rawRider.cashHandoverAmount !== undefined || rawRider.cash_handover_amount !== undefined) ? (Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount) || 0) : (Number(existingRow.cash_handover_amount) || 0),
+            cash_handover_requested_at: (rawRider.cashHandoverRequestedAt !== undefined || rawRider.cash_handover_requested_at !== undefined) ? (rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at) : (existingRow.cash_handover_requested_at ?? null)
+          };
+        } else {
+          maxActiveOrders = Math.max(1, Math.min(4, Number(rawRider.maxActiveOrders ?? rawRider.max_active_orders ?? existingRow?.max_active_orders) || 1));
+          sanitizedRider = {
+            pin,
+            id: rawRider.id || existingRow?.id || `rider-${pin}`,
+            name,
+            phone: rawRider.phone ? String(rawRider.phone).trim() : (existingRow?.phone || ''),
+            vehicle: rawRider.vehicle ? String(rawRider.vehicle).trim() : (existingRow?.vehicle || 'Bike'),
+            status: ['online', 'offline', 'inactive'].includes(rawRider.status) ? rawRider.status : (existingRow?.status || 'online'),
+            avatar: rawRider.avatar || existingRow?.avatar || '🏍️',
+            avatar_img: rawRider.avatarImg || rawRider.avatar_img || existingRow?.avatar_img || '/avatars/rider-1.svg',
+            earnings: rawRider.earnings !== undefined ? (Number(rawRider.earnings) || 0) : (Number(existingRow?.earnings) || 0),
+            trips: rawRider.trips !== undefined ? (Number(rawRider.trips) || 0) : (Number(existingRow?.trips) || 0),
+            upi_vpa: (rawRider.upiVpa !== undefined || rawRider.upi_vpa !== undefined) ? (rawRider.upiVpa || rawRider.upi_vpa || null) : (existingRow?.upi_vpa ?? null),
+            bank_account_no: (rawRider.bankAccountNo !== undefined || rawRider.bank_account_no !== undefined) ? (rawRider.bankAccountNo || rawRider.bank_account_no || null) : (existingRow?.bank_account_no ?? null),
+            bank_ifsc: (rawRider.bankIfsc !== undefined || rawRider.bank_ifsc !== undefined) ? (rawRider.bankIfsc || rawRider.bank_ifsc || null) : (existingRow?.bank_ifsc ?? null),
+            payout_method_pref: rawRider.payoutMethodPref || rawRider.payout_method_pref || existingRow?.payout_method_pref || 'cash',
+            max_active_orders: maxActiveOrders,
+            cash_settled_at: rawRider.cashSettledAt ?? rawRider.cash_settled_at ?? (rawRider.cashSettledAt === null || rawRider.cash_settled_at === null ? null : (existingRow?.cash_settled_at ?? null)),
+            payout_paid_at: rawRider.payoutPaidAt ?? rawRider.payout_paid_at ?? (rawRider.payoutPaidAt === null || rawRider.payout_paid_at === null ? null : (existingRow?.payout_paid_at ?? null)),
+            payout_amount_paid: Number(rawRider.payoutAmountPaid ?? rawRider.payout_amount_paid) || ((rawRider.payoutAmountPaid !== undefined || rawRider.payout_amount_paid !== undefined) ? 0 : (Number(existingRow?.payout_amount_paid) || 0)),
+            cash_handover_status: (rawRider.cashHandoverStatus !== undefined || rawRider.cash_handover_status !== undefined) ? (rawRider.cashHandoverStatus ?? rawRider.cash_handover_status) : (existingRow?.cash_handover_status ?? null),
+            cash_handover_amount: (rawRider.cashHandoverAmount !== undefined || rawRider.cash_handover_amount !== undefined) ? (Number(rawRider.cashHandoverAmount ?? rawRider.cash_handover_amount) || 0) : (Number(existingRow?.cash_handover_amount) || 0),
+            cash_handover_requested_at: (rawRider.cashHandoverRequestedAt !== undefined || rawRider.cash_handover_requested_at !== undefined) ? (rawRider.cashHandoverRequestedAt ?? rawRider.cash_handover_requested_at) : (existingRow?.cash_handover_requested_at ?? null)
+          };
+        }
 
         let { data, error } = await sb
           .from('riders')

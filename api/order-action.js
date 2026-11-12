@@ -460,7 +460,7 @@ export default async function handler(req, res) {
         }
 
         const isAlreadyAssignedToSameRider = Boolean(effectivePin && existingPin === effectivePin);
-        const maxAllowed = Math.max(1, Math.min(5, Number(body.maxActiveOrders) || 1));
+        const maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
         if (!isAlreadyAssignedToSameRider && effectivePin) {
           const riderActive = testOrders.filter(o => {
             if (!o) return false;
@@ -469,12 +469,28 @@ export default async function handler(req, res) {
             if (oPin !== effectivePin) return false;
             return ['on_the_way', 'ready_for_pickup', 'cooking', 'accepted'].includes(o.status);
           });
-          const otwOrder = riderActive.find(o => o.status === 'on_the_way');
-          if (otwOrder) {
-            return res.status(409).json({
-              error: `Rider already has an active order (${otwOrder.id}) on the way. Complete current delivery before accepting another order.`,
-              code: 'ACTIVE_ORDER_LIMIT'
-            });
+          const otwOrders = riderActive.filter(o => o.status === 'on_the_way');
+          if (otwOrders.length > 0) {
+            let canBatchAtCounter = false;
+            if (maxAllowed > 1 && riderActive.length < maxAllowed) {
+              const pickupDistKm = (body.riderLat !== undefined || body.riderLng !== undefined)
+                ? calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng)
+                : null;
+              const withinCounterZone = pickupDistKm !== null && pickupDistKm <= MAX_RIDER_PICKUP_RADIUS_KM;
+              const now = Date.now();
+              const allRecentPickup = otwOrders.every(o => {
+                const details = o.address_details || o.addressDetails || {};
+                const pickedAt = Number(details.pickedUpAt || o.pickedUpAt || 0);
+                return pickedAt > 0 && (now - pickedAt) <= 3 * 60 * 1000;
+              });
+              canBatchAtCounter = withinCounterZone || allRecentPickup;
+            }
+            if (!canBatchAtCounter) {
+              return res.status(409).json({
+                error: `Rider already has an active order (${otwOrders[0].id}) on the way. Complete current delivery before accepting another order.`,
+                code: 'ACTIVE_ORDER_LIMIT'
+              });
+            }
           }
           if (riderActive.length >= maxAllowed) {
             return res.status(409).json({
@@ -560,7 +576,7 @@ export default async function handler(req, res) {
             }
           }
           if (!isAlreadyPickedUpBySameRider && (body.enforceSingleActiveOrder === true || body.maxActiveOrders !== undefined)) {
-            const maxAllowed = Math.max(1, Math.min(5, Number(body.maxActiveOrders) || 1));
+            const maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
             const activeOtwOrders = testOrders.filter(o => {
               if (!o || o.status !== 'on_the_way') return false;
               const oPin = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
@@ -922,7 +938,7 @@ export default async function handler(req, res) {
 
         const isAlreadyAssignedToSameRider = Boolean(effectivePin && existingPin === effectivePin);
         if (effectivePin && !isAlreadyAssignedToSameRider) {
-          let maxAllowed = Math.max(1, Math.min(5, Number(body.maxActiveOrders) || 1));
+          let maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
           try {
             const { data: riderRow, error: rErr } = await sb
               .from('riders')
@@ -930,24 +946,40 @@ export default async function handler(req, res) {
               .eq('pin', effectivePin)
               .maybeSingle();
             if (!rErr && riderRow && riderRow.max_active_orders !== undefined && riderRow.max_active_orders !== null) {
-              maxAllowed = Math.max(1, Math.min(5, Number(riderRow.max_active_orders) || 1));
+              maxAllowed = Math.max(1, Math.min(4, Number(riderRow.max_active_orders) || 1));
             }
           } catch {}
 
           const { data: riderOrders, error: roErr } = await sb
             .from('orders')
-            .select('id, status')
+            .select('id, status, address_details')
             .eq('assigned_rider_pin', effectivePin)
             .in('status', ['on_the_way', 'ready_for_pickup', 'cooking', 'accepted']);
           if (roErr) throw roErr;
 
           const otherOrders = (riderOrders || []).filter(o => String(o.id).replace(/^#/, '') !== cleanId);
-          const otwOrder = otherOrders.find(o => o.status === 'on_the_way');
-          if (otwOrder) {
-            return res.status(409).json({
-              error: `Rider already has an active order (${otwOrder.id}) on the way. Complete current delivery before accepting another order.`,
-              code: 'ACTIVE_ORDER_LIMIT'
-            });
+          const otwOrders = otherOrders.filter(o => o.status === 'on_the_way');
+          if (otwOrders.length > 0) {
+            let canBatchAtCounter = false;
+            if (maxAllowed > 1 && otherOrders.length < maxAllowed) {
+              const pickupDistKm = (body.riderLat !== undefined || body.riderLng !== undefined)
+                ? calculateStraightDistanceKm(body.riderLat, body.riderLng, RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng)
+                : null;
+              const withinCounterZone = pickupDistKm !== null && pickupDistKm <= MAX_RIDER_PICKUP_RADIUS_KM;
+              const now = Date.now();
+              const allRecentPickup = otwOrders.every(o => {
+                const details = o.address_details || o.addressDetails || {};
+                const pickedAt = Number(details.pickedUpAt || o.pickedUpAt || 0);
+                return pickedAt > 0 && (now - pickedAt) <= 3 * 60 * 1000;
+              });
+              canBatchAtCounter = withinCounterZone || allRecentPickup;
+            }
+            if (!canBatchAtCounter) {
+              return res.status(409).json({
+                error: `Rider already has an active order (${otwOrders[0].id}) on the way. Complete current delivery before accepting another order.`,
+                code: 'ACTIVE_ORDER_LIMIT'
+              });
+            }
           }
           if (otherOrders.length >= maxAllowed) {
             return res.status(409).json({
@@ -1067,7 +1099,7 @@ export default async function handler(req, res) {
 
           // Enforce per-rider active order limit when requested
           if (!isAlreadyPickedUpBySameRider && (body.enforceSingleActiveOrder === true || body.maxActiveOrders !== undefined)) {
-            let maxAllowed = Math.max(1, Math.min(5, Number(body.maxActiveOrders) || 1));
+            let maxAllowed = Math.max(1, Math.min(4, Number(body.maxActiveOrders) || 1));
             try {
               const { data: riderRow, error: rErr } = await sb
                 .from('riders')
@@ -1075,7 +1107,7 @@ export default async function handler(req, res) {
                 .eq('pin', effectivePin)
                 .maybeSingle();
               if (!rErr && riderRow && riderRow.max_active_orders !== undefined && riderRow.max_active_orders !== null) {
-                maxAllowed = Math.max(1, Math.min(5, Number(riderRow.max_active_orders) || 1));
+                maxAllowed = Math.max(1, Math.min(4, Number(riderRow.max_active_orders) || 1));
               }
             } catch {}
 
