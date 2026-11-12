@@ -441,5 +441,13 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       assert.match(indexHtml, /id="payment-card-online"/, 'index.html must include payment-card-online');
       assert.doesNotMatch(indexHtml, /id="radio-payment-online"[^>]*\bdisabled\b/, 'radio-payment-online must be enabled');
     });
+
+    test('main.js guards Cashfree SDK modal against mock session IDs when local keys are absent', () => {
+      const mainJs = fs.readFileSync(path.join(rootDir, 'main.js'), 'utf8');
+      const mockIdx = mainJs.indexOf('if (pgData.isMock)');
+      const checkoutIdx = mainJs.indexOf('cashfree.checkout({');
+      assert.ok(mockIdx > 0, 'main.js must explicitly handle pgData.isMock');
+      assert.ok(checkoutIdx > mockIdx, 'main.js must branch on pgData.isMock before calling cashfree.checkout');
+    });
   });
 });

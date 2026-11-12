@@ -6127,21 +6127,34 @@ function initStorefrontApp() {
             sessionStorage.setItem('savera_pending_online_order', JSON.stringify(newOrder));
           } catch {}
 
-          const cashfree = CashfreeFn({ mode: pgData.cashfreeMode || 'production' });
-          const cfResult = await cashfree.checkout({
-            paymentSessionId: pgData.paymentSessionId,
-            redirectTarget: '_modal'
-          });
+          if (pgData.isMock) {
+            const simulatePaid = typeof window.confirm === 'function'
+              ? window.confirm(`[Local Sandbox Mode] Cashfree API keys are not set in .env.local.\n\nClick OK to simulate a successful ₹${verifiedNumericTotal} online payment for ${newOrder.id}, or Cancel to abort.`)
+              : true;
+            if (!simulatePaid) {
+              try { sessionStorage.removeItem('savera_pending_online_order'); } catch {}
+              showToast('⚠️ Local simulated online payment was cancelled. Your basket is still saved.', 'warning');
+              resetSubmitState(true);
+              return;
+            }
+          } else {
+            const cashfree = CashfreeFn({ mode: pgData.cashfreeMode || 'production' });
+            const cfResult = await cashfree.checkout({
+              paymentSessionId: pgData.paymentSessionId,
+              redirectTarget: '_modal'
+            });
 
-          if (cfResult && cfResult.error) {
-            showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed. Your basket is still saved.'}`, 'warning');
-            resetSubmitState(true);
-            return;
-          }
+            if (cfResult && cfResult.error) {
+              try { sessionStorage.removeItem('savera_pending_online_order'); } catch {}
+              showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed. Your basket is still saved.'}`, 'warning');
+              resetSubmitState(true);
+              return;
+            }
 
-          if (cfResult && cfResult.redirect) {
-            // Browser is redirecting to Cashfree/bank/UPI return URL; return_url handler will complete verification.
-            return;
+            if (cfResult && cfResult.redirect) {
+              // Browser is redirecting to Cashfree/bank/UPI return URL; return_url handler will complete verification.
+              return;
+            }
           }
 
           if (btnPlaceOrderFinal) {
