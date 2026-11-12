@@ -24,7 +24,8 @@ import {
   isStaffSessionActive,
   setStaffSessionActive,
   clearStaffSession,
-  verifyStaffPin
+  verifyStaffPin,
+  ensureAdminToken
 } from './securityUtils.js';
 import { initIosPasscodeLock } from './passcodeLockService.js';
 import { requestWakeLock, releaseWakeLock } from './wakeLockService.js';
@@ -2208,9 +2209,12 @@ const initDeliveryApp = () => {
     }
 
     try {
-      const riderToken = typeof sessionStorage !== 'undefined'
-        ? (sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
+      let riderToken = (typeof ensureAdminToken === 'function')
+        ? await ensureAdminToken('rider').catch(() => null)
         : null;
+      if (!riderToken && typeof sessionStorage !== 'undefined') {
+        riderToken = sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token');
+      }
       const headers = { 'Content-Type': 'application/json' };
       if (riderToken) headers['Authorization'] = `Bearer ${riderToken}`;
 
@@ -2226,8 +2230,18 @@ const initDeliveryApp = () => {
       const data = await resp.json();
       if (data && data.success) {
         currentDoorstepCashfreeSession = data;
-        if (data.qrDataUrl && doorstepQrImg) {
-          doorstepQrImg.src = data.qrDataUrl;
+        let qrSrc = data.qrDataUrl || '';
+        if (!qrSrc && (data.qrPayload || data.upiIntentUri)) {
+          try {
+            qrSrc = await QRCode.toDataURL(data.qrPayload || data.upiIntentUri, {
+              width: 280,
+              margin: 2,
+              color: { dark: '#0F172A', light: '#FFFFFF' }
+            });
+          } catch {}
+        }
+        if (qrSrc && doorstepQrImg) {
+          doorstepQrImg.src = qrSrc;
           doorstepQrImg.style.display = 'block';
         }
         if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
@@ -2293,10 +2307,12 @@ const initDeliveryApp = () => {
         return;
       }
       try {
-        const cashfree = CashfreeFn({ mode: currentDoorstepCashfreeSession.cashfreeMode || 'production' });
+        const cfMode = currentDoorstepCashfreeSession.cashfreeMode || 'production';
+        const cashfree = CashfreeFn({ mode: cfMode });
         const cfResult = await cashfree.checkout({
           paymentSessionId: currentDoorstepCashfreeSession.paymentSessionId,
-          redirectTarget: '_modal'
+          redirectTarget: '_modal',
+          mode: cfMode
         });
         if (cfResult && cfResult.error) {
           showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed.'}`, 'warning');

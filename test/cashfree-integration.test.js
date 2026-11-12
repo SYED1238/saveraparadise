@@ -17,6 +17,7 @@ import { createAdminToken, signPayload } from '../api/_auth.js';
 import cashfreePayoutHandler from '../api/cashfree-payout.js';
 import cashfreeCreateOrderHandler from '../api/cashfree-create-order.js';
 import cashfreeGenerateQrHandler from '../api/cashfree-generate-qr.js';
+import orderActionHandler from '../api/order-action.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -473,7 +474,65 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       assert.strictEqual(res.data.isMock, true);
       assert.strictEqual(res.data.cfOrderId, 'doorstep_1005');
       assert.ok(res.data.paymentSessionId.startsWith('session_mock_doorstep_1005_'));
-      assert.ok(res.data.qrDataUrl.startsWith('data:image/png;base64,'));
+      assert.ok(res.data.qrDataUrl.startsWith('data:image/'));
+    });
+
+    test('POST /api/cashfree-generate-qr returns non-empty data:image/ qrDataUrl in Worker/Node environments without setting doorstep_upi: true prematurely', async () => {
+      const riderToken = createAdminToken(3600000, 'rider');
+      const { req, res } = createMockReqRes({
+        headers: { authorization: `Bearer ${riderToken}` },
+        body: { orderId: '1006', amount: 350, customerName: 'Hamza' }
+      });
+      await cashfreeGenerateQrHandler(req, res);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data.success, true);
+      assert.ok(res.data.qrDataUrl.startsWith('data:image/'));
+      assert.ok(res.data.upiIntentUri.startsWith('upi://pay?pa='));
+
+      // Verify code does not set doorstep_upi: true prematurely at QR generation time
+      const apiGenQrSrc = fs.readFileSync(path.join(rootDir, 'api', 'cashfree-generate-qr.js'), 'utf8');
+      const cfGenQrSrc = fs.readFileSync(path.join(rootDir, 'functions', 'api', 'cashfree-generate-qr.js'), 'utf8');
+      assert.strictEqual(apiGenQrSrc.includes('doorstep_upi: true'), false, 'api/cashfree-generate-qr.js must not set doorstep_upi prematurely');
+      assert.strictEqual(cfGenQrSrc.includes('doorstep_upi: true'), false, 'functions/api/cashfree-generate-qr.js must not set doorstep_upi prematurely');
+    });
+
+    test('order where QR was generated can still be marked delivered with doorstepUpi: false and full cashCollected', async () => {
+      const riderToken = createAdminToken(3600000, 'rider', { riderPin: '2233' });
+      const simulateOrders = [
+        {
+          id: 'COD-TEST-SWITCH',
+          status: 'on_the_way',
+          assigned_rider_pin: '2233',
+          numeric_total: 260,
+          total: '₹260',
+          doorstep_upi: true,
+          cf_order_id: 'doorstep_COD-TEST-SWITCH',
+          cf_payment_status: 'PENDING',
+          is_paid_online: false,
+          cash_collected: 0
+        }
+      ];
+
+      const { req, res } = createMockReqRes({
+        headers: { authorization: `Bearer ${riderToken}` },
+        body: {
+          action: 'update_status',
+          orderId: 'COD-TEST-SWITCH',
+          status: 'delivered',
+          doorstepUpi: false,
+          cashCollected: 260,
+          riderPin: '2233',
+          simulateOrders
+        }
+      });
+
+      await orderActionHandler(req, res);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data.success, true);
+      assert.strictEqual(res.data.order.payment_status, 'Paid');
+      assert.strictEqual(res.data.order.cash_collected, 260, 'Full cash amount must be recorded');
+      assert.strictEqual(res.data.order.doorstep_upi, false, 'doorstep_upi must be false when paid in cash');
+      assert.strictEqual(res.data.order.is_paid_online, false, 'is_paid_online must be false for cash delivery');
     });
 
     test('generateDoorstepUpiQr provides paymentSessionId and cfOrderId even in unconfigured mode', async () => {

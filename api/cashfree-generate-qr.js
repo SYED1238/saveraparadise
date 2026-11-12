@@ -127,7 +127,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'QR Generation Failed', message: qrResult.error });
     }
 
-    // Persist cf_order_id and doorstep_upi on orders table so webhook & polling match
+    // Persist cf_order_id on orders table so webhook & polling match (do not set doorstep_upi prematurely)
     if (supabaseUrl && serviceKey && qrResult.cfOrderId) {
       try {
         const { createClient } = await import('@supabase/supabase-js');
@@ -136,8 +136,7 @@ export default async function handler(req, res) {
           .from('orders')
           .update({
             cf_order_id: qrResult.cfOrderId,
-            payment_gateway: 'cashfree',
-            doorstep_upi: true
+            payment_gateway: 'cashfree'
           })
           .or(`id.eq.${cleanId},id.eq.#${cleanId}`);
       } catch (persistErr) {
@@ -145,21 +144,39 @@ export default async function handler(req, res) {
       }
     }
 
-    // Generate high-resolution Data URL for the QR code
-    const qrTarget = qrResult.paymentUrl || qrResult.cashfreePaymentUrl || qrResult.upiIntentUri;
-    let qrDataUrl = '';
-    try {
-      qrDataUrl = await QRCode.toDataURL(qrTarget, {
-        width: 320,
-        margin: 2,
-        color: {
-          dark: '#0F172A',
-          light: '#FFFFFF'
-        },
-        errorCorrectionLevel: 'M'
-      });
-    } catch {
-      qrDataUrl = '';
+    // Generate high-resolution Data URL for the QR code (pure SVG for Worker compatibility, DataURL fallback for Node)
+    let qrDataUrl = qrResult.qrDataUrl || '';
+    if (!qrDataUrl) {
+      const qrTarget = qrResult.qrPayload || qrResult.upiIntentUri || '';
+      try {
+        const svgStr = await QRCode.toString(qrTarget, {
+          type: 'svg',
+          width: 320,
+          margin: 2,
+          color: {
+            dark: '#0F172A',
+            light: '#FFFFFF'
+          },
+          errorCorrectionLevel: 'M'
+        });
+        if (svgStr) {
+          qrDataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgStr)}`;
+        }
+      } catch (svgErr) {
+        try {
+          qrDataUrl = await QRCode.toDataURL(qrTarget, {
+            width: 320,
+            margin: 2,
+            color: {
+              dark: '#0F172A',
+              light: '#FFFFFF'
+            },
+            errorCorrectionLevel: 'M'
+          });
+        } catch {
+          qrDataUrl = '';
+        }
+      }
     }
 
     return res.status(200).json({

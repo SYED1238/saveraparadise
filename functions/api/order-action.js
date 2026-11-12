@@ -557,7 +557,9 @@ export async function onRequest(context) {
 
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
-          const isDoorstep = Boolean(inputDoorstepUpi === true || existing.doorstep_upi === true);
+          const isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
+          const isDoorstep = isCfSuccess || (typeof inputDoorstepUpi === 'boolean' ? inputDoorstepUpi : Boolean(existing.doorstep_upi));
+          enforcedDoorstepUpi = isDoorstep;
 
           if (isPrepaid || isDoorstep) {
             enforcedPaymentStatus = 'Paid';
@@ -1038,7 +1040,9 @@ export async function onRequest(context) {
         // Payment status & Cash collection handling
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
-          const isDoorstep = Boolean(doorstepUpi === true || updatePayload.doorstep_upi === true || existing.doorstep_upi === true);
+          const isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
+          const isDoorstep = isCfSuccess || (typeof doorstepUpi === 'boolean' ? doorstepUpi : Boolean(existing.doorstep_upi));
+          updatePayload.doorstep_upi = isDoorstep;
 
           if (isPrepaid || isDoorstep) {
             updatePayload.payment_status = 'Paid';

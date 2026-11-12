@@ -29,7 +29,7 @@ export function getCashfreeConfig() {
 
 const DEFAULT_SITE_URL = 'https://saveraparadise.foodbliz.in';
 
-export function sanitizeCashfreeReturnUrl(rawUrl, cleanOrderId) {
+export function sanitizeCashfreeReturnUrl(rawUrl, cleanOrderId, isProd = false) {
   const fallback = `${DEFAULT_SITE_URL}/?payment_return=1&order_id=${encodeURIComponent(cleanOrderId)}&cf_order_id={order_id}`;
   if (!rawUrl || typeof rawUrl !== 'string') return fallback;
   try {
@@ -44,7 +44,12 @@ export function sanitizeCashfreeReturnUrl(rawUrl, cleanOrderId) {
       host === 'localhost' ||
       host === '127.0.0.1'
     );
-    if (!isAllowedHost || (u.protocol !== 'https:' && host !== 'localhost' && host !== '127.0.0.1')) {
+    if (!isAllowedHost) return fallback;
+    // Cashfree Production API strictly requires HTTPS return_url (rejects http:// URLs)
+    if (isProd && u.protocol !== 'https:') {
+      return fallback;
+    }
+    if (u.protocol !== 'https:' && host !== 'localhost' && host !== '127.0.0.1') {
       return fallback;
     }
     return rawUrl;
@@ -90,7 +95,7 @@ export async function createPgOrder({
   }
 
   try {
-    const safeReturnUrl = sanitizeCashfreeReturnUrl(returnUrl, cleanOrderId);
+    const safeReturnUrl = sanitizeCashfreeReturnUrl(returnUrl, cleanOrderId, cfg.isProd);
     const payload = {
       order_id: `qb_${cleanOrderId}_${Date.now().toString().slice(-4)}`,
       order_amount: cleanAmount,
@@ -294,15 +299,15 @@ export async function recordVerifiedCashfreePayment({
     };
   }
 
-  const isDoorstep = String(cfOrderId || '').includes('doorstep_') || existingOrder.doorstep_upi === true;
+  const isDoorstepOrder = String(cfOrderId || '').includes('doorstep_') || Boolean(existingOrder.doorstep_upi);
   const updateFields = {
     cf_order_id: safeCfOrderId || existingOrder.cf_order_id || null,
     cf_payment_id: cfPaymentId ? String(cfPaymentId) : (existingOrder.cf_payment_id || null),
     cf_payment_status: 'SUCCESS',
     payment_status: 'Paid',
-    payment_method: isDoorstep ? 'doorstep_upi' : 'Online',
+    payment_method: isDoorstepOrder ? 'doorstep_upi' : 'Online',
     is_paid_online: true,
-    doorstep_upi: isDoorstep,
+    doorstep_upi: isDoorstepOrder,
     cash_collected: 0,
     payment_gateway: 'cashfree'
   };
@@ -360,6 +365,8 @@ export async function generateDoorstepUpiQr({
       amount: cleanAmount,
       merchantVpa,
       upiIntentUri,
+      qrPayload: upiIntentUri,
+      qrDataUrl: '',
       cfOrderId: `doorstep_${cleanId}`,
       paymentSessionId: mockSessionId,
       cashfreeMode: 'sandbox',
@@ -390,8 +397,48 @@ export async function generateDoorstepUpiQr({
         amount: cleanAmount,
         merchantVpa,
         upiIntentUri,
+        qrPayload: upiIntentUri,
+        qrDataUrl: '',
         expiresAt: Date.now() + (expiryMinutes * 60 * 1000)
       };
+    }
+
+    let qrPayload = upiIntentUri;
+    let qrDataUrl = '';
+
+    // Attempt to fetch authentic Cashfree dynamic UPI QR session
+    try {
+      const sessionResp = await fetch(`${cfg.pgBaseUrl}/orders/sessions`, {
+        method: 'POST',
+        headers: {
+          'x-client-id': cfg.appId,
+          'x-client-secret': cfg.secretKey,
+          'x-api-version': '2023-08-01',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          payment_session_id: pgRes.paymentSessionId,
+          payment_method: {
+            upi: {
+              channel: 'qrcode'
+            }
+          }
+        })
+      });
+
+      if (sessionResp.ok) {
+        const sessionData = await sessionResp.json().catch(() => null);
+        const cfQr = sessionData?.data?.payload?.qrcode || sessionData?.payload?.qrcode || '';
+        if (typeof cfQr === 'string' && cfQr.trim()) {
+          if (cfQr.startsWith('data:image/')) {
+            qrDataUrl = cfQr.trim();
+          } else {
+            qrPayload = cfQr.trim();
+          }
+        }
+      }
+    } catch (sessionErr) {
+      console.warn('[Cashfree Doorstep] Session QR fetch failed, falling back to NPCI UPI URI:', sessionErr?.message);
     }
 
     const cashfreePaymentUrl = cfg.isProd
@@ -403,7 +450,9 @@ export async function generateDoorstepUpiQr({
       orderId: cleanId,
       amount: cleanAmount,
       merchantVpa: 'Cashfree Official QR (Savera Paradise)',
-      upiIntentUri: cashfreePaymentUrl,
+      upiIntentUri: qrPayload,
+      qrPayload,
+      qrDataUrl,
       paymentUrl: cashfreePaymentUrl,
       cfOrderId: pgRes.cfOrderId,
       paymentSessionId: pgRes.paymentSessionId,
@@ -424,6 +473,8 @@ export async function generateDoorstepUpiQr({
       amount: cleanAmount,
       merchantVpa,
       upiIntentUri,
+      qrPayload: upiIntentUri,
+      qrDataUrl: '',
       expiresAt: Date.now() + (expiryMinutes * 60 * 1000)
     };
   }

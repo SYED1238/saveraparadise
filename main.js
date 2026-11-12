@@ -6138,10 +6138,12 @@ function initStorefrontApp() {
               return;
             }
           } else {
-            const cashfree = CashfreeFn({ mode: pgData.cashfreeMode || 'production' });
+            const cfMode = pgData.cashfreeMode || 'production';
+            const cashfree = CashfreeFn({ mode: cfMode });
             const cfResult = await cashfree.checkout({
               paymentSessionId: pgData.paymentSessionId,
-              redirectTarget: '_modal'
+              redirectTarget: '_modal',
+              mode: cfMode
             });
 
             if (cfResult && cfResult.error) {

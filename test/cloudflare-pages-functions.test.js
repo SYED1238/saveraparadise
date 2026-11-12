@@ -332,7 +332,7 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       const data = await res.json();
       assert.equal(data.success, true);
       assert.ok(data.upiIntentUri.startsWith('upi://pay?pa='));
-      assert.ok(data.qrDataUrl.startsWith('data:image/png;base64,'));
+      assert.ok(data.qrDataUrl.startsWith('data:image/'));
     });
 
     it('strictly rejects unauthenticated requests to cashfree-generate-qr with 401', async () => {
