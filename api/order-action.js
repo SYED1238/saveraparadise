@@ -301,7 +301,7 @@ export default async function handler(req, res) {
       const sample = [
         { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', pickup_code: '1001', created_at: new Date().toISOString() }
       ];
-      res.setHeader('Cache-Control', 'public, s-maxage=15, max-age=10');
+      res.setHeader('Cache-Control', 'public, s-maxage=4, max-age=3');
       return res.status(200).json(sample);
     }
 
@@ -677,8 +677,8 @@ export default async function handler(req, res) {
       // 0. Lightweight Edge-Cached Kitchen Monitor Poll (Absorbs Android APK Background Loop)
       case 'kitchen_poll': {
         const now = Date.now();
-        if (kitchenPollCache && (now - kitchenPollCachedAt < 15000)) {
-          res.setHeader('Cache-Control', 'public, s-maxage=15, max-age=10');
+        if (kitchenPollCache && (now - kitchenPollCachedAt < 4000)) {
+          res.setHeader('Cache-Control', 'public, s-maxage=4, max-age=3');
           return res.status(200).json(kitchenPollCache);
         }
 
@@ -693,7 +693,7 @@ export default async function handler(req, res) {
         kitchenPollCache = data || [];
         kitchenPollCachedAt = now;
 
-        res.setHeader('Cache-Control', 'public, s-maxage=15, max-age=10');
+        res.setHeader('Cache-Control', 'public, s-maxage=4, max-age=3');
         return res.status(200).json(kitchenPollCache);
       }
 

@@ -297,6 +297,17 @@ public class OrderMonitorService extends Service {
         isRunning = true;
 
         pollingThread = new Thread(() -> {
+            // Immediately seed known order IDs on service start (even if foreground)
+            // so isInitialCheck is cleared before any real customer order arrives
+            if (isInitialCheck) {
+                try {
+                    Log.i(TAG, "Running initial seed poll on service start to clear isInitialCheck");
+                    pollKitchenOrders();
+                } catch (Exception e) {
+                    Log.w(TAG, "Initial seed poll exception: " + e.getMessage());
+                }
+            }
+
             while (isRunning) {
                 // 1. If currently in night quiet hours (1:00 AM to 9:00 AM IST), sleep 60 seconds
                 if (isNightQuietHoursIST()) {
@@ -329,7 +340,7 @@ public class OrderMonitorService extends Service {
                 }
 
                 try {
-                    Thread.sleep(20000); // Poll every 20 seconds when minimized
+                    Thread.sleep(6000); // Poll every 6 seconds when minimized for fast notification delivery
                 } catch (InterruptedException e) {
                     break;
                 }
@@ -387,11 +398,40 @@ public class OrderMonitorService extends Service {
             long now = System.currentTimeMillis();
 
             // First run on cold start: seed known IDs without alerting to prevent spamming old orders
+            // EXCEPT orders created within the last 90 seconds — those are fresh and MUST notify
             if (isInitialCheck) {
                 for (int i = 0; i < orders.length(); i++) {
                     JSONObject order = orders.getJSONObject(i);
                     String id = order.optString("id");
-                    if (!id.isEmpty()) {
+                    if (id.isEmpty()) continue;
+
+                    long createdAt = order.optLong("created_at", 0);
+                    boolean isFreshOrder = (createdAt > 0 && (now - createdAt <= 90 * 1000L));
+
+                    if (isFreshOrder && !knownOrderIds.contains(id)) {
+                        // Fresh order placed in last 90s — fire notification even during initial check
+                        knownOrderIds.add(id);
+                        String status = order.optString("status");
+                        if (!"cancelled".equalsIgnoreCase(status) && !"delivered".equalsIgnoreCase(status)) {
+                            String custName = order.optString("customer_name", "Customer");
+                            String total = order.optString("total", "");
+                            String pickupCode = order.optString("pickup_code", "");
+                            if (!isRiderApp) {
+                                fireHeadsUpNotification(
+                                    "\uD83C\uDF57 NEW ORDER " + id + "!",
+                                    custName + " • " + total + (pickupCode.isEmpty() ? "" : " • Code: " + pickupCode),
+                                    id
+                                );
+                            } else if ("ready_for_pickup".equalsIgnoreCase(status) && !notifiedReadyIds.contains(id)) {
+                                notifiedReadyIds.add(id);
+                                fireHeadsUpNotification(
+                                    "\uD83D\uDEF5 NEW PARCEL READY FOR PICKUP",
+                                    "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
+                                    id
+                                );
+                            }
+                        }
+                    } else {
                         knownOrderIds.add(id);
                         if ("ready_for_pickup".equalsIgnoreCase(order.optString("status"))) {
                             notifiedReadyIds.add(id);

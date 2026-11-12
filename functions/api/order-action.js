@@ -294,7 +294,7 @@ export async function onRequest(context) {
         { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', pickup_code: '1001', created_at: new Date().toISOString() }
       ];
       const pollHeaders = Object.fromEntries(corsHeaders.entries());
-      pollHeaders['Cache-Control'] = 'public, s-maxage=15, max-age=10';
+      pollHeaders['Cache-Control'] = 'public, s-maxage=4, max-age=3';
       return jsonResponse(sample, 200, pollHeaders);
     }
 
@@ -672,9 +672,9 @@ export async function onRequest(context) {
       // 0. Lightweight Edge-Cached Kitchen Monitor Poll (Absorbs Android APK Background Loop)
       case 'kitchen_poll': {
         const now = Date.now();
-        if (kitchenPollCache && (now - kitchenPollCachedAt < 15000)) {
+        if (kitchenPollCache && (now - kitchenPollCachedAt < 4000)) {
           const pollHeaders = Object.fromEntries(corsHeaders.entries());
-          pollHeaders['Cache-Control'] = 'public, s-maxage=15, max-age=10';
+          pollHeaders['Cache-Control'] = 'public, s-maxage=4, max-age=3';
           return jsonResponse(kitchenPollCache, 200, pollHeaders);
         }
 
@@ -690,7 +690,7 @@ export async function onRequest(context) {
         kitchenPollCachedAt = now;
 
         const pollHeaders = Object.fromEntries(corsHeaders.entries());
-        pollHeaders['Cache-Control'] = 'public, s-maxage=15, max-age=10';
+        pollHeaders['Cache-Control'] = 'public, s-maxage=4, max-age=3';
         return jsonResponse(kitchenPollCache, 200, pollHeaders);
       }
 

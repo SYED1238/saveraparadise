@@ -236,7 +236,7 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(res.responseHeaders['Allow'], 'POST, OPTIONS');
   });
 
-  await t.test('12b. GET /api/order-action?action=kitchen_poll permits lightweight edge-cached poll with s-maxage=15', async () => {
+  await t.test('12b. GET /api/order-action?action=kitchen_poll permits lightweight edge-cached poll with s-maxage=4', async () => {
     const { req, res } = createMockReqRes({
       method: 'GET',
       url: '/api/order-action?action=kitchen_poll'
@@ -244,7 +244,7 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     await orderActionHandler(req, res);
     assert.equal(res.statusCode, 200);
     assert.ok(Array.isArray(res.responseData), 'kitchen_poll must return array of orders');
-    assert.match(res.responseHeaders['Cache-Control'], /s-maxage=15/);
+    assert.match(res.responseHeaders['Cache-Control'], /s-maxage=4/);
     if (res.responseData.length > 0) {
       assert.strictEqual(res.responseData[0].delivery_address, undefined, 'kitchen_poll must never expose delivery_address for privacy');
       assert.strictEqual(res.responseData[0].customer_phone, undefined, 'kitchen_poll must never expose customer_phone');

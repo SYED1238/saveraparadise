@@ -4045,8 +4045,9 @@ class QuickBiteDataService {
   startLiveHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
 
-    // 120s fallback interval (Supabase Realtime WebSocket handles instantaneous updates)
-    const intervalMs = 120000;
+    // Admin portal: 10s fast heartbeat to compensate for Migration 08/12 RLS blocking
+    // anon postgres_changes on public.orders. Other portals: 120s gentle fallback.
+    const intervalMs = (this.portalType === 'admin') ? 10000 : 120000;
 
     this.heartbeatTimer = setInterval(async () => {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -4054,7 +4055,9 @@ class QuickBiteDataService {
       try {
         if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
           if (this.isStaffAuthorized()) {
-            await this.syncOrdersFromSupabase();
+            // Admin portal uses force=true on 10s heartbeat because Migration 08/12 RLS
+            // blocks anon postgres_changes — this fast poll replaces the broken realtime feed
+            await this.syncOrdersFromSupabase(this.portalType === 'admin');
             if (this.portalType === 'delivery' || this.portalType === 'owner') {
               await this.syncSettingsFromSupabase().catch(() => {});
             }
@@ -4500,6 +4503,50 @@ class QuickBiteDataService {
       source: 'local',
       ...data
     });
+  }
+
+  /**
+   * Ensure sharedBroadcastChannel is subscribed (joined) before sending.
+   * If the channel doesn't exist or isn't joined, subscribe first and wait for SUBSCRIBED status.
+   * Prevents silently dropped broadcasts when the channel hasn't finished joining.
+   */
+  async _ensureBroadcastSubscribedAndSend(event, payload) {
+    if (typeof window === 'undefined') return;
+
+    // Lazy-initialize channel if needed
+    if (!this.sharedBroadcastChannel && supabase) {
+      this.sharedBroadcastChannel = supabase.channel('quickbite-kitchen-broadcast', {
+        config: { broadcast: { self: false } }
+      });
+    }
+
+    if (!this.sharedBroadcastChannel) return;
+
+    // Wait for channel to reach 'joined' state if not already
+    if (this.sharedBroadcastChannel.state !== 'joined') {
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 3000); // 3s max wait
+        this.sharedBroadcastChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+      });
+    }
+
+    // Send the broadcast event
+    if (this.sharedBroadcastChannel.state === 'joined') {
+      await this.sharedBroadcastChannel.send({
+        type: 'broadcast',
+        event: event,
+        payload: payload
+      }).catch((err) => {
+        console.warn('[DataService] Broadcast send error for', event, ':', err);
+      });
+    } else {
+      console.warn('[DataService] Broadcast channel not joined after subscribe wait, dropping', event);
+    }
   }
 
   broadcastSettings(settings) {
@@ -5853,13 +5900,7 @@ class QuickBiteDataService {
 
     // Instant sub-50ms peer-to-peer WebSocket broadcast across kitchen POS, owner, and rider tablets
     try {
-      if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'new_order',
-          payload: { order: orderData, timestamp: Date.now() }
-        }).catch(() => {});
-      }
+      await this._ensureBroadcastSubscribedAndSend('new_order', { order: orderData, timestamp: Date.now() });
     } catch {}
 
     // Direct clean insertion to Supabase cloud database
@@ -5946,6 +5987,13 @@ class QuickBiteDataService {
           } catch {}
         }
         console.log('[Supabase] addOrder saved to cloud database via secure order gateway:', orderData.id);
+
+        // Re-broadcast new_order AFTER create_order succeeds with authoritative orderId
+        // This guarantees Kitchen/Owner apps receive the confirmed order even if the
+        // pre-create broadcast was dropped (channel not yet joined, or id changed)
+        try {
+          await this._ensureBroadcastSubscribedAndSend('new_order', { order: orderData, timestamp: Date.now() });
+        } catch {}
       } else {
         const error = actionErr || new Error(actionRes?.error || 'Order creation rejected by security gateway');
         console.warn('[Supabase] addOrder gateway error:', error.message);
