@@ -381,11 +381,13 @@ export async function generateDoorstepUpiQr({
 
   try {
     // Generate order via Cashfree PG to obtain verified payment session
+    const returnUrl = `${DEFAULT_SITE_URL}/delivery.html?payment_return=1&order_id=${encodeURIComponent(cleanId)}&cf_order_id={order_id}`;
     const pgRes = await createPgOrder({
       orderId: `doorstep_${cleanId}`,
       amount: cleanAmount,
       customerName,
-      customerPhone: '9999999999'
+      customerPhone: '9999999999',
+      returnUrl
     });
 
     if (!pgRes.success) {

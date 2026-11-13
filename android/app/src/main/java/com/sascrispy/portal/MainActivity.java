@@ -34,11 +34,22 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private SwipeRefreshLayout swipeRefresh;
     private static final int PERMISSION_REQUEST_CODE = 1001;
+    private static java.lang.ref.WeakReference<MainActivity> activeActivityRef = null;
+
+    public static void triggerWebAlarmStop() {
+        MainActivity act = activeActivityRef != null ? activeActivityRef.get() : null;
+        if (act != null && act.webView != null) {
+            act.runOnUiThread(() -> {
+                act.webView.evaluateJavascript("if (typeof window.__stopRiderAlarmFromNative === 'function') window.__stopRiderAlarmFromNative(); if (typeof window.__stopKitchenAlarmFromNative === 'function') window.__stopKitchenAlarmFromNative();", null);
+            });
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        activeActivityRef = new java.lang.ref.WeakReference<>(this);
         setContentView(R.layout.activity_main);
 
         // Keep screen on for Kitchen Admin and Rider Navigation
@@ -241,14 +252,24 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        activeActivityRef = new java.lang.ref.WeakReference<>(this);
         OrderMonitorService.setAppInForeground(true);
         OrderMonitorService.stopNativeAlarm();
+        triggerWebAlarmStop();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         OrderMonitorService.setAppInForeground(false);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (activeActivityRef != null && activeActivityRef.get() == this) {
+            activeActivityRef = null;
+        }
+        super.onDestroy();
     }
 
     @Override

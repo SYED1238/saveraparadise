@@ -152,6 +152,7 @@ public class WebAppInterface {
             manager.notify(notifId, notif);
 
             if (isAlarmAlert) {
+                OrderMonitorService.setLastAlertNotifId(notifId);
                 // Start continuous looping MediaPlayer + repeating Vibrator waveform & acquire audio focus
                 OrderMonitorService.startNativeAlarm();
             } else {
@@ -200,6 +201,13 @@ public class WebAppInterface {
     public void stopAlarm() {
         try {
             OrderMonitorService.stopNativeAlarm();
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
+    public void setDutyStatus(boolean onDuty) {
+        try {
+            OrderMonitorService.setRiderDutyStatus(context, onDuty);
         } catch (Exception ignored) {}
     }
 

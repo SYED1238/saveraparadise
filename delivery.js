@@ -380,7 +380,7 @@ const initDeliveryApp = () => {
     }
   });
 
-  function checkRiderSession() {
+  async function checkRiderSession() {
     if (isStaffSessionActive('rider')) {
       const token = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_rider_token') : null) || (typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_rider_token') : null);
       if (token) {
@@ -390,11 +390,36 @@ const initDeliveryApp = () => {
       let activeRider = dataService.getActiveRider();
       if (!activeRider) {
         clearStaffSession('rider');
-        if (riderLockOverlay) riderLockOverlay.classList.remove('unlocked');
+        if (riderLockOverlay) {
+          riderLockOverlay.classList.remove('unlocked');
+          riderLockOverlay.style.display = 'flex';
+        }
         if (riderPasscodeLock) riderPasscodeLock.reset();
         return;
       }
-      if (riderLockOverlay) { riderLockOverlay.classList.add('unlocked'); riderLockOverlay.style.display = 'none'; }
+
+      // Authoritative token check via ensureAdminToken('rider')
+      let validToken = null;
+      try {
+        validToken = await ensureAdminToken('rider');
+      } catch {}
+
+      // If online and token could not be verified/refreshed, session has expired -> show lock screen
+      if (typeof navigator !== 'undefined' && navigator.onLine && !validToken) {
+        clearStaffSession('rider');
+        releaseWakeLock();
+        if (riderLockOverlay) {
+          riderLockOverlay.classList.remove('unlocked');
+          riderLockOverlay.style.display = 'flex';
+        }
+        if (riderPasscodeLock) riderPasscodeLock.reset();
+        return;
+      }
+
+      if (riderLockOverlay) {
+        riderLockOverlay.classList.add('unlocked');
+        riderLockOverlay.style.display = 'none';
+      }
       updateRiderProfileHeader();
       requestWakeLock();
       if (restoreRiderGpsState()) {
@@ -412,6 +437,7 @@ const initDeliveryApp = () => {
     } else {
       if (riderLockOverlay) {
         riderLockOverlay.classList.remove('unlocked');
+        riderLockOverlay.style.display = 'flex';
         if (riderPasscodeLock) riderPasscodeLock.reset();
       }
     }
@@ -419,6 +445,13 @@ const initDeliveryApp = () => {
 
   if (btnRiderLogout) {
     btnRiderLogout.addEventListener('click', () => {
+      stopRiderAlarm();
+      if (typeof window !== 'undefined') {
+        window.__lastVerifiedRider = null;
+      }
+      try {
+        localStorage.removeItem('quickbite_active_rider_id');
+      } catch {}
       if (activeGpsWatchId !== null && 'geolocation' in navigator) {
         try { navigator.geolocation.clearWatch(activeGpsWatchId); } catch {}
         activeGpsWatchId = null;
@@ -568,6 +601,17 @@ const initDeliveryApp = () => {
       earningsCashSub.textContent = `Owed to kitchen drawer (${codCount} COD order${codCount === 1 ? '' : 's'})`;
     }
 
+    if (btnEarningsHandover) {
+      const isHandoverPending = rider?.cashHandoverStatus === 'pending_owner_approval' && (cashSummary.cashInHand || 0) > 0;
+      if (isHandoverPending) {
+        btnEarningsHandover.textContent = '⏳ Handover Pending Approval';
+        btnEarningsHandover.disabled = true;
+      } else {
+        btnEarningsHandover.textContent = 'Hand Over Cash';
+        btnEarningsHandover.disabled = (cashSummary.cashInHand || 0) <= 0;
+      }
+    }
+
     if (earningsTripsCount) {
       earningsTripsCount.textContent = `${pSummary.deliveredCount} Trip${pSummary.deliveredCount === 1 ? '' : 's'}`;
     }
@@ -591,11 +635,17 @@ const initDeliveryApp = () => {
     earningsTripsList.innerHTML = reversedDetails.map((item, revIdx) => {
       const tripNumber = details.length - revIdx;
       const matchedOrder = orders.find(o => o.id === item.orderId) || {};
+      const isUndelivered = matchedOrder.status === 'undelivered';
       const isCod = isCashOnDelivery(matchedOrder);
       const cashAmt = extractCashAmount(matchedOrder.total);
-      const payBadge = isCod 
-        ? `<span class="trip-pay-badge cod"><i class="fa-solid fa-money-bill-wave"></i> COD: ₹${cashAmt} Collected</span>`
-        : `<span class="trip-pay-badge online"><i class="fa-solid fa-credit-card"></i> Prepaid / UPI</span>`;
+      let payBadge = '';
+      if (isUndelivered) {
+        payBadge = `<span class="trip-pay-badge cod"><i class="fa-solid fa-box-archive"></i> 📦 Returned to Kitchen (₹0 Collected)</span>`;
+      } else if (isCod) {
+        payBadge = `<span class="trip-pay-badge cod"><i class="fa-solid fa-money-bill-wave"></i> COD: ₹${cashAmt} Collected</span>`;
+      } else {
+        payBadge = `<span class="trip-pay-badge online"><i class="fa-solid fa-credit-card"></i> Prepaid / UPI</span>`;
+      }
       const surgeBadge = item.isSurge 
         ? `<span class="trip-surge-badge"><i class="fa-solid fa-bolt"></i> Surge</span>` 
         : '';
@@ -703,10 +753,13 @@ const initDeliveryApp = () => {
     // Broadcast live rider location for customer map tracking sync
     try {
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
-      const activeOrders = dataService.getOrders().filter(o =>
-        (o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o)) &&
-        (o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin)
-      );
+      const myPin = String(currentRider.pin || '').trim();
+      const activeOrders = dataService.getOrders().filter(o => {
+        if (!o) return false;
+        const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+        return (o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o)) &&
+          (oPin === myPin || !oPin);
+      });
       if (activeOrders.length === 0) return;
       const orderIds = activeOrders.map(o => o.id);
       const activeOrderId = activeOrders[0] ? activeOrders[0].id : null;
@@ -903,11 +956,17 @@ const initDeliveryApp = () => {
       if (riderStatusPill) riderStatusPill.className = 'rider-badge-status offline';
       if (riderStatusText) riderStatusText.textContent = 'Offline • On Break';
     }
+    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
+      try { window.AndroidNative.setDutyStatus(isDutyOn); } catch {}
+    }
 
     riderDutyToggle.addEventListener('change', (e) => {
       isDutyOn = e.target.checked;
       try { localStorage.setItem('quickbite_rider_duty_on', String(isDutyOn)); } catch {}
       if (dutyLabel) dutyLabel.textContent = isDutyOn ? 'On Duty' : 'On Break';
+      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
+        try { window.AndroidNative.setDutyStatus(isDutyOn); } catch {}
+      }
       if (isDutyOn) {
         riderStatusPill.className = 'rider-badge-status online';
         riderStatusText.textContent = 'Online • Active';
@@ -1009,7 +1068,9 @@ const initDeliveryApp = () => {
     if (!currentRider || !currentRider.pin) return [];
     const pin = String(currentRider.pin).trim();
     return dataService.getOrders().filter(o => {
-      if (!o || String(o.assignedRiderPin || '').trim() !== pin) return false;
+      if (!o) return false;
+      const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      if (oPin !== pin) return false;
       return o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o);
     });
   }
@@ -1064,7 +1125,7 @@ const initDeliveryApp = () => {
     gateBar.className = 'pickup-gps-gate-bar gps-synced';
     gateText.textContent = withinZone
       ? `✅ Live GPS Synced (${distLabel} away • Limit: ${maxOrders} active) — Ready to pick up`
-      : `✅ Live GPS Synced (${distLabel} away) — Ride within 3 km of restaurant to accept`;
+      : `GPS active (${distLabel} from restaurant — you can accept orders now; move within 3 km for counter pickup)`;
     if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
   }
 
@@ -1139,10 +1200,11 @@ const initDeliveryApp = () => {
   }
 
   // Intelligent coordinate resolver: guarantees rider navigates to customer's exact pinned doorstep
-  // Intelligent coordinate resolver: guarantees rider navigates to customer's exact pinned doorstep
   function getOrderDropCoordinates(order) {
     // 1. Direct addressDetails
-    if (order && order.addressDetails && !isNaN(Number(order.addressDetails.lat)) && Number(order.addressDetails.lat) !== 0) {
+    if (order && order.addressDetails &&
+        !isNaN(Number(order.addressDetails.lat)) && Number(order.addressDetails.lat) !== 0 &&
+        !isNaN(Number(order.addressDetails.lng)) && Number(order.addressDetails.lng) !== 0) {
       return {
         lat: Number(order.addressDetails.lat),
         lng: Number(order.addressDetails.lng),
@@ -1207,17 +1269,19 @@ const initDeliveryApp = () => {
       o.status === 'ready_for_pickup' &&
       !String(o.assignedRiderPin || o.assigned_rider_pin || '').trim()
     );
+    const riderPinStr = String(currentRider.pin || '').trim();
     const activeOrders = orders.filter(o => {
       const assignedPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
       if (o.status === 'on_the_way') {
-        return assignedPin === currentRider.pin || !assignedPin;
+        return assignedPin === riderPinStr || !assignedPin;
       }
-      return assignedPin === currentRider.pin && dataService.isOrderGoingToRestaurant(o);
+      return assignedPin === riderPinStr && dataService.isOrderGoingToRestaurant(o);
     });
     const shiftStartMs = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
     const deliveredOrders = orders.filter(o => {
       if (o.status !== 'delivered' && o.status !== 'undelivered') return false;
-      if (o.assignedRiderPin !== currentRider.pin) return false;
+      const assignedPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      if (assignedPin !== riderPinStr) return false;
       const orderTs = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
       return !orderTs || orderTs >= shiftStartMs;
     }).sort((a, b) => {
@@ -1225,6 +1289,7 @@ const initDeliveryApp = () => {
       const tsB = Number(b.deliveredAt || b.undeliveredAt || b.updatedAt || b.claimedAt || b.createdAt || 0);
       return tsB - tsA;
     });
+    const successfulDeliveredCount = deliveredOrders.filter(o => o.status === 'delivered').length;
 
     // Get rider-specific segregated COD cash in hand
     const cashSummary = dataService.getRiderCashSummary(currentRider.pin);
@@ -1339,7 +1404,7 @@ const initDeliveryApp = () => {
 
         const dropCoords = getOrderDropCoordinates(order);
         const computedDist = dropCoords.hasCustomerCoords
-          ? calculateDistanceKm(RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng, dropCoords.lat, dropCoords.lng)
+          ? ((typeof dataService.calculateRoadDistanceSync === 'function' ? dataService.calculateRoadDistanceSync(dropCoords.lat, dropCoords.lng) : 0) || calculateDistanceKm(RESTAURANT_COORDINATES.lat, RESTAURANT_COORDINATES.lng, dropCoords.lat, dropCoords.lng))
           : 0;
         const savedDist = parseFloat(order?.addressDetails?.distanceKm || order?.distance_km || order?.distanceKm || 0);
         const distanceKm = (savedDist > 0 ? savedDist : computedDist) || 1.8;
@@ -1349,7 +1414,7 @@ const initDeliveryApp = () => {
           ...order,
           addressDetails: { ...(order.addressDetails || {}), distanceKm }
         };
-        const orderPayout = dataService.calculateOrderPayout(payoutOrder, deliveredOrders.length + 1, payoutCfg);
+        const orderPayout = dataService.calculateOrderPayout(payoutOrder, successfulDeliveredCount + 1, payoutCfg);
 
         const rawDropAddress = order.deliveryAddress || `${order.addressDetails?.flatNo || 'House'}, ${order.addressDetails?.area || 'Ramanagara'}`;
         const safeDropAddress = escapeHtml(cleanDeliveryAddress(rawDropAddress));
@@ -1501,14 +1566,13 @@ const initDeliveryApp = () => {
       const rawAddrs = dataService.getAllAddressesRaw();
       const rawPhone = extractPhoneFromOrder(order, rawAddrs) || order.customerPhone || order.customer_phone || order.phone || '';
       const cleanPhoneDigits = rawPhone.replace(/\D/g, '');
-      const hasRealPhone = cleanPhoneDigits.length >= 10;
+      const validTenDigits = cleanPhoneDigits.length >= 10 ? cleanPhoneDigits.slice(-10) : '';
+      const hasRealPhone = Boolean(validTenDigits);
 
-      // Clean phone formatted for dialer (+91 format if 10 digits)
-      const dialerPhone = hasRealPhone 
-        ? (cleanPhoneDigits.length === 10 ? `+91${cleanPhoneDigits}` : `+${cleanPhoneDigits}`)
-        : '';
+      // Clean phone formatted for dialer (+91 format)
+      const dialerPhone = hasRealPhone ? `+91${validTenDigits}` : '';
       const displayPhone = hasRealPhone
-        ? (cleanPhoneDigits.length === 10 ? `+91 ${cleanPhoneDigits.slice(0, 5)} ${cleanPhoneDigits.slice(5)}` : escapeHtml(rawPhone))
+        ? `+91 ${validTenDigits.slice(0, 5)} ${validTenDigits.slice(5)}`
         : 'No phone number';
 
       const rawDropAddress = order.deliveryAddress || `${order.addressDetails?.flatNo || 'House'}, ${order.addressDetails?.area || 'Ramanagara'}`;
@@ -1540,7 +1604,7 @@ const initDeliveryApp = () => {
           ? `<span class="parcel-step-pill"><i class="fa-solid fa-box"></i> Parcel ${orderIdx + 1} of ${displayList.length}</span>`
           : '';
 
-        const orderPayout = dataService.calculateOrderPayout(order, deliveredOrders.length + 1 + orderIdx, payoutCfg);
+        const orderPayout = dataService.calculateOrderPayout(order, successfulDeliveredCount + 1 + orderIdx, payoutCfg);
 
         // Stage 1: Rider accepted order and is heading to Savera Paradise to pick up parcel
         if (dataService.isOrderGoingToRestaurant(order)) {
@@ -1755,7 +1819,7 @@ const initDeliveryApp = () => {
                 <span class="price-badge-label">${isUndelivered ? 'Returned' : (isCod ? 'Cash Collected' : 'Paid Online')}</span>
                 <strong class="price-badge-val">${isUndelivered ? '₹0' : (isCod ? `₹${cashAmount}` : '₹0')}</strong>
               </div>
-              ${!isUndelivered ? `
+              ${(!isUndelivered || orderPayout.amount > 0) ? `
                 <div class="row-payout-badge delivered" title="${escapeHtml(orderPayout.formula)}">
                   <span class="payout-badge-label">Payout Added</span>
                   <strong class="payout-badge-val">+₹${orderPayout.amount.toFixed(2)}</strong>
@@ -1770,7 +1834,7 @@ const initDeliveryApp = () => {
               <i class="fa-solid fa-location-dot"></i>
               <span>${safeDropAddress}</span>
             </div>
-            ${!isUndelivered ? `
+            ${(!isUndelivered || orderPayout.amount > 0) ? `
               <div class="row-payout-calc-strip delivered">
                 <span class="payout-calc-icon">✅</span>
                 <span class="payout-calc-text"><strong>Credited +₹${orderPayout.amount.toFixed(2)} to Balance</strong> (${orderPayout.distanceKm} km • ${escapeHtml(orderPayout.formula)})</span>
@@ -1870,7 +1934,8 @@ const initDeliveryApp = () => {
       return;
     }
     const currentRider = dataService.getActiveRider() || { pin: '0000' };
-    if (order.assignedRiderPin && String(order.assignedRiderPin).trim() !== String(currentRider.pin || '').trim()) {
+    const orderRiderPin = String(order.assignedRiderPin || order.assigned_rider_pin || '').trim();
+    if (orderRiderPin && orderRiderPin !== String(currentRider.pin || '').trim()) {
       showToast(`⚠️ Order ${order.id} was already accepted by ${order.assignedRiderName || 'another rider'}.`, 'warning');
       renderPortal();
       return;
@@ -2028,10 +2093,13 @@ const initDeliveryApp = () => {
     const cash = extractCashAmount(order.total);
 
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
+    const myPin = String(currentRider.pin || '').trim();
     const payoutCfg = dataService.getPayoutConfig();
     const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
     const deliveredCount = orders.filter(o => {
-      if ((o.status !== 'delivered' && o.status !== 'undelivered') || o.assignedRiderPin !== currentRider.pin) return false;
+      if (!o) return false;
+      const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      if (o.status !== 'delivered' || oPin !== myPin) return false;
       const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
       return !ts || ts >= shiftStart;
     }).length;
@@ -2047,8 +2115,9 @@ const initDeliveryApp = () => {
     const rawAddrs = dataService.getAllAddressesRaw();
     const rawPhone = extractPhoneFromOrder(order, rawAddrs) || order.customerPhone || '';
     const cleanDigits = rawPhone.replace(/\D/g, '');
-    const displayPhone = cleanDigits.length >= 10
-      ? (cleanDigits.length === 10 ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}` : escapeHtml(rawPhone))
+    const validTen = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+    const displayPhone = validTen
+      ? `+91 ${validTen.slice(0, 5)} ${validTen.slice(5)}`
       : 'Phone not provided';
 
     const proximityHtml = hasCustomerCoords
@@ -2269,8 +2338,12 @@ const initDeliveryApp = () => {
     } catch {}
   }
 
+  let isOpeningDoorstepScanner = false;
+
   async function openCashfreeDoorstepScanner(order) {
     if (!DOORSTEP_UPI_ENABLED || !order) return;
+    if (isOpeningDoorstepScanner) return;
+    isOpeningDoorstepScanner = true;
     const cash = extractCashAmount(order.total);
     if (doorstepUpiAmountBadge) doorstepUpiAmountBadge.textContent = `₹${cash}`;
     if (doorstepQrLoader) doorstepQrLoader.style.display = 'flex';
@@ -2365,6 +2438,8 @@ const initDeliveryApp = () => {
         doorstepUpiLiveStatus.style.color = '#EF4444';
       }
       showToast(`⚠️ ${err.message || 'Could not open Cashfree Scanner'}`, 'error');
+    } finally {
+      isOpeningDoorstepScanner = false;
     }
   }
 
@@ -2394,6 +2469,7 @@ const initDeliveryApp = () => {
   }
 
   function closeConfirmModal() {
+    isSubmittingDelivery = false;
     resetDoorstepModalState();
     modalConfirmBackdrop.classList.remove('open');
     activeConfirmOrder = null;
@@ -2444,7 +2520,7 @@ const initDeliveryApp = () => {
 
   // Handle Delivery Form Submission
   if (formConfirmDelivered) {
-    formConfirmDelivered.addEventListener('submit', (e) => {
+    formConfirmDelivered.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!activeConfirmOrder || isSubmittingDelivery) return;
       isSubmittingDelivery = true;
@@ -2475,22 +2551,34 @@ const initDeliveryApp = () => {
           }
           return;
         }
-        if (DOORSTEP_UPI_ENABLED && currentDoorstepPaymentMode === 'upi') {
-          const isUpiPaid = Boolean(currentDoorstepCashfreeSession?.isPaid) || Boolean(checkUpiVerified && checkUpiVerified.checked);
-          if (!isUpiPaid) {
-            showToast('⚠️ Please complete payment via Cashfree Scanner before marking delivered, or switch to Cash in Hand.', 'warning');
-            isSubmittingDelivery = false;
-            if (btnSubmitDelivered) {
-              btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-check-double"></i> Mark Order Delivered';
-              btnSubmitDelivered.style.background = '';
-              btnSubmitDelivered.disabled = false;
-            }
-            return;
+        const hasVerifiedCashfreeSession = Boolean(
+          currentDoorstepCashfreeSession &&
+          String(currentDoorstepCashfreeSession.orderId || '').replace(/^#/, '') === String(orderId || '').replace(/^#/, '') &&
+          currentDoorstepCashfreeSession.isPaid
+        );
+        const isDoorstepUpi = DOORSTEP_UPI_ENABLED && currentDoorstepPaymentMode === 'upi' && (
+          hasVerifiedCashfreeSession || Boolean(activeConfirmOrder?.doorstepUpi || activeConfirmOrder?.doorstep_upi || String(activeConfirmOrder?.cfPaymentStatus || activeConfirmOrder?.cf_payment_status || '').toUpperCase() === 'SUCCESS')
+        );
+        if (currentDoorstepPaymentMode === 'upi' && !isDoorstepUpi) {
+          showToast('Please verify the customer UPI QR payment via Cashfree first, or switch to Cash Collected.', 'warning');
+          isSubmittingDelivery = false;
+          if (btnSubmitDelivered) {
+            btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-check-double"></i> Mark Order Delivered';
+            btnSubmitDelivered.style.background = '';
+            btnSubmitDelivered.disabled = false;
           }
+          return;
         }
       }
 
-      const isDoorstepUpi = DOORSTEP_UPI_ENABLED && (isCod && currentDoorstepPaymentMode === 'upi');
+      const hasVerifiedCf = Boolean(
+        currentDoorstepCashfreeSession &&
+        String(currentDoorstepCashfreeSession.orderId || '').replace(/^#/, '') === String(orderId || '').replace(/^#/, '') &&
+        currentDoorstepCashfreeSession.isPaid
+      );
+      const isDoorstepUpi = DOORSTEP_UPI_ENABLED && (isCod && currentDoorstepPaymentMode === 'upi') && (
+        hasVerifiedCf || Boolean(activeConfirmOrder?.doorstepUpi || activeConfirmOrder?.doorstep_upi || String(activeConfirmOrder?.cfPaymentStatus || activeConfirmOrder?.cf_payment_status || '').toUpperCase() === 'SUCCESS')
+      );
       const cashCollected = isDoorstepUpi ? 0 : (isCod ? Number(cash) : 0);
       const finalPaymentMethod = isDoorstepUpi ? 'doorstep_upi' : (isCod ? 'cod' : 'online');
 
@@ -2529,6 +2617,22 @@ const initDeliveryApp = () => {
       localStorage.removeItem(`quickbite_cnr_start_${cleanOrderId}`);
 
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
+      const priorAssignedPin = String(activeConfirmOrder.assignedRiderPin || activeConfirmOrder.assigned_rider_pin || '').trim();
+      if (!priorAssignedPin) {
+        try {
+          const claimRes = dataService.claimOrderByBagCode(
+            activeConfirmOrder.pickupCode || activeConfirmOrder.bagCode || '',
+            currentRider.pin,
+            activeConfirmOrder.id,
+            { riderLat: riderLiveLocation.lat, riderLng: riderLiveLocation.lng }
+          );
+          if (claimRes?.serverPromise) {
+            await claimRes.serverPromise;
+          }
+        } catch (claimErr) {
+          console.warn('[Rider Confirm] Claiming unassigned order before delivery failed:', claimErr);
+        }
+      }
       activeConfirmOrder.assignedRiderPin = activeConfirmOrder.assignedRiderPin || currentRider.pin;
       activeConfirmOrder.assignedRiderName = activeConfirmOrder.assignedRiderName || currentRider.name;
       activeConfirmOrder.deliveredAt = Date.now();
@@ -2536,26 +2640,46 @@ const initDeliveryApp = () => {
       // Calculate order payout for this order
       const payoutCfg = dataService.getPayoutConfig();
       const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
+      const myPin = String(currentRider.pin || '').trim();
       const currentDelivered = dataService.getOrders().filter(o => {
-        if ((o.status !== 'delivered' && o.status !== 'undelivered') || o.assignedRiderPin !== currentRider.pin) return false;
+        if (!o) return false;
+        const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+        if (o.status !== 'delivered' || oPin !== myPin) return false;
         const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
         return !ts || ts >= shiftStart;
       });
       const orderPayout = dataService.calculateOrderPayout(activeConfirmOrder, currentDelivered.length + 1, payoutCfg);
 
       // Update in dataService with rider authorization
-      dataService.updateOrderStatus(orderId, 'delivered', 'rider', {
-        assignedRiderPin: activeConfirmOrder.assignedRiderPin,
-        assignedRiderName: activeConfirmOrder.assignedRiderName,
-        deliveredAt: activeConfirmOrder.deliveredAt,
-        cashCollected,
-        paymentMethod: finalPaymentMethod,
-        isPaidOnline: isDoorstepUpi || !isCod,
-        doorstepUpi: isDoorstepUpi,
-        upiManualVerified: isDoorstepUpi,
-        riderPayoutAmount: orderPayout.amount,
-        riderPayoutFormula: orderPayout.formula
-      });
+      let updateResult = null;
+      try {
+        updateResult = dataService.updateOrderStatus(orderId, 'delivered', 'rider', {
+          assignedRiderPin: activeConfirmOrder.assignedRiderPin,
+          assignedRiderName: activeConfirmOrder.assignedRiderName,
+          deliveredAt: activeConfirmOrder.deliveredAt,
+          cashCollected,
+          paymentMethod: finalPaymentMethod,
+          isPaidOnline: isDoorstepUpi || !isCod,
+          doorstepUpi: isDoorstepUpi,
+          upiManualVerified: isDoorstepUpi,
+          riderPayoutAmount: orderPayout.amount,
+          riderPayoutFormula: orderPayout.formula
+        });
+        if (updateResult && updateResult.serverPromise) {
+          await updateResult.serverPromise;
+        }
+      } catch (actionErr) {
+        isSubmittingDelivery = false;
+        if (btnSubmitDelivered) {
+          btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-check-double"></i> Mark Order Delivered';
+          btnSubmitDelivered.style.background = '';
+          btnSubmitDelivered.disabled = false;
+        }
+        showToast(`❌ Could not complete delivery: ${actionErr?.message || 'Server error'}`, 'error');
+        renderPortal();
+        return;
+      }
+      isSubmittingDelivery = false;
 
       // Trigger Confetti Celebration!
       try {
@@ -2567,11 +2691,14 @@ const initDeliveryApp = () => {
       } catch {}
 
       // Check remaining active parcels on this delivery run (both in transit and accepted going to restaurant)
-      const remainingParcels = dataService.getOrders().filter(o => 
-        (o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o)) && 
-        (o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin) &&
-        o.id !== orderId
-      );
+      const remainingParcels = dataService.getOrders().filter(o => {
+        if (!o) return false;
+        const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+        const oCleanId = String(o.id || '').trim().replace(/^#/, '');
+        return (o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o)) && 
+          (oPin === myPin || !oPin) &&
+          oCleanId !== cleanOrderId;
+      });
 
       closeConfirmModal();
 
@@ -2699,7 +2826,7 @@ const initDeliveryApp = () => {
     const managerPhone = settings?.restaurantPhone || settings?.helpline || '+91 98450 12345';
     if (cnrManagerPhoneDisplay) cnrManagerPhoneDisplay.textContent = managerPhone;
     if (cnrBtnCallManager) {
-      cnrBtnCallManager.href = `tel:${managerPhone.replace(/\D/g, '')}`;
+      cnrBtnCallManager.href = `tel:${String(managerPhone).replace(/[^0-9+]/g, '')}`;
     }
 
     // Payment-specific resolution UI
@@ -2821,7 +2948,7 @@ const initDeliveryApp = () => {
 
   // COD Return to Kitchen
   if (btnCnrReturnCod) {
-    btnCnrReturnCod.addEventListener('click', () => {
+    btnCnrReturnCod.addEventListener('click', async () => {
       if (!activeCnrOrder) return;
       const orderId = activeCnrOrder.id;
       const cleanId = String(orderId).replace(/^#/, '');
@@ -2840,27 +2967,37 @@ const initDeliveryApp = () => {
       const reason = cnrCodReason ? cnrCodReason.value : 'Customer did not answer calls/doorbell after 10 mins wait';
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 
-      localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+      btnCnrReturnCod.disabled = true;
+      try {
+        const updateResult = dataService.riderUndeliveredOrder(orderId, {
+          reason,
+          riderPin: currentRider.pin,
+          returnToKitchen: true
+        });
+        if (updateResult && updateResult.serverPromise) {
+          await updateResult.serverPromise;
+        }
 
-      dataService.riderUndeliveredOrder(orderId, {
-        reason,
-        riderPin: currentRider.pin,
-        returnToKitchen: true
-      });
+        localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+        closeUnreachableModal();
+        showToast(`📦 Order ${orderId} marked for return to kitchen counter. COD cash liability remains ₹0.`, 'info');
 
-      closeUnreachableModal();
-      showToast(`📦 Order ${orderId} marked for return to kitchen counter. COD cash liability remains ₹0.`, 'info');
-
-      activeTab = 'delivered';
-      persistRiderTab('delivered');
-      updateActiveTabUI();
-      renderPortal();
+        const remainingParcels = getRiderActiveOrdersList();
+        activeTab = remainingParcels.length > 0 ? 'active' : 'delivered';
+        persistRiderTab(activeTab);
+        updateActiveTabUI();
+        renderPortal();
+      } catch (err) {
+        btnCnrReturnCod.disabled = false;
+        showToast(`❌ Could not mark returned: ${err?.message || 'Server error'}`, 'error');
+        renderPortal();
+      }
     });
   }
 
   // Prepaid Safe Drop
   if (btnCnrSafedrop) {
-    btnCnrSafedrop.addEventListener('click', () => {
+    btnCnrSafedrop.addEventListener('click', async () => {
       if (!activeCnrOrder) return;
       const orderId = activeCnrOrder.id;
 
@@ -2890,42 +3027,56 @@ const initDeliveryApp = () => {
       const note = (cnrSafedropNote?.value || '').trim() || 'Left at customer doorstep / with building security';
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 
-      localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
-
       const payoutCfg = dataService.getPayoutConfig();
       const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
+      const myPin = String(currentRider.pin || '').trim();
       const currentDelivered = dataService.getOrders().filter(o => {
-        if ((o.status !== 'delivered' && o.status !== 'undelivered') || o.assignedRiderPin !== currentRider.pin) return false;
+        if (!o) return false;
+        const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+        if (o.status !== 'delivered' || oPin !== myPin) return false;
         const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
         return !ts || ts >= shiftStart;
       });
       const orderPayout = dataService.calculateOrderPayout(activeCnrOrder, currentDelivered.length + 1, payoutCfg);
 
-      dataService.riderSafeDropPrepaid(orderId, {
-        safeDropNote: note,
-        riderPin: currentRider.pin,
-        riderPayoutAmount: orderPayout.amount,
-        riderPayoutFormula: orderPayout.formula
-      });
-
+      btnCnrSafedrop.disabled = true;
       try {
-        confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
-      } catch {}
+        const updateResult = dataService.riderSafeDropPrepaid(orderId, {
+          safeDropNote: note,
+          riderPin: currentRider.pin,
+          riderPayoutAmount: orderPayout.amount,
+          riderPayoutFormula: orderPayout.formula
+        });
+        if (updateResult && updateResult.serverPromise) {
+          await updateResult.serverPromise;
+        }
 
-      closeUnreachableModal();
-      const updatedSummary = dataService.getRiderPayoutSummary(currentRider.pin);
-      showToast(`🚪 Order ${orderId} delivered via Safe Drop: ${note} (+₹${orderPayout.amount.toFixed(2)} credited! Balance: ₹${updatedSummary.payoutBalance.toFixed(2)})`, 'success');
+        localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
 
-      activeTab = 'delivered';
-      persistRiderTab('delivered');
-      updateActiveTabUI();
-      renderPortal();
+        try {
+          confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+        } catch {}
+
+        closeUnreachableModal();
+        const updatedSummary = dataService.getRiderPayoutSummary(currentRider.pin);
+        showToast(`🚪 Order ${orderId} delivered via Safe Drop: ${note} (+₹${orderPayout.amount.toFixed(2)} credited! Balance: ₹${updatedSummary.payoutBalance.toFixed(2)})`, 'success');
+
+        const remainingParcels = getRiderActiveOrdersList();
+        activeTab = remainingParcels.length > 0 ? 'active' : 'delivered';
+        persistRiderTab(activeTab);
+        updateActiveTabUI();
+        renderPortal();
+      } catch (err) {
+        btnCnrSafedrop.disabled = false;
+        showToast(`❌ Could not complete Safe Drop: ${err?.message || 'Server error'}`, 'error');
+        renderPortal();
+      }
     });
   }
 
   // Prepaid Return to Kitchen
   if (btnCnrReturnPrepaid) {
-    btnCnrReturnPrepaid.addEventListener('click', () => {
+    btnCnrReturnPrepaid.addEventListener('click', async () => {
       if (!activeCnrOrder) return;
       const orderId = activeCnrOrder.id;
       const cleanId = String(orderId).replace(/^#/, '');
@@ -2948,21 +3099,31 @@ const initDeliveryApp = () => {
       const reason = cnrPrepaidReason ? cnrPrepaidReason.value : 'Inaccessible location / customer unreachable';
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 
-      localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+      btnCnrReturnPrepaid.disabled = true;
+      try {
+        const updateResult = dataService.riderUndeliveredOrder(orderId, {
+          reason,
+          riderPin: currentRider.pin,
+          returnToKitchen: true
+        });
+        if (updateResult && updateResult.serverPromise) {
+          await updateResult.serverPromise;
+        }
 
-      dataService.riderUndeliveredOrder(orderId, {
-        reason,
-        riderPin: currentRider.pin,
-        returnToKitchen: true
-      });
+        localStorage.removeItem(`quickbite_cnr_start_${cleanId}`);
+        closeUnreachableModal();
+        showToast(`📦 Prepaid order ${orderId} marked for return to kitchen counter.`, 'info');
 
-      closeUnreachableModal();
-      showToast(`📦 Prepaid order ${orderId} marked for return to kitchen counter.`, 'info');
-
-      activeTab = 'delivered';
-      persistRiderTab('delivered');
-      updateActiveTabUI();
-      renderPortal();
+        const remainingParcels = getRiderActiveOrdersList();
+        activeTab = remainingParcels.length > 0 ? 'active' : 'delivered';
+        persistRiderTab(activeTab);
+        updateActiveTabUI();
+        renderPortal();
+      } catch (err) {
+        btnCnrReturnPrepaid.disabled = false;
+        showToast(`❌ Could not mark returned: ${err?.message || 'Server error'}`, 'error');
+        renderPortal();
+      }
     });
   }
 
@@ -3034,6 +3195,17 @@ const initDeliveryApp = () => {
             </div>
           `;
         }).join('');
+      }
+    }
+
+    if (btnHandoverCash) {
+      const isHandoverPending = currentRider?.cashHandoverStatus === 'pending_owner_approval' && grandTotal > 0;
+      if (isHandoverPending) {
+        btnHandoverCash.textContent = '⏳ Handover Pending Approval';
+        btnHandoverCash.disabled = true;
+      } else {
+        btnHandoverCash.textContent = 'Hand Over Cash to Manager';
+        btnHandoverCash.disabled = grandTotal <= 0;
       }
     }
 
@@ -3179,9 +3351,12 @@ const initDeliveryApp = () => {
         const orders = dataService.getOrders();
         payoutOrdersBreakdownList.innerHTML = summary.details.map((item, idx) => {
           const matchedOrder = orders.find(o => o.id === item.orderId) || {};
+          const isUndelivered = matchedOrder.status === 'undelivered';
           const isCod = isCashOnDelivery(matchedOrder);
           const cashAmt = extractCashAmount(matchedOrder.total);
-          const payLabel = isCod ? `💵 COD: ₹${cashAmt}` : `💳 Paid Online`;
+          const payLabel = isUndelivered
+            ? `📦 Returned to Kitchen (₹0 Collected)`
+            : (isCod ? `💵 COD: ₹${cashAmt}` : `💳 Paid Online`);
           const surgeTag = item.isSurge ? '<span style="color:#DC2626; font-weight:800; margin-left:4px;">🔥 Surge</span>' : '';
 
           return `
@@ -3411,6 +3586,13 @@ const initDeliveryApp = () => {
     }
   }
 
+  // Expose to window for Android WebView bridge and native background calls
+  if (typeof window !== 'undefined') {
+    window.__stopRiderAlarmFromNative = function () {
+      stopRiderAlarm();
+    };
+  }
+
   const knownDeliveryIds = new Set();
   const initOrders = dataService.getOrders();
   if (Array.isArray(initOrders)) {
@@ -3432,12 +3614,28 @@ const initDeliveryApp = () => {
     knownDeliveryIds.add(cleanId);
     knownDeliveryIds.add(`#${cleanId}`);
 
+    // If assigned to another rider, do NOT alarm or alert this rider!
+    const assignedPin = String(order.assignedRiderPin || order.assigned_rider_pin || '').trim();
+    const currentRider = dataService.getActiveRider();
+    const myPin = String(currentRider?.pin || '').trim();
+    if (assignedPin && myPin && assignedPin !== myPin) {
+      renderPortal();
+      return;
+    }
+
     // If order is already active (on_the_way) or delivered, NEVER treat as incoming ready order!
     const allOrders = dataService.getOrders();
     const existing = allOrders.find(o => normalizeId(o.id) === cleanId);
-    if (existing && (existing.status === 'on_the_way' || existing.status === 'delivered')) {
-      renderPortal();
-      return;
+    if (existing) {
+      const existPin = String(existing.assignedRiderPin || existing.assigned_rider_pin || '').trim();
+      if (existPin && myPin && existPin !== myPin) {
+        renderPortal();
+        return;
+      }
+      if (existing.status === 'on_the_way' || existing.status === 'delivered') {
+        renderPortal();
+        return;
+      }
     }
 
     // Delivery partner / rider ONLY gets notified when the order is READY FOR DISPATCH!
@@ -3509,9 +3707,25 @@ const initDeliveryApp = () => {
     const cleanId = normalizeId(orderId);
     const order = payload.order || allOrders.find(o => normalizeId(o.id) === cleanId);
 
+    const currentRider = dataService.getActiveRider();
+    const myPin = String(currentRider?.pin || '').trim();
+    const assignedPin = String(order?.assignedRiderPin || order?.assigned_rider_pin || payload.assignedRiderPin || '').trim();
+
+    // If order leaves ready_for_pickup or is claimed by another rider, remove from ringingParcelsQueue
+    if (status !== 'ready_for_pickup' || (assignedPin && myPin && assignedPin !== myPin)) {
+      const qIdx = ringingParcelsQueue.findIndex(p => normalizeId(p.id) === cleanId);
+      if (qIdx >= 0) {
+        ringingParcelsQueue.splice(qIdx, 1);
+        if (ringingParcelsQueue.length === 0) {
+          stopRiderAlarm();
+        }
+      }
+    }
+
     // If order has already been accepted/claimed (assignedRiderPin/on_the_way) or delivered, NEVER re-alert as ready!
     const currentOrder = allOrders.find(o => normalizeId(o.id) === cleanId);
-    if (currentOrder && (currentOrder.status === 'on_the_way' || currentOrder.status === 'delivered' || String(currentOrder.assignedRiderPin || '').trim())) {
+    const currAssignedPin = String(currentOrder?.assignedRiderPin || currentOrder?.assigned_rider_pin || '').trim();
+    if (currentOrder && (currentOrder.status === 'on_the_way' || currentOrder.status === 'delivered' || (currAssignedPin && myPin && currAssignedPin !== myPin))) {
       renderPortal();
       return;
     }
@@ -3564,6 +3778,12 @@ const initDeliveryApp = () => {
         handleRiderIncomingOrder(readyArrivals[0]);
       } else {
         renderPortal();
+      }
+    } else {
+      const nowScan = Date.now();
+      const unalertedReady = latestList.find(o => o && o.status === 'ready_for_pickup' && !isRiderStatusAlerted(o.id, 'ready_for_pickup') && (!o.createdAt || (nowScan - Number(o.createdAt)) < 30 * 60 * 1000));
+      if (unalertedReady) {
+        handleRiderIncomingOrder(unalertedReady);
       }
     }
   }
@@ -3689,17 +3909,22 @@ const initDeliveryApp = () => {
         } catch {}
       }
 
+      const orderRiderPin = String(order?.assignedRiderPin || order?.assigned_rider_pin || '').trim();
+      const myRiderPin = String(currentRider.pin || '').trim();
+
       // 2. If order already claimed by this rider or unassigned on the way, ensure server-backed claim and navigate to active tab
-      if (order && order.status === 'on_the_way' && (!order.assignedRiderPin || order.assignedRiderPin === currentRider.pin)) {
-        if (!order.assignedRiderPin) {
-          order.assignedRiderPin = currentRider.pin;
-          order.assignedRiderName = currentRider.name;
-          dataService.saveOrders(dataService.getOrders());
+      if (order && order.status === 'on_the_way' && (!orderRiderPin || orderRiderPin === myRiderPin)) {
+        if (!orderRiderPin) {
           // Authoritative server claim to prevent 403 Forbidden on update_status
-          dataService.claimOrderByBagCode(code, currentRider.pin, order.id, {
+          const claimRes = dataService.claimOrderByBagCode(code, currentRider.pin, order.id, {
             riderLat: riderLiveLocation.lat,
             riderLng: riderLiveLocation.lng
           });
+          if (claimRes && claimRes.serverPromise) {
+            claimRes.serverPromise.catch(err => {
+              console.warn('[Rider] Claim unassigned on_the_way error:', err);
+            });
+          }
         }
         activeTab = 'active';
         persistRiderTab('active');
@@ -3731,7 +3956,8 @@ const initDeliveryApp = () => {
         }
         return;
       }
-      if (order.status === 'on_the_way' && order.assignedRiderPin && order.assignedRiderPin !== currentRider.pin) {
+      const checkedOrderRiderPin = String(order.assignedRiderPin || order.assigned_rider_pin || '').trim();
+      if (order.status === 'on_the_way' && checkedOrderRiderPin && checkedOrderRiderPin !== myRiderPin) {
         showToast(`⚠️ Order ${order.id} is already claimed by ${order.assignedRiderName || 'another rider'}.`, 'warning');
         return;
       }
@@ -3752,7 +3978,7 @@ const initDeliveryApp = () => {
       }
 
       // Stage 2: If order is already accepted by this rider (Going to Restaurant), bag scan confirms parcel pickup!
-      if (order && dataService.isOrderGoingToRestaurant(order) && (!order.assignedRiderPin || order.assignedRiderPin === currentRider.pin)) {
+      if (order && dataService.isOrderGoingToRestaurant(order) && (!checkedOrderRiderPin || checkedOrderRiderPin === myRiderPin)) {
         if (inputBagCode) inputBagCode.value = '';
         activeTab = 'active';
         persistRiderTab('active');
@@ -3777,23 +4003,31 @@ const initDeliveryApp = () => {
     pendingClaimCode = code;
 
     const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
+    const myRiderPin = String(currentRider.pin || '').trim();
     const payoutCfg = dataService.getPayoutConfig();
     const allOrders = dataService.getOrders();
     const shiftStart = typeof getShiftStartTimeMs === 'function' ? getShiftStartTimeMs() : Date.now();
     const deliveredCount = allOrders.filter(o => {
-      if ((o.status !== 'delivered' && o.status !== 'undelivered') || o.assignedRiderPin !== currentRider.pin) return false;
+      if (!o) return false;
+      const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      if (o.status !== 'delivered' || oPin !== myRiderPin) return false;
       const ts = Number(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt || 0);
       return !ts || ts >= shiftStart;
     }).length;
 
     const dropCoords = getOrderDropCoordinates(order);
-    const existingDistanceKm = parseFloat(order?.addressDetails?.distanceKm || order?.distance_km || order?.distanceKm || 0);
-    const riderOriginLat = riderLiveLocation.lat || RESTAURANT_COORDINATES.lat;
-    const riderOriginLng = riderLiveLocation.lng || RESTAURANT_COORDINATES.lng;
-    const rawDistanceKm = (existingDistanceKm && !isNaN(existingDistanceKm) && existingDistanceKm > 0)
-      ? existingDistanceKm
-      : calculateDistanceKm(riderOriginLat, riderOriginLng, dropCoords.lat, dropCoords.lng);
-    const distanceKm = (!rawDistanceKm || isNaN(rawDistanceKm) || rawDistanceKm <= 0) ? 1.8 : Math.round(rawDistanceKm * 100) / 100;
+    const savedDist = parseFloat(order?.distanceKm || order?.distance_km || order?.addressDetails?.distanceKm || 0);
+    const rawDistanceKm = (typeof dataService.calculateRoadDistanceSync === 'function'
+      ? dataService.calculateRoadDistanceSync(dropCoords.lat, dropCoords.lng)
+      : 0) || calculateDistanceKm(
+      RESTAURANT_COORDINATES.lat,
+      RESTAURANT_COORDINATES.lng,
+      dropCoords.lat,
+      dropCoords.lng
+    );
+    const distanceKm = (savedDist > 0 && !isNaN(savedDist))
+      ? savedDist
+      : ((!rawDistanceKm || isNaN(rawDistanceKm) || rawDistanceKm <= 0) ? 1.8 : Math.round(rawDistanceKm * 100) / 100);
 
     // Ensure order.addressDetails has the authoritative distance before payout calculation
     if (!order.addressDetails) order.addressDetails = {};
@@ -3807,9 +4041,10 @@ const initDeliveryApp = () => {
     const rawAddrs = dataService.getAllAddressesRaw();
     const rawPhone = extractPhoneFromOrder(order, rawAddrs) || order.customerPhone || order.customer_phone || order.phone || '';
     const cleanPhoneDigits = rawPhone.replace(/\D/g, '');
-    const hasRealPhone = cleanPhoneDigits.length >= 10;
+    const validTenDigits = cleanPhoneDigits.length >= 10 ? cleanPhoneDigits.slice(-10) : '';
+    const hasRealPhone = Boolean(validTenDigits);
     const displayPhone = hasRealPhone 
-      ? (cleanPhoneDigits.length === 10 ? `+91 ${cleanPhoneDigits.slice(0, 5)} ${cleanPhoneDigits.slice(5)}` : escapeHtml(rawPhone))
+      ? `+91 ${validTenDigits.slice(0, 5)} ${validTenDigits.slice(5)}`
       : 'Phone not provided';
 
     const rawDropAddress = order.deliveryAddress || `${order.addressDetails?.flatNo || 'House'}, ${order.addressDetails?.area || 'Ramanagara'}`;

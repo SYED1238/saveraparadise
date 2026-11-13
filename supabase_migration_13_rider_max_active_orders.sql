@@ -167,7 +167,7 @@ BEGIN
       END IF;
 
       IF NOT (v_existing_pin <> '' AND v_existing_pin = COALESCE(TRIM(p_rider_pin), '') AND v_order.status = 'on_the_way') THEN
-        IF v_order.status <> 'ready_for_pickup' THEN
+        IF v_order.status <> 'ready_for_pickup' AND NOT (v_order.status = 'on_the_way' AND v_existing_pin = '') THEN
           RETURN jsonb_build_object(
             'ok', false,
             'http_status', 400,

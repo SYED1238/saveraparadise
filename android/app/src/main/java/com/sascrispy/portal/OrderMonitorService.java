@@ -44,6 +44,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -85,10 +86,32 @@ public class OrderMonitorService extends Service {
     private static final String CLOUDFLARE_ENDPOINT = 
         "https://saveraparadise.foodbliz.in/api/order-action?action=kitchen_poll";
 
-    private static final Set<String> knownOrderIds = Collections.synchronizedSet(new HashSet<>());
-    private static final Set<String> notifiedReadyIds = Collections.synchronizedSet(new HashSet<>());
+    private static final Set<String> knownOrderIds = Collections.synchronizedSet(new LinkedHashSet<>());
+    private static final Set<String> notifiedReadyIds = Collections.synchronizedSet(new LinkedHashSet<>());
     private static volatile OrderMonitorService activeInstance = null;
     private static volatile boolean isAppInForeground = false;
+
+    public static void setLastAlertNotifId(int notifId) {
+        lastAlertNotifId = notifId;
+    }
+
+    public static void setRiderDutyStatus(Context ctx, boolean onDuty) {
+        if (ctx == null) return;
+        try {
+            SharedPreferences prefs = ctx.getSharedPreferences("sas_monitor_prefs", Context.MODE_PRIVATE);
+            prefs.edit().putBoolean("rider_on_duty", onDuty).apply();
+        } catch (Exception ignored) {}
+    }
+
+    public static boolean isRiderOnDuty(Context ctx) {
+        if (ctx == null) return true;
+        try {
+            SharedPreferences prefs = ctx.getSharedPreferences("sas_monitor_prefs", Context.MODE_PRIVATE);
+            return prefs.getBoolean("rider_on_duty", true);
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
 
     public static void setAppInForeground(boolean inForeground) {
         isAppInForeground = inForeground;
@@ -312,20 +335,22 @@ public class OrderMonitorService extends Service {
     private void saveKnownOrdersToStorage() {
         try {
             SharedPreferences prefs = getSharedPreferences("sas_monitor_prefs", Context.MODE_PRIVATE);
-            // Limit stored set size to latest 50
-            Set<String> boundedKnown = new HashSet<>();
+            // Limit stored set size to latest 200
+            Set<String> boundedKnown = new LinkedHashSet<>();
             synchronized (knownOrderIds) {
-                for (String id : knownOrderIds) {
-                    boundedKnown.add(id);
-                    if (boundedKnown.size() >= 50) break;
+                while (knownOrderIds.size() > 200) {
+                    String first = knownOrderIds.iterator().next();
+                    knownOrderIds.remove(first);
                 }
+                boundedKnown.addAll(knownOrderIds);
             }
-            Set<String> boundedReady = new HashSet<>();
+            Set<String> boundedReady = new LinkedHashSet<>();
             synchronized (notifiedReadyIds) {
-                for (String id : notifiedReadyIds) {
-                    boundedReady.add(id);
-                    if (boundedReady.size() >= 50) break;
+                while (notifiedReadyIds.size() > 200) {
+                    String first = notifiedReadyIds.iterator().next();
+                    notifiedReadyIds.remove(first);
                 }
+                boundedReady.addAll(notifiedReadyIds);
             }
             prefs.edit()
                 .putStringSet("known_ids", boundedKnown)
@@ -484,11 +509,14 @@ public class OrderMonitorService extends Service {
                     } else if (isRiderApp && isActiveReadyOrder && !notifiedReadyIds.contains(id)) {
                         knownOrderIds.add(id);
                         notifiedReadyIds.add(id);
-                        fireHeadsUpNotification(
-                            "\uD83D\uDEF5 NEW PARCEL READY FOR PICKUP",
-                            "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
-                            id
-                        );
+                        boolean onDuty = isRiderOnDuty(getApplicationContext());
+                        if (onDuty) {
+                            fireHeadsUpNotification(
+                                "\uD83D\uDEF5 NEW PARCEL READY FOR PICKUP",
+                                "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
+                                id
+                            );
+                        }
                     } else {
                         knownOrderIds.add(id);
                         if ("ready_for_pickup".equalsIgnoreCase(status)) {
@@ -532,16 +560,19 @@ public class OrderMonitorService extends Service {
                     }
                 } else {
                     // Rider App: Alert when food is marked ready for pickup (blinded notification - bag number remains inside physical bag)
+                    boolean onDuty = isRiderOnDuty(getApplicationContext());
                     boolean isClaimed = !order.optString("assigned_rider_pin", "").trim().isEmpty();
                     boolean isReady = "ready_for_pickup".equalsIgnoreCase(status) && !isClaimed;
                     if (isReady && !notifiedReadyIds.contains(id)) {
                         notifiedReadyIds.add(id);
                         knownOrderIds.add(id);
-                        fireHeadsUpNotification(
-                            "🛵 NEW PARCEL READY FOR PICKUP",
-                            "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
-                            id
-                        );
+                        if (onDuty) {
+                            fireHeadsUpNotification(
+                                "🛵 NEW PARCEL READY FOR PICKUP",
+                                "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
+                                id
+                            );
+                        }
                         saveKnownOrdersToStorage();
                     } else if (!knownOrderIds.contains(id)) {
                         knownOrderIds.add(id);
@@ -1065,6 +1096,7 @@ public class OrderMonitorService extends Service {
                     }
                 } catch (Exception ignored) {}
             }
+            MainActivity.triggerWebAlarmStop();
             return START_STICKY;
         }
         startPolling();

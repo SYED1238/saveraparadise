@@ -3143,7 +3143,7 @@ class QuickBiteDataService {
                 ? (remote.status_label || local?.statusLabel || 'Rider Going to Restaurant')
                 : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted'));
             const effectiveEta = ((preserveLocalStatus || isOptimisticStage1) && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
-            const isWaitingAtDoorstep = (Boolean(remote.cancellation_reason && remote.cancellation_reason.includes('[DOORSTEP_WAIT]') && effectiveStatus === 'on_the_way')) || Boolean(local?.riderWaitingAtDoorstep);
+            const isWaitingAtDoorstep = (Boolean(remote.cancellation_reason && remote.cancellation_reason.includes('[DOORSTEP_WAIT]') && effectiveStatus === 'on_the_way')) || Boolean(isOptimistic && local?.riderWaitingAtDoorstep);
             const waitingStartedAt = remote.address_details?.waitingStartedAt || local?.waitingStartedAt || (isWaitingAtDoorstep ? Date.now() : null);
 
             const mergedOrder = {
@@ -3184,6 +3184,8 @@ class QuickBiteDataService {
               cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
               riderWaitingAtDoorstep: isWaitingAtDoorstep,
               waitingStartedAt: waitingStartedAt,
+              safeDrop: Boolean(remote.address_details?.safeDrop || (isOptimistic && local?.safeDrop)),
+              safeDropNote: remote.address_details?.safeDropNote || (isOptimistic ? (local?.safeDropNote || '') : ''),
               trackingToken: remote.tracking_token || local?.trackingToken || null,
               alarmAcknowledged: local?.alarmAcknowledged || false,
               alarmStoppedAt: local?.alarmStoppedAt || null,
@@ -3238,11 +3240,14 @@ class QuickBiteDataService {
               if (activeAge < 24 * 60 * 60 * 1000) return true;
             }
             // Safely preserve unsettled cash/COD delivered orders for Rider cash ledger (< 48 hours)
-            if ((this.portalType === 'delivery' || this.portalType === 'admin') &&
-                (o.paymentMethod === 'cash' || o.payment_method === 'cash') &&
-                o.status === 'delivered') {
-              const codAge = Date.now() - (Number(o.createdAt) || 0);
-              if (codAge < 48 * 60 * 60 * 1000) return true;
+            if ((this.portalType === 'delivery' || this.portalType === 'admin') && o.status === 'delivered') {
+              const isCodOrder = !o.isPaidOnline && !o.is_paid_online && !o.doorstepUpi && !o.doorstep_upi &&
+                  /cash|cod/i.test(String(o.paymentMethod || o.payment_method || 'cod'));
+              const isUnsettledCod = isCodOrder && !o.cashSettled && !o.cash_settled;
+              if (isUnsettledCod) {
+                const codAge = Date.now() - (Number(o.createdAt) || 0);
+                if (codAge < 48 * 60 * 60 * 1000) return true;
+              }
             }
             // Safely preserve pending offline orders queued for cloud synchronization
             if (o.pendingRemoteSync) {
@@ -4366,7 +4371,9 @@ class QuickBiteDataService {
               paymentMethod: remote.payment_method || lo.paymentMethod,
               paymentStatus: remote.payment_status || lo.paymentStatus,
               cancellationReason: remote.cancellation_reason || lo.cancellationReason || null,
-              riderWaitingAtDoorstep: (Boolean(remote.cancellation_reason && remote.cancellation_reason.includes('[DOORSTEP_WAIT]') && effectiveStatus === 'on_the_way')) || Boolean(lo.riderWaitingAtDoorstep)
+              riderWaitingAtDoorstep: (Boolean(remote.cancellation_reason && remote.cancellation_reason.includes('[DOORSTEP_WAIT]') && effectiveStatus === 'on_the_way')) || Boolean(isOptimisticLo && lo.riderWaitingAtDoorstep),
+              safeDrop: Boolean(remote.address_details?.safeDrop || (isOptimisticLo && lo?.safeDrop)),
+              safeDropNote: remote.address_details?.safeDropNote || (isOptimisticLo ? (lo?.safeDropNote || '') : '')
             };
 
             // Remote database status is authoritative
@@ -4654,9 +4661,17 @@ class QuickBiteDataService {
 
     try {
       localStorage.setItem('quickbite_live_rider_location', JSON.stringify(cleanPayload));
-      if (cleanPayload.orderId) {
-        localStorage.setItem(`quickbite_rider_location_${cleanPayload.orderId}`, JSON.stringify(cleanPayload));
-      }
+      const targetIds = Array.isArray(cleanPayload.orderIds) && cleanPayload.orderIds.length > 0
+        ? cleanPayload.orderIds
+        : (cleanPayload.orderId ? [cleanPayload.orderId] : []);
+      targetIds.forEach(id => {
+        if (!id) return;
+        const rawId = String(id).trim();
+        const cleanId = rawId.replace(/^#/, '');
+        localStorage.setItem(`quickbite_rider_location_${rawId}`, JSON.stringify(cleanPayload));
+        localStorage.setItem(`quickbite_rider_location_${cleanId}`, JSON.stringify(cleanPayload));
+        localStorage.setItem(`quickbite_rider_location_#${cleanId}`, JSON.stringify(cleanPayload));
+      });
       if (cleanPayload.riderPin) {
         localStorage.setItem(`quickbite_rider_location_pin_${cleanPayload.riderPin}`, JSON.stringify(cleanPayload));
       }
@@ -4681,7 +4696,11 @@ class QuickBiteDataService {
   getRiderLiveLocation(orderId = null, riderPin = null) {
     try {
       if (orderId) {
-        const orderStored = localStorage.getItem(`quickbite_rider_location_${orderId}`);
+        const rawId = String(orderId).trim();
+        const cleanId = rawId.replace(/^#/, '');
+        const orderStored = localStorage.getItem(`quickbite_rider_location_${rawId}`) ||
+          localStorage.getItem(`quickbite_rider_location_${cleanId}`) ||
+          localStorage.getItem(`quickbite_rider_location_#${cleanId}`);
         if (orderStored) {
           const parsed = JSON.parse(orderStored);
           if (parsed && parsed.lat && parsed.lng && Date.now() - (parsed.timestamp || 0) < 900000) {
@@ -4783,7 +4802,7 @@ class QuickBiteDataService {
     if (typeof window === 'undefined') return null;
     try {
       let targetRole = null;
-      if (this.portalType === 'delivery' || action === 'sync_rider_profile' || action === 'request_cash_handover' || action === 'rider_at_doorstep' || action === 'cancel_doorstep_wait') {
+      if (this.portalType === 'delivery' || action === 'sync_rider_profile' || action === 'request_cash_handover' || action === 'rider_at_doorstep' || action === 'cancel_doorstep_wait' || action === 'claim_order' || action === 'assign_order') {
         targetRole = 'rider';
       } else if (this.portalType === 'owner') {
         targetRole = 'owner';
@@ -6598,7 +6617,9 @@ class QuickBiteDataService {
               paymentStatus: order.paymentStatus,
               cashCollected: extraData?.cashCollected ?? order.cashCollected,
               isPaidOnline: order.isPaidOnline,
-              doorstepUpi: order.doorstepUpi
+              doorstepUpi: order.doorstepUpi,
+              safeDrop: extraData?.safeDrop ?? order.safeDrop,
+              safeDropNote: extraData?.safeDropNote ?? order.safeDropNote
             });
           }
         } catch (actionErr) {
@@ -7695,8 +7716,21 @@ class QuickBiteDataService {
           }
           return mappedRider;
         });
-        this.ridersCache = mapped;
-        localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
+        if (this.portalType === 'delivery' && rawRiders.length === 1) {
+          const updatedPin = String(rawRiders[0].pin).trim();
+          const targetRider = mapped[0];
+          const existIdx = localList.findIndex(r => String(r.pin).trim() === updatedPin);
+          if (existIdx >= 0) {
+            localList[existIdx] = targetRider;
+          } else {
+            localList.push(targetRider);
+          }
+          this.ridersCache = localList;
+          localStorage.setItem('quickbite_riders', JSON.stringify(localList));
+        } else {
+          this.ridersCache = mapped;
+          localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
+        }
         this.notifyChange('riders', { action: 'sync_riders', source: 'server' });
         handoverTransitions.forEach(t => this.notifyChange('cash_handover_requested', t));
         return mapped;
@@ -7843,6 +7877,9 @@ class QuickBiteDataService {
         localStorage.removeItem('quickbite_active_rider_id');
         localStorage.removeItem('quickbite_active_rider_pin');
         sessionStorage.removeItem('quickbite_rider_session_auth');
+        if (typeof window !== 'undefined') {
+          window.__lastVerifiedRider = null;
+        }
       }
     } catch {}
 
@@ -7858,10 +7895,12 @@ class QuickBiteDataService {
       const activeId = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_active_rider_id') : null;
       const riders = this.getRiders();
       if (activeId && activeId !== 'undefined' && activeId !== 'null') {
-        const found = riders.find(r => r.id === activeId || r.pin === activeId || ('rider-' + r.pin) === activeId) ||
-                      DEFAULT_RIDERS.find(r => r.id === activeId || r.pin === activeId || ('rider-' + r.pin) === activeId);
+        const found = riders.find(r => (r.id === activeId || r.pin === activeId || ('rider-' + r.pin) === activeId) && r.status !== 'inactive') ||
+                      DEFAULT_RIDERS.find(r => (r.id === activeId || r.pin === activeId || ('rider-' + r.pin) === activeId) && r.status !== 'inactive');
         if (found) return found;
-        if (typeof window !== 'undefined' && window.__lastVerifiedRider && (window.__lastVerifiedRider.id === activeId || window.__lastVerifiedRider.pin === activeId || ('rider-' + window.__lastVerifiedRider.pin) === activeId)) {
+        if (typeof window !== 'undefined' && window.__lastVerifiedRider &&
+            (window.__lastVerifiedRider.id === activeId || window.__lastVerifiedRider.pin === activeId || ('rider-' + window.__lastVerifiedRider.pin) === activeId) &&
+            window.__lastVerifiedRider.status !== 'inactive') {
           return window.__lastVerifiedRider;
         }
       }
@@ -7970,14 +8009,12 @@ class QuickBiteDataService {
   }
 
   isOrderGoingToRestaurant(order) {
-    if (!order) return false;
+    if (!order || order.status === 'on_the_way' || order.status === 'delivered' || order.status === 'undelivered' || order.status === 'cancelled') return false;
     const hasRider = Boolean(String(order.assignedRiderPin || order.assigned_rider_pin || '').trim());
     if (!hasRider) return false;
     const stage = order.riderPickupStage || order.addressDetails?.riderPickupStage || order.address_details?.riderPickupStage;
-    if (stage === 'going_to_restaurant') {
-      return order.status !== 'on_the_way' && order.status !== 'delivered' && order.status !== 'undelivered' && order.status !== 'cancelled';
-    }
-    return order.status === 'ready_for_pickup' && hasRider;
+    if (stage === 'going_to_restaurant') return true;
+    return ['ready_for_pickup', 'cooking', 'accepted'].includes(order.status);
   }
 
   assignOrderToRider(orderId, riderPin, options = {}) {
@@ -8357,7 +8394,8 @@ class QuickBiteDataService {
 
     // Atomic Claim Guards: Prevent claiming already claimed, delivered, or cancelled orders
     if (order.status === 'on_the_way') {
-      if (!order.assignedRiderPin || order.assignedRiderPin === cleanPin) {
+      const priorPin = String(order.assignedRiderPin || order.assigned_rider_pin || '').trim();
+      if (!priorPin || priorPin === cleanPin) {
         const activeOther = this.getOrders().find(o =>
           o && o.status === 'on_the_way' &&
           String(o.assignedRiderPin || '').trim() === String(cleanPin || '').trim() &&
@@ -8378,7 +8416,25 @@ class QuickBiteDataService {
           order.assignedRiderVehicle = currentRider.vehicle;
         }
         this.saveOrders(this.getOrders(), { action: 'rider_claimed_order', orderId: order.id, riderPin: cleanPin });
-        return { success: true, order, rider: currentRider };
+
+        let serverPromise = null;
+        if (!priorPin || priorPin !== cleanPin) {
+          const rawLat = (options && Number.isFinite(Number(options.riderLat))) ? Number(options.riderLat) : 17.385044;
+          const rawLng = (options && Number.isFinite(Number(options.riderLng))) ? Number(options.riderLng) : 78.486671;
+          serverPromise = this._orderAction('claim_order', {
+            orderId: order.id,
+            pickupCode: order.pickupCode || String(code || '').trim(),
+            riderPin: cleanPin,
+            riderName: currentRider?.name,
+            riderPhone: currentRider?.phone,
+            riderVehicle: currentRider?.vehicle || 'Bike',
+            riderLat: rawLat,
+            riderLng: rawLng
+          }).catch(err => {
+            console.warn('[DataService] Server claim_order for unassigned on_the_way order failed:', err);
+          });
+        }
+        return { success: true, order, rider: currentRider, serverPromise };
       }
       const riderName = order.assignedRiderName ? `by ${order.assignedRiderName}` : 'by another rider';
       return { success: false, reason: 'already_claimed', message: `Order ${order.id} is already out for delivery ${riderName}.` };
@@ -8588,21 +8644,25 @@ class QuickBiteDataService {
           return await rollbackClaim(actionErr, true);
         }
         try {
-          const { error } = await supabase.from('orders')
-            .update(fullPayload)
-            .eq('id', targetId)
-            .eq('status', 'ready_for_pickup');
-          if (error) {
-            const { error: baseErr } = await supabase.from('orders')
-              .update(basePayload)
+          if (typeof supabase !== 'undefined' && supabase) {
+            const { error } = await supabase.from('orders')
+              .update(fullPayload)
               .eq('id', targetId)
               .eq('status', 'ready_for_pickup');
-            if (baseErr) {
-              return await rollbackClaim(baseErr, false);
+            if (error) {
+              const { error: baseErr } = await supabase.from('orders')
+                .update(basePayload)
+                .eq('id', targetId)
+                .eq('status', 'ready_for_pickup');
+              if (baseErr) {
+                return await rollbackClaim(baseErr, false);
+              }
             }
           }
+          order.pendingStatusSync = true;
+          this.saveOrders(orders);
           emitConfirmedBroadcast();
-          return { success: true, order };
+          return { success: true, order, offlineQueued: true };
         } catch (updateErr) {
           return await rollbackClaim(updateErr || actionErr, false);
         }
@@ -8689,7 +8749,8 @@ class QuickBiteDataService {
       riders[idx].cashHandoverRequestedAt = requestedAt;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
-      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('quickbite_rider_token')) {
+      const riderToken = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_rider_token') : null) || (typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_rider_token') : null);
+      if (riderToken) {
         this._orderAction('request_cash_handover', { riderPin: cleanPin, amount, requestedAt }).catch(err => {
           console.warn('[DataService] Background sync cash handover error:', err?.message || err);
         });

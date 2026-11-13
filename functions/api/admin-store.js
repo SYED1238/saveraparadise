@@ -419,7 +419,11 @@ export async function onRequest(context) {
         }
 
         if (userRole !== 'rider' && originalPin && originalPin !== pin) {
+          await sb.from('orders')
+            .update({ assigned_rider_pin: pin, assigned_rider_name: name })
+            .eq('assigned_rider_pin', originalPin);
           await sb.from('riders').delete().eq('pin', originalPin);
+          invalidateOrderActionMemoryCache();
         }
 
         let maxActiveOrders;

@@ -8,6 +8,8 @@
 import { verifyAdminToken, verifySignedPayload } from './_auth.js';
 import { hydrateEnv, jsonResponse, isOriginAllowed } from './_adapter.js';
 import crypto from 'crypto';
+import { verifyPgOrderPayment } from './_cashfree.js';
+import { invalidateRidersListCache } from './admin-store.js';
 
 const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
@@ -519,7 +521,7 @@ export async function onRequest(context) {
       if (action === 'sync_orders') {
         if (auth.payload?.role === 'rider') {
           const riderPin = String(auth.payload.riderPin || '').trim();
-          const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending'];
+          const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending', 'on_the_way'];
           const filtered = testOrders
             .filter(o => {
               const assigned = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
@@ -907,7 +909,9 @@ export async function onRequest(context) {
         }
 
         const storeSettings = await getCachedKitchenStoreSettings(sb, now);
-        if (storeSettings && !isKitchenScheduleOpenIST(storeSettings) && !hasRecentActiveOrderInMemory(now)) {
+        const hasWarmCache = kitchenPollCache !== null && Array.isArray(kitchenPollCache);
+        const hasActiveCachedOrders = hasWarmCache && kitchenPollCache.length > 0;
+        if (storeSettings && !isKitchenScheduleOpenIST(storeSettings) && !hasRecentActiveOrderInMemory(now) && hasWarmCache && !hasActiveCachedOrders) {
           kitchenPollCache = [];
           kitchenPollCachedAt = now;
           await putKitchenPollEdgeCache(request, context, kitchenPollCache);
@@ -919,7 +923,7 @@ export async function onRequest(context) {
         // Prioritize active orders (cooking, ready_for_pickup, accepted, pending) so active kitchen prep orders never drop off
         const { data: activeOrders, error: activeErr } = await sb
           .from('orders')
-          .select('id, status, customer_name, total, pickup_code, created_at')
+          .select('id, status, customer_name, total, pickup_code, created_at, assigned_rider_pin')
           .neq('status', 'pending_payment')
           .in('status', ['ready_for_pickup', 'cooking', 'accepted', 'pending'])
           .order('created_at', { ascending: false })
@@ -931,7 +935,7 @@ export async function onRequest(context) {
         if (combined.length < 8) {
           const { data: recentOrders } = await sb
             .from('orders')
-            .select('id, status, customer_name, total, pickup_code, created_at')
+            .select('id, status, customer_name, total, pickup_code, created_at, assigned_rider_pin')
             .neq('status', 'pending_payment')
             .order('created_at', { ascending: false })
             .limit(8);
@@ -1079,6 +1083,8 @@ export async function onRequest(context) {
         const paymentStatus = body.paymentStatus || body.payment_status;
         const doorstepUpi = typeof body.doorstepUpi === 'boolean' ? body.doorstepUpi : (typeof body.doorstep_upi === 'boolean' ? body.doorstep_upi : undefined);
         const isPaidOnline = typeof body.isPaidOnline === 'boolean' ? body.isPaidOnline : (typeof body.is_paid_online === 'boolean' ? body.is_paid_online : undefined);
+        const safeDrop = typeof body.safeDrop === 'boolean' ? body.safeDrop : (typeof body.safe_drop === 'boolean' ? body.safe_drop : undefined);
+        const safeDropNote = body.safeDropNote !== undefined ? body.safeDropNote : body.safe_drop_note;
 
         const { data: existing, error: fetchErr } = await sb
           .from('orders')
@@ -1146,11 +1152,35 @@ export async function onRequest(context) {
           updatePayload.address_details = cleanedAddr;
         }
 
+        if (safeDrop !== undefined || safeDropNote !== undefined) {
+          updatePayload.address_details = {
+            ...(updatePayload.address_details || existing.address_details || {}),
+            safeDrop: Boolean(safeDrop),
+            safeDropNote: safeDropNote ? String(safeDropNote).slice(0, 300) : ''
+          };
+        }
+
         // Payment status & Cash collection handling
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
-          const isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
-          const isDoorstep = isCfSuccess || (typeof doorstepUpi === 'boolean' ? doorstepUpi : Boolean(existing.doorstep_upi));
+          let isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
+
+          if (auth.payload?.role === 'rider' && doorstepUpi === true && !isCfSuccess && !existing.doorstep_upi && !isTestEnv) {
+            if (existing.cf_order_id) {
+              try {
+                const verification = await verifyPgOrderPayment({ cfOrderId: existing.cf_order_id, env });
+                if (verification && (verification.paid || verification.isPaid || String(verification.paymentStatus || '').toUpperCase() === 'SUCCESS')) {
+                  isCfSuccess = true;
+                  updatePayload.cf_payment_status = 'SUCCESS';
+                }
+              } catch {}
+            }
+            if (!isCfSuccess) {
+              return jsonResponse({ error: 'Doorstep UPI payment has not been confirmed by Cashfree yet. Please verify QR payment first or switch to Cash (COD).' }, 400, Object.fromEntries(corsHeaders.entries()));
+            }
+          }
+
+          const isDoorstep = isCfSuccess || (auth.payload?.role !== 'rider' && Boolean(doorstepUpi ?? existing.doorstep_upi));
           updatePayload.doorstep_upi = isDoorstep;
 
           if (isPrepaid || isDoorstep) {
@@ -1190,6 +1220,10 @@ export async function onRequest(context) {
               updatePayload.tip_amount = Math.round(cashCollected - orderTotal);
             }
           }
+        }
+
+        if (status === 'undelivered') {
+          updatePayload.cash_collected = 0;
         }
 
         let query = sb
@@ -1433,6 +1467,7 @@ export async function onRequest(context) {
 
           const existingPin = String(existing.assigned_rider_pin || '').trim();
           const isAlreadyPickedUpBySameRider = Boolean(effectivePin && existingPin === effectivePin && existing.status === 'on_the_way');
+          const isUnassignedOnTheWay = existing.status === 'on_the_way' && !existingPin;
 
           if (isRider) {
             if (existingPin && existingPin !== effectivePin) {
@@ -1442,8 +1477,8 @@ export async function onRequest(context) {
               }, 409, Object.fromEntries(corsHeaders.entries()));
             }
 
-            // Strictly require ready_for_pickup for pickup transition
-            if (!isAlreadyPickedUpBySameRider && existing.status !== 'ready_for_pickup') {
+            // Strictly require ready_for_pickup or unassigned on_the_way for pickup transition
+            if (!isAlreadyPickedUpBySameRider && existing.status !== 'ready_for_pickup' && !isUnassignedOnTheWay) {
               return jsonResponse({
                 error: `Order is not ready for pickup (current status: ${existing.status}). Food must be ready on counter before claim.`
               }, 400, Object.fromEntries(corsHeaders.entries()));
@@ -1665,6 +1700,8 @@ export async function onRequest(context) {
           .select();
 
         if (error) throw error;
+        invalidateOrderActionMemoryCache();
+        invalidateRidersListCache();
         return jsonResponse({ success: true, rider: data && data.length > 0 ? data[0] : null }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 

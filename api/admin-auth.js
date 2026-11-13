@@ -144,6 +144,24 @@ export default async function handler(req, res) {
             if (payload && (payload.role === 'admin' || payload.role === 'owner' || payload.role === 'rider')) {
               const maxRefreshAge = 24 * 60 * 60 * 1000;
               if (Date.now() - (payload.iat || 0) < maxRefreshAge) {
+                if (payload.role === 'rider' && payload.riderPin) {
+                  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+                  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+                  if (supabaseUrl && serviceKey) {
+                    try {
+                      const { createClient } = await import('@supabase/supabase-js');
+                      const sb = createClient(supabaseUrl, serviceKey);
+                      const { data: dbRider, error } = await sb
+                        .from('riders')
+                        .select('pin, status')
+                        .eq('pin', String(payload.riderPin).trim())
+                        .maybeSingle();
+                      if (error || !dbRider || dbRider.status === 'inactive') {
+                        return res.status(401).json({ error: 'Rider account is deactivated or no longer exists' });
+                      }
+                    } catch {}
+                  }
+                }
                 const extraPayload = (payload.role === 'rider' && payload.riderPin) ? { riderPin: payload.riderPin } : {};
                 const refreshedToken = createAdminToken(undefined, payload.role, extraPayload);
                 return res.status(200).json({

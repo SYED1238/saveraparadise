@@ -3,8 +3,7 @@
  * POST /api/admin-store
  */
 import { verifyAdminToken } from './_auth.js';
-import { invalidateKitchenPollCache } from './order-action.js';
-import { createClient } from '@supabase/supabase-js';
+import { invalidateKitchenPollCache, invalidateOrderActionMemoryCache } from './order-action.js';
 
 const RIDERS_CACHE_TTL_MS = 30000;
 let ridersListCache = null;
@@ -204,6 +203,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    const { createClient } = await import('@supabase/supabase-js');
     const sb = createClient(supabaseUrl, serviceKey);
 
     switch (action) {
@@ -411,7 +411,11 @@ export default async function handler(req, res) {
         }
 
         if (userRole !== 'rider' && originalPin && originalPin !== pin) {
+          await sb.from('orders')
+            .update({ assigned_rider_pin: pin, assigned_rider_name: name })
+            .eq('assigned_rider_pin', originalPin);
           await sb.from('riders').delete().eq('pin', originalPin);
+          invalidateOrderActionMemoryCache();
         }
 
         let maxActiveOrders;
@@ -529,7 +533,7 @@ export default async function handler(req, res) {
             cancellation_reason: 'Cleared by restaurant owner'
           }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
         }
-        invalidateKitchenPollCache();
+        invalidateOrderActionMemoryCache();
         return res.status(200).json({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 });
       }
 

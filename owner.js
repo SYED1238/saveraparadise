@@ -1894,6 +1894,19 @@ function initActions() {
     });
   }
 
+  // Download Latest Rider APK
+  const RIDER_APK_URL = 'https://saveraparadise.foodbliz.in/apk/Savera-Paradise-Rider.apk';
+  const btnDownloadRiderApk = document.getElementById('btn-owner-download-rider-apk');
+  if (btnDownloadRiderApk) {
+    btnDownloadRiderApk.addEventListener('click', (e) => {
+      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.openExternalUrl === 'function') {
+        e.preventDefault();
+        window.AndroidNative.openExternalUrl(RIDER_APK_URL);
+        showToast('📲 Opening latest Rider APK download...', 'success');
+      }
+    });
+  }
+
   // Lock Dashboard
   const btnLock = document.getElementById('btn-owner-lock');
   if (btnLock) {
