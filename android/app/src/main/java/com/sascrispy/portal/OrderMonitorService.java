@@ -60,7 +60,7 @@ public class OrderMonitorService extends Service {
 
     private static final String TAG = "OrderMonitorService";
     public static final String CHANNEL_ID_SERVICE = "sas_service_channel";
-    public static final String CHANNEL_ID_ALERTS = "sas_orders_channel_v3";
+    public static final String CHANNEL_ID_ALERTS = "sas_orders_channel_v4";
     public static final String ACTION_STOP_ALARM = "com.sascrispy.portal.ACTION_STOP_ALARM";
     private static final int SERVICE_NOTIFICATION_ID = 1001;
     private static final long ALARM_AUTO_STOP_MS = 3 * 60 * 1000L;
@@ -110,6 +110,24 @@ public class OrderMonitorService extends Service {
             return prefs.getBoolean("rider_on_duty", true);
         } catch (Exception ignored) {
             return true;
+        }
+    }
+
+    public static void setKitchenAlarmSoundMode(Context ctx, String mode) {
+        if (ctx == null) return;
+        try {
+            SharedPreferences prefs = ctx.getSharedPreferences("sas_monitor_prefs", Context.MODE_PRIVATE);
+            prefs.edit().putString("kitchen_alarm_mode", mode != null ? mode : "r2_custom").apply();
+        } catch (Exception ignored) {}
+    }
+
+    public static String getKitchenAlarmSoundMode(Context ctx) {
+        if (ctx == null) return "r2_custom";
+        try {
+            SharedPreferences prefs = ctx.getSharedPreferences("sas_monitor_prefs", Context.MODE_PRIVATE);
+            return prefs.getString("kitchen_alarm_mode", "r2_custom");
+        } catch (Exception ignored) {
+            return "r2_custom";
         }
     }
 
@@ -216,24 +234,31 @@ public class OrderMonitorService extends Service {
             alertChannel.setShowBadge(true);
             alertChannel.setBypassDnd(true);
 
-            Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-            if (soundUri == null) {
-                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-            }
-            if (soundUri == null) {
-                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-            }
+            if (!isRiderApp && !isOwnerApp) {
+                // Kitchen Admin App: silent channel sound prevents phone's native "Midnight" alarm from playing over custom music.
+                // Looping custom music (Funk Criminal) or classic chime is handled exclusively by MediaPlayer in startNativeAlarmLoop.
+                alertChannel.setSound(null, null);
+            } else {
+                Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (soundUri == null) {
+                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                }
+                if (soundUri == null) {
+                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                }
 
-            AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .build();
-            alertChannel.setSound(soundUri, audioAttributes);
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .build();
+                alertChannel.setSound(soundUri, audioAttributes);
+            }
             manager.createNotificationChannel(alertChannel);
 
-            // Clean up legacy channel v2 so system doesn't retain old notification-level config
+            // Clean up legacy channels v2 and v3 so system doesn't retain old notification-level config
             try {
                 manager.deleteNotificationChannel("sas_orders_channel_v2");
+                manager.deleteNotificationChannel("sas_orders_channel_v3");
             } catch (Exception ignored) {}
         }
     }
@@ -907,10 +932,42 @@ public class OrderMonitorService extends Service {
 
             // 3. Multi-Tier Audio Playback
             boolean audioStarted = false;
+
+            // Tier 0: Custom Kitchen Music (R.raw.kitchen_alarm / Funk Criminal) for Kitchen App
+            if (!isRiderApp && !isOwnerApp) {
+                String soundMode = getKitchenAlarmSoundMode(getApplicationContext());
+                if (!"classic_chime".equalsIgnoreCase(soundMode)) {
+                    try {
+                        int rawResId = getResources().getIdentifier("kitchen_alarm", "raw", getPackageName());
+                        if (rawResId != 0) {
+                            MediaPlayer mp = MediaPlayer.create(getApplicationContext(), rawResId);
+                            if (mp != null) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                    mp.setAudioAttributes(new AudioAttributes.Builder()
+                                        .setUsage(AudioAttributes.USAGE_ALARM)
+                                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                        .build());
+                                } else {
+                                    mp.setAudioStreamType(AudioManager.STREAM_ALARM);
+                                }
+                                mp.setLooping(true);
+                                mp.start();
+                                alarmPlayer = mp;
+                                audioStarted = true;
+                                Log.i(TAG, "Native kitchen alarm MediaPlayer started with R.raw.kitchen_alarm (Funk Criminal)");
+                            }
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, "Could not play R.raw.kitchen_alarm: " + e.getMessage());
+                    }
+                }
+            }
+
             List<Uri> candidates = getAlarmCandidateUris();
 
             // Tier 1: MediaPlayer with DataSource resolution
-            for (Uri uri : candidates) {
+            if (!audioStarted) {
+                for (Uri uri : candidates) {
                 if (uri == null) continue;
                 MediaPlayer mp = new MediaPlayer();
                 try {
@@ -948,6 +1005,7 @@ public class OrderMonitorService extends Service {
                     } catch (Exception ignored) {}
                     Log.w(TAG, "MediaPlayer candidate failed for " + uri + ": " + e.getMessage());
                 }
+            }
             }
 
             // Tier 2: System Ringtone object (Bypasses Samsung One UI file sandbox restrictions)
@@ -1043,12 +1101,15 @@ public class OrderMonitorService extends Service {
             stopIntent.putExtra("notif_id", notifId);
             PendingIntent stopPendingIntent = PendingIntent.getService(this, notifId + 1, stopIntent, pendingFlags);
 
-            Uri soundUri = RingtoneManager.getDefaultUri(isOwnerApp ? RingtoneManager.TYPE_NOTIFICATION : RingtoneManager.TYPE_ALARM);
-            if (soundUri == null) {
-                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-            }
-            if (soundUri == null) {
-                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            Uri soundUri = null;
+            if (isRiderApp || isOwnerApp || "classic_chime".equalsIgnoreCase(getKitchenAlarmSoundMode(getApplicationContext()))) {
+                soundUri = RingtoneManager.getDefaultUri(isOwnerApp ? RingtoneManager.TYPE_NOTIFICATION : RingtoneManager.TYPE_ALARM);
+                if (soundUri == null) {
+                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                }
+                if (soundUri == null) {
+                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                }
             }
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID_ALERTS)
@@ -1060,12 +1121,15 @@ public class OrderMonitorService extends Service {
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setDefaults(NotificationCompat.DEFAULT_LIGHTS)
-                .setSound(soundUri, AudioManager.STREAM_ALARM)
                 .setVibrate(new long[]{0, 500, 250, 500, 250, 700})
                 .setAutoCancel(true)
                 .setFullScreenIntent(pendingIntent, true)
                 .setDeleteIntent(stopPendingIntent)
                 .setContentIntent(pendingIntent);
+
+            if (soundUri != null) {
+                builder.setSound(soundUri, AudioManager.STREAM_ALARM);
+            }
 
             if (!isOwnerApp) {
                 builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "🛑 Stop Alarm", stopPendingIntent);

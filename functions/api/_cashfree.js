@@ -630,3 +630,91 @@ export async function initiateRiderPayout({
     };
   }
 }
+
+/**
+ * Initiates an Authoritative Order Refund via Cashfree PG Refunds API
+ */
+export async function initiatePgOrderRefund({
+  cfOrderId,
+  refundAmount,
+  refundNote = 'Order cancelled by restaurant kitchen',
+  refundSpeed = 'INSTANT',
+  env = null
+}) {
+  const cfg = getCashfreeConfig(env);
+  const cleanCfOrderId = String(cfOrderId || '').trim();
+  const cleanRefundAmount = Math.max(1, Math.round(Number(refundAmount) * 100) / 100);
+  const cleanRefundId = `rf_${cleanCfOrderId.replace(/[^a-zA-Z0-9_-]/g, '').slice(-16)}_${Date.now().toString().slice(-6)}`;
+
+  if (!cleanCfOrderId) {
+    return { success: false, error: 'cfOrderId is required for Cashfree refund' };
+  }
+
+  if (!cfg.isConfigured) {
+    if (cfg.isProd) {
+      return {
+        success: false,
+        error: 'Cashfree Payment Gateway credentials are not configured in production environment'
+      };
+    }
+    return {
+      success: true,
+      isMock: true,
+      cfRefundId: `mock_rf_${Date.now()}`,
+      refundId: cleanRefundId,
+      cfOrderId: cleanCfOrderId,
+      refundAmount: cleanRefundAmount,
+      refundStatus: 'SUCCESS',
+      refundSpeed,
+      refundArn: `MOCK_ARN_${Date.now()}`,
+      message: 'Simulated Cashfree PG refund — credited within 1 hour'
+    };
+  }
+
+  try {
+    const payload = {
+      refund_amount: cleanRefundAmount,
+      refund_id: cleanRefundId,
+      refund_note: String(refundNote || 'Order cancelled by kitchen').slice(0, 100),
+      refund_speed: refundSpeed || 'INSTANT'
+    };
+
+    const resp = await fetch(`${cfg.pgBaseUrl}/orders/${encodeURIComponent(cleanCfOrderId)}/refunds`, {
+      method: 'POST',
+      headers: {
+        'x-client-id': cfg.appId,
+        'x-client-secret': cfg.secretKey,
+        'x-api-version': '2023-08-01',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      return {
+        success: false,
+        error: data?.message || 'Cashfree refund request failed',
+        code: data?.code,
+        refundId: cleanRefundId
+      };
+    }
+
+    return {
+      success: true,
+      cfRefundId: data?.cf_refund_id || null,
+      refundId: data?.refund_id || cleanRefundId,
+      cfOrderId: data?.order_id || cleanCfOrderId,
+      refundAmount: Number(data?.refund_amount || cleanRefundAmount),
+      refundStatus: String(data?.refund_status || 'SUCCESS').toUpperCase(),
+      refundArn: data?.refund_arn || null,
+      refundSpeed: data?.refund_speed || refundSpeed
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message || 'Network error reaching Cashfree refund service',
+      refundId: cleanRefundId
+    };
+  }
+}

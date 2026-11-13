@@ -11,7 +11,8 @@ import {
   verifyCashfreeWebhookSignature,
   initiateRiderPayout,
   sanitizeCashfreeReturnUrl,
-  recordVerifiedCashfreePayment
+  recordVerifiedCashfreePayment,
+  initiatePgOrderRefund
 } from '../api/_cashfree.js';
 import { createAdminToken, signPayload } from '../api/_auth.js';
 import cashfreePayoutHandler from '../api/cashfree-payout.js';
@@ -565,6 +566,118 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       const cfOrderAction = fs.readFileSync(path.join(rootDir, 'functions', 'api', 'order-action.js'), 'utf8');
       assert.strictEqual(nodeOrderAction.includes('upi_manual_verified'), false, 'Node api/order-action.js must not reference upi_manual_verified');
       assert.strictEqual(cfOrderAction.includes('upi_manual_verified'), false, 'Cloudflare functions/api/order-action.js must not reference upi_manual_verified');
+    });
+  });
+
+  describe('7. Automated Online Order Cancellation & Cashfree PG Refund Engine', () => {
+    test('initiatePgOrderRefund generates simulated refund in sandbox/test mode', async () => {
+      const res = await initiatePgOrderRefund({
+        cfOrderId: 'cf_ord_9988_test',
+        refundAmount: 349.50,
+        refundNote: 'Order rejected by kitchen: Out of stock'
+      });
+
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.isMock, true);
+      assert.strictEqual(res.refundAmount, 349.50);
+      assert.strictEqual(res.cfOrderId, 'cf_ord_9988_test');
+      assert.strictEqual(res.refundStatus, 'SUCCESS');
+      assert.ok(res.refundId.startsWith('rf_'));
+      assert.ok(res.message.includes('1 hour'));
+    });
+
+    test('initiatePgOrderRefund rejects missing cfOrderId', async () => {
+      const res = await initiatePgOrderRefund({
+        cfOrderId: '',
+        refundAmount: 100
+      });
+
+      assert.strictEqual(res.success, false);
+      assert.ok(res.error.includes('cfOrderId is required'));
+    });
+
+    test('initiatePgOrderRefund fails closed in PROD mode when credentials are missing', async () => {
+      process.env.CASHFREE_ENV = 'PROD';
+      delete process.env.CASHFREE_APP_ID;
+      delete process.env.CASHFREE_SECRET_KEY;
+
+      const res = await initiatePgOrderRefund({
+        cfOrderId: 'cf_ord_prod_9988',
+        refundAmount: 500
+      });
+
+      assert.strictEqual(res.success, false);
+      assert.ok(res.error.includes('not configured in production'));
+    });
+
+    test('POST /api/order-action cancel_order automatically triggers refund for online-paid order', async () => {
+      const adminToken = createAdminToken(3600000, 'admin');
+      const simulateOrders = [
+        {
+          id: 'QB-TEST-REFUND-01',
+          status: 'accepted',
+          status_label: 'Accepted',
+          payment_method: 'Online (Cashfree UPI)',
+          payment_status: 'Paid',
+          is_paid_online: true,
+          cf_order_id: 'cf_test_ord_refund_01',
+          cf_payment_id: 'pay_998811',
+          total: '₹380.00',
+          tracking_token: 'secret-tok-QB-TEST-REFUND-01'
+        }
+      ];
+
+      function createMockReq(headers, body) {
+        return {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...(headers || {}) },
+          body
+        };
+      }
+      function createMockRes() {
+        let statusCode = 200;
+        let responseData = null;
+        return {
+          status(code) { statusCode = code; return this; },
+          setHeader() { return this; },
+          json(data) { responseData = data; return this; },
+          get statusCode() { return statusCode; },
+          get responseData() { return responseData; }
+        };
+      }
+
+      const req = createMockReq({ authorization: `Bearer ${adminToken}` }, {
+        action: 'cancel_order',
+        orderId: 'QB-TEST-REFUND-01',
+        reason: 'Kitchen out of chicken stock',
+        simulateOrders
+      });
+      const res = createMockRes();
+
+      await orderActionHandler(req, res);
+
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.responseData.success, true);
+      assert.strictEqual(res.responseData.order.status, 'cancelled');
+      assert.strictEqual(res.responseData.order.status_label, 'Order Cancelled');
+      assert.strictEqual(res.responseData.order.cf_payment_status, 'REFUND_INITIATED');
+      assert.strictEqual(res.responseData.order.address_details?.refund_status, 'SUCCESS');
+      assert.strictEqual(res.responseData.order.address_details?.refund_amount, 380);
+      assert.ok(res.responseData.order.address_details?.refund_message.includes('within an hour'));
+    });
+
+    test('main.js and admin.js include refund status and "Within 1 Hour" notice for online orders', () => {
+      const mainJs = fs.readFileSync(path.join(rootDir, 'main.js'), 'utf8');
+      const adminJs = fs.readFileSync(path.join(rootDir, 'admin.js'), 'utf8');
+
+      // main.js verifies online refund display
+      assert.ok(mainJs.includes('isOrderPaidOnline'), 'main.js must define isOrderPaidOnline helper');
+      assert.ok(mainJs.includes('Within 1 Hour'), 'main.js tracker must display "Within 1 Hour" badge');
+      assert.ok(mainJs.includes('Refund Initiated'), 'main.js must display Refund Initiated banner');
+      assert.ok(mainJs.includes('my-orders-refund-pill'), 'main.js must render my-orders-refund-pill');
+
+      // admin.js verifies kitchen modal awareness
+      assert.ok(adminJs.includes('Refund Initiated'), 'admin.js must indicate Refund Initiated on cancelled online orders');
     });
   });
 });

@@ -3997,6 +3997,31 @@ function initStorefrontApp() {
     }
   }
 
+  function isOrderPaidOnline(order) {
+    if (!order) return false;
+    const method = String(order.paymentMethod || order.payment_method || '').toLowerCase();
+    const status = String(order.paymentStatus || order.payment_status || '').toLowerCase();
+    const cfStatus = String(order.cf_payment_status || order.cfPaymentStatus || '').toLowerCase();
+    const addr = (order.address_details && typeof order.address_details === 'object') ? order.address_details : {};
+    return Boolean(
+      order.is_paid_online ||
+      order.isPaidOnline ||
+      status === 'paid' ||
+      cfStatus === 'refund_initiated' ||
+      cfStatus === 'refunded' ||
+      order.cf_payment_id ||
+      order.cfPaymentId ||
+      order.cf_order_id ||
+      order.cfOrderId ||
+      order.doorstep_upi ||
+      order.doorstepUpi ||
+      method.includes('online') ||
+      method.includes('cashfree') ||
+      addr.refund_status ||
+      addr.refund_initiated_at
+    );
+  }
+
   function renderOrderTracker(orderId) {
     orders = dataService.getOrders();
     const userPhone = getCurrentUserPhone();
@@ -4120,7 +4145,24 @@ function initStorefrontApp() {
         const isCustomerCancelled = order.cancelledBy === 'customer' || order.cancellationReason === 'Cancelled by customer';
         const cancelActor = isCustomerCancelled ? 'you' : 'the kitchen';
         const reasonHtml = order.cancellationReason ? `<br><span style="color:#B91C1C; font-size:0.86rem; display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-weight:600;"><i class="fa-solid fa-circle-exclamation"></i> Reason: ${escapeHtml(order.cancellationReason)}</span>` : '';
-        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was cancelled by ${cancelActor}.${reasonHtml}`;
+        const isOnline = isOrderPaidOnline(order);
+        const refundBannerHtml = isOnline ? `
+          <div class="refund-alert-pill" style="margin-top: 10px; background: #ECFDF5; border: 1px solid #10B981; border-radius: 8px; padding: 10px 14px; text-align: left; display: flex; align-items: flex-start; gap: 10px;">
+            <div style="background: #10B981; color: #FFFFFF; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 0.8rem; margin-top: 2px;">
+              <i class="fa-solid fa-rotate-left"></i>
+            </div>
+            <div>
+              <div style="color: #065F46; font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;">
+                <span>Refund Initiated</span>
+                <span style="background: #D1FAE5; color: #047857; font-size: 0.74rem; font-weight: 800; padding: 2px 8px; border-radius: 12px; border: 1px solid #6EE7B7;">Within 1 Hour</span>
+              </div>
+              <div style="color: #047857; font-size: 0.82rem; margin-top: 3px; font-weight: 500; line-height: 1.4;">
+                100% refund has been initiated automatically via Cashfree. It will be credited back to your original payment account within an hour.
+              </div>
+            </div>
+          </div>
+        ` : '';
+        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was cancelled by ${cancelActor}.${reasonHtml}${refundBannerHtml}`;
       } else if (order.status === 'undelivered') {
         const reasonHtml = order.undeliveredReason || order.cancellationReason ? `<br><span style="color:#B91C1C; font-size:0.86rem; display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Reason: ${escapeHtml(order.undeliveredReason || order.cancellationReason)}</span>` : '';
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was marked undelivered. Our rider waited at your doorstep for 10 minutes but could not reach you. Parcel returned to Savera Paradise kitchen.${reasonHtml}`;
@@ -4164,6 +4206,25 @@ function initStorefrontApp() {
       const dialerRestPhone = cleanRestDigits.length === 10 ? `+91${cleanRestDigits}` : `+${cleanRestDigits}`;
 
       if (order.status === 'cancelled') {
+        const isOnline = isOrderPaidOnline(order);
+        const cleanTotal = order.total || '';
+        const refundCardHtml = isOnline ? `
+          <div class="tracker-refund-status-card" style="margin-top: 10px; margin-bottom: 12px; background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 10px; padding: 12px 14px; display: flex; align-items: flex-start; gap: 10px; text-align: left;">
+            <div style="background: #DCFCE7; color: #16A34A; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 0.9rem;">
+              <i class="fa-solid fa-check"></i>
+            </div>
+            <div style="flex: 1;">
+              <div style="font-weight: 700; color: #15803D; font-size: 0.92rem; display: flex; align-items: center; justify-content: space-between;">
+                <span>100% Refund Initiated</span>
+                <span style="font-size: 0.74rem; background: #BBF7D0; color: #14532D; font-weight: 800; padding: 2px 8px; border-radius: 12px;">Within 1 Hour</span>
+              </div>
+              <div style="font-size: 0.82rem; color: #166534; margin-top: 3px; line-height: 1.4;">
+                Payment ${cleanTotal ? `of <strong>${escapeHtml(cleanTotal)}</strong> ` : ''}has been refunded via Cashfree. Funds will be credited to your original UPI/bank account within an hour.
+              </div>
+            </div>
+          </div>
+        ` : '';
+
         contactCardEl.innerHTML = `
           <div class="order-cancelled-notice-card">
             <div class="notice-icon"><i class="fa-solid fa-circle-xmark"></i></div>
@@ -4172,6 +4233,7 @@ function initStorefrontApp() {
               <div class="notice-reason">${escapeHtml(order.cancellationReason || 'Kitchen was unable to fulfill this order at this time.')}</div>
             </div>
           </div>
+          ${refundCardHtml}
           <div class="tracker-contact-header">
             <div class="tracker-contact-entity">
               <div class="tracker-contact-avatar kitchen" style="background:#FEF2F2; color:#DC2626; border-color:#FECACA;">
@@ -4434,7 +4496,8 @@ function initStorefrontApp() {
     const liveBadgeTextEl = document.getElementById('live-status-badge-text');
     if (liveBadgeTextEl) {
       if (isCancelled) {
-        liveBadgeTextEl.textContent = 'Order Cancelled';
+        const isOnline = isOrderPaidOnline(order);
+        liveBadgeTextEl.textContent = isOnline ? 'Order Cancelled • Refund Initiated (Within 1 Hour)' : 'Order Cancelled';
       } else if (isUndelivered) {
         liveBadgeTextEl.textContent = 'Delivery Attempt Failed — Returned to Kitchen';
       } else if (goingToStore) {
@@ -4810,6 +4873,12 @@ function initStorefrontApp() {
       `;
 
       const failureReason = order.cancellationReason || order.undeliveredReason;
+      const isOnline = isOrderPaidOnline(order);
+      const refundPillHtml = (isCancelled && isOnline) ? `
+        <div class="my-orders-refund-pill" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 700; color: #047857; background: #D1FAE5; border: 1px solid #6EE7B7; padding: 3px 8px; border-radius: 6px; margin-top: 4px;">
+          <i class="fa-solid fa-rotate-left"></i> Refund Initiated: Within 1 Hour
+        </div>
+      ` : '';
       const reasonHtml = ((isCancelled || isUndelivered) && failureReason) ? `
         <div class="cancellation-reason-badge">
           <i class="fa-solid fa-circle-exclamation"></i> Reason: ${escapeHtml(failureReason)}
@@ -4832,6 +4901,7 @@ function initStorefrontApp() {
             ${safeSummary}
           </div>
           ${reasonHtml}
+          ${refundPillHtml}
 
           <div style="font-size: 0.78rem; color: #6B7280; margin-bottom: 6px;">
             <i class="fa-solid fa-location-dot"></i> ${safeAddress}
@@ -6429,11 +6499,15 @@ function initStorefrontApp() {
     } else if (order.status === 'cancelled') {
       updateAppBadge(0);
       playNotificationSound('cancelled');
+      const isOnline = isOrderPaidOnline(order);
       const reasonSuffix = order.cancellationReason ? `: ${order.cancellationReason}` : '';
-      showToast(`❌ Order Cancelled: Order ${dispId} was cancelled by kitchen${reasonSuffix}`, 'error');
+      const refundToastSuffix = isOnline ? ' (100% refund initiated — will be credited within an hour)' : '';
+      showToast(`❌ Order Cancelled: Order ${dispId} was cancelled by kitchen${reasonSuffix}${refundToastSuffix}`, 'error');
       sendSystemNotification({
-        title: `❌ Order ${dispId} Cancelled`,
-        body: `Your order was cancelled by the kitchen.${reasonSuffix}`,
+        title: `❌ Order ${dispId} Cancelled${isOnline ? ' • Refund Initiated' : ''}`,
+        body: isOnline
+          ? `Your order was cancelled by the kitchen. 100% refund initiated — will be credited to your account within an hour.`
+          : `Your order was cancelled by the kitchen.${reasonSuffix}`,
         tag: `customer-cancelled-${order.id}`,
         data: { orderId: order.id, url: '/' }
       });

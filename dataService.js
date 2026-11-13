@@ -6378,6 +6378,34 @@ class QuickBiteDataService {
       if (extraData && typeof extraData === 'object') {
         Object.assign(order, extraData);
       }
+
+      const isOnline = Boolean(
+        order.is_paid_online ||
+        order.payment_status === 'Paid' ||
+        order.paymentStatus === 'Paid' ||
+        order.cf_payment_id ||
+        order.cfPaymentId ||
+        order.cf_order_id ||
+        order.cfOrderId ||
+        order.doorstep_upi ||
+        order.doorstepUpi ||
+        (order.paymentMethod && String(order.paymentMethod).toLowerCase().includes('online')) ||
+        (order.payment_method && String(order.payment_method).toLowerCase().includes('online')) ||
+        (order.paymentMethod && String(order.paymentMethod).toLowerCase().includes('cashfree')) ||
+        (order.payment_method && String(order.payment_method).toLowerCase().includes('cashfree'))
+      );
+      if (isOnline) {
+        order.cf_payment_status = 'REFUND_INITIATED';
+        order.refundStatus = 'INITIATED';
+        order.refundMessage = 'Refund initiated — will be credited to your original payment method within an hour.';
+        const existingAddr = (order.address_details && typeof order.address_details === 'object') ? order.address_details : {};
+        order.address_details = {
+          ...existingAddr,
+          refund_status: 'INITIATED',
+          refund_initiated_at: Date.now(),
+          refund_message: 'Refund initiated — will be credited to your original payment method within an hour.'
+        };
+      }
       this.saveOrders(list, { action: 'status_updated', orderId, order, prevStatus, source, timestamp: Date.now() });
 
       try {
@@ -6427,6 +6455,9 @@ class QuickBiteDataService {
 
           if (res && (res.success || res.order || res.idempotent)) {
             delete order.pendingStatusSync;
+            if (res.order && typeof res.order === 'object') {
+              Object.assign(order, res.order);
+            }
             this.saveOrders(list);
             return order;
           }

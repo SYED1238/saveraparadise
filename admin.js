@@ -22,6 +22,7 @@ import {
   toggleKitchenAlarmSoundMode,
   startKitchenAlarmAudio,
   stopKitchenAlarmAudio,
+  getKitchenAlarmAudio,
   KITCHEN_ALARM_MODES
 } from './notificationService.js';
 import { createBackNavigationManager } from './navigationBackService.js';
@@ -2797,8 +2798,19 @@ const initAdminApp = () => {
 
   function updateModalStatusUI(order) {
     const status = order.status || 'accepted';
+    const isOnline = Boolean(
+      order.isPaidOnline === true ||
+      order.is_paid_online === true ||
+      order.cf_payment_id ||
+      order.cfPaymentId ||
+      order.cf_order_id ||
+      order.cfOrderId ||
+      String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
+      String(order.paymentMethod || order.payment_method || '').toLowerCase().includes('online') ||
+      String(order.cf_payment_status || order.cfPaymentStatus || '').toLowerCase() === 'refund_initiated'
+    );
     let statusLabel = '';
-    if (status === 'cancelled') statusLabel = 'Cancelled';
+    if (status === 'cancelled') statusLabel = isOnline ? 'Cancelled • Refund Initiated' : 'Cancelled';
     else if (status === 'undelivered') statusLabel = 'Undelivered (Returned)';
     else if (status === 'cooking') statusLabel = 'Preparing';
     else if (status === 'ready_for_pickup') statusLabel = 'Ready to Dispatch';
@@ -2861,7 +2873,9 @@ const initAdminApp = () => {
         btnModalAdvanceStatus.style.background = '#FEE2E2';
         btnModalAdvanceStatus.style.color = '#DC2626';
         btnModalAdvanceStatus.style.border = '1px solid #FECACA';
-        btnModalAdvanceText.textContent = status === 'cancelled' ? '❌ Order Cancelled' : '⚠️ Undelivered (Returned)';
+        btnModalAdvanceText.textContent = status === 'cancelled'
+          ? (isOnline ? '❌ Cancelled (Refund Initiated)' : '❌ Order Cancelled')
+          : '⚠️ Undelivered (Returned)';
         if (btnModalRejectOrder) btnModalRejectOrder.style.display = 'none';
       } else {
         btnModalAdvanceStatus.style.background = '';
@@ -3384,6 +3398,11 @@ const initAdminApp = () => {
     }
   }
   updateAlarmToggleUI();
+  try {
+    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setKitchenAlarmMode === 'function') {
+      window.AndroidNative.setKitchenAlarmMode(getKitchenAlarmSoundMode());
+    }
+  } catch {}
 
   // Delegated to notificationService with DynamicsCompressor and volume safeguards
   function playKitchenChime() {
@@ -3493,18 +3512,35 @@ const initAdminApp = () => {
     // Flash browser tab title via centralized notificationService
     flashTabTitle(`🚨 NEW ORDER ${latestOrder.id || ''}!`);
 
+    // Setup global callback to kill chime interval when custom music starts
+    window._stopKitchenChimeFallback = () => {
+      if (kitchenAlarmInterval) {
+        clearInterval(kitchenAlarmInterval);
+        kitchenAlarmInterval = null;
+      }
+    };
+
+    const soundMode = getKitchenAlarmSoundMode();
+
     // Trigger native Android background alarm loop if running inside Android APK
     if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
       try {
-        window.AndroidNative.startAlarm();
+        if (soundMode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
+          window.AndroidNative.startAlarm();
+        } else {
+          // In custom music mode, ensure native Android phone siren never competes with music
+          if (typeof window.AndroidNative.stopAlarm === 'function') {
+            window.AndroidNative.stopAlarm();
+          }
+        }
       } catch (e) {
         console.warn('[Admin] Native startAlarm failed:', e);
       }
     }
 
     // Trigger alarm sound based on configured mode (Custom R2 track vs Classic synthesized chime)
-    const soundMode = getKitchenAlarmSoundMode();
     if (soundMode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
+      stopKitchenAlarmAudio();
       playKitchenChime();
       if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
       kitchenAlarmInterval = setInterval(() => {
@@ -3516,18 +3552,28 @@ const initAdminApp = () => {
         }
       }, 1600);
     } else {
+      // In Custom R2 Music mode: ensure chime interval is completely dead
+      if (kitchenAlarmInterval) {
+        clearInterval(kitchenAlarmInterval);
+        kitchenAlarmInterval = null;
+      }
+
       startKitchenAlarmAudio({
         onFallback: () => {
-          playKitchenChime();
-          if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
-          kitchenAlarmInterval = setInterval(() => {
-            if (isKitchenAlarmRinging) {
-              playKitchenChime();
-            } else {
-              clearInterval(kitchenAlarmInterval);
-              kitchenAlarmInterval = null;
-            }
-          }, 1600);
+          // Only fall back to chime if custom music is paused/failed AND alarm is still ringing
+          const audio = getKitchenAlarmAudio();
+          if (isKitchenAlarmRinging && (!audio || audio.paused)) {
+            playKitchenChime();
+            if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
+            kitchenAlarmInterval = setInterval(() => {
+              if (isKitchenAlarmRinging) {
+                playKitchenChime();
+              } else {
+                clearInterval(kitchenAlarmInterval);
+                kitchenAlarmInterval = null;
+              }
+            }, 1600);
+          }
         }
       });
     }
@@ -3698,15 +3744,18 @@ const initAdminApp = () => {
             showToast('⏹️ Audio test stopped.', 'info');
             return;
           }
-          await startKitchenAlarmAudio({
-            onFallback: () => playNotificationSound('new_order')
-          });
+          if (kitchenAlarmInterval) {
+            clearInterval(kitchenAlarmInterval);
+            kitchenAlarmInterval = null;
+          }
+          await startKitchenAlarmAudio();
           showToast('🎵 Testing Funk Criminal alarm (5s)... Tap bell again to stop.', 'success');
           soundTestTimeout = setTimeout(() => {
             stopKitchenAlarmAudio();
             soundTestTimeout = null;
           }, 5000);
         } else {
+          stopKitchenAlarmAudio();
           playNotificationSound('new_order');
           showToast('🔊 Classic kitchen order chime tested! Volume & notifications active.', 'success');
         }
@@ -3714,7 +3763,8 @@ const initAdminApp = () => {
         sendSystemNotification({
           title: '🍗 Kitchen Alert System Active',
           body: 'Savera Paradise Admin Portal is connected and ready for live orders.',
-          tag: 'admin-test-alert'
+          tag: 'admin-test-alert',
+          soundType: mode === KITCHEN_ALARM_MODES.R2_CUSTOM ? 'custom_r2' : 'new_order'
         });
       }
     });
@@ -3744,6 +3794,18 @@ const initAdminApp = () => {
     const ctx = getAudioContext();
     if (ctx && ctx.state === 'suspended') {
       ctx.resume().catch(() => {});
+    }
+    const audio = getKitchenAlarmAudio();
+    if (audio) {
+      if (isKitchenAlarmRinging && getKitchenAlarmSoundMode() === KITCHEN_ALARM_MODES.R2_CUSTOM) {
+        if (kitchenAlarmInterval) {
+          clearInterval(kitchenAlarmInterval);
+          kitchenAlarmInterval = null;
+        }
+        if (audio.paused) {
+          audio.play().catch(() => {});
+        }
+      }
     }
   };
   window.addEventListener('pointerdown', unlockAudioOnGesture, { passive: true });
@@ -3812,6 +3874,7 @@ const initAdminApp = () => {
       title: `🚨 Savera Paradise Kitchen: New Order ${dispId}!`,
       body: `${orderData.customerName || 'Customer'} • ${orderData.itemsSummary || 'Food order'} (Total: ${orderData.total || ''})`,
       tag: `admin-order-${orderData.id}`,
+      soundType: getKitchenAlarmSoundMode() === KITCHEN_ALARM_MODES.R2_CUSTOM ? 'custom_r2' : 'kitchen_alarm',
       data: { orderId: orderData.id, url: '/admin.html' },
       onClick: () => {
         switchView('view-orders');
@@ -4015,7 +4078,8 @@ const initAdminApp = () => {
             sendSystemNotification({
               title: `🚨 Savera Paradise Kitchen: New Order ${freshDispId}! `,
               body: `${freshAccepted.customerName || 'Customer'} • ${freshAccepted.itemsSummary || 'Food order'} (Total: ${freshAccepted.total || ''})`,
-              tag: `admin-order-${freshAccepted.id}`
+              tag: `admin-order-${freshAccepted.id}`,
+              soundType: getKitchenAlarmSoundMode() === KITCHEN_ALARM_MODES.R2_CUSTOM ? 'custom_r2' : 'kitchen_alarm'
             });
             flashTabTitle(`🚨 NEW ORDER ${freshDispId}!`);
           }

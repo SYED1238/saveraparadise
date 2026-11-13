@@ -23,7 +23,7 @@ import androidx.core.content.ContextCompat;
 public class WebAppInterface {
 
     private final Context context;
-    public static final String CHANNEL_ID_ORDERS = "sas_orders_channel_v3";
+    public static final String CHANNEL_ID_ORDERS = "sas_orders_channel_v4";
     public static final String CHANNEL_NAME_ORDERS = "Savera Paradise Orders & Critical Alerts";
 
     public WebAppInterface(Context context) {
@@ -46,21 +46,28 @@ public class WebAppInterface {
             channel.setShowBadge(true);
             channel.setBypassDnd(true);
 
-            Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-            if (defaultSoundUri == null) {
-                defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            boolean isRider = context.getPackageName().toLowerCase().contains("rider");
+            if (!isRider) {
+                // Kitchen app: sound is managed by startKitchenAlarmAudio / startNativeAlarmLoop (Funk Criminal)
+                channel.setSound(null, null);
+            } else {
+                Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (defaultSoundUri == null) {
+                    defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                }
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .build();
+                channel.setSound(defaultSoundUri, audioAttributes);
             }
-            AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .build();
-            channel.setSound(defaultSoundUri, audioAttributes);
 
             NotificationManager manager = context.getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);
                 try {
                     manager.deleteNotificationChannel("sas_orders_channel_v2");
+                    manager.deleteNotificationChannel("sas_orders_channel_v3");
                 } catch (Exception ignored) {}
             }
         }
@@ -88,14 +95,16 @@ public class WebAppInterface {
             int notifId = tag != null ? Math.abs(tag.hashCode()) : (int) System.currentTimeMillis();
 
             // Urgent alarm alerts for Kitchen (new order) and Rider (parcel ready on counter)
-            boolean isAlarmAlert = "kitchen_alarm".equals(soundType) ||
+            boolean isCustomAudio = "custom_r2".equals(soundType) || "silent_alarm".equals(soundType);
+            boolean isAlarmAlert = !isCustomAudio && (
+                                   "kitchen_alarm".equals(soundType) ||
                                    "new_order".equals(soundType) ||
                                    "rider_new_task".equals(soundType) ||
                                    "rider_alarm".equals(soundType) ||
                                    (tag != null && (tag.startsWith("admin-order-") || 
                                                     tag.startsWith("rider-ready-") || 
                                                     tag.startsWith("rider-task-") ||
-                                                    tag.startsWith("rider-")));
+                                                    tag.startsWith("rider-"))));
 
             int priority;
             String category;
@@ -114,7 +123,7 @@ public class WebAppInterface {
             } else {
                 priority = NotificationCompat.PRIORITY_HIGH;
                 category = NotificationCompat.CATEGORY_EVENT;
-                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                soundUri = isCustomAudio ? null : RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
             }
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID_ORDERS)
@@ -125,13 +134,15 @@ public class WebAppInterface {
                 .setPriority(priority)
                 .setCategory(category)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setDefaults(NotificationCompat.DEFAULT_LIGHTS)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent);
 
             if (isAlarmAlert) {
-                builder.setSound(soundUri, AudioManager.STREAM_ALARM)
-                    .setVibrate(new long[]{0, 500, 250, 500, 250, 700})
+                if (soundUri != null) {
+                    builder.setSound(soundUri, AudioManager.STREAM_ALARM);
+                }
+                builder.setVibrate(new long[]{0, 500, 250, 500, 250, 700})
                     .setFullScreenIntent(pendingIntent, true);
 
                 Intent stopIntent = new Intent(context, OrderMonitorService.class);
@@ -141,8 +152,10 @@ public class WebAppInterface {
                 builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "🛑 Stop Alarm", stopPendingIntent);
                 builder.setDeleteIntent(stopPendingIntent);
             } else {
-                builder.setSound(soundUri)
-                    .setVibrate(new long[]{0, 350, 200, 350, 200, 500});
+                if (soundUri != null && !isCustomAudio) {
+                    builder.setSound(soundUri);
+                }
+                builder.setVibrate(new long[]{0, 350, 200, 350, 200, 500});
             }
 
             Notification notif = builder.build();
@@ -209,6 +222,22 @@ public class WebAppInterface {
         try {
             OrderMonitorService.setRiderDutyStatus(context, onDuty);
         } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
+    public void setKitchenAlarmMode(String mode) {
+        try {
+            OrderMonitorService.setKitchenAlarmSoundMode(context, mode);
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
+    public String getKitchenAlarmMode() {
+        try {
+            return OrderMonitorService.getKitchenAlarmSoundMode(context);
+        } catch (Exception ignored) {
+            return "r2_custom";
+        }
     }
 
     @JavascriptInterface
