@@ -204,7 +204,6 @@ public class OrderMonitorService extends Service {
             AudioAttributes audioAttributes = new AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setUsage(AudioAttributes.USAGE_ALARM)
-                .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
                 .build();
             alertChannel.setSound(soundUri, audioAttributes);
             manager.createNotificationChannel(alertChannel);
@@ -693,7 +692,6 @@ public class OrderMonitorService extends Service {
                             new AudioAttributes.Builder()
                                 .setUsage(AudioAttributes.USAGE_ALARM)
                                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
                                 .build(),
                             new AudioFormat.Builder()
                                 .setSampleRate(sampleRate)
@@ -702,7 +700,7 @@ public class OrderMonitorService extends Service {
                                 .build(),
                             bufferSize,
                             AudioTrack.MODE_STREAM,
-                            AudioManager.AUDIO_SESSION_ID_GENERATE
+                            0
                         );
                     } else {
                         track = new AudioTrack(
@@ -877,7 +875,6 @@ public class OrderMonitorService extends Service {
                         mp.setAudioAttributes(new AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_ALARM)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
                             .build());
                     } else {
                         mp.setAudioStreamType(AudioManager.STREAM_ALARM);

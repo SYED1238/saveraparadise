@@ -51,7 +51,6 @@ public class WebAppInterface {
             AudioAttributes audioAttributes = new AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setUsage(AudioAttributes.USAGE_ALARM)
-                .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
                 .build();
             channel.setSound(defaultSoundUri, audioAttributes);
 
