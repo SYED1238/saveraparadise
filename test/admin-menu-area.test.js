@@ -277,4 +277,52 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
       'initIosPasscodeLock onSuccess must not independently grant staff session without server token'
     );
   });
+
+  it('16. Bug 6: api/admin-store.js and functions/api/admin-store.js role gate protects all mutation actions', () => {
+    const nodeAdminStorePath = path.resolve(process.cwd(), 'api/admin-store.js');
+    const cfAdminStorePath = path.resolve(process.cwd(), 'functions/api/admin-store.js');
+    const nodeContent = fs.readFileSync(nodeAdminStorePath, 'utf8');
+    const cfContent = fs.readFileSync(cfAdminStorePath, 'utf8');
+
+    const expectedActions = ['add_dish', 'update_dish', 'toggle_stock', 'add_category', 'update_category', 'delete_rider'];
+    for (const act of expectedActions) {
+      assert.ok(nodeContent.includes(`'${act}'`), `Node admin-store role gate must include action: ${act}`);
+      assert.ok(cfContent.includes(`'${act}'`), `Cloudflare admin-store role gate must include action: ${act}`);
+    }
+  });
+
+  it('17. Bug 8: renderGlobalDishes renders Delete button, schedule badges, and cross-syncs with category grid', () => {
+    assert.match(
+      adminJsContent,
+      /btn-quick-remove-dish/,
+      'renderGlobalDishes must render the quick delete button'
+    );
+    assert.match(
+      adminJsContent,
+      /dish-schedule-badge time-badge/,
+      'renderGlobalDishes must render schedule time badges'
+    );
+    assert.match(
+      adminJsContent,
+      /renderGlobalDishes\(\);\s*if \(typeof renderCategoryDishes === 'function'\) renderCategoryDishes\(\);/,
+      'Stock toggle in global search must re-render category dishes grid'
+    );
+  });
+
+  it('18. Bug 3: order-action update_status enforces monotonicity and computeOrdersVersion tracks doorstep wait & stage', () => {
+    const nodeOrderActionPath = path.resolve(process.cwd(), 'api/order-action.js');
+    const cfOrderActionPath = path.resolve(process.cwd(), 'functions/api/order-action.js');
+    const nodeOA = fs.readFileSync(nodeOrderActionPath, 'utf8');
+    const cfOA = fs.readFileSync(cfOrderActionPath, 'utf8');
+
+    // Monotonicity rank check across both files
+    assert.match(nodeOA, /if\s*\(nextRank < curRank\)\s*\{\s*return res\.status\(400\)\.json\(\{ error: `Invalid status transition: Cannot reverse order status/);
+    assert.match(cfOA, /if\s*\(nextRank < curRank\)\s*\{\s*return jsonResponse\(\{ error: `Invalid status transition: Cannot reverse order status/);
+
+    // Doorstep wait and pickup stage in computeOrdersVersion
+    assert.match(nodeOA, /const stage = o\.address_details\?\.riderPickupStage \|\| o\.riderPickupStage \|\| '';/);
+    assert.match(nodeOA, /const waitTs = o\.address_details\?\.waitingStartedAt \|\| '';/);
+    assert.match(cfOA, /const stage = o\.address_details\?\.riderPickupStage \|\| o\.riderPickupStage \|\| '';/);
+    assert.match(cfOA, /const waitTs = o\.address_details\?\.waitingStartedAt \|\| '';/);
+  });
 });

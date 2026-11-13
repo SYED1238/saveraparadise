@@ -93,7 +93,7 @@ export default async function handler(req, res) {
   if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
     return res.status(403).json({ error: `Forbidden: Staff or Owner role required for ${action}` });
   }
-  if (['save_dish', 'delete_dish', 'save_category', 'delete_category', 'save_category_images', 'delete_rider'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
+  if (['add_dish', 'update_dish', 'toggle_stock', 'save_dish', 'delete_dish', 'add_category', 'update_category', 'save_category', 'delete_category', 'save_category_images', 'delete_rider', 'toggle_rider_status', 'save_rider'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
     return res.status(403).json({ error: `Forbidden: Staff or Owner role required for ${action}` });
   }
 

@@ -182,9 +182,14 @@ export async function hashPasscode(pin) {
  */
 export function isStaffSessionActive(role) {
   try {
-    if (typeof sessionStorage === 'undefined') return false;
     const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : (role === 'rider' ? STORAGE_KEYS.RIDER_AUTH : STORAGE_KEYS.OWNER_AUTH);
-    const token = sessionStorage.getItem(key);
+    let token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(key) : null;
+    if (!token && role === 'rider' && typeof localStorage !== 'undefined') {
+      token = localStorage.getItem(key);
+      if (token && typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(key, token);
+      }
+    }
     return Boolean(token && token.startsWith('qb_sess_') && token.length > 24);
   } catch {
     return false;
@@ -197,12 +202,20 @@ export function isStaffSessionActive(role) {
  * @returns {Record<string, string>}
  */
 export function getAdminAuthHeaders(role = 'admin') {
-  if (typeof sessionStorage === 'undefined') return {};
-  const token = role === 'rider'
-    ? sessionStorage.getItem('quickbite_rider_token')
-    : (role === 'owner'
-      ? (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token'))
-      : (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token')));
+  let token = null;
+  if (typeof sessionStorage !== 'undefined') {
+    token = role === 'rider'
+      ? sessionStorage.getItem('quickbite_rider_token')
+      : (role === 'owner'
+        ? (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token'))
+        : (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token')));
+  }
+  if (!token && role === 'rider' && typeof localStorage !== 'undefined') {
+    token = localStorage.getItem('quickbite_rider_token');
+    if (token && typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('quickbite_rider_token', token);
+    }
+  }
   if (!token) return {};
   return {
     'Authorization': `Bearer ${token}`
@@ -215,61 +228,66 @@ export function getAdminAuthHeaders(role = 'admin') {
  * @returns {Promise<string|null>}
  */
 export async function ensureAdminToken(requiredRole = 'admin') {
-  if (typeof sessionStorage !== 'undefined') {
-    const tokenKey = requiredRole === 'owner' ? 'quickbite_owner_token' : (requiredRole === 'rider' ? 'quickbite_rider_token' : 'quickbite_admin_token');
-    let token = sessionStorage.getItem(tokenKey) || (requiredRole !== 'rider' ? sessionStorage.getItem('quickbite_admin_token') : null);
-    if (token && token.includes('.')) {
-      try {
-        const parts = token.split('.');
-        if (parts.length === 2) {
-          const base64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
-          const json = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-          const payload = JSON.parse(json);
-          const hasRole = !requiredRole || requiredRole === 'admin' ? (payload.role === 'admin' || payload.role === 'owner') : payload.role === requiredRole;
-          if (hasRole && payload.exp && (payload.exp - Date.now() > 60000)) {
-            return token;
-          }
-        }
-      } catch {}
+  const tokenKey = requiredRole === 'owner' ? 'quickbite_owner_token' : (requiredRole === 'rider' ? 'quickbite_rider_token' : 'quickbite_admin_token');
+  let token = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(tokenKey) : null) || (requiredRole !== 'rider' && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_admin_token') : null);
+  if (!token && requiredRole === 'rider' && typeof localStorage !== 'undefined') {
+    token = localStorage.getItem(tokenKey);
+    if (token && typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(tokenKey, token);
     }
-
-    // Token is missing or expired. Attempt to refresh token via /api/admin-auth if staff session is active
-    const isTargetStaffActive = requiredRole === 'owner' ? isStaffSessionActive('owner') : (requiredRole === 'rider' ? isStaffSessionActive('rider') : (isStaffSessionActive('admin') || isStaffSessionActive('owner')));
-    if (isTargetStaffActive && typeof fetch !== 'undefined') {
-      try {
-        let res = null;
-        if (token) {
-          res = await fetch('/api/admin-auth', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ action: 'refresh', token })
-          });
+  }
+  if (token && token.includes('.')) {
+    try {
+      const parts = token.split('.');
+      if (parts.length === 2) {
+        const base64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
+        const json = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+        const payload = JSON.parse(json);
+        const hasRole = !requiredRole || requiredRole === 'admin' ? (payload.role === 'admin' || payload.role === 'owner') : payload.role === requiredRole;
+        if (hasRole && payload.exp && (payload.exp - Date.now() > 60000)) {
+          return token;
         }
-        if (res && res.ok) {
-          const data = await res.json();
-          if (data && data.token) {
-            const matchesRole = !requiredRole || requiredRole === 'admin'
-              ? (data.role === 'admin' || data.role === 'owner')
-              : (data.role === requiredRole);
-            if (!matchesRole) {
-              return null;
-            }
-            if (data.role === 'owner') {
-              sessionStorage.setItem('quickbite_owner_token', data.token);
-            } else if (data.role === 'rider') {
-              sessionStorage.setItem('quickbite_rider_token', data.token);
-            } else {
-              sessionStorage.setItem('quickbite_admin_token', data.token);
-            }
-            return data.token;
-          }
-        }
-      } catch (err) {
-        console.warn('[Security] ensureAdminToken refresh error:', err);
       }
+    } catch {}
+  }
+
+  // Token is missing or expired. Attempt to refresh token via /api/admin-auth if staff session is active
+  const isTargetStaffActive = requiredRole === 'owner' ? isStaffSessionActive('owner') : (requiredRole === 'rider' ? isStaffSessionActive('rider') : (isStaffSessionActive('admin') || isStaffSessionActive('owner')));
+  if (isTargetStaffActive && typeof fetch !== 'undefined') {
+    try {
+      let res = null;
+      if (token) {
+        res = await fetch('/api/admin-auth', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ action: 'refresh', token })
+        });
+      }
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && data.token) {
+          const matchesRole = !requiredRole || requiredRole === 'admin'
+            ? (data.role === 'admin' || data.role === 'owner')
+            : (data.role === requiredRole);
+          if (!matchesRole) {
+            return null;
+          }
+          if (data.role === 'owner') {
+            if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_owner_token', data.token);
+          } else if (data.role === 'rider') {
+            if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_rider_token', data.token);
+            if (typeof localStorage !== 'undefined') localStorage.setItem('quickbite_rider_token', data.token);
+          } else {
+            if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_admin_token', data.token);
+          }
+          return data.token;
+        }
+      }
+    } catch (err) {
+      console.warn('[Security] ensureAdminToken refresh error:', err);
     }
   }
 
@@ -282,7 +300,6 @@ export async function ensureAdminToken(requiredRole = 'admin') {
  */
 export function setStaffSessionActive(role) {
   try {
-    if (typeof sessionStorage === 'undefined') return;
     const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : (role === 'rider' ? STORAGE_KEYS.RIDER_AUTH : STORAGE_KEYS.OWNER_AUTH);
     const arr = new Uint8Array(24);
     if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
@@ -293,7 +310,12 @@ export function setStaffSessionActive(role) {
       }
     }
     const token = 'qb_sess_' + Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-    sessionStorage.setItem(key, token);
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(key, token);
+    }
+    if (role === 'rider' && typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, token);
+    }
   } catch {}
 }
 
@@ -303,16 +325,28 @@ export function setStaffSessionActive(role) {
  */
 export function clearStaffSession(role) {
   try {
-    if (typeof sessionStorage === 'undefined') return;
     const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : (role === 'rider' ? STORAGE_KEYS.RIDER_AUTH : STORAGE_KEYS.OWNER_AUTH);
-    sessionStorage.removeItem(key);
-    if (role === 'admin') {
-      sessionStorage.removeItem('quickbite_admin_token');
-    } else if (role === 'owner') {
-      sessionStorage.removeItem('quickbite_owner_token');
-      sessionStorage.removeItem('quickbite_admin_token');
-    } else if (role === 'rider') {
-      sessionStorage.removeItem('quickbite_rider_token');
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(key);
+      if (role === 'admin') {
+        sessionStorage.removeItem('quickbite_admin_token');
+      } else if (role === 'owner') {
+        sessionStorage.removeItem('quickbite_owner_token');
+        sessionStorage.removeItem('quickbite_admin_token');
+      } else if (role === 'rider') {
+        sessionStorage.removeItem('quickbite_rider_token');
+      }
+    }
+    if (typeof localStorage !== 'undefined') {
+      if (role === 'rider') {
+        localStorage.removeItem(key);
+        localStorage.removeItem('quickbite_rider_token');
+      } else if (role === 'admin') {
+        localStorage.removeItem('quickbite_admin_token');
+      } else if (role === 'owner') {
+        localStorage.removeItem('quickbite_owner_token');
+        localStorage.removeItem('quickbite_admin_token');
+      }
     }
   } catch {}
 }

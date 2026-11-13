@@ -4550,19 +4550,9 @@ class QuickBiteDataService {
 
     // 1. Send via Supabase WebSocket broadcast (instant cross-device, works between separate phones/laptops/tablets)
     try {
-      if (!this.sharedBroadcastChannel && supabase) {
-        this.sharedBroadcastChannel = supabase.channel('quickbite-kitchen-broadcast', {
-          config: { broadcast: { self: false } }
-        });
-        this.sharedBroadcastChannel.subscribe();
-      }
-      if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'stop_alarm',
-          payload: data
-        }).catch(err => console.warn('[Supabase Realtime] send broadcast error:', err));
-      }
+      this._ensureBroadcastSubscribedAndSend('stop_alarm', data).catch(err => {
+        console.warn('[Supabase Realtime] send broadcast error:', err);
+      });
     } catch (err) {
       console.warn('[Supabase Realtime] broadcast error:', err);
     }
@@ -4638,22 +4628,10 @@ class QuickBiteDataService {
   broadcastSettings(settings) {
     if (typeof window === 'undefined') return;
     try {
-      if (!this.sharedBroadcastChannel && supabase) {
-        this.sharedBroadcastChannel = supabase.channel('quickbite-kitchen-broadcast', {
-          config: { broadcast: { self: false } }
-        });
-        this.sharedBroadcastChannel.subscribe();
-      }
-      if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'settings_updated',
-          payload: {
-            settings,
-            timestamp: Date.now()
-          }
-        }).catch(err => console.warn('[Supabase Realtime] settings broadcast error:', err));
-      }
+      this._ensureBroadcastSubscribedAndSend('settings_updated', {
+        settings,
+        timestamp: Date.now()
+      }).catch(err => console.warn('[Supabase Realtime] settings broadcast error:', err));
     } catch (err) {
       console.warn('[Supabase Realtime] settings broadcast exception:', err);
     }
@@ -4775,6 +4753,14 @@ class QuickBiteDataService {
     if (!token && typeof sessionStorage !== 'undefined') {
       token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token');
     }
+    if (!token && typeof localStorage !== 'undefined') {
+      token = isOwnerAction
+        ? (localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_admin_token'))
+        : (localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_rider_token'));
+      if (token && typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(isOwnerAction ? 'quickbite_owner_token' : 'quickbite_admin_token', token);
+      }
+    }
 
     if (!token) throw new Error('Unauthorized: Staff or Owner session required');
 
@@ -4797,7 +4783,7 @@ class QuickBiteDataService {
     if (typeof window === 'undefined') return null;
     try {
       let targetRole = null;
-      if (this.portalType === 'delivery' || action === 'request_cash_handover' || action === 'rider_at_doorstep' || action === 'cancel_doorstep_wait') {
+      if (this.portalType === 'delivery' || action === 'sync_rider_profile' || action === 'request_cash_handover' || action === 'rider_at_doorstep' || action === 'cancel_doorstep_wait') {
         targetRole = 'rider';
       } else if (this.portalType === 'owner') {
         targetRole = 'owner';
@@ -4818,6 +4804,21 @@ class QuickBiteDataService {
         }
       }
 
+      if (!token && typeof localStorage !== 'undefined') {
+        if (targetRole === 'rider') {
+          token = localStorage.getItem('quickbite_rider_token');
+          if (token && typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_rider_token', token);
+        } else if (targetRole === 'owner') {
+          token = localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_admin_token');
+          if (token && typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_owner_token', token);
+        } else if (targetRole === 'admin') {
+          token = localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token');
+          if (token && typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_admin_token', token);
+        } else {
+          token = localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_rider_token');
+        }
+      }
+
       if (typeof ensureAdminToken === 'function') {
         const roleForRefresh = targetRole || (token ? (sessionStorage?.getItem('quickbite_rider_token') === token ? 'rider' : (sessionStorage?.getItem('quickbite_owner_token') === token ? 'owner' : 'admin')) : null);
         if (roleForRefresh) {
@@ -4830,6 +4831,9 @@ class QuickBiteDataService {
 
       if (!token && typeof sessionStorage !== 'undefined') {
         token = sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_rider_token');
+      }
+      if (!token && typeof localStorage !== 'undefined') {
+        token = localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_rider_token');
       }
 
       const headers = { 'Content-Type': 'application/json' };
@@ -6303,6 +6307,9 @@ class QuickBiteDataService {
         return null;
       }
       const prevStatus = order.status;
+    const prevStepIndex = order.stepIndex;
+    const prevStatusLabel = order.statusLabel;
+    const prevEta = order.eta;
       order.status = 'cancelled';
       order.stepIndex = -1;
       order.statusLabel = 'Cancelled';
@@ -6398,24 +6405,18 @@ class QuickBiteDataService {
 
       // Broadcast cancellation across all connected devices via Supabase Realtime channel
       try {
-        if (this.sharedBroadcastChannel) {
-          this.sharedBroadcastChannel.send({
-            type: 'broadcast',
-            event: 'order_status_updated',
-            payload: {
-              orderId: order.id,
-              status: 'cancelled',
-              prevStatus,
-              statusLabel: 'Cancelled',
-              stepIndex: -1,
-              eta: 'Order Cancelled',
-              cancellationReason: order.cancellationReason,
-              order,
-              source,
-              timestamp: Date.now()
-            }
-          }).catch(() => {});
-        }
+        this._ensureBroadcastSubscribedAndSend('order_status_updated', {
+          orderId: order.id,
+          status: 'cancelled',
+          prevStatus,
+          statusLabel: 'Cancelled',
+          stepIndex: -1,
+          eta: 'Order Cancelled',
+          cancellationReason: order.cancellationReason,
+          order,
+          source,
+          timestamp: Date.now()
+        }).catch(() => {});
       } catch {}
 
       return order;
@@ -6449,6 +6450,9 @@ class QuickBiteDataService {
     }
 
     const prevStatus = order.status;
+    const prevStepIndex = order.stepIndex;
+    const prevStatusLabel = order.statusLabel;
+    const prevEta = order.eta;
     order.status = newStatus;
     order._optimisticTimestamp = Date.now();
     if (newStatus === 'accepted') {
@@ -6511,23 +6515,17 @@ class QuickBiteDataService {
 
     // Broadcast across all connected devices via Supabase Realtime channel
     try {
-      if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'order_status_updated',
-          payload: {
-            orderId: order.id,
-            status: order.status,
-            prevStatus: prevStatus,
-            statusLabel: order.statusLabel,
-            stepIndex: order.stepIndex,
-            eta: order.eta,
-            order: order,
-            source: source,
-            timestamp: Date.now()
-          }
-        }).catch(() => {});
-      }
+      this._ensureBroadcastSubscribedAndSend('order_status_updated', {
+        orderId: order.id,
+        status: order.status,
+        prevStatus: prevStatus,
+        statusLabel: order.statusLabel,
+        stepIndex: order.stepIndex,
+        eta: order.eta,
+        order: order,
+        source: source,
+        timestamp: Date.now()
+      }).catch(() => {});
     } catch {}
 
     // Resilient Supabase database update
@@ -6605,6 +6603,19 @@ class QuickBiteDataService {
           }
         } catch (actionErr) {
           console.warn('[DataService] updateOrderStatus server sync error:', actionErr?.message || actionErr);
+          const httpStatus = Number(actionErr?.status || actionErr?.data?.status);
+          const isAuthoritativeRejection = [400, 401, 403, 404, 409].includes(httpStatus);
+          if (isAuthoritativeRejection) {
+            delete order.pendingStatusSync;
+            delete order._optimisticTimestamp;
+            order.status = prevStatus;
+            order.stepIndex = prevStepIndex;
+            order.statusLabel = prevStatusLabel;
+            order.eta = prevEta;
+            this.saveOrders(list);
+            this.syncOrdersFromSupabase(true).catch(() => {});
+            throw actionErr;
+          }
           order.pendingStatusSync = true;
           this.saveOrders(list);
           if (supabase) {
@@ -6618,8 +6629,11 @@ class QuickBiteDataService {
       };
 
       const serverPromise = doUpdate(orderId).catch((err) => {
-        order.pendingStatusSync = true;
-        this.saveOrders(list);
+        const httpStatus = Number(err?.status || err?.data?.status);
+        if (![400, 401, 403, 404, 409].includes(httpStatus)) {
+          order.pendingStatusSync = true;
+          this.saveOrders(list);
+        }
         throw err;
       });
       order.serverPromise = serverPromise;
@@ -7456,65 +7470,83 @@ class QuickBiteDataService {
       return this.getAllAddressesRaw();
     }
 
-    try {
-      let query = supabase.from('user_addresses').select('*');
-      if (safeUserId && cleanEmail) {
-        query = query.or(`user_id.eq.${safeUserId},user_email.eq.${cleanEmail}`);
-      } else if (safeUserId) {
-        query = query.eq('user_id', safeUserId);
-      } else if (cleanEmail) {
-        query = query.eq('user_email', cleanEmail);
-      }
+    if (this._lastUserAddressesSyncTime && Date.now() - this._lastUserAddressesSyncTime < 15000) {
+      return this.getUserAddresses(safeUserId, cleanEmail);
+    }
+    if (this._isSyncingUserAddresses) {
+      return this._isSyncingUserAddresses;
+    }
 
-      const { data, error } = await query;
-      let localList = this.getAllAddressesRaw();
+    this._isSyncingUserAddresses = (async () => {
+      try {
+        let query = supabase.from('user_addresses').select('*');
+        if (safeUserId && cleanEmail) {
+          query = query.or(`user_id.eq.${safeUserId},user_email.eq.${cleanEmail}`);
+        } else if (safeUserId) {
+          query = query.eq('user_id', safeUserId);
+        } else if (cleanEmail) {
+          query = query.eq('user_email', cleanEmail);
+        }
 
-      if (!error && Array.isArray(data) && data.length > 0) {
-        data.forEach(row => {
-          const cloudAddr = {
-            id: row.id,
-            userId: row.user_id || safeUserId || null,
-            userEmail: (row.user_email || cleanEmail || '').toLowerCase(),
-            name: row.name,
-            phone: row.phone,
-            tag: row.tag || 'Home',
-            flatNo: row.flat_no,
-            area: row.area,
-            city: row.city || 'Ramanagara',
-            pincode: row.pincode || '',
-            details: row.area || row.flat_no || 'Doorstep Delivery',
-            fullText: row.area || row.flat_no || 'Doorstep Delivery',
-            lat: Number(row.lat) || RESTAURANT_COORDINATES.lat,
-            lng: Number(row.lng) || RESTAURANT_COORDINATES.lng,
-            distanceKm: Number(row.distance_km) || 0,
-            isDefault: Boolean(row.is_default),
-            updatedAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
-          };
+        const { data, error } = await query;
+        let localList = this.getAllAddressesRaw();
 
-          const idx = localList.findIndex(a => a.id === cloudAddr.id);
-          if (idx >= 0) {
-            localList[idx] = { ...localList[idx], ...cloudAddr };
-          } else {
-            localList.push(cloudAddr);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          data.forEach(row => {
+            const cloudAddr = {
+              id: row.id,
+              userId: row.user_id || safeUserId || null,
+              userEmail: (row.user_email || cleanEmail || '').toLowerCase(),
+              name: row.name,
+              phone: row.phone,
+              tag: row.tag || 'Home',
+              flatNo: row.flat_no,
+              area: row.area,
+              city: row.city || 'Ramanagara',
+              pincode: row.pincode || '',
+              details: row.area || row.flat_no || 'Doorstep Delivery',
+              fullText: row.area || row.flat_no || 'Doorstep Delivery',
+              lat: Number(row.lat) || RESTAURANT_COORDINATES.lat,
+              lng: Number(row.lng) || RESTAURANT_COORDINATES.lng,
+              distanceKm: Number(row.distance_km) || 0,
+              isDefault: Boolean(row.is_default),
+              updatedAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+            };
+
+            const idx = localList.findIndex(a => a.id === cloudAddr.id);
+            if (idx >= 0) {
+              localList[idx] = { ...localList[idx], ...cloudAddr };
+            } else {
+              localList.push(cloudAddr);
+            }
+          });
+
+          try {
+            localStorage.setItem(STORAGE_KEYS.ADDRESSES, JSON.stringify(localList));
+          } catch (e) {}
+        }
+
+        this._lastUserAddressesSyncTime = Date.now();
+
+        // TWO-WAY CLOUD BACKUP: Only upload local addresses that are NOT yet in Supabase
+        const remoteIds = new Set((data || []).map(r => String(r.id)));
+        const userAddrs = this.getUserAddresses(safeUserId, cleanEmail);
+        userAddrs.forEach(addr => {
+          if (!remoteIds.has(String(addr.id))) {
+            this.syncSingleAddressToSupabase(addr);
           }
         });
 
-        try {
-          localStorage.setItem(STORAGE_KEYS.ADDRESSES, JSON.stringify(localList));
-        } catch (e) {}
+        return userAddrs;
+      } catch (e) {
+        console.warn('[DataService] Could not sync user addresses from Supabase:', e);
+        return this.getUserAddresses(userId, userEmail);
+      } finally {
+        this._isSyncingUserAddresses = null;
       }
+    })();
 
-      // TWO-WAY CLOUD BACKUP: Ensure all local addresses for this user exist in Supabase
-      const userAddrs = this.getUserAddresses(safeUserId, cleanEmail);
-      userAddrs.forEach(addr => {
-        this.syncSingleAddressToSupabase(addr);
-      });
-
-      return userAddrs;
-    } catch (e) {
-      console.warn('[DataService] Could not sync user addresses from Supabase:', e);
-      return this.getUserAddresses(userId, userEmail);
-    }
+    return this._isSyncingUserAddresses;
   }
 
   // ========================================================
@@ -7589,11 +7621,24 @@ class QuickBiteDataService {
   async syncRidersFromSupabase() {
     try {
       let rawRiders = null;
-      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token')))) {
+      const hasAdminOrOwnerToken = (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))) ||
+        (typeof localStorage !== 'undefined' && (localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token')));
+      const hasRiderToken = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('quickbite_rider_token')) ||
+        (typeof localStorage !== 'undefined' && localStorage.getItem('quickbite_rider_token'));
+
+      if (this.isStaffAuthorized() || hasAdminOrOwnerToken || hasRiderToken) {
         try {
-          const res = await this._adminStoreAction('list_riders');
-          if (res && res.success && Array.isArray(res.riders)) {
-            rawRiders = res.riders;
+          if (this.portalType === 'delivery' && !hasAdminOrOwnerToken) {
+            const activeRider = this.getActiveRider();
+            const res = await this._orderAction('sync_rider_profile', { riderPin: activeRider?.pin });
+            if (res && res.success && Array.isArray(res.riders)) {
+              rawRiders = res.riders;
+            }
+          } else {
+            const res = await this._adminStoreAction('list_riders');
+            if (res && res.success && Array.isArray(res.riders)) {
+              rawRiders = res.riders;
+            }
           }
         } catch (apiErr) {
           console.warn('[DataService] syncRidersFromSupabase API error:', apiErr?.message);
@@ -7816,6 +7861,9 @@ class QuickBiteDataService {
         const found = riders.find(r => r.id === activeId || r.pin === activeId || ('rider-' + r.pin) === activeId) ||
                       DEFAULT_RIDERS.find(r => r.id === activeId || r.pin === activeId || ('rider-' + r.pin) === activeId);
         if (found) return found;
+        if (typeof window !== 'undefined' && window.__lastVerifiedRider && (window.__lastVerifiedRider.id === activeId || window.__lastVerifiedRider.pin === activeId || ('rider-' + window.__lastVerifiedRider.pin) === activeId)) {
+          return window.__lastVerifiedRider;
+        }
       }
       // Migrate legacy plaintext PIN storage if present and remove it
       const legacyPin = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_active_rider_pin') : null;
@@ -7836,16 +7884,21 @@ class QuickBiteDataService {
     }
   }
 
-  setActiveRiderPin(pin) {
+  setActiveRiderPin(pin, explicitRider = null) {
     try {
       const cleanPin = String(pin).trim();
-      const rider = this.getRiderByPin(cleanPin);
-      if (!rider) return null;
+      let rider = explicitRider || this.getRiderByPin(cleanPin) || (typeof window !== 'undefined' && window.__lastVerifiedRider ? window.__lastVerifiedRider : null);
+      if (!rider) {
+        rider = { pin: cleanPin, id: `rider-${cleanPin}`, name: 'Delivery Partner', vehicle: '🏍️ Bike', status: 'online' };
+      }
+      this.saveOrUpdateRider(rider);
       // Store rider ID instead of raw plaintext PIN to prevent credential theft
       const riderId = rider.id || ('rider-' + cleanPin);
       if (!rider.id) rider.id = riderId;
-      localStorage.setItem('quickbite_active_rider_id', riderId);
-      localStorage.removeItem('quickbite_active_rider_pin');
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('quickbite_active_rider_id', riderId);
+        localStorage.removeItem('quickbite_active_rider_pin');
+      }
       this.notifyChange('rider_session', { pin: cleanPin, rider, timestamp: Date.now() });
       return rider;
     } catch {

@@ -91,7 +91,7 @@ export async function onRequest(context) {
   if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
     return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
-  if (['save_dish', 'delete_dish', 'save_category', 'delete_category', 'save_category_images', 'delete_rider'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
+  if (['add_dish', 'update_dish', 'toggle_stock', 'save_dish', 'delete_dish', 'add_category', 'update_category', 'save_category', 'delete_category', 'save_category_images', 'delete_rider', 'toggle_rider_status', 'save_rider'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
     return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
 

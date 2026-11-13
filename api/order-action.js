@@ -53,7 +53,9 @@ function computeOrdersVersion(orders) {
   for (let i = 0; i < orders.length; i++) {
     const o = orders[i];
     if (!o) continue;
-    const str = `${o.id || ''}|${o.status || ''}|${o.updated_at || o.created_at || ''}|${o.assigned_rider_pin || o.assigned_rider_id || ''}`;
+    const stage = o.address_details?.riderPickupStage || o.riderPickupStage || '';
+    const waitTs = o.address_details?.waitingStartedAt || '';
+    const str = `${o.id || ''}|${o.status || ''}|${o.status_label || ''}|${o.eta || ''}|${o.cancellation_reason || ''}|${stage}|${waitTs}|${o.updated_at || o.created_at || ''}|${o.assigned_rider_pin || o.assigned_rider_id || ''}`;
     for (let j = 0; j < str.length; j++) {
       hash = ((hash << 5) + hash) + str.charCodeAt(j);
       hash = hash & hash;
@@ -258,7 +260,7 @@ export default async function handler(req, res) {
   }
 
   // 1. Role Gate: Enforce authentication for staff-restricted actions
-  if (['sync_orders', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
+  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
     const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
     if (!auth || !auth.valid) {
       return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff or Rider session required' });
@@ -456,7 +458,7 @@ export default async function handler(req, res) {
       return res.status(200).json(sample);
     }
 
-    if (isTestEnv && ['sync_orders', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
+    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
       const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
         return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff session required' });
@@ -468,6 +470,16 @@ export default async function handler(req, res) {
         { id: '#QB-103', status: 'on_the_way', assigned_rider_pin: '4422', tracking_token: 'secret-tok-103', total: '₹400' },
         { id: '#QB-104', status: 'delivered', assigned_rider_pin: '4422', tracking_token: 'secret-tok-104', total: '₹600' }
       ];
+
+      if (action === 'sync_rider_profile') {
+        const riderPin = String(auth.payload?.riderPin || body.riderPin || '').trim();
+        const testRiders = body.simulateRiders || [
+          { pin: '2233', name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-1.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0 },
+          { pin: '4422', name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-2.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0 }
+        ];
+        const matched = riderPin ? testRiders.filter(r => String(r.pin).trim() === riderPin) : testRiders;
+        return res.status(200).json({ success: true, riders: matched });
+      }
 
       if (action === 'sync_orders') {
         if (auth.payload?.role === 'rider') {
@@ -502,6 +514,16 @@ export default async function handler(req, res) {
         const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
         if (!existing) {
           return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const STATUS_RANKS = { pending: -1, accepted: 0, cooking: 1, ready_for_pickup: 2, on_the_way: 3, delivered: 4, undelivered: 4, cancelled: 4 };
+        if (['delivered', 'undelivered', 'cancelled'].includes(existing.status) && status !== existing.status) {
+          return res.status(400).json({ error: `Order is in terminal state (${existing.status}) and cannot be modified` });
+        }
+        const curRank = STATUS_RANKS[existing.status] ?? 0;
+        const nextRank = STATUS_RANKS[status] ?? -1;
+        if (nextRank < curRank) {
+          return res.status(400).json({ error: `Invalid status transition: Cannot reverse order status from "${existing.status}" to "${status}"` });
         }
         if (auth.payload?.role === 'rider') {
           const riderPin = String(auth.payload.riderPin || '').trim();
@@ -926,6 +948,21 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, orders: sourceOrders, version: syncOrdersVersion });
       }
 
+      case 'sync_rider_profile': {
+        const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+        if (!auth || !auth.valid) {
+          return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff or Rider session required' });
+        }
+        const riderPin = String(auth.payload?.riderPin || body.riderPin || '').trim();
+        let query = sb.from('riders').select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at');
+        if (riderPin) {
+          query = query.eq('pin', riderPin);
+        }
+        const { data: riderRows, error } = await query;
+        if (error) throw error;
+        return res.status(200).json({ success: true, riders: riderRows || [] });
+      }
+
       // 2. Verified Guest Customer Order Tracking (Requires Order ID + Tracking Token)
       case 'track_orders': {
         const orderIds = Array.isArray(body.orderIds) ? body.orderIds : (body.orderId ? [body.orderId] : []);
@@ -999,6 +1036,16 @@ export default async function handler(req, res) {
         if (fetchErr) throw fetchErr;
         if (!existing) {
           return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const STATUS_RANKS = { pending: -1, accepted: 0, cooking: 1, ready_for_pickup: 2, on_the_way: 3, delivered: 4, undelivered: 4, cancelled: 4 };
+        if (['delivered', 'undelivered', 'cancelled'].includes(existing.status) && status !== existing.status) {
+          return res.status(400).json({ error: `Order is in terminal state (${existing.status}) and cannot be modified` });
+        }
+        const curRank = STATUS_RANKS[existing.status] ?? 0;
+        const nextRank = STATUS_RANKS[status] ?? -1;
+        if (nextRank < curRank) {
+          return res.status(400).json({ error: `Invalid status transition: Cannot reverse order status from "${existing.status}" to "${status}"` });
         }
 
         if (auth.payload?.role === 'rider') {

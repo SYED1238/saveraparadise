@@ -102,4 +102,44 @@ test('FEATURE #13: KITCHEN ADMIN POS, ORDER LIFECYCLE, SOUNDBOX ALARMS & THERMAL
     assert.match(dataServiceJs, /const hasPendingStatus = Boolean\(local\?\.pendingStatusSync\);/, 'syncOrdersFromSupabase must check hasPendingStatus');
     assert.match(dataServiceJs, /const preserveLocalStatus = \(\(hasPendingStatus \|\| isOptimistic\) && canOverride\) && remote\.status !== 'cancelled';/, 'syncOrdersFromSupabase must preserve local status when offline updates are pending and monotonic');
   });
+
+  // =========================================================================
+  // 6. Kitchen Portal Bugs 1, 2, 4, 5, 7, 9, 10 Regression Gates
+  // =========================================================================
+  await t.test('14. Bug 1: Step-by-step pipeline guard prevents skipping cooking to ready_for_pickup & stops alarm', () => {
+    assert.match(adminJs, /if\s*\(targetStatus === 'ready_for_pickup' && \(order\?\.status === 'accepted' \|\| order\?\.status === 'pending'\)\)/, 'orderStatusStepPills must require cooking before ready_for_pickup');
+    assert.match(adminJs, /if\s*\(targetStatus !== 'accepted' && targetStatus !== 'pending' && isKitchenAlarmRinging\)\s*\{\s*stopKitchenAlarm\(true,\s*\{\s*orderId\s*\}\);/, 'Order status pill update must silence kitchen alarm on any advance');
+    assert.match(adminJs, /if\s*\(nextStatus !== 'accepted' && nextStatus !== 'pending' && isKitchenAlarmRinging\)\s*\{\s*stopKitchenAlarm\(true,\s*\{\s*orderId\s*\}\);/, 'Modal advance button must silence kitchen alarm on any advance');
+  });
+
+  await t.test('15. Bug 2: updateOrderStatus, broadcastStopAlarm, and broadcastSettings await joined broadcast channel', () => {
+    assert.match(dataServiceJs, /this\._ensureBroadcastSubscribedAndSend\('order_status_updated'/, 'updateOrderStatus must use _ensureBroadcastSubscribedAndSend for status broadcasts');
+    assert.match(dataServiceJs, /this\._ensureBroadcastSubscribedAndSend\('stop_alarm'/, 'broadcastStopAlarm must use _ensureBroadcastSubscribedAndSend');
+    assert.match(dataServiceJs, /this\._ensureBroadcastSubscribedAndSend\('settings_updated'/, 'broadcastSettings must use _ensureBroadcastSubscribedAndSend');
+  });
+
+  await t.test('16. Bug 4: Asynchronous server rejection rollback in dataService.js and UI catch in admin.js', () => {
+    assert.match(dataServiceJs, /const isAuthoritativeRejection = \[400, 401, 403, 404, 409\]\.includes\(httpStatus\);/, 'dataService must identify authoritative HTTP rejections');
+    assert.match(dataServiceJs, /order\.status = prevStatus;\s*order\.stepIndex = prevStepIndex;/, 'Authoritative rejection must roll back local status');
+    assert.match(adminJs, /updated\.serverPromise\.catch/, 'admin.js advance handlers must handle serverPromise rejection');
+  });
+
+  await t.test('17. Bug 5: Alarm banner and View Order button target the displayed queue order', () => {
+    assert.match(adminJs, /const displayedId = alarmBannerOrderId \? alarmBannerOrderId\.textContent\.trim\(\) : null;/, 'btnViewAlarmOrder must query displayed banner order ID');
+  });
+
+  await t.test('18. Bug 7: Duplicate #btn-refresh-orders resolved and multi-button listeners attached', () => {
+    assert.match(adminHtml, /id="btn-refresh-orders-pill"/, 'admin.html must use unique ID btn-refresh-orders-pill for revenue card button');
+    assert.match(adminJs, /document\.querySelectorAll\('#btn-refresh-orders, #btn-refresh-orders-pill, \.btn-refresh-orders'\)/, 'admin.js must bind listener to all refresh buttons');
+  });
+
+  await t.test('19. Bug 9: Store Hours normalizeTimeStr bounds validation and deliveryRadiusKm preservation', () => {
+    assert.match(adminJs, /if \(isNaN\(h\) \|\| isNaN\(mins\) \|\| mins < 0 \|\| mins > 59\) return defaultVal;/, 'normalizeTimeStr must reject invalid minutes');
+    assert.match(adminJs, /const radiusKm = Number\(current\.deliveryRadiusKm \|\| 7\);/, 'formStoreHours must preserve current deliveryRadiusKm and not overwrite from slider');
+  });
+
+  await t.test('20. Bug 10: Owner session clearance on logout and idle lock timeout', () => {
+    assert.match(adminJs, /clearStaffSession\('admin'\);\s*clearStaffSession\('owner'\);/, 'btnAdminLogout and idle lock must clear both admin and owner sessions');
+    assert.match(adminJs, /if \(!isStaffSessionActive\('admin'\) && !isStaffSessionActive\('owner'\)\)/, 'Incoming order alarm guard must allow active owner session');
+  });
 });

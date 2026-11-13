@@ -3288,12 +3288,17 @@ function initStorefrontApp() {
     return PRE_DISPATCH_ORDER_STATUSES.includes(status);
   }
 
-  function syncTrackerVideoBackground(order) {
+  function syncTrackerVideoBackground(order, isGoingToStore = null) {
     const modalCard = document.querySelector('.order-modal-card');
     const videoWrap = document.getElementById('order-tracker-video-bg');
     const videoEl = document.getElementById('tracker-bg-video-el');
 
-    const shouldShowVideo = Boolean(order && isPreDispatchOrderStatus(order.status));
+    const goingToStore = typeof isGoingToStore === 'boolean'
+      ? isGoingToStore
+      : (typeof isOrderRiderGoingToStore === 'function' ? isOrderRiderGoingToStore(order) : false);
+
+    // Live video only plays during pre-dispatch food preparation BEFORE a rider is dispatched to store or delivery
+    const shouldShowVideo = Boolean(order && isPreDispatchOrderStatus(order.status) && !goingToStore);
 
     if (shouldShowVideo) {
       if (modalCard) modalCard.classList.add('has-video-bg');
@@ -4498,7 +4503,7 @@ function initStorefrontApp() {
     }
 
     // Synchronize live preparation background video with current order status
-    syncTrackerVideoBackground(order);
+    syncTrackerVideoBackground(order, goingToStore);
 
     // Live interactive map for accepted/going-to-store & dispatched orders
     if (order.status === 'on_the_way' || goingToStore) {

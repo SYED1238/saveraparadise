@@ -30,6 +30,7 @@ test('TWO-STAGE RIDER PICKUP, LIVE GPS TRACKING & PER-RIDER ORDER LIMIT SUITE', 
     assert.ok(mainJs.includes('function isOrderRiderGoingToStore('), 'main.js must define isOrderRiderGoingToStore');
     assert.ok(mainJs.includes("order.status === 'on_the_way' || goingToStore"), 'main.js tracker must render live map for Stage 1 & Stage 2');
     assert.ok(mainJs.includes('Rider Going to Restaurant!'), 'main.js tracker title must show Stage 1 going-to-restaurant state');
+    assert.match(mainJs, /shouldShowVideo\s*=\s*Boolean\(order\s*&&\s*isPreDispatchOrderStatus\(order\.status\)\s*&&\s*!goingToStore\)/, 'main.js live tracker video must stop playing when rider is going to restaurant');
 
     assert.ok(adminJs.includes('Going to Restaurant to Pick Up Bag #'), 'admin.js must show Stage 1 going-to-restaurant label');
     assert.ok(adminJs.includes('On the Way to Customer'), 'admin.js must distinguish Stage 2 on-the-way label');
@@ -728,6 +729,27 @@ test('TWO-STAGE RIDER PICKUP, LIVE GPS TRACKING & PER-RIDER ORDER LIMIT SUITE', 
       assert.ok(deliveryJs.includes('Confirming Pickup...'), 'delivery.js must show loading state on pickup button');
       assert.ok(deliveryJs.includes('Accepting Order...'), 'delivery.js must show loading state on accept button');
       assert.ok(deliveryJs.includes('await res.serverPromise'), 'delivery.js must await res.serverPromise before toast/sound');
+
+      // 6f. Dual-API Parity: sync_rider_profile in api/ and functions/api/ allows rider session
+      const syncRiderPayload = { action: 'sync_rider_profile', riderPin: '2233' };
+      const [cfSyncRes, apiSyncRes] = await Promise.all([
+        callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', cfRiderToken, syncRiderPayload),
+        callNode(apiOrderAction, apiRiderToken, syncRiderPayload)
+      ]);
+      assert.equal(cfSyncRes.statusCode, 200, 'Cloudflare sync_rider_profile must return 200 for rider');
+      assert.equal(apiSyncRes.statusCode, 200, 'Node sync_rider_profile must return 200 for rider');
+      assert.ok(Array.isArray(cfSyncRes.body.riders) && cfSyncRes.body.riders.length > 0, 'Cloudflare sync_rider_profile returns riders');
+      assert.ok(Array.isArray(apiSyncRes.body.riders) && apiSyncRes.body.riders.length > 0, 'Node sync_rider_profile returns riders');
+      assert.equal(cfSyncRes.body.riders[0].pin, '2233');
+      assert.equal(apiSyncRes.body.riders[0].pin, '2233');
+
+      // Unauthenticated sync_rider_profile must fail with 401
+      const [cfNoAuth, apiNoAuth] = await Promise.all([
+        callCf(cfOrderAction, 'https://saveraparadise.com/api/order-action', '', syncRiderPayload),
+        callNode(apiOrderAction, '', syncRiderPayload)
+      ]);
+      assert.equal(cfNoAuth.statusCode, 401, 'Unauthenticated Cloudflare sync_rider_profile must return 401');
+      assert.equal(apiNoAuth.statusCode, 401, 'Unauthenticated Node sync_rider_profile must return 401');
     } finally {
       globalThis.fetch = origFetch;
       if (hadSs) globalThis.sessionStorage = origSs; else delete globalThis.sessionStorage;

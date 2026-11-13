@@ -118,6 +118,7 @@ const initAdminApp = () => {
       dataService.syncRidersFromSupabase().catch(() => {});
     } else {
       clearStaffSession('admin');
+      clearStaffSession('owner');
       releaseWakeLock();
       if (adminLockOverlay) {
         adminLockOverlay.classList.remove('unlocked');
@@ -130,6 +131,7 @@ const initAdminApp = () => {
   if (btnAdminLogout) {
     btnAdminLogout.addEventListener('click', () => {
       clearStaffSession('admin');
+      clearStaffSession('owner');
       releaseWakeLock();
       if (adminLockOverlay) {
         adminLockOverlay.classList.remove('unlocked');
@@ -144,10 +146,11 @@ const initAdminApp = () => {
   let idleLockTimer = null;
   function resetIdleLockTimer() {
     if (idleLockTimer) clearTimeout(idleLockTimer);
-    if (isStaffSessionActive('admin')) {
+    if (isStaffSessionActive('admin') || isStaffSessionActive('owner')) {
       idleLockTimer = setTimeout(() => {
-        if (isStaffSessionActive('admin')) {
+        if (isStaffSessionActive('admin') || isStaffSessionActive('owner')) {
           clearStaffSession('admin');
+          clearStaffSession('owner');
           releaseWakeLock();
           if (adminLockOverlay) {
             adminLockOverlay.classList.remove('unlocked');
@@ -1109,6 +1112,8 @@ const initAdminApp = () => {
               isNowInStock ? 'success' : 'info'
             );
             renderCategoryDishes();
+            if (typeof renderGlobalDishes === 'function') renderGlobalDishes();
+            renderCategories();
           }
         } catch (err) {
           showToast(`Error toggling stock: ${err?.message || err}`, 'error');
@@ -1612,6 +1617,14 @@ const initAdminApp = () => {
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                   </svg>
                 </button>
+                <button type="button" class="btn-dish-card-action btn-dish-card-delete btn-quick-remove-dish" data-id="${safeId}" title="Remove ${safeName} from menu" aria-label="Delete dish">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -1620,6 +1633,8 @@ const initAdminApp = () => {
                 📂 ${safeCategory}
               </div>
               ${safeBadge ? `<div class="dish-category-badge-chip">${safeBadge}</div>` : ''}
+              ${(dish.timeRestricted && dish.availableFrom && dish.availableTo) ? `<div class="dish-schedule-badge time-badge"><i class="fa-regular fa-clock"></i> ${formatTime12h(dish.availableFrom)} - ${formatTime12h(dish.availableTo)}</div>` : ''}
+              ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
               <h3 class="dish-title-text">${safeName}</h3>
               <div class="dish-price-rating-row">
                 <span class="dish-price-highlight">₹${safePrice}</span>
@@ -1642,6 +1657,7 @@ const initAdminApp = () => {
             if (updated) {
               showToast(`${updated.name} marked ${updated.inStock ? 'In Stock' : 'Out of Stock'}!`, 'info');
               renderGlobalDishes();
+              if (typeof renderCategoryDishes === 'function') renderCategoryDishes();
               renderCategories();
             }
           } catch (err) {
@@ -1658,6 +1674,14 @@ const initAdminApp = () => {
         e.stopPropagation();
         const id = btn.getAttribute('data-id');
         if (id) openEditDishModal(id);
+      });
+    });
+
+    globalDishesResultsGrid.querySelectorAll('.btn-quick-remove-dish').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        if (id) deleteDishPrompt(id);
       });
     });
 
@@ -2111,13 +2135,20 @@ const initAdminApp = () => {
     if (btnOverdueQuickAccept) {
       btnOverdueQuickAccept.onclick = (e) => {
         e.stopPropagation();
-        dataService.updateOrderStatus(first.id, 'cooking');
+        const updated = dataService.updateOrderStatus(first.id, 'cooking');
         if (isKitchenAlarmRinging) {
           stopKitchenAlarm(true, { orderId: first.id });
         }
         showToast(`🔥 Order ${first.id} moved to Preparing!`, 'success');
         checkOverduePendingOrders();
         renderOrders();
+        if (updated?.serverPromise) {
+          updated.serverPromise.catch(err => {
+            showToast(`⚠️ Could not update order ${first.id}: ${err?.message || 'Server rejected transition'}`, 'error');
+            renderOrders();
+            checkOverduePendingOrders();
+          });
+        }
       };
     }
 
@@ -2519,13 +2550,20 @@ const initAdminApp = () => {
             return;
           }
           const updated = dataService.updateOrderStatus(id, next);
-          if ((next === 'cooking' || next === 'accepted') && isKitchenAlarmRinging) {
+          if (next !== 'pending' && isKitchenAlarmRinging) {
             stopKitchenAlarm(true, { orderId: id });
           }
           if (updated) {
             showToast(`Order ${id} advanced to "${next.replace(/_/g, ' ')}"!`, 'success');
             checkOverduePendingOrders();
             renderOrders();
+            if (updated.serverPromise) {
+              updated.serverPromise.catch(err => {
+                showToast(`⚠️ Could not advance order ${id}: ${err?.message || 'Server rejected transition'}`, 'error');
+                renderOrders();
+                checkOverduePendingOrders();
+              });
+            }
           }
         }
       });
@@ -2857,6 +2895,12 @@ const initAdminApp = () => {
       const currentRank = order && STATUS_RANKS[order.status] !== undefined ? STATUS_RANKS[order.status] : 0;
       const targetRank = STATUS_RANKS[targetStatus] !== undefined ? STATUS_RANKS[targetStatus] : -1;
 
+      // STEP-BY-STEP FORWARD PROGRESSION: Must move to Preparing before Ready to Dispatch
+      if (targetStatus === 'ready_for_pickup' && (order?.status === 'accepted' || order?.status === 'pending')) {
+        showToast('🔥 Start Preparing first: Move the order to "Preparing" before packing for dispatch!', 'warning');
+        return;
+      }
+
       // STRICT CHECK: Cannot reverse or set to previous/current status
       if (targetRank <= currentRank) {
         showToast('🔒 Cannot Reverse Status: Order status pipeline is permanent and forward-only!', 'warning');
@@ -2874,7 +2918,7 @@ const initAdminApp = () => {
       }
 
       const updated = dataService.updateOrderStatus(orderId, targetStatus);
-      if (targetStatus === 'cooking' && isKitchenAlarmRinging) {
+      if (targetStatus !== 'accepted' && targetStatus !== 'pending' && isKitchenAlarmRinging) {
         stopKitchenAlarm(true, { orderId });
       }
 
@@ -2882,6 +2926,14 @@ const initAdminApp = () => {
         updateModalStatusUI(updated);
         showToast(`Order status updated to "${updated.statusLabel || targetStatus}"!`, 'success');
         renderOrders();
+        if (updated.serverPromise) {
+          updated.serverPromise.catch(err => {
+            showToast(`⚠️ Could not update order ${orderId}: ${err?.message || 'Server rejected transition'}`, 'error');
+            const latestOrder = (dataService.getOrderById ? dataService.getOrderById(orderId) : null) || dataService.getOrders().find(o => o.id === orderId);
+            if (latestOrder) updateModalStatusUI(latestOrder);
+            renderOrders();
+          });
+        }
       }
     });
   });
@@ -2910,7 +2962,7 @@ const initAdminApp = () => {
       }
 
       const updated = dataService.updateOrderStatus(orderId, nextStatus);
-      if (nextStatus === 'cooking' && isKitchenAlarmRinging) {
+      if (nextStatus !== 'accepted' && nextStatus !== 'pending' && isKitchenAlarmRinging) {
         stopKitchenAlarm(true, { orderId });
       }
 
@@ -2918,6 +2970,14 @@ const initAdminApp = () => {
         updateModalStatusUI(updated);
         showToast(`Order advanced to "${updated.statusLabel || nextStatus}"!`, 'success');
         renderOrders();
+        if (updated.serverPromise) {
+          updated.serverPromise.catch(err => {
+            showToast(`⚠️ Could not advance order ${orderId}: ${err?.message || 'Server rejected transition'}`, 'error');
+            const latestOrder = (dataService.getOrderById ? dataService.getOrderById(orderId) : null) || dataService.getOrders().find(o => o.id === orderId);
+            if (latestOrder) updateModalStatusUI(latestOrder);
+            renderOrders();
+          });
+        }
       }
     });
   }
@@ -3210,16 +3270,19 @@ const initAdminApp = () => {
     renderOrders();
   });
 
-  if (btnRefreshOrders) {
-    btnRefreshOrders.addEventListener('click', async () => {
-      btnRefreshOrders.classList.add('rotating');
-      try {
-        await dataService.syncOrdersFromSupabase(true);
-      } catch {}
-      renderOrders();
-      updateOrderBadges();
-      btnRefreshOrders.classList.remove('rotating');
-      showToast('🔄 Orders updated!', 'info');
+  const refreshOrderButtons = document.querySelectorAll('#btn-refresh-orders, #btn-refresh-orders-pill, .btn-refresh-orders');
+  if (refreshOrderButtons.length > 0) {
+    refreshOrderButtons.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        refreshOrderButtons.forEach(b => b.classList.add('rotating'));
+        try {
+          await dataService.syncOrdersFromSupabase(true);
+        } catch {}
+        renderOrders();
+        updateOrderBadges();
+        refreshOrderButtons.forEach(b => b.classList.remove('rotating'));
+        showToast('🔄 Orders updated!', 'info');
+      });
     });
   }
 
@@ -3471,8 +3534,9 @@ const initAdminApp = () => {
   if (btnViewAlarmOrder) {
     btnViewAlarmOrder.addEventListener('click', (e) => {
       e.stopPropagation();
-      const targetOrder = ringingOrdersQueue[ringingOrdersQueue.length - 1];
-      const targetId = targetOrder?.id || (alarmBannerOrderId ? alarmBannerOrderId.textContent.trim() : null);
+      const displayedId = alarmBannerOrderId ? alarmBannerOrderId.textContent.trim() : null;
+      const targetOrder = (displayedId && ringingOrdersQueue.find(o => o && o.id === displayedId)) || ringingOrdersQueue[0] || ringingOrdersQueue[ringingOrdersQueue.length - 1];
+      const targetId = targetOrder?.id || displayedId;
       stopKitchenAlarm(true, { orderId: targetId });
       switchView('view-orders');
       if (targetId) {
@@ -3577,8 +3641,8 @@ const initAdminApp = () => {
       return;
     }
 
-    // 5. Only ring alarm and push notifications if admin session is actively unlocked!
-    if (!isStaffSessionActive('admin')) {
+    // 5. Only ring alarm and push notifications if admin or owner session is actively unlocked!
+    if (!isStaffSessionActive('admin') && !isStaffSessionActive('owner')) {
       renderOrders();
       updateOrderBadges();
       return;
@@ -3785,7 +3849,7 @@ const initAdminApp = () => {
         freshAcceptedList.forEach(freshAccepted => {
           const normId = String(freshAccepted.id).trim();
           const lastAlert = recentAlertedOrderIds.get(normId) || 0;
-          if (isStaffSessionActive('admin') && (now - lastAlert >= 5000)) {
+          if ((isStaffSessionActive('admin') || isStaffSessionActive('owner')) && (now - lastAlert >= 5000)) {
             recentAlertedOrderIds.set(normId, now);
             startKitchenAlarm(freshAccepted);
 
@@ -4736,15 +4800,22 @@ const initAdminApp = () => {
         if (!val) return defaultVal;
         const str = String(val).trim();
         const m = str.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)?$/i);
-        if (!m) return str;
+        if (!m) return defaultVal;
         let h = parseInt(m[1], 10);
         let mins = m[2] ? parseInt(m[2], 10) : 0;
-        let period = m[3] ? m[3].toUpperCase() : (h >= 12 ? 'PM' : 'AM');
-        if (h > 12) {
-          h -= 12;
-          period = 'PM';
-        } else if (h === 0) {
-          h = 12;
+        if (isNaN(h) || isNaN(mins) || mins < 0 || mins > 59) return defaultVal;
+        let period = m[3] ? m[3].toUpperCase() : null;
+        if (period) {
+          if (h < 1 || h > 12) return defaultVal;
+        } else {
+          if (h < 0 || h > 23) return defaultVal;
+          if (h >= 12) {
+            period = 'PM';
+            if (h > 12) h -= 12;
+          } else {
+            period = 'AM';
+            if (h === 0) h = 12;
+          }
         }
         return `${h}:${String(mins).padStart(2, '0')} ${period}`;
       }
@@ -4761,7 +4832,7 @@ const initAdminApp = () => {
       const noticeT = (!rawNotice || /^Open Now(\s*[:–-].*)?$/i.test(rawNotice))
         ? `Open Now: ${openT} – ${closeT} • Delivery & Pickup`
         : rawNotice;
-      const radiusKm = Number(deliveryRadiusSlider?.value || current.deliveryRadiusKm || 7);
+      const radiusKm = Number(current.deliveryRadiusKm || 7);
       const storeIsOpen = inputStoreOpen ? inputStoreOpen.checked : (current.storeOpen !== false);
       const storeReason = inputStoreClosedReason?.value?.trim() || '';
 

@@ -335,6 +335,10 @@ const initDeliveryApp = () => {
           if (typeof sessionStorage !== 'undefined') {
             sessionStorage.setItem('quickbite_rider_token', data.token);
           }
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('quickbite_rider_token', data.token);
+          }
+          window.__verifiedRiderToken = data.token;
           if (data.rider) {
             dataService.saveOrUpdateRider({ ...data.rider, pin: cleanPin });
           }
@@ -349,10 +353,15 @@ const initDeliveryApp = () => {
     },
     onSuccess: async (pin) => {
       const cleanPin = String(pin).trim();
+      const token = window.__verifiedRiderToken || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_rider_token') : null) || (typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_rider_token') : null);
+      if (token) {
+        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_rider_token', token);
+        if (typeof localStorage !== 'undefined') localStorage.setItem('quickbite_rider_token', token);
+      }
       const rider = window.__lastVerifiedRider || dataService.getRiderByPin(cleanPin) || { pin: cleanPin, name: 'Delivery Partner' };
 
       setStaffSessionActive('rider');
-      dataService.setActiveRiderPin(cleanPin);
+      dataService.setActiveRiderPin(cleanPin, rider);
       updateRiderProfileHeader();
       requestWakeLock();
       restoreRiderGpsState();
@@ -373,6 +382,11 @@ const initDeliveryApp = () => {
 
   function checkRiderSession() {
     if (isStaffSessionActive('rider')) {
+      const token = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_rider_token') : null) || (typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_rider_token') : null);
+      if (token) {
+        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_rider_token', token);
+        if (typeof localStorage !== 'undefined') localStorage.setItem('quickbite_rider_token', token);
+      }
       let activeRider = dataService.getActiveRider();
       if (!activeRider) {
         clearStaffSession('rider');

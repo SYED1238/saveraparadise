@@ -123,11 +123,18 @@ export async function onRequest(context) {
     return jsonResponse({ error: 'Manager passcode required' }, 400, Object.fromEntries(corsHeaders.entries()));
   }
 
+  const DEFAULT_RIDER_PROFILES = {
+    '2233': { name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', avatar: '🏍️', avatarImg: '/avatars/rider-1.svg', maxActiveOrders: 1 },
+    '4422': { name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', avatar: '🏍️', avatarImg: '/avatars/rider-2.svg', maxActiveOrders: 1 },
+    '4455': { name: 'Salman Ahmed', phone: '+91 96666 55555', vehicle: '🛵 TVS Jupiter', avatar: '🛵', avatarImg: '/avatars/rider-1.svg', maxActiveOrders: 1 },
+    '8811': { name: 'Arif Khan', phone: '+91 95555 44444', vehicle: '⚡ Ather 450X EV', avatar: '⚡', avatarImg: '/avatars/rider-2.svg', maxActiveOrders: 1 }
+  };
+
   let role = getPinRole(inputPin, env);
   let dynamicRiderRecord = null;
 
-  // If not matched by static/env PINs, authenticate dynamic fleet riders from the database
-  if (!role) {
+  // Always query Supabase public.riders when (!role || role === 'rider') so full rider profile is hydrated
+  if (!role || role === 'rider') {
     const isTestEnv = Boolean(
       (env && (env.NODE_ENV === 'test' || env.ENVIRONMENT === 'test')) ||
       (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))))
@@ -144,7 +151,7 @@ export async function onRequest(context) {
         const sb = createClient(supabaseUrl, serviceKey);
         const { data: dbRider, error } = await sb
           .from('riders')
-          .select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings')
+          .select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at')
           .eq('pin', String(inputPin).trim())
           .maybeSingle();
 
@@ -208,18 +215,21 @@ export async function onRequest(context) {
   const token = createAdminToken(undefined, role, env, extraPayload);
   let safeRiderProfile = null;
   if (role === 'rider') {
+    const cleanPinStr = String(inputPin).trim();
+    const fallbackProfile = DEFAULT_RIDER_PROFILES[cleanPinStr] || {};
     safeRiderProfile = {
-      pin: String(inputPin).trim(),
-      name: dynamicRiderRecord?.name || 'Delivery Partner',
-      phone: dynamicRiderRecord?.phone || '',
-      vehicle: dynamicRiderRecord?.vehicle || 'Bike',
+      pin: cleanPinStr,
+      name: dynamicRiderRecord?.name || fallbackProfile.name || 'Delivery Partner',
+      phone: dynamicRiderRecord?.phone || fallbackProfile.phone || '',
+      vehicle: dynamicRiderRecord?.vehicle || fallbackProfile.vehicle || 'Bike',
       status: dynamicRiderRecord?.status || 'online'
     };
-    if (dynamicRiderRecord?.avatar) safeRiderProfile.avatar = dynamicRiderRecord.avatar;
-    if (dynamicRiderRecord?.avatar_img || dynamicRiderRecord?.avatarImg) safeRiderProfile.avatarImg = dynamicRiderRecord.avatar_img || dynamicRiderRecord.avatarImg;
-    if (dynamicRiderRecord?.max_active_orders !== undefined || dynamicRiderRecord?.maxActiveOrders !== undefined) {
-      safeRiderProfile.maxActiveOrders = dynamicRiderRecord.max_active_orders ?? dynamicRiderRecord.maxActiveOrders;
+    if (dynamicRiderRecord?.avatar || fallbackProfile.avatar) safeRiderProfile.avatar = dynamicRiderRecord?.avatar || fallbackProfile.avatar;
+    if (dynamicRiderRecord?.avatar_img || dynamicRiderRecord?.avatarImg || fallbackProfile.avatarImg) {
+      safeRiderProfile.avatarImg = dynamicRiderRecord?.avatar_img || dynamicRiderRecord?.avatarImg || fallbackProfile.avatarImg;
     }
+    const maxActive = dynamicRiderRecord?.max_active_orders ?? dynamicRiderRecord?.maxActiveOrders ?? fallbackProfile.maxActiveOrders;
+    if (maxActive !== undefined) safeRiderProfile.maxActiveOrders = maxActive;
     if (dynamicRiderRecord?.cash_settled_at !== undefined || dynamicRiderRecord?.cashSettledAt !== undefined) {
       safeRiderProfile.cashSettledAt = dynamicRiderRecord.cash_settled_at ?? dynamicRiderRecord.cashSettledAt;
     }
@@ -231,6 +241,15 @@ export async function onRequest(context) {
     }
     if (dynamicRiderRecord?.trips !== undefined) safeRiderProfile.trips = dynamicRiderRecord.trips;
     if (dynamicRiderRecord?.earnings !== undefined) safeRiderProfile.earnings = dynamicRiderRecord.earnings;
+    if (dynamicRiderRecord?.cash_handover_status || dynamicRiderRecord?.cashHandoverStatus) {
+      safeRiderProfile.cashHandoverStatus = dynamicRiderRecord.cash_handover_status || dynamicRiderRecord.cashHandoverStatus;
+    }
+    if (dynamicRiderRecord?.cash_handover_amount !== undefined || dynamicRiderRecord?.cashHandoverAmount !== undefined) {
+      safeRiderProfile.cashHandoverAmount = dynamicRiderRecord.cash_handover_amount ?? dynamicRiderRecord.cashHandoverAmount;
+    }
+    if (dynamicRiderRecord?.cash_handover_requested_at || dynamicRiderRecord?.cashHandoverRequestedAt) {
+      safeRiderProfile.cashHandoverRequestedAt = dynamicRiderRecord.cash_handover_requested_at || dynamicRiderRecord.cashHandoverRequestedAt;
+    }
   }
 
   return jsonResponse({
