@@ -44,7 +44,23 @@ let lastActiveOrderSeenAt = 0;
 let syncOrdersCache = null;
 let syncOrdersCachedAt = 0;
 let syncOrdersCachedLimit = 0;
-let syncOrdersVersion = 0;
+let syncOrdersVersion = '0';
+
+// Deterministic version calculation: generates identical string if order IDs, statuses, assignments, and timestamps match
+function computeOrdersVersion(orders) {
+  if (!Array.isArray(orders) || orders.length === 0) return '0';
+  let hash = 5381;
+  for (let i = 0; i < orders.length; i++) {
+    const o = orders[i];
+    if (!o) continue;
+    const str = `${o.id || ''}|${o.status || ''}|${o.updated_at || o.created_at || ''}|${o.assigned_rider_pin || o.assigned_rider_id || ''}`;
+    for (let j = 0; j < str.length; j++) {
+      hash = ((hash << 5) + hash) + str.charCodeAt(j);
+      hash = hash & hash;
+    }
+  }
+  return `${orders.length}_${(hash >>> 0).toString(16)}`;
+}
 
 export function invalidateOrderActionMemoryCache() {
   kitchenPollCachedAt = 0;
@@ -52,7 +68,7 @@ export function invalidateOrderActionMemoryCache() {
   syncOrdersCachedAt = 0;
   syncOrdersCache = null;
   syncOrdersCachedLimit = 0;
-  syncOrdersVersion = 0;
+  syncOrdersVersion = '0';
 }
 export const invalidateKitchenPollCache = invalidateOrderActionMemoryCache;
 
@@ -851,12 +867,12 @@ export default async function handler(req, res) {
           return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff session required' });
         }
         const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
-        const clientVersion = Number(body.sinceVersion) || 0;
+        const clientVersion = String(body.sinceVersion || '').trim();
         const now = Date.now();
 
         let sourceOrders = null;
         if (syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
-          if (clientVersion > 0 && clientVersion === syncOrdersVersion) {
+          if (clientVersion && clientVersion === String(syncOrdersVersion)) {
             return res.status(200).json({ success: true, unchanged: true, version: syncOrdersVersion });
           }
           sourceOrders = syncOrdersCache.slice(0, limit);
@@ -872,8 +888,12 @@ export default async function handler(req, res) {
           syncOrdersCache = data || [];
           syncOrdersCachedAt = now;
           syncOrdersCachedLimit = fetchLimit;
-          syncOrdersVersion = now;
+          syncOrdersVersion = computeOrdersVersion(syncOrdersCache);
           updateActiveOrderTracker(syncOrdersCache, now);
+
+          if (clientVersion && clientVersion === String(syncOrdersVersion)) {
+            return res.status(200).json({ success: true, unchanged: true, version: syncOrdersVersion });
+          }
           sourceOrders = syncOrdersCache.slice(0, limit);
         }
 

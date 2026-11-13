@@ -2851,9 +2851,13 @@ class QuickBiteDataService {
     }
   }
 
-  async syncCategoryImagesFromSupabase() {
+  async syncCategoryImagesFromSupabase(force = false) {
+    if (!force && Date.now() - (this._lastCategoryImagesSyncTime || 0) < 120000 && Object.keys(this.getCategoryImages()).length > 0) {
+      return this.getCategoryImages();
+    }
     try {
       if (!supabase) return this.getCategoryImages();
+      this._lastCategoryImagesSyncTime = Date.now();
       const { data, error } = await supabase
         .from('store_settings')
         .select('*')
@@ -3222,6 +3226,18 @@ class QuickBiteDataService {
             if (this.portalType === 'owner' && ['delivered', 'cancelled', 'undelivered'].includes(o.status)) {
               const orderAge = Date.now() - (Number(o.createdAt) || 0);
               if (orderAge < 30 * 24 * 60 * 60 * 1000) return true;
+            }
+            // Safely preserve any active in-flight orders (< 24 hours)
+            if (!['delivered', 'cancelled', 'undelivered'].includes(o.status)) {
+              const activeAge = Date.now() - (Number(o.createdAt) || 0);
+              if (activeAge < 24 * 60 * 60 * 1000) return true;
+            }
+            // Safely preserve unsettled cash/COD delivered orders for Rider cash ledger (< 48 hours)
+            if ((this.portalType === 'delivery' || this.portalType === 'admin') &&
+                (o.paymentMethod === 'cash' || o.payment_method === 'cash') &&
+                o.status === 'delivered') {
+              const codAge = Date.now() - (Number(o.createdAt) || 0);
+              if (codAge < 48 * 60 * 60 * 1000) return true;
             }
             // Safely preserve pending offline orders queued for cloud synchronization
             if (o.pendingRemoteSync) {
@@ -4096,7 +4112,7 @@ class QuickBiteDataService {
             const isOpen = typeof this.isStoreOpen === 'function' ? this.isStoreOpen() : true;
             const orders = this.getOrders();
             const hasActiveOrders = Array.isArray(orders) && orders.some(
-              o => o && !['delivered', 'cancelled', 'undelivered'].includes(o.status)
+              o => o && !['delivered', 'cancelled', 'undelivered', 'pending_payment'].includes(o.status)
             );
             if (!isOpen && !hasActiveOrders) {
               return;
@@ -4109,9 +4125,13 @@ class QuickBiteDataService {
             }
           }
         } else {
-          // Customer portal: only poll if customer currently has active orders
+          // Customer portal: only poll if customer currently has active orders (< 6 hours old)
           const orders = this.getOrders();
-          const hasActiveOrders = orders.some(o => o && o.status !== 'delivered' && o.status !== 'cancelled');
+          const hasActiveOrders = orders.some(o => {
+            if (!o || ['delivered', 'cancelled', 'undelivered', 'pending_payment'].includes(o.status)) return false;
+            const ageMs = Date.now() - new Date(o.createdAt || o.created_at || 0).getTime();
+            return isNaN(ageMs) || ageMs < 6 * 60 * 60 * 1000;
+          });
           if (hasActiveOrders) {
             await this.syncCustomerActiveOrders();
           }
@@ -4126,6 +4146,16 @@ class QuickBiteDataService {
     if (typeof document !== 'undefined') {
       const handleTabResume = () => {
         if (document.hidden) return;
+        const isOpen = typeof this.isStoreOpen === 'function' ? this.isStoreOpen() : true;
+        const orders = this.getOrders();
+        const hasActiveOrders = Array.isArray(orders) && orders.some(
+          o => o && !['delivered', 'cancelled', 'undelivered', 'pending_payment'].includes(o.status)
+        );
+        // If store is closed and no active orders exist, avoid waking Supabase on tab focus
+        if (!isOpen && !hasActiveOrders) {
+          return;
+        }
+
         const isRealtimeHealthy = this.realtimeChannel && this.realtimeChannel.state === 'joined';
         const isBroadcastHealthy = this.sharedBroadcastChannel && this.sharedBroadcastChannel.state === 'joined';
         if (!isRealtimeHealthy || !isBroadcastHealthy) {
@@ -4144,9 +4174,12 @@ class QuickBiteDataService {
             this.syncOrdersFromSupabase();
           }
         } else {
-          const orders = this.getOrders();
-          const hasActiveOrders = orders.some(o => o && o.status !== 'delivered' && o.status !== 'cancelled');
-          if (hasActiveOrders && now - this._lastCustomerOrdersSyncTime > 15000) {
+          const hasCustomerActiveOrders = orders.some(o => {
+            if (!o || ['delivered', 'cancelled', 'undelivered', 'pending_payment'].includes(o.status)) return false;
+            const ageMs = now - new Date(o.createdAt || o.created_at || 0).getTime();
+            return isNaN(ageMs) || ageMs < 6 * 60 * 60 * 1000;
+          });
+          if (hasCustomerActiveOrders && now - this._lastCustomerOrdersSyncTime > 15000) {
             this.syncCustomerActiveOrders();
           }
         }

@@ -96,6 +96,7 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tip_amount NUMERIC DEFAULT 0;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tracking_token UUID DEFAULT gen_random_uuid();
 CREATE INDEX IF NOT EXISTS idx_orders_tracking_token ON public.orders(tracking_token);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at_desc ON public.orders(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.user_addresses (
   id TEXT PRIMARY KEY,
