@@ -771,6 +771,15 @@ public class OrderMonitorService extends Service {
         }
     }
 
+    public static boolean isAlarmActive() {
+        synchronized (alarmLock) {
+            return (alarmPlayer != null && alarmPlayer.isPlaying()) ||
+                   (activeRingtone != null && activeRingtone.isPlaying()) ||
+                   isSirenRunning ||
+                   activeVibrator != null;
+        }
+    }
+
     public static void stopNativeAlarm() {
         synchronized (alarmLock) {
             if (alarmTimeoutHandler != null && alarmTimeoutRunnable != null) {

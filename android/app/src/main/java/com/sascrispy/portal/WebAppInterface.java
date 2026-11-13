@@ -151,15 +151,15 @@ public class WebAppInterface {
             }
             manager.notify(notifId, notif);
 
-            // Hardware haptic vibration
-            Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
-            if (v != null && v.hasVibrator()) {
-                v.vibrate(new long[]{0, 350, 200, 350}, -1);
-            }
-
-            // If kitchen or rider order alert, also trigger native loud continuous siren loop & audio focus
             if (isAlarmAlert) {
+                // Start continuous looping MediaPlayer + repeating Vibrator waveform & acquire audio focus
                 OrderMonitorService.startNativeAlarm();
+            } else {
+                // One-shot haptic vibration for non-alarm notifications (e.g. cash settled)
+                Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+                if (v != null && v.hasVibrator()) {
+                    v.vibrate(new long[]{0, 350, 200, 350}, -1);
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -186,6 +186,9 @@ public class WebAppInterface {
     @JavascriptInterface
     public void triggerVibration() {
         try {
+            if (OrderMonitorService.isAlarmActive()) {
+                return; // Guard active continuous alarm waveform against premature cancellation
+            }
             Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
             if (v != null && v.hasVibrator()) {
                 v.vibrate(new long[]{0, 300, 150, 300}, -1);

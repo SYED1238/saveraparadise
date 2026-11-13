@@ -243,14 +243,16 @@
       <div class="parcel-pickup-card">
         <div class="parcel-pickup-header">
           <div class="parcel-pickup-icon">
-            <i class="fa-solid fa-box-open"></i>
+            <i class="fa-solid fa-bell-concierge"></i>
           </div>
           <div class="parcel-pickup-titles">
-            <div class="parcel-pickup-badge">
-              <i class="fa-solid fa-kitchen-set"></i> Live Kitchen Dispatch Queue • 3 km Pickup Zone
+            <div class="parcel-pickup-title-row">
+              <h3 class="parcel-pickup-title">Kitchen Dispatch Queue</h3>
+              <span class="parcel-pickup-badge">
+                <i class="fa-solid fa-kitchen-set"></i> 3 km Pickup Zone
+              </span>
             </div>
-            <h3 class="parcel-pickup-title">View Orders, Distance & Payout — Pick One to Deliver</h3>
-            <p class="parcel-pickup-sub">Review all kitchen orders, road distances, and delivery payouts below. Turn on & sync Live GPS Location within a 3 km radius of Savera Paradise to pick 1 ready order at a time.</p>
+            <p class="parcel-pickup-sub">Select an available order below to accept and deliver.</p>
           </div>
         </div>
 
@@ -258,9 +260,9 @@
         <div class="pickup-gps-gate-bar gps-required" id="rider-pickup-gps-gate">
           <div class="pickup-gps-gate-info">
             <i class="fa-solid fa-location-crosshairs" id="pickup-gps-gate-icon"></i>
-            <span id="pickup-gps-gate-text">Syncing live GPS location... Turn on location within 3 km of restaurant to pick an order.</span>
+            <span id="pickup-gps-gate-text">Syncing live GPS location... Turn on location within 3 km to pick an order.</span>
           </div>
-          <button type="button" class="btn-sync-live-gps" id="btn-sync-live-gps">
+          <button type="button" class="btn-sync-live-gps" id="btn-sync-live-gps" title="Refresh Live GPS">
             <i class="fa-solid fa-satellite-dish"></i>
             <span id="btn-sync-live-gps-label">Turn On & Sync GPS</span>
           </button>

@@ -1051,7 +1051,7 @@ const initDeliveryApp = () => {
     const gpsReady = isRiderGpsSyncedAndFresh();
     if (!gpsReady) {
       gateBar.className = 'pickup-gps-gate-bar gps-required';
-      gateText.textContent = '📍 Turn on Live GPS to accept orders & share your live route with customers.';
+      gateText.textContent = '📍 Turn on Live GPS within 3 km of restaurant to accept orders.';
       if (gateBtnLabel) gateBtnLabel.textContent = 'Turn On & Sync GPS';
       return;
     }
@@ -1063,8 +1063,8 @@ const initDeliveryApp = () => {
     const withinZone = Number.isFinite(distMeters) && distMeters <= MAX_RESTAURANT_PICKUP_RADIUS_METERS;
     gateBar.className = 'pickup-gps-gate-bar gps-synced';
     gateText.textContent = withinZone
-      ? `✅ Live GPS Synced (${distLabel} from restaurant • Limit: ${maxOrders} order${maxOrders > 1 ? 's' : ''}) — Ready to accept & pick up!`
-      : `✅ Live GPS Synced (${distLabel} from restaurant • Limit: ${maxOrders} order${maxOrders > 1 ? 's' : ''}) — Accept an order & ride to Savera Paradise!`;
+      ? `✅ Live GPS Synced (${distLabel} away • Limit: ${maxOrders} active) — Ready to pick up`
+      : `✅ Live GPS Synced (${distLabel} away) — Ride within 3 km of restaurant to accept`;
     if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
   }
 
@@ -3266,6 +3266,7 @@ const initDeliveryApp = () => {
 
   function switchRiderTab(target) {
     if (!target) return;
+    stopRiderAlarm();
     activeTab = target;
     persistRiderTab(target);
     updateActiveTabUI();
@@ -3620,6 +3621,7 @@ const initDeliveryApp = () => {
   let isClaimingBag = false;
   async function startDeliveryByBagCode(rawCode) {
     if (isClaimingBag) return;
+    stopRiderAlarm();
 
     const inputBagCode = document.getElementById('input-bag-code');
     const code = String(rawCode || (inputBagCode ? inputBagCode.value : '')).trim().replace(/\D/g, '');
@@ -4022,7 +4024,7 @@ const initDeliveryApp = () => {
               <strong>${count} Order${count === 1 ? '' : 's'} Ready to Pick Up</strong>
             </div>
             <div class="kitchen-waiting-sub">
-              Review each order's distance and payout below, sync your live GPS within 3 km of the restaurant, and tap Pick Up Order on one order.
+              Packed &amp; waiting on counter. Tap "Accept &amp; Go to Restaurant" on any order below.
             </div>
           </div>
         </div>
