@@ -434,7 +434,7 @@ describe('EDGE CASES & DUAL-API PARITY BREAKING TEST SUITE', () => {
   });
 
   describe('7. Audited Backend & DataService Edge Cases', () => {
-    it('Cloudflare checkout rejects items with price < 10', async () => {
+    it('Cloudflare checkout rejects items with price < 1 and accepts valid ₹1 items', async () => {
       const req = new Request('https://saveraparadise.com/api/checkout', {
         method: 'POST',
         headers: {
@@ -442,13 +442,27 @@ describe('EDGE CASES & DUAL-API PARITY BREAKING TEST SUITE', () => {
           'cf-turnstile-response': '1x00000000000000000000AA'
         },
         body: JSON.stringify({
-          items: [{ id: 'dish-cheap', name: 'Free Water', price: 5, quantity: 1 }]
+          items: [{ id: 'dish-cheap', name: 'Free Water', price: 0, quantity: 1 }]
         })
       });
       const res = await cfCheckoutHandler({ request: req, env: mockEnv });
       assert.equal(res.status, 400);
       const data = await res.json();
       assert.match(data.error || data.message, /invalid price/i);
+
+      // Verify ₹1 test dish is accepted
+      const req1 = new Request('https://saveraparadise.com/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'cf-turnstile-response': '1x00000000000000000000AA'
+        },
+        body: JSON.stringify({
+          items: [{ id: 'dish-test-1', name: 'TEST', price: 1, quantity: 1 }]
+        })
+      });
+      const res1 = await cfCheckoutHandler({ request: req1, env: mockEnv });
+      assert.equal(res1.status, 200);
     });
 
     it('Cloudflare checkout blocks SAVERA20 on orders below 199 with default fallback settings', async () => {

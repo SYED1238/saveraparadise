@@ -280,8 +280,8 @@ export default async function handler(req, res) {
       unitPrice = Math.max(0, Number(item.price) || 0);
     }
 
-    if (unitPrice < 10) {
-      return res.status(400).json({ error: `Item '${item.name || 'Unknown'}' has an invalid price (must be at least ₹10)` });
+    if (unitPrice < 1) {
+      return res.status(400).json({ error: `Item '${item.name || 'Unknown'}' has an invalid price (must be at least ₹1)` });
     }
 
     const rawQty = Number(item.quantity);

@@ -308,14 +308,14 @@ export async function onRequest(context) {
           return jsonResponse({ error: `Item "${item.name || 'dish'}" price cannot be verified. Please retry in a moment.` }, 503, Object.fromEntries(corsHeaders.entries()));
         }
         const clientPrice = Number(item.price);
-        if (isNaN(clientPrice) || clientPrice < 10) {
+        if (isNaN(clientPrice) || clientPrice < 1) {
           return jsonResponse({ error: `Invalid price for item "${item.name || 'dish'}"` }, 400, Object.fromEntries(corsHeaders.entries()));
         }
         authoritativePrice = clientPrice;
       }
 
-      if (authoritativePrice < 10) {
-        return jsonResponse({ error: `Item "${item.name || 'dish'}" has an invalid price (must be at least ₹10)` }, 400, Object.fromEntries(corsHeaders.entries()));
+      if (authoritativePrice < 1) {
+        return jsonResponse({ error: `Item "${item.name || 'dish'}" has an invalid price (must be at least ₹1)` }, 400, Object.fromEntries(corsHeaders.entries()));
       }
 
       // Aggregate quantity check per dish

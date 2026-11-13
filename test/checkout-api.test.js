@@ -235,16 +235,25 @@ describe('Checkout API handler', () => {
     assert.match(res.data.error, /integer/i);
   });
 
-  // 15. Item price below ₹10 → 400
-  it('rejects item with price below ₹10 with 400', async () => {
+  // 15. Item price below ₹1 → 400
+  it('rejects item with price below ₹1 with 400 and accepts ₹1', async () => {
     const body = {
-      items: [{ id: '1', name: 'Cheap', price: 5, quantity: 1 }],
-      catalogDishes: [{ id: '1', name: 'Cheap', price: 5 }]
+      items: [{ id: '1', name: 'Cheap', price: 0, quantity: 1 }],
+      catalogDishes: [{ id: '1', name: 'Cheap', price: 0 }]
     };
     const { req, res } = postCheckout(body);
     await checkoutHandler(req, res);
     assert.equal(res.statusCode, 400);
     assert.match(res.data.error, /price/i);
+
+    // Verify ₹1 item is accepted
+    const body1 = {
+      items: [{ id: '1', name: 'TEST', price: 1, quantity: 1 }],
+      catalogDishes: [{ id: '1', name: 'TEST', price: 1 }]
+    };
+    const { req: req1, res: res1 } = postCheckout(body1);
+    await checkoutHandler(req1, res1);
+    assert.equal(res1.statusCode, 200);
   });
 
   // 16. Malformed item (null in items array) → 400
