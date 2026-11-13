@@ -1185,14 +1185,33 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
       'utf8'
     );
 
+    const adminManifestSrc = fs.readFileSync(
+      new URL('../android/app/src/admin/AndroidManifest.xml', import.meta.url),
+      'utf8'
+    );
+    const mainManifestSrc = fs.readFileSync(
+      new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url),
+      'utf8'
+    );
+
     assert.match(omsSrc, /Notification\.FLAG_INSISTENT/, 'Notification must set FLAG_INSISTENT');
     assert.match(omsSrc, /AudioAttributes\.USAGE_ALARM/, 'Native alarm MediaPlayer must use USAGE_ALARM');
+    assert.match(omsSrc, /AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE/, 'Must request exclusive transient audio focus to duck YouTube/media');
+    assert.match(omsSrc, /AudioTrack/, 'Must include zero-dependency procedural AudioTrack siren fallback');
     assert.match(omsSrc, /ALARM_AUTO_STOP_MS\s*=\s*3\s*\*\s*60\s*\*\s*1000L/, 'Must enforce 3-minute auto-stop safety timeout');
     assert.match(omsSrc, /ACTION_STOP_ALARM/, 'Must define and handle ACTION_STOP_ALARM');
     assert.match(omsSrc, /Stop Alarm/, 'Notification must include Stop Alarm action button');
     assert.match(omsSrc, /public static void stopNativeAlarm\(\)/, 'Must expose static stopNativeAlarm()');
+    assert.match(omsSrc, /public static void startNativeAlarm\(\)/, 'Must expose static startNativeAlarm()');
+    assert.match(omsSrc, /OrderMonitorReceiver/, 'onTaskRemoved must route restart through OrderMonitorReceiver');
+    assert.match(adminManifestSrc, /android:stopWithTask="false"/, 'OrderMonitorService must persist with stopWithTask=false');
+    assert.match(mainManifestSrc, /RECEIVE_BOOT_COMPLETED/, 'Main manifest must declare RECEIVE_BOOT_COMPLETED');
+    assert.match(mainManifestSrc, /OrderMonitorReceiver/, 'Main manifest must register OrderMonitorReceiver');
     assert.match(mainActivitySrc, /onResume\([\s\S]*?OrderMonitorService\.stopNativeAlarm\(\)/, 'MainActivity.onResume must call stopNativeAlarm()');
+    assert.match(mainActivitySrc, /setShowWhenLocked|FLAG_SHOW_WHEN_LOCKED/, 'MainActivity must support showing over lock screen on alarm');
     assert.match(webAppSrc, /@JavascriptInterface[\s\S]*?public void stopAlarm\(\)[\s\S]*?OrderMonitorService\.stopNativeAlarm\(\)/, 'WebAppInterface must expose @JavascriptInterface stopAlarm()');
+    assert.match(webAppSrc, /@JavascriptInterface[\s\S]*?public void startAlarm\(\)[\s\S]*?OrderMonitorService\.startNativeAlarm\(\)/, 'WebAppInterface must expose @JavascriptInterface startAlarm()');
     assert.match(adminSrc, /function stopKitchenAlarm[\s\S]*?window\.AndroidNative\.stopAlarm\(\)/, 'stopKitchenAlarm in admin.js must invoke window.AndroidNative.stopAlarm()');
+    assert.match(adminSrc, /function startKitchenAlarm[\s\S]*?window\.AndroidNative\.startAlarm\(\)/, 'startKitchenAlarm in admin.js must invoke window.AndroidNative.startAlarm()');
   });
 });

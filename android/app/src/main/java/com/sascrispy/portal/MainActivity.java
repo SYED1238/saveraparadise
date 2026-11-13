@@ -44,6 +44,17 @@ public class MainActivity extends AppCompatActivity {
         // Keep screen on for Kitchen Admin and Rider Navigation
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        // Turn screen on and show over lock screen on new order alarm
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        } else {
+            getWindow().addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            );
+        }
+
         progressBar = findViewById(R.id.progressBar);
         swipeRefresh = findViewById(R.id.swipeRefresh);
         webView = findViewById(R.id.webView);
@@ -54,6 +65,7 @@ public class MainActivity extends AppCompatActivity {
         // Kitchen tablet and Rider app run background OrderMonitorService
         if (shouldRunOrderMonitorService()) {
             startOrderMonitorService();
+            requestBatteryOptimizationExemption();
         }
 
         String targetUrl = getString(R.string.portal_url);
@@ -201,6 +213,20 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private void requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                    @SuppressLint("BatteryLife")
+                    Intent intent = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                    intent.setData(Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
+                }
+            } catch (Exception ignored) {}
         }
     }
 

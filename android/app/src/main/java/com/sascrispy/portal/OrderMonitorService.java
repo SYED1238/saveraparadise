@@ -11,9 +11,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
+import android.content.res.AssetFileDescriptor;
 import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.media.AudioTrack;
 import android.media.MediaPlayer;
+import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -23,6 +28,7 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.provider.Settings;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -35,8 +41,10 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -51,17 +59,28 @@ public class OrderMonitorService extends Service {
 
     private static final String TAG = "OrderMonitorService";
     public static final String CHANNEL_ID_SERVICE = "sas_service_channel";
-    public static final String CHANNEL_ID_ALERTS = "sas_orders_channel_v2";
+    public static final String CHANNEL_ID_ALERTS = "sas_orders_channel_v3";
     public static final String ACTION_STOP_ALARM = "com.sascrispy.portal.ACTION_STOP_ALARM";
     private static final int SERVICE_NOTIFICATION_ID = 1001;
     private static final long ALARM_AUTO_STOP_MS = 3 * 60 * 1000L;
 
     private static final Object alarmLock = new Object();
     private static MediaPlayer alarmPlayer = null;
+    private static Ringtone activeRingtone = null;
     private static Vibrator activeVibrator = null;
     private static Handler alarmTimeoutHandler = null;
     private static Runnable alarmTimeoutRunnable = null;
     private static volatile int lastAlertNotifId = -1;
+
+    // Audio Focus & Alarm Volume Management (Ducks/pauses background media e.g. YouTube)
+    private static AudioManager audioManager = null;
+    private static AudioFocusRequest audioFocusRequest = null;
+    private static int originalAlarmVolume = -1;
+
+    // Procedural AudioTrack Siren Synthesizer (Zero-dependency fallback if device ringtones fail)
+    private static volatile boolean isSirenRunning = false;
+    private static Thread sirenThread = null;
+    private static AudioTrack sirenAudioTrack = null;
 
     private static final String CLOUDFLARE_ENDPOINT = 
         "https://saveraparadise.foodbliz.in/api/order-action?action=kitchen_poll";
@@ -73,6 +92,13 @@ public class OrderMonitorService extends Service {
 
     public static void setAppInForeground(boolean inForeground) {
         isAppInForeground = inForeground;
+    }
+
+    public static void startNativeAlarm() {
+        OrderMonitorService instance = activeInstance;
+        if (instance != null) {
+            instance.startNativeAlarmLoop();
+        }
     }
 
     private volatile boolean isRunning = false;
@@ -133,6 +159,7 @@ public class OrderMonitorService extends Service {
 
         startForegroundNotification();
         startPolling();
+        scheduleKeepAliveWatchdog();
     }
 
     private void createNotificationChannels() {
@@ -152,7 +179,7 @@ public class OrderMonitorService extends Service {
             serviceChannel.setShowBadge(false);
             manager.createNotificationChannel(serviceChannel);
 
-            // 2. High-Priority Channel for Heads-Up Order Popup Banner
+            // 2. High-Priority Channel for Heads-Up Order Popup Banner & Continuous Loud Siren
             NotificationChannel alertChannel = new NotificationChannel(
                 CHANNEL_ID_ALERTS,
                 "Savera Paradise Orders & Critical Alerts",
@@ -161,17 +188,31 @@ public class OrderMonitorService extends Service {
             alertChannel.setDescription("Loud incoming order sirens and dispatch alerts");
             alertChannel.enableLights(true);
             alertChannel.enableVibration(true);
-            alertChannel.setVibrationPattern(new long[]{0, 400, 200, 400, 200, 600});
+            alertChannel.setVibrationPattern(new long[]{0, 500, 250, 500, 250, 700});
             alertChannel.setLockscreenVisibility(NotificationCompat.VISIBILITY_PUBLIC);
             alertChannel.setShowBadge(true);
+            alertChannel.setBypassDnd(true);
 
-            Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (soundUri == null) {
+                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            }
+            if (soundUri == null) {
+                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
+
             AudioAttributes audioAttributes = new AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
                 .build();
             alertChannel.setSound(soundUri, audioAttributes);
             manager.createNotificationChannel(alertChannel);
+
+            // Clean up legacy channel v2 so system doesn't retain old notification-level config
+            try {
+                manager.deleteNotificationChannel("sas_orders_channel_v2");
+            } catch (Exception ignored) {}
         }
     }
 
@@ -511,6 +552,224 @@ public class OrderMonitorService extends Service {
         }
     }
 
+    private void acquireAudioFocus() {
+        try {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build();
+                    audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                        .setAudioAttributes(playbackAttributes)
+                        .setAcceptsDelayedFocusGain(false)
+                        .setOnAudioFocusChangeListener(focusChange -> Log.d(TAG, "Audio focus changed: " + focusChange))
+                        .build();
+                    audioManager.requestAudioFocus(audioFocusRequest);
+                } else {
+                    audioManager.requestAudioFocus(
+                        null,
+                        AudioManager.STREAM_ALARM,
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
+                    );
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to acquire audio focus: " + e.getMessage());
+        }
+    }
+
+    private static void releaseAudioFocus() {
+        try {
+            if (audioManager != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
+                    audioManager.abandonAudioFocusRequest(audioFocusRequest);
+                    audioFocusRequest = null;
+                } else {
+                    audioManager.abandonAudioFocus(null);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to release audio focus: " + e.getMessage());
+        }
+    }
+
+    private void elevateAlarmVolumeIfNeeded() {
+        try {
+            if (audioManager == null) {
+                audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            }
+            if (audioManager != null) {
+                int maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+                int currentVol = audioManager.getStreamVolume(AudioManager.STREAM_ALARM);
+                int targetVol = Math.max((int) (maxVol * 0.8), 1);
+                if (currentVol < targetVol) {
+                    originalAlarmVolume = currentVol;
+                    audioManager.setStreamVolume(AudioManager.STREAM_ALARM, targetVol, 0);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Could not adjust alarm stream volume: " + e.getMessage());
+        }
+    }
+
+    private static void restoreAlarmVolume() {
+        try {
+            if (originalAlarmVolume != -1 && audioManager != null) {
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, originalAlarmVolume, 0);
+            }
+        } catch (Exception ignored) {}
+        originalAlarmVolume = -1;
+    }
+
+    private List<Uri> getAlarmCandidateUris() {
+        List<Uri> uris = new ArrayList<>();
+        Context ctx = getApplicationContext();
+
+        // 1. User's actual default Alarm sound
+        try {
+            Uri u = RingtoneManager.getActualDefaultRingtoneUri(ctx, RingtoneManager.TYPE_ALARM);
+            if (u != null) uris.add(u);
+        } catch (Exception ignored) {}
+
+        // 2. Default Alarm URI constant
+        try {
+            Uri u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (u != null && !uris.contains(u)) uris.add(u);
+        } catch (Exception ignored) {}
+
+        // 3. System Alarm Alert Settings URI
+        try {
+            Uri u = Settings.System.DEFAULT_ALARM_ALERT_URI;
+            if (u != null && !uris.contains(u)) uris.add(u);
+        } catch (Exception ignored) {}
+
+        // 4. User's actual default Ringtone sound
+        try {
+            Uri u = RingtoneManager.getActualDefaultRingtoneUri(ctx, RingtoneManager.TYPE_RINGTONE);
+            if (u != null && !uris.contains(u)) uris.add(u);
+        } catch (Exception ignored) {}
+
+        // 5. Default Ringtone URI constant
+        try {
+            Uri u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            if (u != null && !uris.contains(u)) uris.add(u);
+        } catch (Exception ignored) {}
+
+        // 6. User's actual default Notification sound
+        try {
+            Uri u = RingtoneManager.getActualDefaultRingtoneUri(ctx, RingtoneManager.TYPE_NOTIFICATION);
+            if (u != null && !uris.contains(u)) uris.add(u);
+        } catch (Exception ignored) {}
+
+        // 7. Default Notification URI constant
+        try {
+            Uri u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            if (u != null && !uris.contains(u)) uris.add(u);
+        } catch (Exception ignored) {}
+
+        return uris;
+    }
+
+    private static void startProceduralSiren() {
+        synchronized (alarmLock) {
+            if (isSirenRunning) return;
+            isSirenRunning = true;
+
+            sirenThread = new Thread(() -> {
+                int sampleRate = 44100;
+                int bufferSize = AudioTrack.getMinBufferSize(
+                    sampleRate,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                );
+                if (bufferSize <= 0) bufferSize = sampleRate;
+
+                AudioTrack track = null;
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        track = new AudioTrack(
+                            new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ALARM)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
+                                .build(),
+                            new AudioFormat.Builder()
+                                .setSampleRate(sampleRate)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .build(),
+                            bufferSize,
+                            AudioTrack.MODE_STREAM,
+                            AudioManager.AUDIO_SESSION_ID_GENERATE
+                        );
+                    } else {
+                        track = new AudioTrack(
+                            AudioManager.STREAM_ALARM,
+                            sampleRate,
+                            AudioFormat.CHANNEL_OUT_MONO,
+                            AudioFormat.ENCODING_PCM_16BIT,
+                            bufferSize,
+                            AudioTrack.MODE_STREAM
+                        );
+                    }
+
+                    sirenAudioTrack = track;
+                    track.play();
+
+                    double[] freqs = new double[]{ 880.0, 1174.66, 1760.0 };
+                    int noteSamples = (int) (sampleRate * 0.25); // 250ms per tone
+                    short[] buffer = new short[noteSamples];
+
+                    while (isSirenRunning) {
+                        for (double freq : freqs) {
+                            if (!isSirenRunning) break;
+                            for (int i = 0; i < noteSamples; i++) {
+                                double angle = 2.0 * Math.PI * i * freq / sampleRate;
+                                buffer[i] = (short) (Math.sin(angle) * 32767 * 0.85);
+                            }
+                            track.write(buffer, 0, noteSamples);
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "Procedural siren execution error: " + e.getMessage());
+                } finally {
+                    if (track != null) {
+                        try {
+                            track.stop();
+                        } catch (Exception ignored) {}
+                        try {
+                            track.release();
+                        } catch (Exception ignored) {}
+                    }
+                    sirenAudioTrack = null;
+                }
+            }, "Savera-ProceduralSirenThread");
+
+            sirenThread.start();
+        }
+    }
+
+    private static void stopProceduralSiren() {
+        isSirenRunning = false;
+        if (sirenThread != null) {
+            try {
+                sirenThread.interrupt();
+            } catch (Exception ignored) {}
+            sirenThread = null;
+        }
+        if (sirenAudioTrack != null) {
+            try {
+                sirenAudioTrack.stop();
+            } catch (Exception ignored) {}
+            try {
+                sirenAudioTrack.release();
+            } catch (Exception ignored) {}
+            sirenAudioTrack = null;
+        }
+    }
+
     public static void stopNativeAlarm() {
         synchronized (alarmLock) {
             if (alarmTimeoutHandler != null && alarmTimeoutRunnable != null) {
@@ -530,12 +789,23 @@ public class OrderMonitorService extends Service {
                 } catch (Exception ignored) {}
                 alarmPlayer = null;
             }
+            if (activeRingtone != null) {
+                try {
+                    if (activeRingtone.isPlaying()) {
+                        activeRingtone.stop();
+                    }
+                } catch (Exception ignored) {}
+                activeRingtone = null;
+            }
+            stopProceduralSiren();
             if (activeVibrator != null) {
                 try {
                     activeVibrator.cancel();
                 } catch (Exception ignored) {}
                 activeVibrator = null;
             }
+            restoreAlarmVolume();
+            releaseAudioFocus();
         }
 
         OrderMonitorService instance = activeInstance;
@@ -580,49 +850,115 @@ public class OrderMonitorService extends Service {
                 } catch (Exception ignored) {}
                 alarmPlayer = null;
             }
+            if (activeRingtone != null) {
+                try {
+                    if (activeRingtone.isPlaying()) activeRingtone.stop();
+                } catch (Exception ignored) {}
+                activeRingtone = null;
+            }
+            stopProceduralSiren();
 
-            try {
-                Uri alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-                if (alarmUri == null) {
-                    alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-                }
-                if (alarmUri == null) {
-                    alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-                }
-                if (alarmUri != null) {
-                    MediaPlayer player = new MediaPlayer();
-                    try {
-                        player.setDataSource(getApplicationContext(), alarmUri);
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                            player.setAudioAttributes(new AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_ALARM)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                .build());
-                        } else {
-                            player.setAudioStreamType(AudioManager.STREAM_ALARM);
-                        }
-                        player.setLooping(true);
-                        player.prepare();
-                        player.start();
-                        alarmPlayer = player;
-                    } catch (Exception innerEx) {
-                        try {
-                            player.release();
-                        } catch (Exception ignored) {}
-                        Log.w(TAG, "Failed to start native alarm MediaPlayer: " + innerEx.getMessage());
+            // 1. Duck/pause YouTube or background music and claim exclusive audio
+            acquireAudioFocus();
+
+            // 2. Safeguard stream volume so alarm is loudly audible
+            elevateAlarmVolumeIfNeeded();
+
+            // 3. Multi-Tier Audio Playback
+            boolean audioStarted = false;
+            List<Uri> candidates = getAlarmCandidateUris();
+
+            // Tier 1: MediaPlayer with DataSource resolution
+            for (Uri uri : candidates) {
+                if (uri == null) continue;
+                MediaPlayer mp = new MediaPlayer();
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        mp.setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
+                            .build());
+                    } else {
+                        mp.setAudioStreamType(AudioManager.STREAM_ALARM);
                     }
+
+                    try {
+                        AssetFileDescriptor afd = getContentResolver().openAssetFileDescriptor(uri, "r");
+                        if (afd != null) {
+                            mp.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
+                            afd.close();
+                        } else {
+                            mp.setDataSource(getApplicationContext(), uri);
+                        }
+                    } catch (Exception e) {
+                        mp.setDataSource(getApplicationContext(), uri);
+                    }
+
+                    mp.setLooping(true);
+                    mp.prepare();
+                    mp.start();
+                    alarmPlayer = mp;
+                    audioStarted = true;
+                    Log.i(TAG, "Native alarm MediaPlayer successfully started with URI: " + uri);
+                    break;
+                } catch (Exception e) {
+                    try {
+                        mp.release();
+                    } catch (Exception ignored) {}
+                    Log.w(TAG, "MediaPlayer candidate failed for " + uri + ": " + e.getMessage());
                 }
-            } catch (Exception e) {
-                Log.w(TAG, "Alarm URI lookup failed: " + e.getMessage());
             }
 
+            // Tier 2: System Ringtone object (Bypasses Samsung One UI file sandbox restrictions)
+            if (!audioStarted) {
+                for (Uri uri : candidates) {
+                    if (uri == null) continue;
+                    try {
+                        Ringtone ringtone = RingtoneManager.getRingtone(getApplicationContext(), uri);
+                        if (ringtone != null) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                ringtone.setAudioAttributes(new AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_ALARM)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .build());
+                            } else {
+                                ringtone.setStreamType(AudioManager.STREAM_ALARM);
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                ringtone.setLooping(true);
+                            }
+                            ringtone.play();
+                            activeRingtone = ringtone;
+                            audioStarted = true;
+                            Log.i(TAG, "Native alarm Ringtone successfully started with URI: " + uri);
+                            break;
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, "Ringtone candidate failed for " + uri + ": " + e.getMessage());
+                    }
+                }
+            }
+
+            // Tier 3: Zero-dependency Procedural Kitchen Siren via AudioTrack
+            if (!audioStarted) {
+                Log.i(TAG, "All system ringtones failed. Starting procedural kitchen siren AudioTrack...");
+                startProceduralSiren();
+                audioStarted = true;
+            }
+
+            // Continuous hardware vibration pattern
             try {
                 Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                 if (v != null && v.hasVibrator()) {
                     activeVibrator = v;
-                    long[] pattern = new long[]{0, 500, 300, 500, 300, 700};
+                    long[] pattern = new long[]{0, 500, 250, 500, 250, 700};
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        v.vibrate(VibrationEffect.createWaveform(pattern, 0));
+                        AudioAttributes vibeAttrs = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build();
+                        v.vibrate(VibrationEffect.createWaveform(pattern, 0), vibeAttrs);
                     } else {
                         v.vibrate(pattern, 0);
                     }
@@ -631,6 +967,7 @@ public class OrderMonitorService extends Service {
                 Log.w(TAG, "Repeating vibrator start failed: " + e.getMessage());
             }
 
+            // Auto-stop safety timeout (3 minutes)
             try {
                 if (alarmTimeoutHandler == null) {
                     alarmTimeoutHandler = new Handler(Looper.getMainLooper());
@@ -668,6 +1005,9 @@ public class OrderMonitorService extends Service {
 
             Uri soundUri = RingtoneManager.getDefaultUri(isOwnerApp ? RingtoneManager.TYPE_NOTIFICATION : RingtoneManager.TYPE_ALARM);
             if (soundUri == null) {
+                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            }
+            if (soundUri == null) {
                 soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
             }
 
@@ -676,13 +1016,14 @@ public class OrderMonitorService extends Service {
                 .setContentTitle(title)
                 .setContentText(message)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setDefaults(NotificationCompat.DEFAULT_ALL)
-                .setSound(soundUri)
-                .setVibrate(new long[]{0, 400, 200, 400, 200, 600})
+                .setDefaults(NotificationCompat.DEFAULT_LIGHTS)
+                .setSound(soundUri, AudioManager.STREAM_ALARM)
+                .setVibrate(new long[]{0, 500, 250, 500, 250, 700})
                 .setAutoCancel(true)
+                .setFullScreenIntent(pendingIntent, true)
                 .setDeleteIntent(stopPendingIntent)
                 .setContentIntent(pendingIntent);
 
@@ -698,6 +1039,9 @@ public class OrderMonitorService extends Service {
                 startNativeAlarmLoop();
             }
         } catch (Exception e) {
+            Log.e(TAG, "Error firing heads-up notification", e);
+        }
+    }
             Log.e(TAG, "Error firing heads-up notification", e);
         }
     }
@@ -721,29 +1065,65 @@ public class OrderMonitorService extends Service {
         return START_STICKY; // Tell Android to auto-recreate service if killed
     }
 
-    @Override
-    public void onTaskRemoved(Intent rootIntent) {
-        // Re-schedule service restart when user swipes away app from recent apps
+    private void scheduleKeepAliveWatchdog() {
         try {
-            Intent restartServiceIntent = new Intent(getApplicationContext(), OrderMonitorService.class);
-            restartServiceIntent.setPackage(getPackageName());
-            int pendingFlags = PendingIntent.FLAG_ONE_SHOT;
+            Intent watchdogIntent = new Intent(getApplicationContext(), OrderMonitorReceiver.class);
+            watchdogIntent.setAction(OrderMonitorReceiver.ACTION_RESTART_MONITOR);
+            int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
             }
-            PendingIntent restartPendingIntent = PendingIntent.getService(
-                getApplicationContext(), 
-                1002, 
-                restartServiceIntent, 
+            PendingIntent watchdogPending = PendingIntent.getBroadcast(
+                getApplicationContext(),
+                1003,
+                watchdogIntent,
+                pendingFlags
+            );
+            AlarmManager am = (AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
+            if (am != null) {
+                am.setInexactRepeating(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + 15 * 60 * 1000L,
+                    15 * 60 * 1000L,
+                    watchdogPending
+                );
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Watchdog alarm scheduling failed: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // Re-schedule service restart via OrderMonitorReceiver when user swipes away app from recents
+        try {
+            Intent restartBroadcast = new Intent(getApplicationContext(), OrderMonitorReceiver.class);
+            restartBroadcast.setAction(OrderMonitorReceiver.ACTION_RESTART_MONITOR);
+            int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent restartPending = PendingIntent.getBroadcast(
+                getApplicationContext(),
+                1002,
+                restartBroadcast,
                 pendingFlags
             );
             AlarmManager alarmService = (AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
             if (alarmService != null) {
-                alarmService.set(
-                    AlarmManager.ELAPSED_REALTIME,
-                    SystemClock.elapsedRealtime() + 1500,
-                    restartPendingIntent
-                );
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmService.setExactAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        SystemClock.elapsedRealtime() + 1500,
+                        restartPending
+                    );
+                } else {
+                    alarmService.set(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        SystemClock.elapsedRealtime() + 1500,
+                        restartPending
+                    );
+                }
             }
         } catch (Exception e) {
             Log.w(TAG, "Error scheduling task restart: " + e.getMessage());

@@ -3415,6 +3415,15 @@ const initAdminApp = () => {
     // Flash browser tab title via centralized notificationService
     flashTabTitle(`🚨 NEW ORDER ${latestOrder.id || ''}!`);
 
+    // Trigger native Android background alarm loop if running inside Android APK
+    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
+      try {
+        window.AndroidNative.startAlarm();
+      } catch (e) {
+        console.warn('[Admin] Native startAlarm failed:', e);
+      }
+    }
+
     // Play first chime burst immediately
     playKitchenChime();
 

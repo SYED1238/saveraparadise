@@ -21,7 +21,7 @@ import androidx.core.content.ContextCompat;
 public class WebAppInterface {
 
     private final Context context;
-    public static final String CHANNEL_ID_ORDERS = "sas_orders_channel_v2";
+    public static final String CHANNEL_ID_ORDERS = "sas_orders_channel_v3";
     public static final String CHANNEL_NAME_ORDERS = "Savera Paradise Orders & Critical Alerts";
 
     public WebAppInterface(Context context) {
@@ -39,20 +39,28 @@ public class WebAppInterface {
             channel.setDescription("Critical kitchen order alarms and delivery partner dispatch alerts");
             channel.enableLights(true);
             channel.enableVibration(true);
-            channel.setVibrationPattern(new long[]{0, 300, 150, 300, 150, 450});
+            channel.setVibrationPattern(new long[]{0, 500, 250, 500, 250, 700});
             channel.setLockscreenVisibility(NotificationCompat.VISIBILITY_PUBLIC);
             channel.setShowBadge(true);
+            channel.setBypassDnd(true);
 
-            Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (defaultSoundUri == null) {
+                defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
             AudioAttributes audioAttributes = new AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
                 .build();
             channel.setSound(defaultSoundUri, audioAttributes);
 
             NotificationManager manager = context.getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);
+                try {
+                    manager.deleteNotificationChannel("sas_orders_channel_v2");
+                } catch (Exception ignored) {}
             }
         }
     }
@@ -100,9 +108,21 @@ public class WebAppInterface {
             if (v != null && v.hasVibrator()) {
                 v.vibrate(new long[]{0, 350, 200, 350}, -1);
             }
+
+            // If kitchen order alert, also trigger native loud continuous siren loop
+            if ("kitchen_alarm".equals(soundType) || "new_order".equals(soundType) || (tag != null && tag.startsWith("admin-order-"))) {
+                OrderMonitorService.startNativeAlarm();
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @JavascriptInterface
+    public void startAlarm() {
+        try {
+            OrderMonitorService.startNativeAlarm();
+        } catch (Exception ignored) {}
     }
 
     @JavascriptInterface
