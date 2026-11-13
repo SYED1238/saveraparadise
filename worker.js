@@ -15,6 +15,7 @@ import { onRequest as r2ImageHandler } from './functions/api/r2-image.js';
 import { onRequest as r2ListHandler } from './functions/api/r2-list.js';
 import { onRequest as r2DeleteHandler } from './functions/api/r2-delete.js';
 import { onRequest as r2VideoHandler } from './functions/api/r2-video.js';
+import { onRequest as r2AudioHandler } from './functions/api/r2-audio.js';
 import { onRequest as adminStoreHandler } from './functions/api/admin-store.js';
 import { onRequest as orderActionHandler } from './functions/api/order-action.js';
 
@@ -32,7 +33,8 @@ const ROUTES = {
   '/api/r2-image': r2ImageHandler,
   '/api/r2-list': r2ListHandler,
   '/api/r2-delete': r2DeleteHandler,
-  '/api/r2-video': r2VideoHandler
+  '/api/r2-video': r2VideoHandler,
+  '/api/r2-audio': r2AudioHandler
 };
 
 // Clean URL Aliases for Static Assets (Cloudflare Workers Static Assets does not evaluate _redirects)

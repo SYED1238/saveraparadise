@@ -16,7 +16,11 @@ import {
   sendSystemNotification,
   flashTabTitle,
   stopFlashingTabTitle,
-  showSamsungToast
+  showSamsungToast,
+  getKitchenAlarmSoundMode,
+  setKitchenAlarmSoundMode,
+  toggleKitchenAlarmSoundMode,
+  KITCHEN_ALARM_MODES
 } from '../notificationService.js';
 
 test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', async (t) => {
@@ -1020,6 +1024,28 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
     assert.doesNotMatch(adminSrc, /let titleFlashInterval/, 'admin.js must not declare competing local titleFlashInterval');
     assert.match(adminSrc, /playNotificationSound\(['"]kitchen_alarm['"]\)/, 'playKitchenChime must delegate to playNotificationSound');
     assert.match(adminSrc, /stopFlashingTabTitle\(\)/, 'stopKitchenAlarm must call centralized stopFlashingTabTitle');
+  });
+
+  await t.test('21b. kitchen alarm sound mode toggles between custom R2 audio and classic chime with instant revertability', () => {
+    const adminHtml = fs.readFileSync(new URL('../admin.html', import.meta.url), 'utf8');
+    const adminSrc = fs.readFileSync(new URL('../admin.js', import.meta.url), 'utf8');
+
+    assert.match(adminHtml, /id="btn-admin-alarm-toggle"/, 'admin.html must contain alarm mode switch button');
+    assert.match(adminHtml, /id="alarm-toggle-icon"/, 'admin.html must contain alarm mode switch icon');
+    assert.match(adminSrc, /toggleKitchenAlarmSoundMode/, 'admin.js must wire toggleKitchenAlarmSoundMode');
+    assert.match(adminSrc, /startKitchenAlarmAudio/, 'admin.js must wire startKitchenAlarmAudio with resilient fallback');
+
+    // Test toggle logic
+    setKitchenAlarmSoundMode(KITCHEN_ALARM_MODES.R2_CUSTOM);
+    assert.strictEqual(getKitchenAlarmSoundMode(), KITCHEN_ALARM_MODES.R2_CUSTOM);
+
+    const toggled = toggleKitchenAlarmSoundMode();
+    assert.strictEqual(toggled, KITCHEN_ALARM_MODES.CLASSIC_CHIME);
+    assert.strictEqual(getKitchenAlarmSoundMode(), KITCHEN_ALARM_MODES.CLASSIC_CHIME);
+
+    // Revert back
+    const reverted = setKitchenAlarmSoundMode(KITCHEN_ALARM_MODES.R2_CUSTOM);
+    assert.strictEqual(reverted, KITCHEN_ALARM_MODES.R2_CUSTOM);
   });
 
   await t.test('22. dataService.js listens for cross-device cash_handover_requested broadcasts and sync transitions', () => {

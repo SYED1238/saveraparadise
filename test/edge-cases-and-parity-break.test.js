@@ -527,12 +527,12 @@ describe('EDGE CASES & DUAL-API PARITY BREAKING TEST SUITE', () => {
     });
 
     it('admin-store save_rider maps camelCase upiVpa and bankAccountNo', async () => {
-      const adminToken = createAdminToken(undefined, 'admin', mockEnv);
+      const ownerToken = createAdminToken(undefined, 'owner', mockEnv);
       const req = new Request('https://saveraparadise.com/api/admin-store', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${adminToken}`
+          'Authorization': `Bearer ${ownerToken}`
         },
         body: JSON.stringify({
           action: 'save_rider',

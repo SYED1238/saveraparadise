@@ -51,6 +51,21 @@ function sanitizeDishFields(input) {
   return clean;
 }
 
+const ALLOWED_CATEGORY_FIELDS = [
+  'id', 'name', 'emoji', 'slug', 'image', 'created_at'
+];
+
+function sanitizeCategoryFields(input) {
+  if (!input || typeof input !== 'object') return {};
+  const clean = {};
+  for (const key of ALLOWED_CATEGORY_FIELDS) {
+    if (input[key] !== undefined) {
+      clean[key] = input[key];
+    }
+  }
+  return clean;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
@@ -85,14 +100,24 @@ export default async function handler(req, res) {
 
   const userRole = auth.payload?.role;
 
-  // Role Gate: Clearing orders requires Executive Owner session; saving store settings requires Staff or Owner session
-  if (action === 'clear_orders' && userRole !== 'owner') {
+  // Role Gate: Rider mutations and clearing orders strictly require Executive Owner session
+  const ownerOnlyActions = [
+    'save_rider',
+    'delete_rider',
+    'toggle_rider_status',
+    'clear_orders',
+    'reset_business_data',
+    'reset_defaults',
+    'settle_rider_cash',
+    'record_rider_payout'
+  ];
+  if (ownerOnlyActions.includes(action) && userRole !== 'owner') {
     return res.status(403).json({ error: `Forbidden: Owner role required for ${action}` });
   }
   if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
     return res.status(403).json({ error: `Forbidden: Staff or Owner role required for ${action}` });
   }
-  if (['add_dish', 'update_dish', 'toggle_stock', 'save_dish', 'delete_dish', 'add_category', 'update_category', 'save_category', 'delete_category', 'save_category_images', 'delete_rider', 'toggle_rider_status', 'save_rider'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
+  if (['add_dish', 'update_dish', 'toggle_stock', 'save_dish', 'delete_dish', 'add_category', 'update_category', 'save_category', 'delete_category', 'save_category_images'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
     return res.status(403).json({ error: `Forbidden: Staff or Owner role required for ${action}` });
   }
 
@@ -112,7 +137,12 @@ export default async function handler(req, res) {
       ];
 
       if (action === 'list_riders') {
-        return res.status(200).json({ success: true, riders: testRiders });
+        const safeRiders = testRiders.map(r => {
+          if (userRole === 'owner') return r;
+          const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
+          return { ...rest, pin_masked: true };
+        });
+        return res.status(200).json({ success: true, riders: safeRiders });
       }
       if (action === 'save_rider') {
         const rawRider = body.rider;
@@ -277,7 +307,14 @@ export default async function handler(req, res) {
         if (!category || !category.id || !category.name) {
           return res.status(400).json({ error: 'Valid category payload (id, name) is required' });
         }
-        const { data, error } = await sb.from('categories').insert([category]).select();
+        const catPayload = sanitizeCategoryFields(category);
+        let { data, error } = await sb.from('categories').insert([catPayload]).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
+          delete catPayload.image;
+          const retry = await sb.from('categories').insert([catPayload]).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) throw error;
         return res.status(200).json({ success: true, data });
       }
@@ -287,11 +324,23 @@ export default async function handler(req, res) {
         if (!id || !updates || typeof updates !== 'object') {
           return res.status(400).json({ error: 'Category ID and updates payload are required' });
         }
-        let { data, error } = await sb.from('categories').update(updates).eq('id', id).select();
+        let cleanUpdates = sanitizeCategoryFields(updates);
+        delete cleanUpdates.id;
+        let { data, error } = await sb.from('categories').update(cleanUpdates).eq('id', id).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
+          delete cleanUpdates.image;
+          const retry = await sb.from('categories').update(cleanUpdates).eq('id', id).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) throw error;
         if (!data || data.length === 0) {
-          const upsertPayload = { id, ...updates };
-          const upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          const upsertPayload = { id, ...cleanUpdates };
+          let upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('image'))) {
+            delete upsertPayload.image;
+            upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          }
           if (upsertRes.error) throw upsertRes.error;
           data = upsertRes.data;
         }
@@ -368,7 +417,12 @@ export default async function handler(req, res) {
       case 'list_riders': {
         const now = Date.now();
         if (ridersListCache && (now - ridersListCachedAt < RIDERS_CACHE_TTL_MS)) {
-          return res.status(200).json({ success: true, riders: ridersListCache });
+          const safeRiders = ridersListCache.map(r => {
+            if (userRole === 'owner') return r;
+            const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
+            return { ...rest, pin_masked: true };
+          });
+          return res.status(200).json({ success: true, riders: safeRiders });
         }
         const { data, error } = await sb
           .from('riders')
@@ -377,7 +431,12 @@ export default async function handler(req, res) {
         if (error) throw error;
         ridersListCache = data || [];
         ridersListCachedAt = now;
-        return res.status(200).json({ success: true, riders: ridersListCache });
+        const safeRiders = ridersListCache.map(r => {
+          if (userRole === 'owner') return r;
+          const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
+          return { ...rest, pin_masked: true };
+        });
+        return res.status(200).json({ success: true, riders: safeRiders });
       }
 
       case 'save_rider': {

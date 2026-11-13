@@ -995,3 +995,97 @@ if (typeof window !== 'undefined') {
   window.showSamsungToast = showSamsungToast;
   window.showToast = (msg, type = 'info', opts = {}) => showSamsungToast(msg, type, opts);
 }
+
+
+// ============================================================================
+// KITCHEN ORDER ALARM SOUND ENGINE (CUSTOM R2 AUDIO VS CLASSIC CHIME)
+// ============================================================================
+export const KITCHEN_ALARM_MODES = {
+  R2_CUSTOM: 'r2_custom',
+  CLASSIC_CHIME: 'classic_chime'
+};
+
+const KITCHEN_ALARM_MODE_KEY = 'quickbite_kitchen_alarm_sound_mode';
+export const DEFAULT_KITCHEN_ALARM_URL = '/api/r2-audio';
+
+let activeKitchenAudio = null;
+let currentSoundMode = null;
+
+export function getKitchenAlarmSoundMode() {
+  if (currentSoundMode !== null) return currentSoundMode;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const mode = localStorage.getItem(KITCHEN_ALARM_MODE_KEY);
+      if (mode === KITCHEN_ALARM_MODES.CLASSIC_CHIME || mode === KITCHEN_ALARM_MODES.R2_CUSTOM) {
+        currentSoundMode = mode;
+        return mode;
+      }
+    }
+  } catch {}
+  return KITCHEN_ALARM_MODES.R2_CUSTOM;
+}
+
+export function setKitchenAlarmSoundMode(mode) {
+  const targetMode = mode === KITCHEN_ALARM_MODES.CLASSIC_CHIME
+    ? KITCHEN_ALARM_MODES.CLASSIC_CHIME
+    : KITCHEN_ALARM_MODES.R2_CUSTOM;
+  currentSoundMode = targetMode;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(KITCHEN_ALARM_MODE_KEY, targetMode);
+    }
+  } catch {}
+  return targetMode;
+}
+
+export function toggleKitchenAlarmSoundMode() {
+  const current = getKitchenAlarmSoundMode();
+  const next = current === KITCHEN_ALARM_MODES.R2_CUSTOM
+    ? KITCHEN_ALARM_MODES.CLASSIC_CHIME
+    : KITCHEN_ALARM_MODES.R2_CUSTOM;
+  return setKitchenAlarmSoundMode(next);
+}
+
+export function getKitchenAlarmAudio() {
+  if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
+  if (!activeKitchenAudio) {
+    activeKitchenAudio = new Audio(DEFAULT_KITCHEN_ALARM_URL);
+    activeKitchenAudio.loop = true;
+    activeKitchenAudio.preload = 'auto';
+  }
+  return activeKitchenAudio;
+}
+
+export async function startKitchenAlarmAudio({ onFallback = null } = {}) {
+  const mode = getKitchenAlarmSoundMode();
+  if (mode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
+    if (typeof onFallback === 'function') onFallback();
+    return KITCHEN_ALARM_MODES.CLASSIC_CHIME;
+  }
+
+  try {
+    const audio = getKitchenAlarmAudio();
+    if (!audio) throw new Error('Audio element not supported');
+    audio.currentTime = 0;
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      await playPromise;
+    }
+    return KITCHEN_ALARM_MODES.R2_CUSTOM;
+  } catch (err) {
+    console.warn('[NotificationService] Custom R2 alarm playback failed, falling back to classic chime:', err);
+    if (typeof onFallback === 'function') onFallback();
+    return 'fallback_chime';
+  }
+}
+
+export function stopKitchenAlarmAudio() {
+  try {
+    if (activeKitchenAudio) {
+      activeKitchenAudio.pause();
+      activeKitchenAudio.currentTime = 0;
+    }
+  } catch (err) {
+    console.warn('[NotificationService] Error stopping kitchen alarm audio:', err);
+  }
+}

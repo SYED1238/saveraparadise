@@ -208,6 +208,11 @@
           <span id="wakelock-status-text" class="sr-only" style="display: none;">Screen Normal</span>
         </button>
 
+        <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-alarm-toggle" title="Switch Kitchen Alarm Sound (Funk Criminal / Classic Chime)" aria-label="Switch Alarm Sound">
+          <i class="fa-solid fa-music" id="alarm-toggle-icon"></i>
+          <span id="alarm-toggle-label" class="sr-only" style="display: none;">Sound: Funk Criminal</span>
+        </button>
+
         <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-sound-test" title="Test Kitchen Alarm Sound" aria-label="Test Kitchen Alarm Sound">
           <i class="fa-solid fa-bell" id="sound-pill-icon"></i>
           <span id="sound-pill-text" class="sr-only" style="display: none;">Alarm: Active</span>
@@ -1772,7 +1777,7 @@
         <!-- 4. Total Amount Paid Receipt Card -->
         <div class="order-readonly-total-box">
           <div class="readonly-total-left">
-            <span class="readonly-total-label">Total Amount Paid</span>
+            <span class="readonly-total-label" id="order-detail-total-label">Total Amount Paid</span>
             <span class="readonly-payment-tag" id="order-detail-payment-tag"><i class="fa-solid fa-circle-check"></i> Paid Online</span>
           </div>
           <div class="readonly-total-val" id="order-detail-total">₹0</div>

@@ -16,6 +16,7 @@ import { onRequest as r2ImageHandler } from '../functions/api/r2-image.js';
 import { onRequest as r2ListHandler } from '../functions/api/r2-list.js';
 import { onRequest as r2DeleteHandler } from '../functions/api/r2-delete.js';
 import { onRequest as r2VideoHandler } from '../functions/api/r2-video.js';
+import { onRequest as r2AudioHandler } from '../functions/api/r2-audio.js';
 
 import { createAdminToken, signData, signPayload } from '../functions/api/_auth.js';
 import { getR2Config, buildSigV4Headers, sha256Hex } from '../functions/api/_r2.js';
@@ -456,6 +457,16 @@ describe('CLOUDFLARE PAGES FUNCTIONS & COMPATIBILITY SUITE', () => {
       });
       const res = await r2VideoHandler({ request: req, env: mockEnv });
       assert.equal(res.status, 400);
+    });
+
+    it('rejects path traversal and non-audio extensions on R2 audio stream proxy', async () => {
+      const req1 = new Request('https://saveraparadise.com/api/r2-audio?key=../secret.mp3', { method: 'GET' });
+      const res1 = await r2AudioHandler({ request: req1, env: mockEnv });
+      assert.equal(res1.status, 400);
+
+      const req2 = new Request('https://saveraparadise.com/api/r2-audio?key=audio/malware.exe', { method: 'GET' });
+      const res2 = await r2AudioHandler({ request: req2, env: mockEnv });
+      assert.equal(res2.status, 400);
     });
 
     it('requires admin token and blocks directory traversal on R2 delete proxy', async () => {

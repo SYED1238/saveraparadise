@@ -227,9 +227,11 @@ export function getAdminAuthHeaders(role = 'admin') {
  * If token is missing or expired, fetches a fresh token via /api/admin-auth.
  * @returns {Promise<string|null>}
  */
-export async function ensureAdminToken(requiredRole = 'admin') {
+export async function ensureAdminToken(requiredRole = 'admin', forceRefresh = false) {
   const tokenKey = requiredRole === 'owner' ? 'quickbite_owner_token' : (requiredRole === 'rider' ? 'quickbite_rider_token' : 'quickbite_admin_token');
-  let token = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(tokenKey) : null) || (requiredRole !== 'rider' && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_admin_token') : null);
+  let token = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(tokenKey) : null)
+    || (requiredRole === 'admin' && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_owner_token') : null)
+    || (requiredRole !== 'rider' && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_admin_token') : null);
   if (!token && requiredRole === 'rider' && typeof localStorage !== 'undefined') {
     token = localStorage.getItem(tokenKey);
     if (token && typeof sessionStorage !== 'undefined') {
@@ -244,7 +246,7 @@ export async function ensureAdminToken(requiredRole = 'admin') {
         const json = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
         const payload = JSON.parse(json);
         const hasRole = !requiredRole || requiredRole === 'admin' ? (payload.role === 'admin' || payload.role === 'owner') : payload.role === requiredRole;
-        if (hasRole && payload.exp && (payload.exp - Date.now() > 60000)) {
+        if (!forceRefresh && hasRole && payload.exp && (payload.exp - Date.now() > 60000)) {
           return token;
         }
       }

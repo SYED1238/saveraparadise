@@ -33,7 +33,7 @@ function isOriginAllowed(origin) {
 
 const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
-const STORE_SETTINGS_CACHE_TTL_MS = 60000;
+const STORE_SETTINGS_CACHE_TTL_MS = 3600000; // 1 hour cache (auto-invalidates immediately on admin settings save)
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 const SYNC_ORDERS_CACHE_TTL_MS = 30000;
 
@@ -68,6 +68,8 @@ function computeOrdersVersion(orders) {
 export function invalidateOrderActionMemoryCache() {
   kitchenPollCachedAt = 0;
   kitchenPollCache = null;
+  kitchenPollStoreSettingsCachedAt = 0;
+  kitchenPollStoreSettingsCache = null;
   syncOrdersCachedAt = 0;
   syncOrdersCache = null;
   syncOrdersCachedLimit = 0;
@@ -433,8 +435,12 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, order: existing, idempotent: true });
       }
 
-      // Customer cancellation rule: Cannot cancel once cooking starts
-      if (!isStaff && !['pending', 'accepted'].includes(existing.status)) {
+      if (['delivered', 'cancelled'].includes(existing.status)) {
+        return res.status(400).json({ error: `Cannot cancel an order that is already ${existing.status}` });
+      }
+
+      const isOwner = auth?.authenticated && auth?.payload?.role === 'owner';
+      if (!isOwner && !['pending', 'accepted'].includes(existing.status)) {
         return res.status(400).json({ error: `Cannot cancel order once kitchen preparation has begun (${existing.status})` });
       }
 
@@ -453,7 +459,7 @@ export default async function handler(req, res) {
 
     if (isTestEnv && action === 'kitchen_poll') {
       const sample = [
-        { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', pickup_code: '1001', created_at: new Date().toISOString() }
+        { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', created_at: new Date().toISOString(), assigned_rider_pin: 'ASSIGNED' }
       ];
       res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
       return res.status(200).json(sample);
@@ -479,7 +485,12 @@ export default async function handler(req, res) {
           { pin: '4422', name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-2.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0 }
         ];
         const matched = riderPin ? testRiders.filter(r => String(r.pin).trim() === riderPin) : testRiders;
-        return res.status(200).json({ success: true, riders: matched });
+        const safeRiders = matched.map(r => {
+          if (auth.payload?.role === 'owner' || auth.payload?.role === 'rider') return r;
+          const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
+          return { ...rest, pin_masked: true };
+        });
+        return res.status(200).json({ success: true, riders: safeRiders });
       }
 
       if (action === 'sync_orders') {
@@ -550,6 +561,24 @@ export default async function handler(req, res) {
             });
           }
         }
+        if (auth.payload?.role === 'admin') {
+          const allowedKitchenTargets = ['accepted', 'cooking', 'ready_for_pickup'];
+          if (!allowedKitchenTargets.includes(status)) {
+            return res.status(403).json({ error: 'Kitchen staff can only update orders to Accepted, Cooking, or Ready for Pickup' });
+          }
+          if (existing.status === 'pending' && status !== 'accepted') {
+            return res.status(400).json({ error: 'Pending orders must be Accepted before Cooking' });
+          }
+          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'accepted') {
+            return res.status(400).json({ error: 'Order must be marked as Cooking before it can be Ready for Pickup' });
+          }
+          if (existing.status === 'cooking' && status !== 'ready_for_pickup' && status !== 'cooking') {
+            return res.status(400).json({ error: 'Cooking orders can only advance to Ready for Pickup' });
+          }
+          if (['ready_for_pickup', 'on_the_way', 'delivered', 'undelivered', 'cancelled'].includes(existing.status) && status !== existing.status) {
+            return res.status(400).json({ error: `Kitchen staff cannot transition order from "${existing.status}" to "${status}"` });
+          }
+        }
 
         const inputCash = body.cashCollected ?? body.cash_collected;
         const inputDoorstepUpi = typeof body.doorstepUpi === 'boolean' ? body.doorstepUpi : (typeof body.doorstep_upi === 'boolean' ? body.doorstep_upi : undefined);
@@ -565,7 +594,7 @@ export default async function handler(req, res) {
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
           const isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
-          const isDoorstep = isCfSuccess || (typeof inputDoorstepUpi === 'boolean' ? inputDoorstepUpi : Boolean(existing.doorstep_upi));
+          const isDoorstep = isCfSuccess || (auth.payload?.role !== 'admin' && (typeof inputDoorstepUpi === 'boolean' ? inputDoorstepUpi : Boolean(existing.doorstep_upi)));
           enforcedDoorstepUpi = isDoorstep;
 
           if (isPrepaid || isDoorstep) {
@@ -858,6 +887,15 @@ export default async function handler(req, res) {
           return res.status(200).json(kitchenPollCache);
         }
 
+        // Fast clock check: between 1:00 AM and 9:00 AM IST (closed night quiet hours), short-circuit with 0 DB queries
+        const istHour = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).getHours();
+        if (istHour >= 1 && istHour < 9 && !hasRecentActiveOrderInMemory(now)) {
+          kitchenPollCache = [];
+          kitchenPollCachedAt = now;
+          res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
+          return res.status(200).json(kitchenPollCache);
+        }
+
         const storeSettings = await getCachedKitchenStoreSettings(sb, now);
         const hasWarmCache = kitchenPollCache !== null && Array.isArray(kitchenPollCache);
         const hasActiveCachedOrders = hasWarmCache && kitchenPollCache.length > 0;
@@ -898,7 +936,14 @@ export default async function handler(req, res) {
           }
         }
 
-        kitchenPollCache = combined;
+        kitchenPollCache = combined.map(row => ({
+          id: row.id,
+          status: row.status,
+          customer_name: row.customer_name,
+          total: row.total,
+          created_at: row.created_at,
+          assigned_rider_pin: row.assigned_rider_pin ? 'ASSIGNED' : ''
+        }));
         kitchenPollCachedAt = now;
         updateActiveOrderTracker(kitchenPollCache, now);
 
@@ -963,7 +1008,12 @@ export default async function handler(req, res) {
         }
         const { data: riderRows, error } = await query;
         if (error) throw error;
-        return res.status(200).json({ success: true, riders: riderRows || [] });
+        const safeRows = (riderRows || []).map(r => {
+          if (auth.payload?.role === 'owner' || auth.payload?.role === 'rider') return r;
+          const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
+          return { ...rest, pin_masked: true };
+        });
+        return res.status(200).json({ success: true, riders: safeRows });
       }
 
       // 2. Verified Guest Customer Order Tracking (Requires Order ID + Tracking Token)
@@ -1072,6 +1122,24 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: `Invalid status transition from "${existing.status}" to "${status}" for rider` });
           }
         }
+        if (auth.payload?.role === 'admin') {
+          const allowedKitchenTargets = ['accepted', 'cooking', 'ready_for_pickup'];
+          if (!allowedKitchenTargets.includes(status)) {
+            return res.status(403).json({ error: 'Kitchen staff can only update orders to Accepted, Cooking, or Ready for Pickup' });
+          }
+          if (existing.status === 'pending' && status !== 'accepted') {
+            return res.status(400).json({ error: 'Pending orders must be Accepted before Cooking' });
+          }
+          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'accepted') {
+            return res.status(400).json({ error: 'Order must be marked as Cooking before it can be Ready for Pickup' });
+          }
+          if (existing.status === 'cooking' && status !== 'ready_for_pickup' && status !== 'cooking') {
+            return res.status(400).json({ error: 'Cooking orders can only advance to Ready for Pickup' });
+          }
+          if (['ready_for_pickup', 'on_the_way', 'delivered', 'undelivered', 'cancelled'].includes(existing.status) && status !== existing.status) {
+            return res.status(400).json({ error: `Kitchen staff cannot transition order from "${existing.status}" to "${status}"` });
+          }
+        }
 
         const updatePayload = {
           status,
@@ -1126,7 +1194,7 @@ export default async function handler(req, res) {
             }
           }
 
-          const isDoorstep = isCfSuccess || (auth.payload?.role !== 'rider' && Boolean(doorstepUpi ?? existing.doorstep_upi));
+          const isDoorstep = isCfSuccess || (auth.payload?.role === 'owner' && Boolean(doorstepUpi ?? existing.doorstep_upi));
           updatePayload.doorstep_upi = isDoorstep;
 
           if (isPrepaid || isDoorstep) {
@@ -1591,8 +1659,12 @@ export default async function handler(req, res) {
           return res.status(200).json({ success: true, order, idempotent: true });
         }
 
-        // Customer cancellation rule: Cannot cancel once cooking starts
-        if (!isStaff && !['pending', 'accepted'].includes(order.status)) {
+        if (['delivered', 'cancelled'].includes(order.status)) {
+          return res.status(400).json({ error: `Cannot cancel an order that is already ${order.status}` });
+        }
+
+        const isOwner = isStaff && auth.payload?.role === 'owner';
+        if (!isOwner && !['pending', 'accepted'].includes(order.status)) {
           return res.status(400).json({ error: `Cannot cancel order once kitchen preparation has begun (${order.status})` });
         }
 

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
   name TEXT NOT NULL,
   emoji TEXT NOT NULL,
   slug TEXT NOT NULL,
+  image TEXT,
   created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

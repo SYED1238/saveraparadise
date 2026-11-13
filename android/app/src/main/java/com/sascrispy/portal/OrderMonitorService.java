@@ -496,7 +496,7 @@ public class OrderMonitorService extends Service {
 
                     if (!isRiderApp && isFreshKitchenOrder && !knownOrderIds.contains(id)) {
                         knownOrderIds.add(id);
-                        if (!"cancelled".equalsIgnoreCase(status) && !"delivered".equalsIgnoreCase(status)) {
+                        if ("pending".equalsIgnoreCase(status) || "accepted".equalsIgnoreCase(status)) {
                             String custName = order.optString("customer_name", "Customer");
                             String total = order.optString("total", "");
                             String pickupCode = order.optString("pickup_code", "");
@@ -549,7 +549,7 @@ public class OrderMonitorService extends Service {
                     // Kitchen Admin App: Alert for newly created orders
                     if (!knownOrderIds.contains(id)) {
                         knownOrderIds.add(id);
-                        if (!"cancelled".equalsIgnoreCase(status) && !"delivered".equalsIgnoreCase(status)) {
+                        if ("pending".equalsIgnoreCase(status) || "accepted".equalsIgnoreCase(status)) {
                             fireHeadsUpNotification(
                                 "🍗 NEW ORDER " + id + "!",
                                 custName + " • " + total + (pickupCode.isEmpty() ? "" : " • Code: " + pickupCode),

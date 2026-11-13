@@ -6408,6 +6408,16 @@ body.kitchen-alarm-ringing::before {
 
 @media print {
   /* Hide whole app during printing except KOT ticket */
+  .admin-header,
+  .admin-main,
+  .admin-modal-backdrop,
+  .mobile-floating-bar,
+  #admin-lock-overlay,
+  #kitchen-alarm-banner,
+  #toast-container {
+    display: none !important;
+  }
+
   body * {
     visibility: hidden !important;
   }

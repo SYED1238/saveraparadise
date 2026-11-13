@@ -37,6 +37,21 @@ function sanitizeDishFields(input) {
   return clean;
 }
 
+const ALLOWED_CATEGORY_FIELDS = [
+  'id', 'name', 'emoji', 'slug', 'image', 'created_at'
+];
+
+function sanitizeCategoryFields(input) {
+  if (!input || typeof input !== 'object') return {};
+  const clean = {};
+  for (const key of ALLOWED_CATEGORY_FIELDS) {
+    if (input[key] !== undefined) {
+      clean[key] = input[key];
+    }
+  }
+  return clean;
+}
+
 export async function onRequest(context) {
   hydrateEnv(context);
   const { request, env } = context;
@@ -84,14 +99,24 @@ export async function onRequest(context) {
 
   const userRole = auth.payload?.role;
 
-  // Role Gate: Clearing orders requires Executive Owner session; saving store settings requires Staff or Owner session
-  if (action === 'clear_orders' && userRole !== 'owner') {
+  // Role Gate: Rider mutations and clearing orders strictly require Executive Owner session
+  const ownerOnlyActions = [
+    'save_rider',
+    'delete_rider',
+    'toggle_rider_status',
+    'clear_orders',
+    'reset_business_data',
+    'reset_defaults',
+    'settle_rider_cash',
+    'record_rider_payout'
+  ];
+  if (ownerOnlyActions.includes(action) && userRole !== 'owner') {
     return jsonResponse({ error: `Forbidden: Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
   if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
     return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
-  if (['add_dish', 'update_dish', 'toggle_stock', 'save_dish', 'delete_dish', 'add_category', 'update_category', 'save_category', 'delete_category', 'save_category_images', 'delete_rider', 'toggle_rider_status', 'save_rider'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
+  if (['add_dish', 'update_dish', 'toggle_stock', 'save_dish', 'delete_dish', 'add_category', 'update_category', 'save_category', 'delete_category', 'save_category_images'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
     return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
 
@@ -114,7 +139,12 @@ export async function onRequest(context) {
       ];
 
       if (action === 'list_riders') {
-        return jsonResponse({ success: true, riders: testRiders }, 200, Object.fromEntries(corsHeaders.entries()));
+        const safeRiders = testRiders.map(r => {
+          if (userRole === 'owner') return r;
+          const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
+          return { ...rest, pin_masked: true };
+        });
+        return jsonResponse({ success: true, riders: safeRiders }, 200, Object.fromEntries(corsHeaders.entries()));
       }
       if (action === 'save_rider') {
         const rawRider = body.rider;
@@ -282,7 +312,14 @@ export async function onRequest(context) {
         if (!category || !category.id || !category.name) {
           return jsonResponse({ error: 'Valid category payload (id, name) is required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        const { data, error } = await sb.from('categories').insert([category]).select();
+        const catPayload = sanitizeCategoryFields(category);
+        let { data, error } = await sb.from('categories').insert([catPayload]).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
+          delete catPayload.image;
+          const retry = await sb.from('categories').insert([catPayload]).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) throw error;
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
@@ -292,11 +329,23 @@ export async function onRequest(context) {
         if (!id || !updates || typeof updates !== 'object') {
           return jsonResponse({ error: 'Category ID and updates payload are required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        let { data, error } = await sb.from('categories').update(updates).eq('id', id).select();
+        let cleanUpdates = sanitizeCategoryFields(updates);
+        delete cleanUpdates.id;
+        let { data, error } = await sb.from('categories').update(cleanUpdates).eq('id', id).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
+          delete cleanUpdates.image;
+          const retry = await sb.from('categories').update(cleanUpdates).eq('id', id).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) throw error;
         if (!data || data.length === 0) {
-          const upsertPayload = { id, ...updates };
-          const upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          const upsertPayload = { id, ...cleanUpdates };
+          let upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('image'))) {
+            delete upsertPayload.image;
+            upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          }
           if (upsertRes.error) throw upsertRes.error;
           data = upsertRes.data;
         }
@@ -376,7 +425,12 @@ export async function onRequest(context) {
       case 'list_riders': {
         const now = Date.now();
         if (ridersListCache && (now - ridersListCachedAt < RIDERS_CACHE_TTL_MS)) {
-          return jsonResponse({ success: true, riders: ridersListCache }, 200, Object.fromEntries(corsHeaders.entries()));
+          const safeRiders = ridersListCache.map(r => {
+            if (userRole === 'owner') return r;
+            const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
+            return { ...rest, pin_masked: true };
+          });
+          return jsonResponse({ success: true, riders: safeRiders }, 200, Object.fromEntries(corsHeaders.entries()));
         }
         const { data, error } = await sb
           .from('riders')
@@ -385,7 +439,12 @@ export async function onRequest(context) {
         if (error) throw error;
         ridersListCache = data || [];
         ridersListCachedAt = now;
-        return jsonResponse({ success: true, riders: ridersListCache }, 200, Object.fromEntries(corsHeaders.entries()));
+        const safeRiders = ridersListCache.map(r => {
+          if (userRole === 'owner') return r;
+          const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
+          return { ...rest, pin_masked: true };
+        });
+        return jsonResponse({ success: true, riders: safeRiders }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       case 'save_rider': {

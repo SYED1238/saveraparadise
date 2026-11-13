@@ -7,6 +7,7 @@ import r2DeleteHandler from '../api/r2-delete.js';
 import r2ListHandler from '../api/r2-list.js';
 import r2ImageHandler from '../api/r2-image.js';
 import r2VideoHandler from '../api/r2-video.js';
+import r2AudioHandler from '../api/r2-audio.js';
 import { sanitizeDishImageUrl } from '../dataService.js';
 import { cloudflareR2Service } from '../cloudflareR2Service.js';
 
@@ -291,6 +292,40 @@ test('STAGE 1: Live Tracker Video Streaming Endpoint (r2-video.js)', async (t) =
     const { req, res } = createMockReqRes({ method: 'GET', query: { key: 'videos/prep_kitchen.mp4' } });
     await r2VideoHandler(req, res);
     assert.notStrictEqual(res.statusCode, 400, 'videos/ folder paths must pass validation');
+  });
+});
+
+test('STAGE 1B: Kitchen Alarm Audio Streaming Endpoint (r2-audio.js)', async (t) => {
+  await t.test('Rejects non-GET/HEAD methods with 405 Method Not Allowed', async () => {
+    const { req, res } = createMockReqRes({ method: 'POST' });
+    await r2AudioHandler(req, res);
+    assert.strictEqual(res.statusCode, 405);
+  });
+
+  await t.test('Rejects path traversal attempts with 400', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: { key: '../secret.mp3' } });
+    await r2AudioHandler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+    assert.ok(res.data.error.includes('path traversal') || res.data.error.includes('Invalid audio key'));
+  });
+
+  await t.test('Rejects non-audio extensions with 400', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: { key: 'dishes/sample.exe' } });
+    await r2AudioHandler(req, res);
+    assert.strictEqual(res.statusCode, 400);
+    assert.ok(res.data.error.includes('only audio files') || res.data.error.includes('Invalid audio key'));
+  });
+
+  await t.test('Accepts default Funk Criminal audio track without query param', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: {} });
+    await r2AudioHandler(req, res);
+    assert.notStrictEqual(res.statusCode, 400, 'Default kitchen alarm track must NOT fail validation');
+  });
+
+  await t.test('Accepts audio tracks in audio/ subfolder', async () => {
+    const { req, res } = createMockReqRes({ method: 'GET', query: { key: 'audio/chime.mp3' } });
+    await r2AudioHandler(req, res);
+    assert.notStrictEqual(res.statusCode, 400, 'audio/ folder paths must pass validation');
   });
 });
 

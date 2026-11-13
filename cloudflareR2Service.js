@@ -105,7 +105,7 @@ class CloudflareR2Service {
       // If unauthorized, attempt one token refresh and retry
       if (res.status === 401) {
         console.info('[R2] Session token expired or missing, auto-refreshing admin token...');
-        const refreshedToken = await ensureAdminToken();
+        const refreshedToken = await ensureAdminToken('admin', true);
         if (refreshedToken) {
           res = await fetch('/api/r2-upload', {
             method: 'POST',
@@ -156,8 +156,7 @@ class CloudflareR2Service {
         }
       });
       if (response.status === 401) {
-        try { sessionStorage.removeItem('quickbite_admin_token'); } catch {}
-        const refreshed = await ensureAdminToken();
+        const refreshed = await ensureAdminToken('admin', true);
         if (refreshed) {
           response = await fetch(`/api/r2-list?prefix=${encodeURIComponent(prefix)}`, {
             headers: { ...getAdminAuthHeaders() }
@@ -197,8 +196,7 @@ class CloudflareR2Service {
         body: JSON.stringify({ key })
       });
       if (response.status === 401) {
-        try { sessionStorage.removeItem('quickbite_admin_token'); } catch {}
-        const refreshed = await ensureAdminToken();
+        const refreshed = await ensureAdminToken('admin', true);
         if (refreshed) {
           response = await fetch('/api/r2-delete', {
             method: 'POST',

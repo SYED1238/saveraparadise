@@ -213,6 +213,7 @@ BEGIN
 
   -- 5.2 Categories (Public Read, Service Role Write)
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'categories') THEN
+    ALTER TABLE public.categories ADD COLUMN IF NOT EXISTS image TEXT;
     ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS "app_manage_categories" ON public.categories;
     DROP POLICY IF EXISTS "categories_public_read" ON public.categories;

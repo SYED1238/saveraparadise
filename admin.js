@@ -4,7 +4,7 @@
  * and data synchronization with dataService.
  */
 
-import { dataService, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId } from './dataService.js';
+import { dataService, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs } from './dataService.js';
 import { cloudflareR2Service } from './cloudflareR2Service.js';
 import {
   playNotificationSound,
@@ -16,7 +16,13 @@ import {
   requestSystemNotificationPermission,
   getSystemNotificationPermission,
   updateAppBadge,
-  showSamsungToast
+  showSamsungToast,
+  getKitchenAlarmSoundMode,
+  setKitchenAlarmSoundMode,
+  toggleKitchenAlarmSoundMode,
+  startKitchenAlarmAudio,
+  stopKitchenAlarmAudio,
+  KITCHEN_ALARM_MODES
 } from './notificationService.js';
 import { createBackNavigationManager } from './navigationBackService.js';
 import {
@@ -89,6 +95,7 @@ const initAdminApp = () => {
     onSuccess: () => {
       requestWakeLock();
       showToast('🔓 Manager Access Granted', 'success');
+      resetIdleLockTimer();
       dataService.syncOrdersFromSupabase(true).then(() => {
         renderOrders();
         updateOrderBadges();
@@ -111,6 +118,7 @@ const initAdminApp = () => {
         adminLockOverlay.style.display = 'none';
       }
       requestWakeLock();
+      resetIdleLockTimer();
       dataService.syncOrdersFromSupabase().then(() => {
         renderOrders();
         updateOrderBadges();
@@ -468,6 +476,7 @@ const initAdminApp = () => {
       }).catch(() => {});
       // Remove other view steps from back stack
       ['view-menu', 'view-hours', 'view-offers', 'view-delivery'].forEach(v => backNav.removeStep('admin-view-' + v));
+      backNav.removeStepDirect('category-detail');
     } else if (targetView === 'view-menu') {
       if (viewMenu) viewMenu.classList.add('active');
       if (topBtnMenu) topBtnMenu.classList.add('active');
@@ -518,6 +527,16 @@ const initAdminApp = () => {
     if (topOrderCounter) topOrderCounter.textContent = activeCount;
     if (capsuleOrderBadge) capsuleOrderBadge.textContent = activeCount;
     updateAppBadge(activeCount);
+
+    // Update capsule offer & delivery badges
+    const settings = dataService.getSettings();
+    if (capsuleOfferBadge) {
+      capsuleOfferBadge.style.display = (settings.offerActive || settings.unlockedDealsEnabled) ? 'inline-block' : 'none';
+    }
+    const capsuleDeliveryBadge = document.getElementById('capsule-delivery-badge');
+    if (capsuleDeliveryBadge) {
+      capsuleDeliveryBadge.style.display = (settings.freeDeliveryEnabled || settings.deliveryRadius) ? 'inline-block' : 'none';
+    }
   }
 
   // ========================================================
@@ -923,15 +942,6 @@ const initAdminApp = () => {
         }
       } else if (editId) {
         await dataService.updateCategory(editId, { name, emoji, image });
-        if (image) {
-          await dataService.saveCategoryImage(editId, image);
-          const cats = dataService.getCategories();
-          const matchedCat = cats.find(c => c.id === editId || c.slug === editId);
-          if (matchedCat) {
-            if (matchedCat.id) await dataService.saveCategoryImage(matchedCat.id, image);
-            if (matchedCat.slug) await dataService.saveCategoryImage(matchedCat.slug, image);
-          }
-        }
         showToast(`Category updated to "${name}"!`, 'success');
       } else {
         await dataService.addCategory({ name, emoji, image });
@@ -1071,7 +1081,6 @@ const initAdminApp = () => {
 
             <!-- Bottom Content Info -->
             <div class="dish-bottom-info">
-              ${['dish-chicken-3pcs', 'dish-pizza-chicken', 'dish-burger-crispy'].includes(dish.id) ? '<div class="dish-category-badge-chip hero-featured-chip" style="background:#FF5A26;color:#FFFFFF;font-weight:700;margin-bottom:4px;border:none;"><i class="fa-solid fa-star"></i> Home Hero Bubble</div>' : ''}
               ${safeBadge ? `<div class="dish-category-badge-chip">${safeBadge}</div>` : ''}
               ${(dish.timeRestricted && dish.availableFrom && dish.availableTo) ? `<div class="dish-schedule-badge time-badge"><i class="fa-regular fa-clock"></i> ${formatTime12h(dish.availableFrom)} - ${formatTime12h(dish.availableTo)}</div>` : ''}
               ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
@@ -1491,18 +1500,25 @@ const initAdminApp = () => {
     if (!dish) return;
 
     if (confirm(`Are you sure you want to remove dish "${dish.name}" from your restaurant menu?`)) {
-      if (dish.r2Key || dish.gdriveFileId) {
-        try {
-          await cloudflareR2Service.deleteImage(dish.r2Key || dish.gdriveFileId);
-        } catch (e) {
-          console.warn('[Cloudflare R2] delete error:', e);
-        }
-      }
       try {
         await dataService.deleteDish(id);
         renderDishes();
         renderCategories();
         showToast(`Dish "${dish.name}" removed from menu!`, 'info');
+
+        // Only delete the R2 image asset after DB deletion succeeds and if no other dish shares it
+        if (dish.r2Key || dish.gdriveFileId) {
+          const remainingDishes = dataService.getDishes();
+          const targetKey = dish.r2Key || dish.gdriveFileId;
+          const isShared = remainingDishes.some(d => d.id !== id && (d.r2Key === targetKey || (dish.image && d.image === dish.image)));
+          if (!isShared) {
+            try {
+              await cloudflareR2Service.deleteImage(targetKey);
+            } catch (e) {
+              console.warn('[Cloudflare R2] delete error:', e);
+            }
+          }
+        }
       } catch (err) {
         showToast(`Error deleting dish: ${err?.message || err}`, 'error');
       }
@@ -2017,7 +2033,7 @@ const initAdminApp = () => {
     let totalRevenue = 0;
     let todayRevenue = 0;
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const todayStart = getShiftStartTimeMs(now);
 
     visibleOrders.forEach(o => {
       // Exclude cancelled and undelivered returned orders from revenue
@@ -2054,6 +2070,7 @@ const initAdminApp = () => {
   // ACCEPTED ORDERS > 5 MINUTES ALERT ENGINE (UNSTARTED ORDERS)
   // ========================================================
   const alertedOverdueOrderIds = new Set();
+  let lastRelativeTimestampRenderAt = Date.now();
 
   function checkOverduePendingOrders() {
     const orders = dataService.getOrders();
@@ -2103,10 +2120,12 @@ const initAdminApp = () => {
     });
 
     // Update banner UI
-    updateOverdueBanner(overdueOrders);
+    updateOverdueBanner(overdueList);
 
-    // If active view is orders and newly triggered, re-render
-    if (newlyTriggered && activeView === 'view-orders') {
+    // If active view is orders and newly triggered (or periodic 60s ticker), re-render
+    const shouldPeriodicRender = (now - lastRelativeTimestampRenderAt >= 60000) && orders.some(o => ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way'].includes(o.status));
+    if ((newlyTriggered || shouldPeriodicRender) && activeView === 'view-orders') {
+      lastRelativeTimestampRenderAt = now;
       renderOrders();
     }
   }
@@ -2238,17 +2257,19 @@ const initAdminApp = () => {
       // Check if order has been waiting without cooking for > 5 minutes
       const isUnstarted = (order.status || 'accepted') === 'accepted' || order.status === 'pending';
       const createdMs = typeof order.createdAt === 'number' ? order.createdAt : new Date(order.createdAt).getTime();
-      const ageMs = !isNaN(createdMs) && createdMs > 0 ? (Date.now() - createdMs) : 0;
+      const ageMs = !isNaN(createdMs) && createdMs > 0 ? Math.max(0, Date.now() - createdMs) : 0;
+      const actualAgeMins = Math.floor(ageMs / 60000);
       const isOverdue = isUnstarted && ageMs >= 5 * 60 * 1000;
-      const ageMins = Math.max(5, Math.floor(ageMs / 60000));
+      const overdueMins = Math.max(5, actualAgeMins);
       const cardOverdueClass = isOverdue ? 'order-card-overdue' : '';
       const overdueBadgeHtml = isOverdue ? `
         <div class="badge-pending-overdue">
-          <i class="fa-solid fa-triangle-exclamation fa-beat"></i> ⚠️ WAITING: Accepted ${ageMins}m ago!
+          <i class="fa-solid fa-triangle-exclamation fa-beat"></i> ⚠️ WAITING: Accepted ${overdueMins}m ago!
         </div>
       ` : '';
 
       // Next status action: Accepted -> Preparing -> Ready to Dispatch -> Dispatched -> Delivered
+      const safeOrderId = escapeHtml(String(order.id || ''));
       let nextActionBtn = '';
       if (order.status === 'cancelled') {
         const reasonText = order.cancellationReason ? escapeHtml(order.cancellationReason) : 'Cancelled by Kitchen';
@@ -2257,12 +2278,13 @@ const initAdminApp = () => {
         const reasonText = order.undeliveredReason || order.cancellationReason || 'Customer unreachable at doorstep';
         nextActionBtn = `<span class="btn-advance-status" style="background:#FFF7ED; color:#C2410C; border:1.5px solid #FDBA74; cursor:default;" title="${escapeHtml(reasonText)}"><i class="fa-solid fa-box-archive"></i> Returned to Kitchen</span>`;
       } else if (order.status === 'accepted' || order.status === 'pending') {
-        nextActionBtn = `<button class="btn-advance-status" data-id="${order.id}" data-next="cooking">🔥 Start Preparing</button>`;
+        nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="cooking">🔥 Start Preparing</button>`;
       } else if (order.status === 'cooking') {
-        nextActionBtn = `<button class="btn-advance-status" data-id="${order.id}" data-next="ready_for_pickup">📦 Pack & Ready to Dispatch</button>`;
+        nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="ready_for_pickup">📦 Pack & Ready to Dispatch</button>`;
       } else if (order.status === 'ready_for_pickup') {
         const bagCode = order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000');
-        nextActionBtn = `<span class="btn-advance-status rider-only-pill" title="Food packed and ready on shelf. Rider enters 4-digit code to dispatch."><i class="fa-solid fa-box"></i> Ready on Shelf (Bag #${bagCode})</span>`;
+        const safeBagCode = escapeHtml(String(bagCode));
+        nextActionBtn = `<span class="btn-advance-status rider-only-pill" title="Food packed and ready on shelf. Rider enters 4-digit code to dispatch."><i class="fa-solid fa-box"></i> Ready on Shelf (Bag #${safeBagCode})</span>`;
       } else if (order.status === 'on_the_way') {
         nextActionBtn = `<span class="btn-advance-status rider-only-pill" title="Only the Delivery Partner can mark this order as delivered at customer doorstep"><i class="fa-solid fa-motorcycle"></i> Rider Delivering</span>`;
       } else {
@@ -2287,7 +2309,6 @@ const initAdminApp = () => {
         `;
       }
 
-      const safeOrderId = escapeHtml(order.id);
       const bagCode = order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000');
       const displayOrderId = formatDisplayOrderId(order.id, bagCode);
       const safeCustomerName = escapeHtml(order.customerName || 'Online Order');
@@ -2420,10 +2441,10 @@ const initAdminApp = () => {
       let timeClass = 'order-time-tag';
       let timeDisplay = timeAgo;
       if (isUnstarted) {
-        if (ageMins >= 5) {
+        if (actualAgeMins >= 5) {
           timeClass = 'order-time-tag time-urgent';
-          timeDisplay = `⚠️ Waiting ${ageMins}m!`;
-        } else if (ageMins >= 3) {
+          timeDisplay = `⚠️ Waiting ${actualAgeMins}m!`;
+        } else if (actualAgeMins >= 3) {
           timeClass = 'order-time-tag time-warning';
           timeDisplay = `🕒 ${timeAgo} (Prepare soon)`;
         }
@@ -2435,7 +2456,7 @@ const initAdminApp = () => {
             <div>
               <div class="order-id-label">${escapeHtml(displayOrderId)}</div>
               <div class="order-pickup-code-badge" title="Write this 4-digit token on the food delivery bag/box">
-                <i class="fa-solid fa-tag"></i> <span>Write on Bag:</span> <strong>#${bagCode}</strong>
+                <i class="fa-solid fa-tag"></i> <span>Write on Bag:</span> <strong>#${escapeHtml(String(bagCode))}</strong>
               </div>
               <div class="${timeClass}"><i class="fa-regular fa-clock"></i> ${timeDisplay}</div>
               ${overdueBadgeHtml}
@@ -2680,8 +2701,15 @@ const initAdminApp = () => {
 
     renderOrderModalReadonlyItems(order);
 
+    const isPaid = Boolean(order.isPaidOnline || String(order.paymentStatus || '').toLowerCase() === 'paid' || order.status === 'delivered');
+
     if (orderDetailTotal) {
       orderDetailTotal.textContent = order.total || '₹0';
+    }
+
+    const totalLabelEl = document.getElementById('order-detail-total-label') || (modalManageOrder && modalManageOrder.querySelector('.readonly-total-label'));
+    if (totalLabelEl) {
+      totalLabelEl.textContent = isPaid ? 'Total Amount Paid' : 'Amount to Collect';
     }
 
     const orderDetailPaymentTag = document.getElementById('order-detail-payment-tag');
@@ -2691,7 +2719,11 @@ const initAdminApp = () => {
         orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-circle-check"></i> Paid Online';
       } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi') {
         orderDetailPaymentTag.className = 'readonly-payment-tag payment-upi';
-        orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-qrcode"></i> Paid via Doorstep UPI';
+        if (isPaid) {
+          orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-qrcode"></i> Paid via Doorstep UPI';
+        } else {
+          orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-qrcode"></i> Collect via UPI QR (Unpaid)';
+        }
       } else {
         orderDetailPaymentTag.className = 'readonly-payment-tag payment-cod';
         orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-money-bill-wave"></i> Cash on Delivery (COD)';
@@ -3079,9 +3111,9 @@ const initAdminApp = () => {
           </tbody>
         </table>
         <div class="kot-divider">--------------------------------</div>
-        ${Number(order.packagingFee || order.packingCharge || 0) > 0 ? `<div class="kot-row"><span>Packaging Fee:</span> <span>₹${Number(order.packagingFee || order.packingCharge || 0)}</span></div>` : ''}
-        ${Number(order.deliveryFee || 0) > 0 ? `<div class="kot-row"><span>Delivery Fee:</span> <span>₹${Number(order.deliveryFee || 0)}</span></div>` : ''}
-        ${Number(order.discount || order.discountAmount || order.couponDiscount || 0) > 0 ? `<div class="kot-row"><span>Coupon Discount:</span> <span>-₹${Number(order.discount || order.discountAmount || order.couponDiscount || 0)}</span></div>` : ''}
+        ${Number(order.packagingFee || order.packingCharge || (order.addressDetails && (order.addressDetails.platformFee || order.addressDetails.packagingFee)) || 0) > 0 ? `<div class="kot-row"><span>Packaging Fee:</span> <span>₹${Number(order.packagingFee || order.packingCharge || (order.addressDetails && (order.addressDetails.platformFee || order.addressDetails.packagingFee)) || 0)}</span></div>` : ''}
+        ${Number(order.deliveryFee || (order.addressDetails && order.addressDetails.deliveryFee) || 0) > 0 ? `<div class="kot-row"><span>Delivery Fee:</span> <span>₹${Number(order.deliveryFee || (order.addressDetails && order.addressDetails.deliveryFee) || 0)}</span></div>` : ''}
+        ${Number(order.discount || order.discountAmount || order.couponDiscount || (order.addressDetails && order.addressDetails.discount) || 0) > 0 ? `<div class="kot-row"><span>Coupon Discount:</span> <span>-₹${Number(order.discount || order.discountAmount || order.couponDiscount || (order.addressDetails && order.addressDetails.discount) || 0)}</span></div>` : ''}
         <div class="kot-row" style="font-size: 13px; font-weight: 900;">
           <span>TOTAL AMOUNT:</span>
           <span>${escapeHtml(order.total || `₹${order.totalAmount || 0}`)}</span>
@@ -3122,6 +3154,15 @@ const initAdminApp = () => {
     if (!modalCancelOrderBackdrop) return;
     if (cancelOrderIdLabel) cancelOrderIdLabel.textContent = orderId;
     if (cancelOrderNote) cancelOrderNote.value = '';
+    selectedCancelReason = 'Item(s) Out of Stock';
+    cancelReasonPills.forEach((p, idx) => {
+      if (idx === 0) {
+        p.classList.add('active');
+        selectedCancelReason = p.getAttribute('data-reason') || 'Item(s) Out of Stock';
+      } else {
+        p.classList.remove('active');
+      }
+    });
     modalCancelOrderBackdrop.classList.add('open');
     modalCancelOrderBackdrop.style.display = 'flex';
     backNav.pushStep('modal-cancel-order', () => {
@@ -3137,7 +3178,11 @@ const initAdminApp = () => {
       modalCancelOrderBackdrop.classList.remove('open');
       modalCancelOrderBackdrop.style.display = 'none';
     }
-    backNav.removeStepDirect('modal-cancel-order');
+    if (typeof backNav.removeStep === 'function') {
+      backNav.removeStep('modal-cancel-order');
+    } else {
+      backNav.removeStepDirect('modal-cancel-order');
+    }
   }
 
   if (btnModalRejectOrder) {
@@ -3160,7 +3205,7 @@ const initAdminApp = () => {
   }
 
   if (btnConfirmCancelOrder) {
-    btnConfirmCancelOrder.addEventListener('click', () => {
+    btnConfirmCancelOrder.addEventListener('click', async () => {
       const orderId = orderEditId ? orderEditId.value : null;
       if (!orderId) return;
 
@@ -3181,6 +3226,16 @@ const initAdminApp = () => {
       closeOrderManageModal();
       showToast(`❌ Order ${orderId} has been cancelled.`, 'info');
       renderOrders();
+
+      if (updated && updated.serverPromise) {
+        try {
+          await updated.serverPromise;
+        } catch (err) {
+          console.error('[Admin] Order cancellation rejected by server:', err);
+          showToast(`⚠️ Order cancellation failed on server: ${err?.message || 'Error'}`, 'warning');
+          renderOrders();
+        }
+      }
     });
   }
 
@@ -3306,6 +3361,29 @@ const initAdminApp = () => {
   const btnAdminSoundTest = document.getElementById('btn-admin-sound-test');
   const soundPillText = document.getElementById('sound-pill-text');
   const soundPillIcon = document.getElementById('sound-pill-icon');
+  const btnAdminAlarmToggle = document.getElementById('btn-admin-alarm-toggle');
+  const alarmToggleIcon = document.getElementById('alarm-toggle-icon');
+  const alarmToggleLabel = document.getElementById('alarm-toggle-label');
+
+  function updateAlarmToggleUI() {
+    const mode = getKitchenAlarmSoundMode();
+    if (alarmToggleIcon) {
+      if (mode === KITCHEN_ALARM_MODES.R2_CUSTOM) {
+        alarmToggleIcon.className = 'fa-solid fa-music';
+        if (btnAdminAlarmToggle) {
+          btnAdminAlarmToggle.title = 'Current Kitchen Alarm: Funk Criminal (Custom R2 Track) - Click to revert to Classic Chime';
+        }
+        if (alarmToggleLabel) alarmToggleLabel.textContent = 'Alarm: Funk Criminal';
+      } else {
+        alarmToggleIcon.className = 'fa-solid fa-bell';
+        if (btnAdminAlarmToggle) {
+          btnAdminAlarmToggle.title = 'Current Kitchen Alarm: Classic Chime - Click to switch to Funk Criminal (R2)';
+        }
+        if (alarmToggleLabel) alarmToggleLabel.textContent = 'Alarm: Classic Chime';
+      }
+    }
+  }
+  updateAlarmToggleUI();
 
   // Delegated to notificationService with DynamicsCompressor and volume safeguards
   function playKitchenChime() {
@@ -3424,19 +3502,35 @@ const initAdminApp = () => {
       }
     }
 
-    // Play first chime burst immediately
-    playKitchenChime();
-
-    // Loop chime repeatedly every 1.6s UNTIL admin clicks STOP button
-    if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
-    kitchenAlarmInterval = setInterval(() => {
-      if (isKitchenAlarmRinging) {
-        playKitchenChime();
-      } else {
-        clearInterval(kitchenAlarmInterval);
-        kitchenAlarmInterval = null;
-      }
-    }, 1600);
+    // Trigger alarm sound based on configured mode (Custom R2 track vs Classic synthesized chime)
+    const soundMode = getKitchenAlarmSoundMode();
+    if (soundMode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
+      playKitchenChime();
+      if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
+      kitchenAlarmInterval = setInterval(() => {
+        if (isKitchenAlarmRinging) {
+          playKitchenChime();
+        } else {
+          clearInterval(kitchenAlarmInterval);
+          kitchenAlarmInterval = null;
+        }
+      }, 1600);
+    } else {
+      startKitchenAlarmAudio({
+        onFallback: () => {
+          playKitchenChime();
+          if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
+          kitchenAlarmInterval = setInterval(() => {
+            if (isKitchenAlarmRinging) {
+              playKitchenChime();
+            } else {
+              clearInterval(kitchenAlarmInterval);
+              kitchenAlarmInterval = null;
+            }
+          }, 1600);
+        }
+      });
+    }
   }
 
   function stopKitchenAlarm(shouldBroadcast = true, extra = {}) {
@@ -3444,7 +3538,8 @@ const initAdminApp = () => {
     if (extra && extra.orderId && !extra.all) {
       const targetId = extra.orderId;
       markAlarmAcknowledged([targetId]);
-      ringingOrdersQueue = ringingOrdersQueue.filter(o => o && o.id !== targetId);
+      const normTargetId = String(targetId).replace(/^#/, '');
+      ringingOrdersQueue = ringingOrdersQueue.filter(o => o && String(o.id).replace(/^#/, '') !== normTargetId);
 
       if (ringingOrdersQueue.length > 0) {
         const nextOrder = ringingOrdersQueue[0];
@@ -3479,6 +3574,7 @@ const initAdminApp = () => {
     // Persist to acknowledged alarms set so no future reload or sync can replay
     markAlarmAcknowledged(orderIds);
 
+    stopKitchenAlarmAudio();
     isKitchenAlarmRinging = false;
     if (kitchenAlarmInterval) {
       clearInterval(kitchenAlarmInterval);
@@ -3531,6 +3627,14 @@ const initAdminApp = () => {
     }
   }
 
+  if (typeof window !== 'undefined') {
+    window.__stopKitchenAlarmFromNative = function () {
+      if (isKitchenAlarmRinging) {
+        stopKitchenAlarm(true);
+      }
+    };
+  }
+
   // Stop Alarm Button Event Listener
   if (btnStopAlarm) {
     btnStopAlarm.addEventListener('click', (e) => {
@@ -3563,10 +3667,13 @@ const initAdminApp = () => {
       const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
       if (!isInput) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         stopKitchenAlarm(true);
       }
     }
-  });
+  }, true);
+
+  let soundTestTimeout = null;
 
   // Header sound test button
   if (btnAdminSoundTest) {
@@ -3581,13 +3688,53 @@ const initAdminApp = () => {
         if (getSystemNotificationPermission() === 'default') {
           await requestSystemNotificationPermission();
         }
-        playNotificationSound('new_order');
+
+        const mode = getKitchenAlarmSoundMode();
+        if (mode === KITCHEN_ALARM_MODES.R2_CUSTOM) {
+          if (soundTestTimeout) {
+            clearTimeout(soundTestTimeout);
+            soundTestTimeout = null;
+            stopKitchenAlarmAudio();
+            showToast('⏹️ Audio test stopped.', 'info');
+            return;
+          }
+          await startKitchenAlarmAudio({
+            onFallback: () => playNotificationSound('new_order')
+          });
+          showToast('🎵 Testing Funk Criminal alarm (5s)... Tap bell again to stop.', 'success');
+          soundTestTimeout = setTimeout(() => {
+            stopKitchenAlarmAudio();
+            soundTestTimeout = null;
+          }, 5000);
+        } else {
+          playNotificationSound('new_order');
+          showToast('🔊 Classic kitchen order chime tested! Volume & notifications active.', 'success');
+        }
+
         sendSystemNotification({
           title: '🍗 Kitchen Alert System Active',
           body: 'Savera Paradise Admin Portal is connected and ready for live orders.',
           tag: 'admin-test-alert'
         });
-        showToast('🔊 Kitchen order alert chime tested! Volume & notifications active.', 'success');
+      }
+    });
+  }
+
+  // Header alarm sound mode toggle (Custom R2 vs Classic Chime)
+  if (btnAdminAlarmToggle) {
+    btnAdminAlarmToggle.addEventListener('click', () => {
+      if (soundTestTimeout) {
+        clearTimeout(soundTestTimeout);
+        soundTestTimeout = null;
+        stopKitchenAlarmAudio();
+      }
+      const newMode = toggleKitchenAlarmSoundMode();
+      updateAlarmToggleUI();
+      if (newMode === KITCHEN_ALARM_MODES.R2_CUSTOM) {
+        showToast('🎵 Kitchen Alarm set to: Funk Criminal (Custom R2 Track)', 'success');
+      } else {
+        stopKitchenAlarmAudio();
+        showToast('🔔 Kitchen Alarm reverted to: Classic POS Chime', 'info');
       }
     });
   }
@@ -3730,8 +3877,10 @@ const initAdminApp = () => {
     const status = payload.status || payload.order?.status;
     if (!orderId || !status) return;
 
+    const normOrderId = String(orderId).replace(/^#/, '');
+
     // Deduplicate identical status transitions across channels within 3 seconds
-    const syncKey = `${orderId}:${status}`;
+    const syncKey = `${normOrderId}:${status}`;
     const now = Date.now();
     const lastSync = recentAdminStatusSyncs.get(syncKey) || 0;
     if (now - lastSync < 3000) {
@@ -3740,12 +3889,12 @@ const initAdminApp = () => {
     recentAdminStatusSyncs.set(syncKey, now);
 
     const allOrders = dataService.getOrders();
-    const order = payload.order || allOrders.find(o => o.id === orderId);
+    const order = payload.order || allOrders.find(o => String(o.id || '').replace(/^#/, '') === normOrderId);
     const customer = order?.customerName || payload.customerName || 'Customer';
 
     // If order was in the ringing queue but has now been moved to cooking or beyond, dismiss it
     if (status !== 'accepted' && status !== 'pending') {
-      const ringIdx = ringingOrdersQueue.findIndex(o => o && o.id === orderId);
+      const ringIdx = ringingOrdersQueue.findIndex(o => o && String(o.id || '').replace(/^#/, '') === normOrderId);
       if (ringIdx !== -1) {
         ringingOrdersQueue.splice(ringIdx, 1);
         if (ringingOrdersQueue.length === 0 && isKitchenAlarmRinging) {
@@ -3759,7 +3908,7 @@ const initAdminApp = () => {
     }
 
     // If order manage modal is open for this order, update modal live
-    if (modalOrderBackdrop && modalOrderBackdrop.classList.contains('open') && orderEditId && orderEditId.value === orderId && order) {
+    if (modalOrderBackdrop && modalOrderBackdrop.classList.contains('open') && orderEditId && String(orderEditId.value || '').replace(/^#/, '') === normOrderId && order) {
       updateModalStatusUI(order);
     }
 
@@ -4393,7 +4542,7 @@ const initAdminApp = () => {
   function updateUnlockedDealsPreview() {
     const isEnabled = inputUnlockedDealsActive ? inputUnlockedDealsActive.checked : false;
     const rawMin = Number(inputUnlockedDealsMin?.value);
-    const minOrder = Number.isFinite(rawMin) && rawMin >= 50 ? Math.round(rawMin) : 199;
+    const minOrder = Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 199;
     const rawPct = Number(inputUnlockedDealsPct?.value);
     const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(50, Math.round(rawPct)) : 15;
     const title = inputUnlockedDealsTitle?.value?.trim() || 'Wholesale Club Deals';
@@ -4516,6 +4665,9 @@ const initAdminApp = () => {
         adminLiveRushChip.classList.add('paused');
       }
       if (rushModeBadge) {
+        rushModeBadge.style.background = '';
+        rushModeBadge.style.color = '';
+        rushModeBadge.style.borderColor = '';
         rushModeBadge.textContent = '⏸️ Rush Paused';
         rushModeBadge.className = 'count-pill rush-mode-pill paused';
       }
@@ -4547,6 +4699,9 @@ const initAdminApp = () => {
         adminLiveRushChip.classList.remove('paused');
       }
       if (rushModeBadge) {
+        rushModeBadge.style.background = '';
+        rushModeBadge.style.color = '';
+        rushModeBadge.style.borderColor = '';
         rushModeBadge.textContent = '🟢 Taking Orders';
         rushModeBadge.className = 'count-pill rush-mode-pill';
       }
@@ -4736,6 +4891,12 @@ const initAdminApp = () => {
     if (typeof syncHoursSummaryChips === 'function') syncHoursSummaryChips();
   });
 
+  function assertCloudSettingsSynced(res) {
+    if (res && (res._localOnly || res._syncedToCloud === false)) {
+      throw new Error('Could not sync settings to cloud. Please check your connection or re-login.');
+    }
+  }
+
   // Trigger rush pause
   if (btnTriggerRush) {
     btnTriggerRush.addEventListener('click', async () => {
@@ -4743,7 +4904,8 @@ const initAdminApp = () => {
       const reason = rushReasonInput?.value?.trim() || 'High kitchen rush — orders temporarily paused';
 
       try {
-        await dataService.setRushPause(mins, reason);
+        const res = await dataService.setRushPause(mins, reason);
+        assertCloudSettingsSynced(res);
         updateRushUI();
         showToast(`⚡ Orders paused for ${mins} minutes! Homepage customer notice is now live.`, 'warning');
       } catch (err) {
@@ -4758,7 +4920,8 @@ const initAdminApp = () => {
   if (btnExtendRush10) {
     btnExtendRush10.addEventListener('click', async () => {
       try {
-        await dataService.extendRushPause(10);
+        const res = await dataService.extendRushPause(10);
+        assertCloudSettingsSynced(res);
         updateRushUI();
         showToast('➕ Rush extended by 10 minutes!', 'info');
       } catch (err) {
@@ -4773,7 +4936,8 @@ const initAdminApp = () => {
   if (btnResumeOrders) {
     btnResumeOrders.addEventListener('click', async () => {
       try {
-        await dataService.resumeOrders();
+        const res = await dataService.resumeOrders();
+        assertCloudSettingsSynced(res);
         updateRushUI();
         showToast('🟢 Kitchen reopened! Customers can now place orders on the homepage.', 'success');
       } catch (err) {
@@ -4932,7 +5096,8 @@ const initAdminApp = () => {
     btnSaveRadius.addEventListener('click', async () => {
       const km = Number(deliveryRadiusSlider?.value || 7);
       try {
-        await dataService.setDeliveryRadius(km);
+        const res = await dataService.setDeliveryRadius(km);
+        assertCloudSettingsSynced(res);
         if (typeof syncDeliverySummaryChips === 'function') {
           syncDeliverySummaryChips();
         }
@@ -5058,7 +5223,7 @@ const initAdminApp = () => {
       }
 
       try {
-        await dataService.setOffer({
+        const res = await dataService.setOffer({
           offerActive: active,
           offerCode: code,
           offerDiscountType: type,
@@ -5069,6 +5234,7 @@ const initAdminApp = () => {
           offerSubtext: subtext,
           offerFreeDelivery: freeDelivWithCoupon
         });
+        assertCloudSettingsSynced(res);
 
         updateOfferPreview();
         const discLabel = type === 'flat' ? `₹${discount} OFF` : `${discount}% OFF`;
@@ -5111,7 +5277,7 @@ const initAdminApp = () => {
       e.preventDefault();
       const isEnabled = inputUnlockedDealsActive ? inputUnlockedDealsActive.checked : false;
       const rawMin = Number(inputUnlockedDealsMin?.value);
-      const minOrder = Number.isFinite(rawMin) && rawMin >= 50 ? Math.round(rawMin) : 199;
+      const minOrder = Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 199;
       const rawPct = Number(inputUnlockedDealsPct?.value);
       const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(50, Math.round(rawPct)) : 15;
       const title = inputUnlockedDealsTitle?.value?.trim() || 'Wholesale Club Deals';
@@ -5125,13 +5291,14 @@ const initAdminApp = () => {
       }
 
       try {
-        await dataService.setUnlockedDeals({
+        const res = await dataService.setUnlockedDeals({
           unlockedDealsEnabled: isEnabled,
           unlockedDealsMinOrder: minOrder,
           unlockedDealsDiscountPct: discountPct,
           unlockedDealsTitle: title,
           unlockedDealsSubtext: subtext
         });
+        assertCloudSettingsSynced(res);
 
         updateUnlockedDealsPreview();
         const statusMsg = isEnabled ? `Active (${discountPct}% OFF above ₹${minOrder})` : 'Disabled';
@@ -5328,25 +5495,6 @@ const initAdminApp = () => {
     if (summaryRushReason) {
       const reasonText = (rushReasonInput?.value || settings.pauseReason || 'High kitchen rush').trim();
       summaryRushReason.textContent = reasonText.length > 30 ? reasonText.slice(0, 27) + '...' : reasonText;
-    }
-
-    if (rushModeBadge) {
-      if (isClosed) {
-        rushModeBadge.textContent = 'Store Closed';
-        rushModeBadge.className = 'count-pill rush-mode-pill';
-        rushModeBadge.style.background = '#EF4444';
-        rushModeBadge.style.color = '#FFFFFF';
-      } else if (isPaused) {
-        rushModeBadge.textContent = 'Rush Paused';
-        rushModeBadge.className = 'count-pill rush-mode-pill paused';
-        rushModeBadge.style.background = '#F59E0B';
-        rushModeBadge.style.color = '#FFFFFF';
-      } else {
-        rushModeBadge.textContent = 'Active';
-        rushModeBadge.className = 'count-pill rush-mode-pill';
-        rushModeBadge.style.background = '#D1FAE5';
-        rushModeBadge.style.color = '#065F46';
-      }
     }
 
     // 2. Daily Operating Timings & Helpline chips
@@ -5728,7 +5876,7 @@ const initAdminApp = () => {
       }
 
       try {
-        await dataService.setDeliverySettings({
+        const res = await dataService.setDeliverySettings({
           freeDeliveryEnabled: freeDelivEnabled,
           freeDeliveryThreshold: freeDelivThreshold,
           minOrderValue: minOrderVal,
@@ -5736,6 +5884,7 @@ const initAdminApp = () => {
           deliveryRadiusKm: radiusKm,
           maxActiveOrdersPerCustomer: maxActive
         });
+        assertCloudSettingsSynced(res);
 
         updateDeliveryPreview();
         if (typeof syncDeliverySummaryChips === 'function') {
@@ -5807,8 +5956,8 @@ const initAdminApp = () => {
     }
 
     adminRidersGrid.innerHTML = riders.map(r => {
-      const pin = escapeHtml(r.pin);
-      const name = escapeHtml(r.name || `Rider ${r.pin}`);
+      const riderId = escapeHtml(r.id || r.phone || '');
+      const name = escapeHtml(r.name || 'Delivery Partner');
       const rawPhone = (r.phone || '').trim();
       const phoneDigits = rawPhone.replace(/\D/g, '');
       const hasRealPhone = phoneDigits.length >= 10;
@@ -5822,7 +5971,7 @@ const initAdminApp = () => {
       const avatar = escapeHtml(rawAvatar);
 
       return `
-        <div class="admin-rider-card" data-pin="${pin}">
+        <div class="admin-rider-card" data-rider-id="${riderId}">
           <div class="admin-rider-card-top">
             <div class="admin-rider-identity">
               <div class="admin-rider-avatar-wrap">

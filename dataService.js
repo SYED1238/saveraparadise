@@ -2871,8 +2871,7 @@ class QuickBiteDataService {
             sanitizedRemote[k] = sanitizeCategoryImageUrl(v);
           }
         }
-        const localMap = this.getCategoryImages();
-        const merged = { ...CANONICAL_CATEGORY_IMAGES, ...sanitizedRemote, ...localMap };
+        const merged = { ...CANONICAL_CATEGORY_IMAGES, ...sanitizedRemote };
         localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(merged));
         return merged;
       }
@@ -2983,15 +2982,16 @@ class QuickBiteDataService {
                 availableDays: (Array.isArray(d.available_days) && d.available_days.length > 0) ? d.available_days.map(x => String(x).toLowerCase()) : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
                 timeRestricted: Boolean(d.time_restricted),
                 availableFrom: d.available_from || '',
-                availableTo: d.available_to || ''
+                availableTo: d.available_to || '',
+                r2Key: d.r2_key || d.r2Key || ''
             };
           });
 
           // Order dishes deterministically matching DEFAULT_DISHES storefront order so Admin matches Storefront
           const defaultDishOrderMap = new Map(DEFAULT_DISHES.map((dish, i) => [dish.id, i]));
           mapped.sort((a, b) => {
-            const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : 9000;
-            const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : 9000;
+            const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : -1;
+            const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : -1;
             return posA - posB;
           });
           this.saveDishes(mapped);
@@ -3175,6 +3175,9 @@ class QuickBiteDataService {
               lat: remote.lat ? Number(remote.lat) : (local?.lat || local?.addressDetails?.lat || null),
               lng: remote.lng ? Number(remote.lng) : (local?.lng || local?.addressDetails?.lng || null),
               addressDetails: remote.address_details || local?.addressDetails || null,
+              deliveryFee: Number(remote.delivery_fee ?? remote.address_details?.deliveryFee ?? local?.deliveryFee ?? local?.addressDetails?.deliveryFee ?? 0),
+              packagingFee: Number(remote.packaging_fee ?? remote.address_details?.platformFee ?? remote.address_details?.packagingFee ?? local?.packagingFee ?? local?.addressDetails?.platformFee ?? local?.addressDetails?.packagingFee ?? 0),
+              discount: Number(remote.discount ?? remote.address_details?.discount ?? local?.discount ?? local?.addressDetails?.discount ?? 0),
               pickupCode: remote.pickup_code || local?.pickupCode || fallbackPickupCode,
               assignedRiderPin: remote.assigned_rider_pin || (isOptimisticStage1 ? local?.assignedRiderPin : null) || null,
               assignedRiderName: remote.assigned_rider_name || (isOptimisticStage1 ? local?.assignedRiderName : null) || null,
@@ -4754,7 +4757,18 @@ class QuickBiteDataService {
 
   async _adminStoreAction(action, payload = {}) {
     if (typeof window === 'undefined') return null;
-    const isOwnerAction = action === 'save_settings' || action === 'clear_orders' || action === 'reset_business_data' || this.portalType === 'owner';
+    const isOwnerAction = action === 'save_settings' ? (this.portalType === 'owner' || isStaffSessionActive('owner') || !isStaffSessionActive('admin')) : ([
+      'save_rider',
+      'delete_rider',
+      'toggle_rider_status',
+      'settle_rider_cash',
+      'record_rider_payout',
+      'reset_defaults',
+      'clear_orders',
+      'reset_business_data'
+    ].includes(action) || this.portalType === 'owner');
+    const requiredRole = isOwnerAction ? 'owner' : 'admin';
+    const tokenKey = isOwnerAction ? 'quickbite_owner_token' : 'quickbite_admin_token';
     let token = null;
 
     if (typeof sessionStorage !== 'undefined') {
@@ -4773,11 +4787,11 @@ class QuickBiteDataService {
       token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token');
     }
     if (!token && typeof localStorage !== 'undefined') {
-      token = isOwnerAction
+      token = isOwnerOnlyAction
         ? (localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_admin_token'))
         : (localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_rider_token'));
       if (token && typeof sessionStorage !== 'undefined') {
-        sessionStorage.setItem(isOwnerAction ? 'quickbite_owner_token' : 'quickbite_admin_token', token);
+        sessionStorage.setItem(tokenKey, token);
       }
     }
 
@@ -4945,7 +4959,7 @@ class QuickBiteDataService {
 
       // Always execute authoritative cloud sync via _adminStoreAction (which automatically checks & ensures owner/admin tokens)
       const res = await this._adminStoreAction('save_settings', { settings: payloadSettings });
-      return { ...(res?.data || payloadSettings), _syncedToCloud: true, _localOnly: false };
+      return { ...payloadSettings, _syncedToCloud: true, _localOnly: false };
     } catch (err) {
       console.warn('[DataService] syncSettingsToSupabase error:', err?.message || err);
       return { ...settings, _syncedToCloud: false, _localOnly: true };
@@ -5237,6 +5251,19 @@ class QuickBiteDataService {
       }
       this.saveCategories(list);
 
+      // Cascade category name change to dishes
+      if (updatedData.name && updatedData.name !== prevCat.name) {
+        const dishes = this.getDishes();
+        let changed = false;
+        dishes.forEach(d => {
+          if (d && (d.category === list[idx].id || d.category === list[idx].slug)) {
+            d.categoryName = updatedData.name;
+            changed = true;
+          }
+        });
+        if (changed) this.saveDishes(dishes);
+      }
+
       const updatePayload = {
         name: list[idx].name,
         emoji: list[idx].emoji,
@@ -5274,38 +5301,46 @@ class QuickBiteDataService {
   deleteCategory(id) {
     const list = this.getCategories();
     const cat = list.find(c => c.id === id || c.slug === id);
+    if (!cat) return { success: false, then: (fn) => Promise.resolve(false).then(fn), catch: () => Promise.resolve(false) };
+
+    const prevCategories = [...list];
+    const prevDishes = this.getDishes();
+    const prevCatImages = this.getCategoryImages();
+
     const filtered = list.filter(c => c.id !== id && c.slug !== id);
     this.saveCategories(filtered);
-    if (cat) {
-      this.removeCategoryImage(cat.id);
-      if (cat.slug) this.removeCategoryImage(cat.slug);
 
-      // Cascade remove orphaned dishes belonging to this deleted category
-      const dishes = this.getDishes();
-      const catKey = cat.slug || cat.id;
-      const remainingDishes = dishes.filter(d => d && d.category !== catKey && d.category !== cat.id && d.category !== cat.slug);
-      if (remainingDishes.length !== dishes.length) {
-        this.saveDishes(remainingDishes);
-      }
+    // Cascade remove orphaned dishes belonging to this deleted category
+    const catKey = cat.slug || cat.id;
+    const remainingDishes = prevDishes.filter(d => d && d.category !== catKey && d.category !== cat.id && d.category !== cat.slug);
+    if (remainingDishes.length !== prevDishes.length) {
+      this.saveDishes(remainingDishes);
     }
 
-    const catKey = cat ? (cat.slug || cat.id) : id;
     const serverPromise = (async () => {
       try {
         if (this.isStaffAuthorized() && typeof window !== 'undefined') {
-          await this._adminStoreAction('delete_category', { id: cat ? cat.id : id, catKey });
+          await this._adminStoreAction('delete_category', { id: cat.id, catKey });
+          this.removeCategoryImage(cat.id);
+          if (cat.slug) this.removeCategoryImage(cat.slug);
         } else if (supabase) {
           if (catKey) {
             await supabase.from('dishes').delete().or(`category.eq.${catKey},category.eq.${cat?.id || ''}`);
           }
-          const { error } = await supabase.from('categories').delete().eq('id', cat ? cat.id : id);
+          const { error } = await supabase.from('categories').delete().eq('id', cat.id);
           if (error) console.warn('[DataService] Direct supabase deleteCategory error:', error.message);
+          this.removeCategoryImage(cat.id);
+          if (cat.slug) this.removeCategoryImage(cat.slug);
+        } else {
+          this.removeCategoryImage(cat.id);
+          if (cat.slug) this.removeCategoryImage(cat.slug);
         }
       } catch (err) {
         console.warn('[DataService] deleteCategory server error:', err?.message || err);
         if (this.isStaffAuthorized() && cat) {
-          list.push(cat);
-          this.saveCategories(list);
+          this.saveCategories(prevCategories);
+          this.saveDishes(prevDishes);
+          localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(prevCatImages));
           throw err;
         }
       }
@@ -5342,8 +5377,8 @@ class QuickBiteDataService {
       return d;
     });
     list.sort((a, b) => {
-      const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : 9000;
-      const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : 9000;
+      const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : -1;
+      const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : -1;
       return posA - posB;
     });
     this.dishesCache = list.map(d => ({
@@ -5474,7 +5509,8 @@ class QuickBiteDataService {
       price: parseFloat(dishData.price) || 199,
       rating: '',
       image: sanitizedImage,
-      badge: dishData.badge || '✨ Chef Specialty',
+      badge: dishData.badge !== undefined ? dishData.badge : '',
+      r2Key: dishData.r2Key || '',
       time: dishData.time || '10 - 15 mins',
       calories: dishData.calories || '520 kcal',
       diet: dishData.diet || 'Fresh Daily',
@@ -6386,13 +6422,13 @@ class QuickBiteDataService {
           const res = await this._orderAction('cancel_order', {
             orderId: targetId,
             trackingToken,
-            reason: order.cancellationReason || 'Cancelled by customer'
+            reason: order.cancellationReason || (source === 'customer' ? 'Cancelled by customer' : 'Cancelled by restaurant management')
           });
 
           if (res && (res.success || res.order || res.idempotent)) {
             delete order.pendingStatusSync;
             this.saveOrders(list);
-            return;
+            return order;
           }
           throw new Error(res?.error || 'Server rejected cancellation');
         } catch (gatewayErr) {
@@ -6409,18 +6445,24 @@ class QuickBiteDataService {
             order.statusLabel = 'Cooking in Kitchen';
             order.stepIndex = 1;
             this.saveOrders(list);
+            throw gatewayErr;
           } else {
-            // Other server rejection (e.g. invalid token)
+            // Other server rejection (e.g. 401/403/400): roll back state!
             delete order.pendingStatusSync;
+            order.status = prevStatus;
+            order.stepIndex = prevStepIndex;
+            order.statusLabel = prevStatusLabel;
+            order.eta = prevEta;
+            delete order.cancellationReason;
+            delete order.cancelledAt;
             this.saveOrders(list);
+            throw gatewayErr;
           }
         }
       };
 
-      doCancelUpdate(order.id).catch(() => {
-        order.pendingStatusSync = true;
-        this.saveOrders(list);
-      });
+      const cancelPromise = doCancelUpdate(order.id);
+      order.serverPromise = cancelPromise;
 
       // Broadcast cancellation across all connected devices via Supabase Realtime channel
       try {
@@ -6599,29 +6641,21 @@ class QuickBiteDataService {
           const cleanId = String(targetId).replace(/^#/, '');
           const trackingToken = order.trackingToken || tokens[targetId] || tokens[cleanId] || tokens[`#${cleanId}`];
 
-          if (order.status === 'cancelled') {
-            await this._orderAction('cancel_order', {
-              orderId: targetId,
-              trackingToken,
-              reason: order.cancellationReason || 'Cancelled'
-            });
-          } else {
-            await this._orderAction('update_status', {
-              orderId: targetId,
-              status: order.status,
-              stepIndex: order.stepIndex,
-              statusLabel: order.statusLabel,
-              eta: order.eta,
-              deliveredAt: order.deliveredAt,
-              cancellationReason: order.cancellationReason || order.undeliveredReason,
-              paymentStatus: order.paymentStatus,
-              cashCollected: extraData?.cashCollected ?? order.cashCollected,
+          await this._orderAction('update_status', {
+            orderId: targetId,
+            status: order.status,
+            stepIndex: order.stepIndex,
+            statusLabel: order.statusLabel,
+            eta: order.eta,
+            deliveredAt: order.deliveredAt,
+            cancellationReason: order.cancellationReason || order.undeliveredReason,
+            paymentStatus: order.paymentStatus,
+            cashCollected: extraData?.cashCollected ?? order.cashCollected,
               isPaidOnline: order.isPaidOnline,
               doorstepUpi: order.doorstepUpi,
               safeDrop: extraData?.safeDrop ?? order.safeDrop,
               safeDropNote: extraData?.safeDropNote ?? order.safeDropNote
             });
-          }
         } catch (actionErr) {
           console.warn('[DataService] updateOrderStatus server sync error:', actionErr?.message || actionErr);
           const httpStatus = Number(actionErr?.status || actionErr?.data?.status);
@@ -7151,7 +7185,7 @@ class QuickBiteDataService {
     const current = this.getSettings();
     const rawMin = Number(dealsData.unlockedDealsMinOrder);
     const rawPct = Number(dealsData.unlockedDealsDiscountPct);
-    const minOrder = Number.isFinite(rawMin) && rawMin >= 50 ? Math.round(rawMin) : 299;
+    const minOrder = Number.isFinite(rawMin) && rawMin >= 10 ? Math.round(rawMin) : 299;
     const discountPct = Number.isFinite(rawPct) && rawPct >= 1 ? Math.min(50, Math.round(rawPct)) : 15;
     const title = (dealsData.unlockedDealsTitle || 'Wholesale Club Deals').trim();
     const subtext = (dealsData.unlockedDealsSubtext || `Shop for ₹${minOrder} to unlock special menu prices!`).trim();
