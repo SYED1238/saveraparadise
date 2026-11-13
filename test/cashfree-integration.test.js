@@ -553,6 +553,13 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       assert.ok(deliveryJs.includes('currentDoorstepCashfreeSession.isMock'), 'btnOpenCashfreeCheckout must handle isMock');
     });
 
+    test('delivery.js automatically marks order delivered upon Cashfree payment confirmation with submission guard', () => {
+      const deliveryJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf8');
+      assert.ok(deliveryJs.includes('isSubmittingDelivery'), 'Must declare isSubmittingDelivery guard');
+      assert.ok(deliveryJs.includes('formConfirmDelivered.requestSubmit'), 'Must trigger formConfirmDelivered.requestSubmit automatically');
+      assert.ok(deliveryJs.includes('Marking Delivered...'), 'Must update UI to indicate delivery in progress');
+    });
+
     test('api/order-action.js and functions/api/order-action.js never write non-existent upi_manual_verified column', () => {
       const nodeOrderAction = fs.readFileSync(path.join(rootDir, 'api', 'order-action.js'), 'utf8');
       const cfOrderAction = fs.readFileSync(path.join(rootDir, 'functions', 'api', 'order-action.js'), 'utf8');

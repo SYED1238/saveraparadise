@@ -236,6 +236,7 @@ const initDeliveryApp = () => {
   const doorstepUpiLiveStatus = document.getElementById('doorstep-upi-live-status');
   let currentDoorstepCashfreeSession = null;
   let doorstepPollTimer = null;
+  let isSubmittingDelivery = false;
 
   // Cash Summary Modal Elements
   const modalCashBackdrop = document.getElementById('modal-cash-summary-backdrop');
@@ -2088,6 +2089,7 @@ const initDeliveryApp = () => {
   function resetDoorstepModalState() {
     stopDoorstepPaymentPolling();
     currentDoorstepCashfreeSession = null;
+    isSubmittingDelivery = false;
     if (doorstepUpiAmountBadge) {
       doorstepUpiAmountBadge.textContent = '';
       doorstepUpiAmountBadge.style.background = '';
@@ -2103,6 +2105,12 @@ const initDeliveryApp = () => {
     }
     if (btnOpenCashfreeCheckout) {
       btnOpenCashfreeCheckout.style.background = '#0F172A';
+    }
+    const btnSubmitDelivered = document.getElementById('btn-submit-delivered');
+    if (btnSubmitDelivered) {
+      btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-check-double"></i> Mark Order Delivered';
+      btnSubmitDelivered.style.background = '';
+      btnSubmitDelivered.disabled = false;
     }
     if (doorstepQrImg) {
       doorstepQrImg.src = '';
@@ -2207,7 +2215,23 @@ const initDeliveryApp = () => {
         if (btnOpenCashfreeCheckout) {
           btnOpenCashfreeCheckout.style.background = '#059669';
         }
-        showToast('🎉 Cashfree verified customer payment! You can now tap Mark Order Delivered.', 'success');
+        const btnSubmitDelivered = document.getElementById('btn-submit-delivered');
+        if (btnSubmitDelivered) {
+          btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Marking Delivered...';
+          btnSubmitDelivered.style.background = '#059669';
+        }
+        showToast('🎉 Cashfree payment received! Automatically marking order as delivered...', 'success');
+
+        // Automatically mark delivered immediately upon payment confirmation
+        setTimeout(() => {
+          if (formConfirmDelivered && activeConfirmOrder && !isSubmittingDelivery) {
+            if (typeof formConfirmDelivered.requestSubmit === 'function') {
+              formConfirmDelivered.requestSubmit();
+            } else {
+              formConfirmDelivered.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+          }
+        }, 500);
       } else if (announce) {
         showToast('⏳ Cashfree has not received payment yet. Customer can scan the QR code in the Cashfree scanner.', 'info');
       }
@@ -2391,7 +2415,14 @@ const initDeliveryApp = () => {
   if (formConfirmDelivered) {
     formConfirmDelivered.addEventListener('submit', (e) => {
       e.preventDefault();
-      if (!activeConfirmOrder) return;
+      if (!activeConfirmOrder || isSubmittingDelivery) return;
+      isSubmittingDelivery = true;
+
+      const btnSubmitDelivered = document.getElementById('btn-submit-delivered');
+      if (btnSubmitDelivered) {
+        btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Completing Delivery...';
+        btnSubmitDelivered.disabled = true;
+      }
 
       const orderId = activeConfirmOrder.id;
       const isCod = isCashOnDelivery(activeConfirmOrder);
@@ -2405,12 +2436,24 @@ const initDeliveryApp = () => {
       if (isCod) {
         if (currentDoorstepPaymentMode === 'cash' && checkCashReceived && !checkCashReceived.checked) {
           showToast('⚠️ Please confirm cash collection by checking the box.', 'warning');
+          isSubmittingDelivery = false;
+          if (btnSubmitDelivered) {
+            btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-check-double"></i> Mark Order Delivered';
+            btnSubmitDelivered.style.background = '';
+            btnSubmitDelivered.disabled = false;
+          }
           return;
         }
         if (DOORSTEP_UPI_ENABLED && currentDoorstepPaymentMode === 'upi') {
           const isUpiPaid = Boolean(currentDoorstepCashfreeSession?.isPaid) || Boolean(checkUpiVerified && checkUpiVerified.checked);
           if (!isUpiPaid) {
             showToast('⚠️ Please complete payment via Cashfree Scanner before marking delivered, or switch to Cash in Hand.', 'warning');
+            isSubmittingDelivery = false;
+            if (btnSubmitDelivered) {
+              btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-check-double"></i> Mark Order Delivered';
+              btnSubmitDelivered.style.background = '';
+              btnSubmitDelivered.disabled = false;
+            }
             return;
           }
         }
@@ -2428,12 +2471,24 @@ const initDeliveryApp = () => {
       if (hasCustomerCoords) {
         if (!riderLiveLocation.hasGps || (Date.now() - (riderLiveLocation.lastUpdated || 0) > 180000)) {
           showToast('📍 GPS Location Required: Please enable GPS to confirm doorstep delivery.', 'error');
+          isSubmittingDelivery = false;
+          if (btnSubmitDelivered) {
+            btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-check-double"></i> Mark Order Delivered';
+            btnSubmitDelivered.style.background = '';
+            btnSubmitDelivered.disabled = false;
+          }
           return;
         }
         distMeters = calculateStraightDistanceMeters(riderLiveLocation.lat, riderLiveLocation.lng, dropCoords.lat, dropCoords.lng);
         if (distMeters > MAX_DOORSTEP_GEOFENCE_METERS) {
           const distDisplay = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(1)} km` : `${distMeters}m`;
           showToast(`⚠️ Delivery Blocked: You are ${distDisplay} away from customer doorstep. You must stay within a 500m radius to complete delivery.`, 'error');
+          isSubmittingDelivery = false;
+          if (btnSubmitDelivered) {
+            btnSubmitDelivered.innerHTML = '<i class="fa-solid fa-check-double"></i> Mark Order Delivered';
+            btnSubmitDelivered.style.background = '';
+            btnSubmitDelivered.disabled = false;
+          }
           return;
         }
       }
