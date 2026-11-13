@@ -59,18 +59,6 @@ export async function onRequest(context) {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
   }
 
-  // 1. Verify admin/owner session token (strict role check: admin or owner)
-  const auth = verifyAdminToken(request, env, ['admin', 'owner']);
-  if (!auth || !auth.valid) {
-    return jsonResponse(
-      { error: auth?.error || 'Unauthorized: Admin or Owner session required' },
-      401,
-      Object.fromEntries(corsHeaders.entries())
-    );
-  }
-
-  const userRole = auth.payload?.role;
-
   // 2. Parse payload
   let body = {};
   try {
@@ -84,11 +72,26 @@ export async function onRequest(context) {
     return jsonResponse({ error: 'Action parameter is required' }, 400, Object.fromEntries(corsHeaders.entries()));
   }
 
+  // 1. Verify admin/owner session token (strict role check: admin or owner)
+  const auth = verifyAdminToken(request, env, ['admin', 'owner']);
+  if (!auth || !auth.valid) {
+    return jsonResponse(
+      { error: auth?.error || 'Unauthorized: Admin or Owner session required' },
+      401,
+      Object.fromEntries(corsHeaders.entries())
+    );
+  }
+
+  const userRole = auth.payload?.role;
+
   // Role Gate: Clearing orders requires Executive Owner session; saving store settings requires Staff or Owner session
   if (action === 'clear_orders' && userRole !== 'owner') {
     return jsonResponse({ error: `Forbidden: Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
   if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
+    return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
+  }
+  if (['save_dish', 'delete_dish', 'save_category', 'delete_category', 'save_category_images', 'delete_rider'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
     return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
 

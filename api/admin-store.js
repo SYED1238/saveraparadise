@@ -72,6 +72,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const body = req.body || {};
+  const action = String(body.action || '').trim();
+  if (!action) {
+    return res.status(400).json({ error: 'Action parameter is required' });
+  }
+
   // 1. Verify admin/owner session token (strict role check: admin or owner)
   const auth = verifyAdminToken(req, ['admin', 'owner']);
   if (!auth || !auth.valid) {
@@ -80,17 +86,14 @@ export default async function handler(req, res) {
 
   const userRole = auth.payload?.role;
 
-  const body = req.body || {};
-  const action = String(body.action || '').trim();
-  if (!action) {
-    return res.status(400).json({ error: 'Action parameter is required' });
-  }
-
   // Role Gate: Clearing orders requires Executive Owner session; saving store settings requires Staff or Owner session
   if (action === 'clear_orders' && userRole !== 'owner') {
     return res.status(403).json({ error: `Forbidden: Owner role required for ${action}` });
   }
   if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
+    return res.status(403).json({ error: `Forbidden: Staff or Owner role required for ${action}` });
+  }
+  if (['save_dish', 'delete_dish', 'save_category', 'delete_category', 'save_category_images', 'delete_rider'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
     return res.status(403).json({ error: `Forbidden: Staff or Owner role required for ${action}` });
   }
 

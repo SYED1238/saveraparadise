@@ -3143,6 +3143,8 @@ class QuickBiteDataService {
                 ? (remote.status_label || local?.statusLabel || 'Rider Going to Restaurant')
                 : (STATUS_TO_LABEL_MAP[effectiveStatus] || remote.status_label || local?.statusLabel || 'Accepted'));
             const effectiveEta = ((preserveLocalStatus || isOptimisticStage1) && local?.eta) ? local.eta : (remote.eta || local?.eta || '20 - 30 Minutes');
+            const isWaitingAtDoorstep = (Boolean(remote.cancellation_reason && remote.cancellation_reason.includes('[DOORSTEP_WAIT]') && effectiveStatus === 'on_the_way')) || Boolean(local?.riderWaitingAtDoorstep);
+            const waitingStartedAt = remote.address_details?.waitingStartedAt || local?.waitingStartedAt || (isWaitingAtDoorstep ? Date.now() : null);
 
             const mergedOrder = {
               ...(local || {}),
@@ -3164,6 +3166,7 @@ class QuickBiteDataService {
               total: remote.total || local?.total || '₹0',
               claimedAt: remote.claimed_at ? parseTimestampMs(remote.claimed_at) : (local?.claimedAt || null),
               deliveredAt: remote.delivered_at ? parseTimestampMs(remote.delivered_at) : (local?.deliveredAt || null),
+              pickedUpAt: remote.address_details?.pickedUpAt || (remote.picked_up_at ? parseTimestampMs(remote.picked_up_at) : (local?.pickedUpAt || null)),
               cashCollected: remote.cash_collected !== undefined && remote.cash_collected !== null ? Number(remote.cash_collected) : local?.cashCollected,
               isPaidOnline: Boolean(remote.is_paid_online || local?.isPaidOnline),
               doorstepUpi: Boolean(remote.doorstep_upi || local?.doorstepUpi),
@@ -3179,6 +3182,8 @@ class QuickBiteDataService {
               assignedRiderVehicle: remote.assigned_rider_vehicle || (isOptimisticStage1 ? local?.assignedRiderVehicle : null) || null,
               riderPickupStage: effectivePickupStage,
               cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
+              riderWaitingAtDoorstep: isWaitingAtDoorstep,
+              waitingStartedAt: waitingStartedAt,
               trackingToken: remote.tracking_token || local?.trackingToken || null,
               alarmAcknowledged: local?.alarmAcknowledged || false,
               alarmStoppedAt: local?.alarmStoppedAt || null,
@@ -3489,6 +3494,9 @@ class QuickBiteDataService {
                 }
               }
               this.saveOrders(orders, { action: 'status_updated', orderId: payload.orderId, order: orders[idx], prevStatus, source: 'supabase_broadcast', timestamp: payload.timestamp || Date.now() });
+            } else if (payload.status === 'ready_for_pickup' || (payload.order && payload.order.status === 'ready_for_pickup')) {
+              // Eliminate discovery blindspot: sync immediately when an order becomes ready for pickup
+              this.syncOrdersFromSupabase(true).catch(() => {});
             }
           }
         })
@@ -4099,9 +4107,8 @@ class QuickBiteDataService {
   startLiveHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
 
-    // Admin portal: 10s fast heartbeat to compensate for Migration 08/12 RLS blocking
-    // anon postgres_changes on public.orders. Other portals: 120s gentle fallback.
-    const intervalMs = (this.portalType === 'admin') ? 10000 : 120000;
+    // Admin portal: 10s fast heartbeat; Delivery portal: 20s active poll to discover newly packed orders; Other portals: 120s fallback.
+    const intervalMs = (this.portalType === 'admin') ? 10000 : (this.portalType === 'delivery' ? 20000 : 120000);
 
     this.heartbeatTimer = setInterval(async () => {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -4117,9 +4124,9 @@ class QuickBiteDataService {
             if (!isOpen && !hasActiveOrders) {
               return;
             }
-            // Admin portal uses force=true on 10s heartbeat because Migration 08/12 RLS
-            // blocks anon postgres_changes — this fast poll replaces the broken realtime feed
-            await this.syncOrdersFromSupabase(this.portalType === 'admin');
+            // Admin & Delivery portals use force=true on heartbeat because Migration 08/12 RLS
+            // blocks anon postgres_changes — this active poll replaces the broken realtime feed
+            await this.syncOrdersFromSupabase(this.portalType === 'admin' || this.portalType === 'delivery');
             if (this.portalType === 'delivery' || this.portalType === 'owner') {
               await this.syncSettingsFromSupabase().catch(() => {});
             }
@@ -6596,27 +6603,26 @@ class QuickBiteDataService {
               doorstepUpi: order.doorstepUpi
             });
           }
-        } catch {
-          try {
-            const { error } = await supabase.from('orders').update(fullPayload).eq('id', targetId).neq('status', 'cancelled');
-            if (error) {
-              const { error: baseErr } = await supabase.from('orders').update(basePayload).eq('id', targetId).neq('status', 'cancelled');
-              if (baseErr) {
-                order.pendingStatusSync = true;
-                this.saveOrders(list);
-              }
+        } catch (actionErr) {
+          console.warn('[DataService] updateOrderStatus server sync error:', actionErr?.message || actionErr);
+          order.pendingStatusSync = true;
+          this.saveOrders(list);
+          if (supabase) {
+            const { error: fullErr } = await supabase.from('orders').update(fullPayload).eq('id', targetId).neq('status', 'cancelled');
+            if (fullErr) {
+              await supabase.from('orders').update(basePayload).eq('id', targetId).neq('status', 'cancelled');
             }
-          } catch (updateErr) {
-            order.pendingStatusSync = true;
-            this.saveOrders(list);
           }
+          throw actionErr;
         }
       };
 
-      doUpdate(orderId).catch(() => {
+      const serverPromise = doUpdate(orderId).catch((err) => {
         order.pendingStatusSync = true;
         this.saveOrders(list);
+        throw err;
       });
+      order.serverPromise = serverPromise;
     } catch (err) {}
 
     return order;
@@ -7583,7 +7589,7 @@ class QuickBiteDataService {
   async syncRidersFromSupabase() {
     try {
       let rawRiders = null;
-      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('quickbite_rider_token'))) {
+      if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token')))) {
         try {
           const res = await this._adminStoreAction('list_riders');
           if (res && res.success && Array.isArray(res.riders)) {
@@ -7591,21 +7597,6 @@ class QuickBiteDataService {
           }
         } catch (apiErr) {
           console.warn('[DataService] syncRidersFromSupabase API error:', apiErr?.message);
-        }
-      }
-
-      // Authoritative fallback: Read directly from Supabase public table (e.g. for delivery rider sessions)
-      if (!rawRiders && supabase) {
-        try {
-          const { data, error } = await supabase
-            .from('riders')
-            .select('*')
-            .order('created_at', { ascending: true });
-          if (!error && Array.isArray(data) && data.length > 0) {
-            rawRiders = data;
-          }
-        } catch (dbErr) {
-          console.warn('[DataService] syncRidersFromSupabase DB fallback error:', dbErr?.message);
         }
       }
 
@@ -9012,9 +9003,13 @@ class QuickBiteDataService {
     let totalPayout = 0;
     let totalKms = 0;
     let surgeCount = 0;
+    let deliveredTripCount = 0;
     const start = Number(startIndex) || 1;
-    const details = sorted.map((order, idx) => {
-      const item = this.calculateOrderPayout(order, start + idx, cfg);
+    const details = sorted.map((order) => {
+      const isUndelivered = String(order?.status || '').toLowerCase() === 'undelivered';
+      const isDeliveredTrip = !isUndelivered;
+      const orderIdx = isDeliveredTrip ? (start + deliveredTripCount++) : start;
+      const item = this.calculateOrderPayout(order, orderIdx, cfg);
       totalPayout += (item?.amount || 0);
       totalKms += (item?.distanceKm || 0);
       if (item?.isSurge) surgeCount++;
@@ -9278,6 +9273,10 @@ class QuickBiteDataService {
 
     order.riderWaitingAtDoorstep = true;
     order.waitingStartedAt = waitingStartedAt;
+    order.addressDetails = {
+      ...(order.addressDetails || {}),
+      waitingStartedAt
+    };
     if (riderPin) order.assignedRiderPin = riderPin;
 
     this.saveOrders(list, {
@@ -9302,7 +9301,8 @@ class QuickBiteDataService {
       this._orderAction('update_status', {
         orderId: order.id,
         status: order.status || 'on_the_way',
-        cancellationReason: waitReason
+        cancellationReason: waitReason,
+        waitingStartedAt
       }).catch(() => {});
 
       if (typeof supabase !== 'undefined' && supabase) {

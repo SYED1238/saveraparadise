@@ -182,7 +182,7 @@ export default async function handler(req, res) {
         const sb = createClient(supabaseUrl, serviceKey);
         const { data: dbRider, error } = await sb
           .from('riders')
-          .select('pin, name, phone, vehicle, status')
+          .select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings')
           .eq('pin', String(pin).trim())
           .maybeSingle();
 
@@ -241,6 +241,22 @@ export default async function handler(req, res) {
       vehicle: dynamicRiderRecord?.vehicle || 'Bike',
       status: dynamicRiderRecord?.status || 'online'
     };
+    if (dynamicRiderRecord?.avatar) safeRiderProfile.avatar = dynamicRiderRecord.avatar;
+    if (dynamicRiderRecord?.avatar_img || dynamicRiderRecord?.avatarImg) safeRiderProfile.avatarImg = dynamicRiderRecord.avatar_img || dynamicRiderRecord.avatarImg;
+    if (dynamicRiderRecord?.max_active_orders !== undefined || dynamicRiderRecord?.maxActiveOrders !== undefined) {
+      safeRiderProfile.maxActiveOrders = dynamicRiderRecord.max_active_orders ?? dynamicRiderRecord.maxActiveOrders;
+    }
+    if (dynamicRiderRecord?.cash_settled_at !== undefined || dynamicRiderRecord?.cashSettledAt !== undefined) {
+      safeRiderProfile.cashSettledAt = dynamicRiderRecord.cash_settled_at ?? dynamicRiderRecord.cashSettledAt;
+    }
+    if (dynamicRiderRecord?.payout_paid_at !== undefined || dynamicRiderRecord?.payoutPaidAt !== undefined) {
+      safeRiderProfile.payoutPaidAt = dynamicRiderRecord.payout_paid_at ?? dynamicRiderRecord.payoutPaidAt;
+    }
+    if (dynamicRiderRecord?.payout_amount_paid !== undefined || dynamicRiderRecord?.payoutAmountPaid !== undefined) {
+      safeRiderProfile.payoutAmountPaid = dynamicRiderRecord.payout_amount_paid ?? dynamicRiderRecord.payoutAmountPaid;
+    }
+    if (dynamicRiderRecord?.trips !== undefined) safeRiderProfile.trips = dynamicRiderRecord.trips;
+    if (dynamicRiderRecord?.earnings !== undefined) safeRiderProfile.earnings = dynamicRiderRecord.earnings;
   }
 
   return res.status(200).json({

@@ -52,7 +52,7 @@ export function invalidateOrderActionMemoryCache() {
 export const invalidateKitchenPollCache = invalidateOrderActionMemoryCache;
 
 function filterOrdersForRider(orders, riderPin) {
-  const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending'];
+  const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending', 'on_the_way'];
   return (orders || [])
     .filter(o => {
       if (!o) return false;
@@ -894,16 +894,37 @@ export async function onRequest(context) {
           return jsonResponse(kitchenPollCache, 200, pollHeaders);
         }
 
-        const { data, error } = await sb
+        // Prioritize active orders (cooking, ready_for_pickup, accepted, pending) so active kitchen prep orders never drop off
+        const { data: activeOrders, error: activeErr } = await sb
           .from('orders')
           .select('id, status, customer_name, total, pickup_code, created_at')
           .neq('status', 'pending_payment')
+          .in('status', ['ready_for_pickup', 'cooking', 'accepted', 'pending'])
           .order('created_at', { ascending: false })
-          .limit(8);
+          .limit(16);
 
-        if (error) throw error;
+        if (activeErr) throw activeErr;
 
-        kitchenPollCache = data || [];
+        let combined = activeOrders || [];
+        if (combined.length < 8) {
+          const { data: recentOrders } = await sb
+            .from('orders')
+            .select('id, status, customer_name, total, pickup_code, created_at')
+            .neq('status', 'pending_payment')
+            .order('created_at', { ascending: false })
+            .limit(8);
+          if (Array.isArray(recentOrders)) {
+            const seen = new Set(combined.map(o => o.id));
+            for (const r of recentOrders) {
+              if (!seen.has(r.id)) {
+                combined.push(r);
+                seen.add(r.id);
+              }
+            }
+          }
+        }
+
+        kitchenPollCache = combined;
         kitchenPollCachedAt = now;
         updateActiveOrderTracker(kitchenPollCache, now);
         await putKitchenPollEdgeCache(request, context, kitchenPollCache);
@@ -1064,6 +1085,19 @@ export async function onRequest(context) {
         if (hasCancellationReason || status === 'undelivered') updatePayload.cancellation_reason = hasCancellationReason ? cancellationReason : (status === 'undelivered' ? 'Marked undelivered by rider' : existing.cancellation_reason);
         if (typeof doorstepUpi === 'boolean') updatePayload.doorstep_upi = doorstepUpi;
         if (typeof isPaidOnline === 'boolean') updatePayload.is_paid_online = isPaidOnline;
+
+        const waitingStartedAt = typeof body.waitingStartedAt === 'number' ? body.waitingStartedAt : undefined;
+        if (waitingStartedAt || (hasCancellationReason && cancellationReason && String(cancellationReason).includes('[DOORSTEP_WAIT]'))) {
+          const waitTs = waitingStartedAt || Date.now();
+          updatePayload.address_details = {
+            ...(existing.address_details || {}),
+            waitingStartedAt: waitTs
+          };
+        } else if (hasCancellationReason && cancellationReason === null && existing.address_details?.waitingStartedAt) {
+          const cleanedAddr = { ...(existing.address_details || {}) };
+          delete cleanedAddr.waitingStartedAt;
+          updatePayload.address_details = cleanedAddr;
+        }
 
         // Payment status & Cash collection handling
         if (status === 'delivered') {

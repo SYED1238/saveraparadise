@@ -422,34 +422,34 @@ public class OrderMonitorService extends Service {
                     if (id.isEmpty()) continue;
 
                     long createdAt = order.optLong("created_at", 0);
-                    boolean isFreshOrder = (createdAt > 0 && (now - createdAt <= 90 * 1000L));
+                    String status = order.optString("status");
+                    boolean isFreshKitchenOrder = (createdAt > 0 && (now - createdAt <= 90 * 1000L));
+                    boolean isActiveReadyOrder = (createdAt > 0 && (now - createdAt <= 2 * 60 * 60 * 1000L))
+                        && "ready_for_pickup".equalsIgnoreCase(status);
 
-                    if (isFreshOrder && !knownOrderIds.contains(id)) {
-                        // Fresh order placed in last 90s — fire notification even during initial check
+                    if (!isRiderApp && isFreshKitchenOrder && !knownOrderIds.contains(id)) {
                         knownOrderIds.add(id);
-                        String status = order.optString("status");
                         if (!"cancelled".equalsIgnoreCase(status) && !"delivered".equalsIgnoreCase(status)) {
                             String custName = order.optString("customer_name", "Customer");
                             String total = order.optString("total", "");
                             String pickupCode = order.optString("pickup_code", "");
-                            if (!isRiderApp) {
-                                fireHeadsUpNotification(
-                                    "\uD83C\uDF57 NEW ORDER " + id + "!",
-                                    custName + " • " + total + (pickupCode.isEmpty() ? "" : " • Code: " + pickupCode),
-                                    id
-                                );
-                            } else if ("ready_for_pickup".equalsIgnoreCase(status) && !notifiedReadyIds.contains(id)) {
-                                notifiedReadyIds.add(id);
-                                fireHeadsUpNotification(
-                                    "\uD83D\uDEF5 NEW PARCEL READY FOR PICKUP",
-                                    "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
-                                    id
-                                );
-                            }
+                            fireHeadsUpNotification(
+                                "\uD83C\uDF57 NEW ORDER " + id + "!",
+                                custName + " • " + total + (pickupCode.isEmpty() ? "" : " • Code: " + pickupCode),
+                                id
+                            );
                         }
+                    } else if (isRiderApp && isActiveReadyOrder && !notifiedReadyIds.contains(id)) {
+                        knownOrderIds.add(id);
+                        notifiedReadyIds.add(id);
+                        fireHeadsUpNotification(
+                            "\uD83D\uDEF5 NEW PARCEL READY FOR PICKUP",
+                            "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
+                            id
+                        );
                     } else {
                         knownOrderIds.add(id);
-                        if ("ready_for_pickup".equalsIgnoreCase(order.optString("status"))) {
+                        if ("ready_for_pickup".equalsIgnoreCase(status)) {
                             notifiedReadyIds.add(id);
                         }
                     }
@@ -561,7 +561,7 @@ public class OrderMonitorService extends Service {
     }
 
     private void startNativeAlarmLoop() {
-        if (isRiderApp || isOwnerApp) {
+        if (isOwnerApp) {
             return;
         }
         synchronized (alarmLock) {
@@ -666,7 +666,7 @@ public class OrderMonitorService extends Service {
             stopIntent.putExtra("notif_id", notifId);
             PendingIntent stopPendingIntent = PendingIntent.getService(this, notifId + 1, stopIntent, pendingFlags);
 
-            Uri soundUri = RingtoneManager.getDefaultUri(!isRiderApp ? RingtoneManager.TYPE_ALARM : RingtoneManager.TYPE_NOTIFICATION);
+            Uri soundUri = RingtoneManager.getDefaultUri(isOwnerApp ? RingtoneManager.TYPE_NOTIFICATION : RingtoneManager.TYPE_ALARM);
             if (soundUri == null) {
                 soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
             }
@@ -677,7 +677,7 @@ public class OrderMonitorService extends Service {
                 .setContentText(message)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_EVENT)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setDefaults(NotificationCompat.DEFAULT_ALL)
                 .setSound(soundUri)
@@ -686,7 +686,7 @@ public class OrderMonitorService extends Service {
                 .setDeleteIntent(stopPendingIntent)
                 .setContentIntent(pendingIntent);
 
-            if (!isRiderApp) {
+            if (!isOwnerApp) {
                 builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "🛑 Stop Alarm", stopPendingIntent);
             }
 
@@ -694,18 +694,8 @@ public class OrderMonitorService extends Service {
             notification.flags |= Notification.FLAG_INSISTENT;
             manager.notify(notifId, notification);
 
-            if (!isRiderApp) {
+            if (!isOwnerApp) {
                 startNativeAlarmLoop();
-            } else {
-                // Hardware Haptic Vibration
-                Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-                if (v != null && v.hasVibrator()) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        v.vibrate(VibrationEffect.createWaveform(new long[]{0, 400, 200, 400, 200, 600}, -1));
-                    } else {
-                        v.vibrate(new long[]{0, 400, 200, 400, 200, 600}, -1);
-                    }
-                }
             }
         } catch (Exception e) {
             Log.e(TAG, "Error firing heads-up notification", e);

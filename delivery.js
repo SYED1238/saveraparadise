@@ -75,7 +75,7 @@ const initDeliveryApp = () => {
   }
 
   let activeTab = getPersistedRiderTab() || 'ready'; // 'ready' (Kitchen), 'active' (Transit), 'delivered' (Done), 'earnings' (Payouts)
-  let isDutyOn = true;
+  let isDutyOn = typeof localStorage !== 'undefined' ? (localStorage.getItem('quickbite_rider_duty_on') !== 'false') : true;
   let activeConfirmOrder = null;
   let pendingBagOrder = null;
   const DOORSTEP_UPI_ENABLED = true; // Enabled for dynamic PhonePe / UPI QR collection at customer doorstep
@@ -882,8 +882,18 @@ const initDeliveryApp = () => {
   // DUTY TOGGLE
   // ========================================================
   if (riderDutyToggle) {
+    riderDutyToggle.checked = isDutyOn;
+    const dutyLabel = document.getElementById('duty-toggle-label');
+    if (dutyLabel) dutyLabel.textContent = isDutyOn ? 'On Duty' : 'On Break';
+    if (!isDutyOn) {
+      if (riderStatusPill) riderStatusPill.className = 'rider-badge-status offline';
+      if (riderStatusText) riderStatusText.textContent = 'Offline • On Break';
+    }
+
     riderDutyToggle.addEventListener('change', (e) => {
       isDutyOn = e.target.checked;
+      try { localStorage.setItem('quickbite_rider_duty_on', String(isDutyOn)); } catch {}
+      if (dutyLabel) dutyLabel.textContent = isDutyOn ? 'On Duty' : 'On Break';
       if (isDutyOn) {
         riderStatusPill.className = 'rider-badge-status online';
         riderStatusText.textContent = 'Online • Active';
@@ -1588,7 +1598,10 @@ const initDeliveryApp = () => {
         }
 
         const cnrKey = `quickbite_cnr_start_${cleanId}`;
-        const cnrStartTime = localStorage.getItem(cnrKey);
+        let cnrStartTime = localStorage.getItem(cnrKey) || order.waitingStartedAt;
+        if (!localStorage.getItem(cnrKey) && order.waitingStartedAt) {
+          try { localStorage.setItem(cnrKey, String(order.waitingStartedAt)); } catch {}
+        }
         let isWaiting = false;
         let formattedTimer = '10:00';
         if (cnrStartTime) {
@@ -1704,7 +1717,8 @@ const initDeliveryApp = () => {
       // TAB 3: DELIVERED TODAY ('delivered')
       // ==========================================
       const isUndelivered = order.status === 'undelivered';
-      const chronologicalIndex = Math.max(1, displayList.length - orderIdx);
+      const priorDeliveredCount = displayList.slice(orderIdx + 1).filter(o => o && o.status === 'delivered').length;
+      const chronologicalIndex = priorDeliveredCount + 1;
       const orderPayout = dataService.calculateOrderPayout(order, chronologicalIndex, payoutCfg);
 
       return `
@@ -2535,9 +2549,9 @@ const initDeliveryApp = () => {
         });
       } catch {}
 
-      // Check remaining active parcels on this delivery run
+      // Check remaining active parcels on this delivery run (both in transit and accepted going to restaurant)
       const remainingParcels = dataService.getOrders().filter(o => 
-        o.status === 'on_the_way' && 
+        (o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o)) && 
         (o.assignedRiderPin === currentRider.pin || !o.assignedRiderPin) &&
         o.id !== orderId
       );
@@ -2548,9 +2562,11 @@ const initDeliveryApp = () => {
 
       if (remainingParcels.length > 0) {
         activeTab = 'active';
+        persistRiderTab('active');
         showToast(`🎉 Parcel ${orderId} delivered! +₹${orderPayout.amount.toFixed(2)} added to your payout balance! (Total balance: ₹${updatedSummary.payoutBalance.toFixed(2)}). ${remainingParcels.length} parcel${remainingParcels.length > 1 ? 's' : ''} remaining.`, 'success');
       } else {
         activeTab = 'delivered';
+        persistRiderTab('delivered');
         const paymentMsg = isDoorstepUpi
           ? `Customer paid ₹${cash} via PhonePe/UPI directly to restaurant (Cash in hand: ₹0).`
           : (isCod ? `₹${cash} added to Cash in Hand.` : 'Paid Online.');
@@ -2614,7 +2630,7 @@ const initDeliveryApp = () => {
 
     // Persistent 10-Minute Waiting Countdown Timer
     const timerStorageKey = `quickbite_cnr_start_${cleanId}`;
-    let startTime = localStorage.getItem(timerStorageKey);
+    let startTime = localStorage.getItem(timerStorageKey) || order.waitingStartedAt;
     if (!startTime) {
       startTime = Date.now();
       localStorage.setItem(timerStorageKey, startTime);
@@ -2624,6 +2640,8 @@ const initDeliveryApp = () => {
         waitingStartedAt: startTime
       });
       showToast(`⏱️ 10-Minute doorstep waiting timer started for ${safeId}.`, 'info');
+    } else if (!localStorage.getItem(timerStorageKey)) {
+      try { localStorage.setItem(timerStorageKey, String(startTime)); } catch {}
     }
 
     // Show "Customer Answered / Cancel Wait" button if rider tapped accidentally
@@ -3336,6 +3354,12 @@ const initDeliveryApp = () => {
       return;
     }
 
+    // Suppress notification sounds and alerts when rider is offline or on break
+    if (!isDutyOn) {
+      renderPortal();
+      return;
+    }
+
     if (isRiderStatusAlerted(order.id, order.status)) {
       renderPortal();
       return;
@@ -3393,6 +3417,10 @@ const initDeliveryApp = () => {
 
     // Delivery partner only gets notified when order is READY FOR DISPATCH ('ready_for_pickup')!
     if (status === 'ready_for_pickup') {
+      if (!isDutyOn) {
+        renderPortal();
+        return;
+      }
       if (isRiderStatusAlerted(orderId, status)) {
         renderPortal();
         return;
@@ -3555,12 +3583,17 @@ const initDeliveryApp = () => {
         } catch {}
       }
 
-      // 2. If order already claimed by this rider or on the way, navigate to active tab
+      // 2. If order already claimed by this rider or unassigned on the way, ensure server-backed claim and navigate to active tab
       if (order && order.status === 'on_the_way' && (!order.assignedRiderPin || order.assignedRiderPin === currentRider.pin)) {
         if (!order.assignedRiderPin) {
           order.assignedRiderPin = currentRider.pin;
           order.assignedRiderName = currentRider.name;
           dataService.saveOrders(dataService.getOrders());
+          // Authoritative server claim to prevent 403 Forbidden on update_status
+          dataService.claimOrderByBagCode(code, currentRider.pin, order.id, {
+            riderLat: riderLiveLocation.lat,
+            riderLng: riderLiveLocation.lng
+          });
         }
         activeTab = 'active';
         persistRiderTab('active');
@@ -3802,8 +3835,22 @@ const initDeliveryApp = () => {
         const inputBagCode = document.getElementById('input-bag-code');
         if (inputBagCode) inputBagCode.value = '';
 
-        activeTab = 'active';
-        persistRiderTab('active');
+        const maxOrders = dataService.getRiderMaxActiveOrders(currentRider.pin);
+        const curOrders = dataService.getOrders();
+        const activeCount = curOrders.filter(o => {
+          if (!o) return false;
+          const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+          if (oPin !== String(currentRider.pin).trim()) return false;
+          return o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o);
+        }).length;
+
+        // If rider has capacity for batched orders (>1 limit and below cap), remain on ready tab to allow picking another order
+        if (maxOrders > 1 && activeCount < maxOrders) {
+          activeTab = 'ready';
+        } else {
+          activeTab = 'active';
+        }
+        persistRiderTab(activeTab);
         updateActiveTabUI();
         renderPortal();
 
