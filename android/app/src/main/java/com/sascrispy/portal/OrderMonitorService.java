@@ -1039,9 +1039,6 @@ public class OrderMonitorService extends Service {
             Log.e(TAG, "Error firing heads-up notification", e);
         }
     }
-            Log.e(TAG, "Error firing heads-up notification", e);
-        }
-    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
