@@ -83,24 +83,71 @@ public class WebAppInterface {
             }
             PendingIntent pendingIntent = PendingIntent.getActivity(context, (int) System.currentTimeMillis(), intent, pendingFlags);
 
-            Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            int notifId = tag != null ? Math.abs(tag.hashCode()) : (int) System.currentTimeMillis();
+
+            // Urgent alarm alerts for Kitchen (new order) and Rider (parcel ready on counter)
+            boolean isAlarmAlert = "kitchen_alarm".equals(soundType) ||
+                                   "new_order".equals(soundType) ||
+                                   "rider_new_task".equals(soundType) ||
+                                   "rider_alarm".equals(soundType) ||
+                                   (tag != null && (tag.startsWith("admin-order-") || 
+                                                    tag.startsWith("rider-ready-") || 
+                                                    tag.startsWith("rider-task-") ||
+                                                    tag.startsWith("rider-")));
+
+            int priority;
+            String category;
+            Uri soundUri;
+
+            if (isAlarmAlert) {
+                priority = NotificationCompat.PRIORITY_MAX;
+                category = NotificationCompat.CATEGORY_ALARM;
+                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (soundUri == null) {
+                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                }
+                if (soundUri == null) {
+                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                }
+            } else {
+                priority = NotificationCompat.PRIORITY_HIGH;
+                category = NotificationCompat.CATEGORY_EVENT;
+                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID_ORDERS)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(title)
                 .setContentText(message)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_EVENT)
+                .setPriority(priority)
+                .setCategory(category)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setDefaults(NotificationCompat.DEFAULT_ALL)
-                .setSound(soundUri)
-                .setVibrate(new long[]{0, 350, 200, 350, 200, 500})
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent);
 
-            int notifId = tag != null ? Math.abs(tag.hashCode()) : (int) System.currentTimeMillis();
-            manager.notify(notifId, builder.build());
+            if (isAlarmAlert) {
+                builder.setSound(soundUri, AudioManager.STREAM_ALARM)
+                    .setVibrate(new long[]{0, 500, 250, 500, 250, 700})
+                    .setFullScreenIntent(pendingIntent, true);
+
+                Intent stopIntent = new Intent(context, OrderMonitorService.class);
+                stopIntent.setAction(OrderMonitorService.ACTION_STOP_ALARM);
+                stopIntent.putExtra("notif_id", notifId);
+                PendingIntent stopPendingIntent = PendingIntent.getService(context, notifId + 1, stopIntent, pendingFlags);
+                builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "🛑 Stop Alarm", stopPendingIntent);
+                builder.setDeleteIntent(stopPendingIntent);
+            } else {
+                builder.setSound(soundUri)
+                    .setVibrate(new long[]{0, 350, 200, 350, 200, 500});
+            }
+
+            Notification notif = builder.build();
+            if (isAlarmAlert) {
+                notif.flags |= Notification.FLAG_INSISTENT;
+            }
+            manager.notify(notifId, notif);
 
             // Hardware haptic vibration
             Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
@@ -108,8 +155,8 @@ public class WebAppInterface {
                 v.vibrate(new long[]{0, 350, 200, 350}, -1);
             }
 
-            // If kitchen order alert, also trigger native loud continuous siren loop
-            if ("kitchen_alarm".equals(soundType) || "new_order".equals(soundType) || (tag != null && tag.startsWith("admin-order-"))) {
+            // If kitchen or rider order alert, also trigger native loud continuous siren loop & audio focus
+            if (isAlarmAlert) {
                 OrderMonitorService.startNativeAlarm();
             }
         } catch (Exception e) {

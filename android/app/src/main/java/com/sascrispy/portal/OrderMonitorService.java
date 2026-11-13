@@ -463,9 +463,11 @@ public class OrderMonitorService extends Service {
 
                     long createdAt = order.optLong("created_at", 0);
                     String status = order.optString("status");
+                    String assignedRider = order.optString("assigned_rider_pin", "").trim();
+                    boolean isClaimed = !assignedRider.isEmpty();
                     boolean isFreshKitchenOrder = (createdAt > 0 && (now - createdAt <= 90 * 1000L));
                     boolean isActiveReadyOrder = (createdAt > 0 && (now - createdAt <= 2 * 60 * 60 * 1000L))
-                        && "ready_for_pickup".equalsIgnoreCase(status);
+                        && "ready_for_pickup".equalsIgnoreCase(status) && !isClaimed;
 
                     if (!isRiderApp && isFreshKitchenOrder && !knownOrderIds.contains(id)) {
                         knownOrderIds.add(id);
@@ -530,7 +532,8 @@ public class OrderMonitorService extends Service {
                     }
                 } else {
                     // Rider App: Alert when food is marked ready for pickup (blinded notification - bag number remains inside physical bag)
-                    boolean isReady = "ready_for_pickup".equalsIgnoreCase(status);
+                    boolean isClaimed = !order.optString("assigned_rider_pin", "").trim().isEmpty();
+                    boolean isReady = "ready_for_pickup".equalsIgnoreCase(status) && !isClaimed;
                     if (isReady && !notifiedReadyIds.contains(id)) {
                         notifiedReadyIds.add(id);
                         knownOrderIds.add(id);

@@ -916,6 +916,7 @@ const initDeliveryApp = () => {
         }
         showToast('🟢 You are now Online and receiving delivery tasks!', 'success');
       } else {
+        stopRiderAlarm();
         riderStatusPill.className = 'rider-badge-status offline';
         riderStatusText.textContent = 'Offline • On Break';
         showToast('⏸️ You are now Offline. No new tasks will be assigned.', 'info');
@@ -1853,6 +1854,7 @@ const initDeliveryApp = () => {
   // Stage 1: Rider accepts order (from any location) & heads to Savera Paradise
   function handleStartDelivery(orderId) {
     if (!orderId) return;
+    stopRiderAlarm();
     const cleanId = String(orderId).trim().replace(/^#/, '');
     const allOrders = dataService.getOrders();
     const order = dataService.getOrderById(orderId) ||
@@ -1896,6 +1898,7 @@ const initDeliveryApp = () => {
   // Stage 2: Rider arrives at Savera Paradise counter and picks up the parcel
   async function handleConfirmParcelPickup(orderId, triggerBtn = null) {
     if (!orderId) return;
+    stopRiderAlarm();
     if (triggerBtn && triggerBtn.disabled) return;
     const cleanId = String(orderId).trim().replace(/^#/, '');
     const allOrders = dataService.getOrders();
@@ -3326,6 +3329,87 @@ const initDeliveryApp = () => {
       localStorage.setItem('quickbite_rider_alerted_statuses', JSON.stringify(pruned));
     } catch {}
   }
+  let isRiderAlarmRinging = false;
+  let riderAlarmInterval = null;
+  const ringingParcelsQueue = [];
+
+  function startRiderAlarm(order) {
+    if (!order || !order.id) return;
+    if (!isDutyOn) return;
+
+    // Suppress audio alerts for stale/historical orders (>30 mins old)
+    const orderAge = order.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
+    if (orderAge > 30 * 60 * 1000) return;
+
+    const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
+    const cleanId = normalizeId(order.id);
+
+    if (!ringingParcelsQueue.some(o => normalizeId(o.id) === cleanId)) {
+      ringingParcelsQueue.push(order);
+    }
+
+    isRiderAlarmRinging = true;
+
+    // Show Alarm Banner in delivery.html
+    const banner = document.getElementById('rider-alarm-banner');
+    if (banner) {
+      const titleEl = document.getElementById('rider-alarm-title');
+      const subEl = document.getElementById('rider-alarm-sub');
+      const bagCode = order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000');
+      if (titleEl) titleEl.textContent = `Parcel #${bagCode} Ready (#${cleanId})`;
+      if (subEl) subEl.textContent = `Food is packed on Savera Paradise kitchen counter • Tap Pick Up to start delivery`;
+      banner.style.display = 'block';
+    }
+
+    document.body.classList.add('rider-alarm-ringing');
+    flashTabTitle(`🚨 PARCEL READY ON COUNTER!`);
+
+    // Trigger native Android background alarm loop if running inside Android APK
+    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
+      try {
+        window.AndroidNative.startAlarm();
+      } catch (e) {
+        console.warn('[Rider] Native startAlarm failed:', e);
+      }
+    }
+
+    // Play first chime immediately
+    playNotificationSound('rider_new_task');
+
+    // Loop chime repeatedly every 2.0s UNTIL rider clicks STOP button or accepts order
+    if (riderAlarmInterval) clearInterval(riderAlarmInterval);
+    riderAlarmInterval = setInterval(() => {
+      if (isRiderAlarmRinging) {
+        playNotificationSound('rider_new_task');
+      } else {
+        clearInterval(riderAlarmInterval);
+        riderAlarmInterval = null;
+      }
+    }, 2000);
+  }
+
+  function stopRiderAlarm() {
+    isRiderAlarmRinging = false;
+    ringingParcelsQueue.length = 0;
+    if (riderAlarmInterval) {
+      clearInterval(riderAlarmInterval);
+      riderAlarmInterval = null;
+    }
+
+    const banner = document.getElementById('rider-alarm-banner');
+    if (banner) banner.style.display = 'none';
+    document.body.classList.remove('rider-alarm-ringing');
+
+    // Trigger native Android stopAlarm if running inside Android APK
+    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.stopAlarm === 'function') {
+      try {
+        window.AndroidNative.stopAlarm();
+      } catch (e) {
+        console.warn('[Rider] Native stopAlarm failed:', e);
+      }
+    }
+  }
+
   const knownDeliveryIds = new Set();
   const initOrders = dataService.getOrders();
   if (Array.isArray(initOrders)) {
@@ -3380,15 +3464,17 @@ const initDeliveryApp = () => {
     }
     markRiderStatusAlerted(order.id, order.status);
 
-    playNotificationSound('rider_new_task');
+    startRiderAlarm(order);
     showToast(`📦 New parcel packed & ready on restaurant kitchen counter!`, 'success');
 
     sendSystemNotification({
       title: `📦 New Parcel Ready on Kitchen Counter!`,
       body: `Tap to view order distance & payout in your Pending queue and pick it up (within 3 km of restaurant).`,
-      tag: `rider-ready-${order.id}`,
+      tag: `rider-ready-${cleanId}`,
+      soundType: 'rider_new_task',
       data: { orderId: order.id, url: '/delivery.html' },
       onClick: () => {
+        stopRiderAlarm();
         const curOrders = dataService.getOrders();
         const cur = curOrders.find(o => normalizeId(o.id) === cleanId);
         if (cur && cur.status === 'ready_for_pickup') {
@@ -3440,13 +3526,17 @@ const initDeliveryApp = () => {
         return;
       }
       markRiderStatusAlerted(orderId, status);
-      playNotificationSound('rider_new_task');
+      startRiderAlarm(order || { id: orderId, status });
       showToast(`📦 New parcel packed & ready on kitchen counter!`, 'success');
       sendSystemNotification({
         title: `📦 New Parcel Ready on Kitchen Counter!`,
         body: `View the order distance & payout in your Pending queue and tap Pick Up Order to start delivery.`,
-        tag: `rider-ready-${orderId}`,
-        data: { orderId, url: '/delivery.html' }
+        tag: `rider-ready-${cleanId}`,
+        soundType: 'rider_new_task',
+        data: { orderId, url: '/delivery.html' },
+        onClick: () => {
+          stopRiderAlarm();
+        }
       });
       flashTabTitle(`📦 NEW PARCEL READY ON COUNTER!`);
     } else {
@@ -4031,6 +4121,15 @@ const initDeliveryApp = () => {
       btnDemo.onclick = (e) => {
         e.preventDefault();
         createDemoDeliveryOrder('1001');
+      };
+    }
+
+    const btnStopRiderAlarm = document.getElementById('btn-stop-rider-alarm');
+    if (btnStopRiderAlarm) {
+      btnStopRiderAlarm.onclick = (e) => {
+        e.preventDefault();
+        stopRiderAlarm();
+        showToast('🔕 Parcel alarm silenced.', 'info');
       };
     }
   }
