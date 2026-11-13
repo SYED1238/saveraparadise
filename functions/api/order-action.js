@@ -13,7 +13,7 @@ const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
 const STORE_SETTINGS_CACHE_TTL_MS = 60000;
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
-const SYNC_ORDERS_CACHE_TTL_MS = 12000;
+const SYNC_ORDERS_CACHE_TTL_MS = 30000;
 
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
@@ -23,6 +23,7 @@ let lastActiveOrderSeenAt = 0;
 let syncOrdersCache = null;
 let syncOrdersCachedAt = 0;
 let syncOrdersCachedLimit = 0;
+let syncOrdersVersion = 0;
 
 export function invalidateOrderActionMemoryCache() {
   kitchenPollCachedAt = 0;
@@ -30,6 +31,7 @@ export function invalidateOrderActionMemoryCache() {
   syncOrdersCachedAt = 0;
   syncOrdersCache = null;
   syncOrdersCachedLimit = 0;
+  syncOrdersVersion = 0;
 }
 
 function filterOrdersForRider(orders, riderPin) {
@@ -501,9 +503,9 @@ export async function onRequest(context) {
               delete copy.trackingToken;
               return copy;
             });
-          return jsonResponse({ success: true, orders: filtered }, 200, Object.fromEntries(corsHeaders.entries()));
+          return jsonResponse({ success: true, orders: filtered, version: 1 }, 200, Object.fromEntries(corsHeaders.entries()));
         }
-        return jsonResponse({ success: true, orders: testOrders }, 200, Object.fromEntries(corsHeaders.entries()));
+        return jsonResponse({ success: true, orders: testOrders, version: 1 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       if (action === 'update_status') {
@@ -894,17 +896,21 @@ export async function onRequest(context) {
         return jsonResponse(kitchenPollCache, 200, pollHeaders);
       }
 
-      // 1. Authenticated Staff Sync (Admin, Delivery, Owner — 12s Shared In-Memory Cache)
+      // 1. Authenticated Staff Sync (Admin, Delivery, Owner — 30s Shared In-Memory Cache with Version Deltas)
       case 'sync_orders': {
         const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
         if (!auth || !auth.valid) {
           return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
         }
         const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
+        const clientVersion = Number(body.sinceVersion) || 0;
         const now = Date.now();
 
         let sourceOrders = null;
         if (syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
+          if (clientVersion > 0 && clientVersion === syncOrdersVersion) {
+            return jsonResponse({ success: true, unchanged: true, version: syncOrdersVersion }, 200, Object.fromEntries(corsHeaders.entries()));
+          }
           sourceOrders = syncOrdersCache.slice(0, limit);
         } else {
           const fetchLimit = limit;
@@ -918,16 +924,17 @@ export async function onRequest(context) {
           syncOrdersCache = data || [];
           syncOrdersCachedAt = now;
           syncOrdersCachedLimit = fetchLimit;
+          syncOrdersVersion = now;
           updateActiveOrderTracker(syncOrdersCache, now);
           sourceOrders = syncOrdersCache.slice(0, limit);
         }
 
         if (auth.payload?.role === 'rider') {
           const riderPin = String(auth.payload.riderPin || '').trim();
-          return jsonResponse({ success: true, orders: filterOrdersForRider(sourceOrders, riderPin) }, 200, Object.fromEntries(corsHeaders.entries()));
+          return jsonResponse({ success: true, orders: filterOrdersForRider(sourceOrders, riderPin), version: syncOrdersVersion }, 200, Object.fromEntries(corsHeaders.entries()));
         }
 
-        return jsonResponse({ success: true, orders: sourceOrders }, 200, Object.fromEntries(corsHeaders.entries()));
+        return jsonResponse({ success: true, orders: sourceOrders, version: syncOrdersVersion }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       // 2. Verified Guest Customer Order Tracking (Requires Order ID + Tracking Token)

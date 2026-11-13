@@ -4,6 +4,7 @@
  * Strictly forbids mock/fallback success when running in PRODUCTION environment.
  */
 import crypto from 'node:crypto';
+import { invalidateOrderActionMemoryCache } from './order-action.js';
 
 export function getCashfreeConfig(env = null) {
   const appId = (env && (env.CASHFREE_APP_ID || env.VITE_CASHFREE_APP_ID)) ||
@@ -339,6 +340,10 @@ export async function recordVerifiedCashfreePayment({
   if (error) {
     throw error;
   }
+
+  try {
+    invalidateOrderActionMemoryCache();
+  } catch {}
 
   return { updated: true, order: savedOrder || { ...existingOrder, ...updateFields } };
 }

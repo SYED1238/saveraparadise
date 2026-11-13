@@ -34,7 +34,7 @@ const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
 const STORE_SETTINGS_CACHE_TTL_MS = 60000;
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
-const SYNC_ORDERS_CACHE_TTL_MS = 12000;
+const SYNC_ORDERS_CACHE_TTL_MS = 30000;
 
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
@@ -44,14 +44,17 @@ let lastActiveOrderSeenAt = 0;
 let syncOrdersCache = null;
 let syncOrdersCachedAt = 0;
 let syncOrdersCachedLimit = 0;
+let syncOrdersVersion = 0;
 
-export function invalidateKitchenPollCache() {
+export function invalidateOrderActionMemoryCache() {
   kitchenPollCachedAt = 0;
   kitchenPollCache = null;
   syncOrdersCachedAt = 0;
   syncOrdersCache = null;
   syncOrdersCachedLimit = 0;
+  syncOrdersVersion = 0;
 }
+export const invalidateKitchenPollCache = invalidateOrderActionMemoryCache;
 
 function filterOrdersForRider(orders, riderPin) {
   const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending'];
@@ -466,9 +469,9 @@ export default async function handler(req, res) {
               delete copy.trackingToken;
               return copy;
             });
-          return res.status(200).json({ success: true, orders: filtered });
+          return res.status(200).json({ success: true, orders: filtered, version: 1 });
         }
-        return res.status(200).json({ success: true, orders: testOrders });
+        return res.status(200).json({ success: true, orders: testOrders, version: 1 });
       }
 
       if (action === 'update_status') {
@@ -841,17 +844,21 @@ export default async function handler(req, res) {
         return res.status(200).json(kitchenPollCache);
       }
 
-      // 1. Authenticated Staff Sync (Admin, Delivery, Owner — 12s Shared In-Memory Cache)
+      // 1. Authenticated Staff Sync (Admin, Delivery, Owner — 30s Shared In-Memory Cache with Version Deltas)
       case 'sync_orders': {
         const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
         if (!auth || !auth.valid) {
           return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff session required' });
         }
         const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
+        const clientVersion = Number(body.sinceVersion) || 0;
         const now = Date.now();
 
         let sourceOrders = null;
         if (syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
+          if (clientVersion > 0 && clientVersion === syncOrdersVersion) {
+            return res.status(200).json({ success: true, unchanged: true, version: syncOrdersVersion });
+          }
           sourceOrders = syncOrdersCache.slice(0, limit);
         } else {
           const fetchLimit = limit;
@@ -865,16 +872,17 @@ export default async function handler(req, res) {
           syncOrdersCache = data || [];
           syncOrdersCachedAt = now;
           syncOrdersCachedLimit = fetchLimit;
+          syncOrdersVersion = now;
           updateActiveOrderTracker(syncOrdersCache, now);
           sourceOrders = syncOrdersCache.slice(0, limit);
         }
 
         if (auth.payload?.role === 'rider') {
           const riderPin = String(auth.payload.riderPin || '').trim();
-          return res.status(200).json({ success: true, orders: filterOrdersForRider(sourceOrders, riderPin) });
+          return res.status(200).json({ success: true, orders: filterOrdersForRider(sourceOrders, riderPin), version: syncOrdersVersion });
         }
 
-        return res.status(200).json({ success: true, orders: sourceOrders });
+        return res.status(200).json({ success: true, orders: sourceOrders, version: syncOrdersVersion });
       }
 
       // 2. Verified Guest Customer Order Tracking (Requires Order ID + Tracking Token)

@@ -3028,9 +3028,18 @@ class QuickBiteDataService {
         let error = null;
         let fromAuthoritativeApi = false;
         try {
-          const actionRes = await this._orderAction('sync_orders', { limit: 100 });
+          const reqLimit = this.portalType === 'owner' ? 500 : 100;
+          const actionRes = await this._orderAction('sync_orders', {
+            limit: reqLimit,
+            sinceVersion: this._lastOrdersSyncVersion || 0
+          });
+          if (actionRes && actionRes.unchanged && this.getOrders().length > 0) {
+            this._lastOrdersSyncTime = Date.now();
+            return this.getOrders();
+          }
           if (actionRes && Array.isArray(actionRes.orders)) {
             data = actionRes.orders;
+            if (actionRes.version) this._lastOrdersSyncVersion = actionRes.version;
             fromAuthoritativeApi = true;
           }
         } catch {}
@@ -3044,6 +3053,7 @@ class QuickBiteDataService {
         if (!error && Array.isArray(data)) {
           this._lastOrdersSyncTime = Date.now();
           if (data.length === 0) {
+            this._lastOrdersSyncVersion = 0;
             this.isSupabaseConnected = true;
             const localList = this.getOrders();
             const pendingOrders = localList.filter(o => o && o.pendingRemoteSync && (Date.now() - (Number(o.createdAt) || 0)) < 24 * 60 * 60 * 1000);
@@ -3208,6 +3218,11 @@ class QuickBiteDataService {
             if (!o || !o.id) return false;
             const cId = normalizeId(o.id);
             if (remoteCleanIds.has(cId)) return true;
+            // Safely preserve Owner historical completed orders up to 30 days
+            if (this.portalType === 'owner' && ['delivered', 'cancelled', 'undelivered'].includes(o.status)) {
+              const orderAge = Date.now() - (Number(o.createdAt) || 0);
+              if (orderAge < 30 * 24 * 60 * 60 * 1000) return true;
+            }
             // Safely preserve pending offline orders queued for cloud synchronization
             if (o.pendingRemoteSync) {
               const pendingAge = Date.now() - (Number(o.createdAt) || 0);
@@ -6711,6 +6726,7 @@ class QuickBiteDataService {
   }
 
   async clearAllOrders() {
+    this._lastOrdersSyncVersion = 0;
     this.ordersCache = [];
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
     try {

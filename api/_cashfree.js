@@ -4,6 +4,7 @@
  * Supports both Sandbox (Test) and Production environments.
  */
 import crypto from 'node:crypto';
+import { invalidateOrderActionMemoryCache } from './order-action.js';
 
 export function getCashfreeConfig() {
   const appId = process.env.CASHFREE_APP_ID || process.env.VITE_CASHFREE_APP_ID || '';
@@ -327,6 +328,10 @@ export async function recordVerifiedCashfreePayment({
   if (error) {
     throw error;
   }
+
+  try {
+    invalidateOrderActionMemoryCache();
+  } catch {}
 
   return { updated: true, order: savedOrder || { ...existingOrder, ...updateFields } };
 }
