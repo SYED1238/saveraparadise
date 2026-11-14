@@ -1907,6 +1907,19 @@ function initActions() {
     });
   }
 
+  // Download Latest Owner APK
+  const OWNER_APK_URL = 'https://saveraparadise.foodbliz.in/apk/Savera-Paradise-Owner.apk';
+  const btnDownloadOwnerApk = document.getElementById('btn-owner-download-owner-apk');
+  if (btnDownloadOwnerApk) {
+    btnDownloadOwnerApk.addEventListener('click', (e) => {
+      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.openExternalUrl === 'function') {
+        e.preventDefault();
+        window.AndroidNative.openExternalUrl(OWNER_APK_URL);
+        showToast('📲 Opening latest Owner APK download...', 'success');
+      }
+    });
+  }
+
   // Lock Dashboard
   const btnLock = document.getElementById('btn-owner-lock');
   if (btnLock) {

@@ -247,12 +247,12 @@ export async function onRequest(context) {
       if (action === 'settle_rider_cash') {
         const pin = String(body.riderPin || body.pin || '').trim();
         if (!pin) return jsonResponse({ error: 'Rider PIN is required' }, 400, Object.fromEntries(corsHeaders.entries()));
-        return jsonResponse({ success: true, pin, settledAt: body.settledAt || Date.now() }, 200, Object.fromEntries(corsHeaders.entries()));
+        return jsonResponse({ success: true, pin, settledAt: Number(body.settledAt) || Date.now() }, 200, Object.fromEntries(corsHeaders.entries()));
       }
       if (action === 'record_rider_payout') {
         const pin = String(body.riderPin || body.pin || '').trim();
         if (!pin) return jsonResponse({ error: 'Rider PIN is required' }, 400, Object.fromEntries(corsHeaders.entries()));
-        return jsonResponse({ success: true, pin, paidAt: body.paidAt || Date.now(), amount: body.amount || 0 }, 200, Object.fromEntries(corsHeaders.entries()));
+        return jsonResponse({ success: true, pin, paidAt: Number(body.paidAt) || Date.now(), amount: body.amount || 0 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
       if (action === 'reset_defaults' || action === 'reset_business_data') {
         return jsonResponse({ success: true, message: 'Store reset successfully' }, 200, Object.fromEntries(corsHeaders.entries()));
@@ -692,7 +692,7 @@ export async function onRequest(context) {
       case 'settle_rider_cash': {
         const pin = String(body.riderPin || body.pin || '').trim();
         if (!pin) return jsonResponse({ error: 'Rider PIN is required' }, 400, Object.fromEntries(corsHeaders.entries()));
-        const settledAt = body.settledAt ? new Date(body.settledAt).toISOString() : new Date().toISOString();
+        const settledAt = Number(body.settledAt) || Date.now();
         const updateFields = {
           cash_settled_at: settledAt,
           cash_handover_status: 'taken',
@@ -707,7 +707,7 @@ export async function onRequest(context) {
       case 'record_rider_payout': {
         const pin = String(body.riderPin || body.pin || '').trim();
         if (!pin) return jsonResponse({ error: 'Rider PIN is required' }, 400, Object.fromEntries(corsHeaders.entries()));
-        const paidAt = body.paidAt ? new Date(body.paidAt).toISOString() : new Date().toISOString();
+        const paidAt = Number(body.paidAt) || Date.now();
         const updateFields = { payout_paid_at: paidAt };
         if (body.amount !== undefined) updateFields.payout_amount_paid = Number(body.amount) || 0;
         const { data, error } = await sb.from('riders').update(updateFields).eq('pin', pin).select();

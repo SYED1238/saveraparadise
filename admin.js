@@ -4,7 +4,7 @@
  * and data synchronization with dataService.
  */
 
-import { dataService, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs } from './dataService.js';
+import { dataService, CANONICAL_CATEGORY_IMAGES, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs } from './dataService.js';
 import { cloudflareR2Service } from './cloudflareR2Service.js';
 import {
   playNotificationSound,

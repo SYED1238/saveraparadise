@@ -252,4 +252,58 @@ test('KITCHEN PORTAL ROUND 2 BUG HUNT & REMEDIATION SUITE (16 Verified Findings)
       'syncHoursSummaryChips must not declare unused local rushModeBadge variable'
     );
   });
+
+  // R3-CRIT-01: Numeric epoch timestamp for BIGINT columns
+  await t.test('17. [R3-CRIT-01] settle_rider_cash and record_rider_payout pass numeric epoch timestamps to BIGINT columns', () => {
+    for (const [name, content] of [['api/admin-store.js', apiAdminStoreJs], ['functions/api/admin-store.js', functionsApiAdminStoreJs]]) {
+      assert.match(
+        content,
+        /case\s*['"]settle_rider_cash['"]:[\s\S]*?const\s+settledAt\s*=\s*Number\(body\.settledAt\)\s*\|\|\s*Date\.now\(\);/,
+        `${name} settle_rider_cash must use numeric epoch timestamp for BIGINT cash_settled_at`
+      );
+      assert.match(
+        content,
+        /case\s*['"]record_rider_payout['"]:[\s\S]*?const\s+paidAt\s*=\s*Number\(body\.paidAt\)\s*\|\|\s*Date\.now\(\);/,
+        `${name} record_rider_payout must use numeric epoch timestamp for BIGINT payout_paid_at`
+      );
+      assert.doesNotMatch(
+        content,
+        /case\s*['"]settle_rider_cash['"]:[\s\S]*?new\s+Date\([^)]*\)\.toISOString\(\)/,
+        `${name} settle_rider_cash must not pass ISO string to BIGINT column`
+      );
+      assert.doesNotMatch(
+        content,
+        /case\s*['"]record_rider_payout['"]:[\s\S]*?new\s+Date\([^)]*\)\.toISOString\(\)/,
+        `${name} record_rider_payout must not pass ISO string to BIGINT column`
+      );
+    }
+  });
+
+  // R3-HIGH-01: dataService.CANONICAL_CATEGORY_IMAGES runtime exposure
+  await t.test('18. [R3-HIGH-01] dataService exposes CANONICAL_CATEGORY_IMAGES on instance constructor and admin.js imports it', () => {
+    assert.match(
+      dataServiceJs,
+      /constructor\(\)\s*\{[\s\S]*?this\.CANONICAL_CATEGORY_IMAGES\s*=\s*CANONICAL_CATEGORY_IMAGES;/,
+      'QuickBiteDataService must expose CANONICAL_CATEGORY_IMAGES on instance constructor'
+    );
+    assert.match(
+      adminJs,
+      /import\s*\{[^}]*CANONICAL_CATEGORY_IMAGES[^}]*\}\s*from\s*['"]\.\/dataService\.js['"]/,
+      'admin.js must import CANONICAL_CATEGORY_IMAGES directly from dataService.js'
+    );
+  });
+
+  // R3-MED-01: Doorstep wait cancellation and status guard
+  await t.test('19. [R3-MED-01] cancellationReason handles cleared null values and riderWaitingAtDoorstep guards on on_the_way', () => {
+    assert.match(
+      dataServiceJs,
+      /cancellationReason:\s*remote\.cancellation_reason\s*!==\s*undefined\s*\?\s*remote\.cancellation_reason\s*:\s*\(local\?\.cancellationReason\s*\|\|\s*null\)/,
+      'syncOrdersFromSupabase and handleRealtimeOrderDelta must check !== undefined to permit clearing cancellation_reason to null'
+    );
+    assert.match(
+      dataServiceJs,
+      /riderWaitingAtDoorstep:\s*remote\.address_details\?\.riderWaitingAtDoorstep\s*!==\s*undefined[\s\S]*?Boolean\(effectiveStatus\s*===\s*['"]on_the_way['"]\s*&&\s*remote\.address_details\.riderWaitingAtDoorstep\)/,
+      'riderWaitingAtDoorstep must guard on effectiveStatus === on_the_way'
+    );
+  });
 });

@@ -2559,6 +2559,7 @@ export function getDishScheduleStatus(dish, now = new Date()) {
 // ========================================================
 class QuickBiteDataService {
   constructor() {
+    this.CANONICAL_CATEGORY_IMAGES = CANONICAL_CATEGORY_IMAGES;
     this.isSupabaseConnected = false;
     this.realtimeChannel = null;
     this.heartbeatTimer = null;
@@ -3188,10 +3189,10 @@ class QuickBiteDataService {
               assignedRiderPhone: remote.assigned_rider_phone || (isOptimisticStage1 ? local?.assignedRiderPhone : null) || null,
               assignedRiderVehicle: remote.assigned_rider_vehicle || (isOptimisticStage1 ? local?.assignedRiderVehicle : null) || null,
               riderPickupStage: effectivePickupStage,
-              cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
+              cancellationReason: remote.cancellation_reason !== undefined ? remote.cancellation_reason : (local?.cancellationReason || null),
               riderWaitingAtDoorstep: remote.address_details?.riderWaitingAtDoorstep !== undefined
-          ? Boolean(remote.address_details.riderWaitingAtDoorstep)
-          : isWaitingAtDoorstep,
+                ? Boolean(effectiveStatus === 'on_the_way' && remote.address_details.riderWaitingAtDoorstep)
+                : isWaitingAtDoorstep,
               waitingStartedAt: waitingStartedAt,
               safeDrop: Boolean(remote.address_details?.safeDrop || (isOptimistic && local?.safeDrop)),
               safeDropNote: remote.address_details?.safeDropNote || (isOptimistic ? (local?.safeDropNote || '') : ''),
@@ -3784,7 +3785,7 @@ class QuickBiteDataService {
           ? (remote.address_details?.waitingStartedAt ? parseTimestampMs(remote.address_details.waitingStartedAt) : (local?.waitingStartedAt || Date.now()))
           : null,
         riderWaitingAtDoorstep: remote.address_details?.riderWaitingAtDoorstep !== undefined
-          ? Boolean(remote.address_details.riderWaitingAtDoorstep)
+          ? Boolean(effectiveStatus === 'on_the_way' && remote.address_details.riderWaitingAtDoorstep)
           : isWaitingAtDoorstep,
         safeDrop: remote.address_details?.safeDrop !== undefined ? Boolean(remote.address_details.safeDrop) : Boolean(local?.safeDrop),
         safeDropNote: remote.address_details?.safeDropNote || local?.safeDropNote || '',
@@ -3811,7 +3812,7 @@ class QuickBiteDataService {
         assignedRiderPhone: remote.assigned_rider_phone || local?.assignedRiderPhone || null,
         assignedRiderVehicle: remote.assigned_rider_vehicle || local?.assignedRiderVehicle || null,
         riderPickupStage: remotePickupStage || (effectiveStatus === 'on_the_way' ? 'picked_up' : null),
-        cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
+        cancellationReason: remote.cancellation_reason !== undefined ? remote.cancellation_reason : (local?.cancellationReason || null),
         trackingToken: remote.tracking_token || local?.trackingToken || null,
         alarmAcknowledged: local?.alarmAcknowledged || false,
         alarmStoppedAt: local?.alarmStoppedAt || null

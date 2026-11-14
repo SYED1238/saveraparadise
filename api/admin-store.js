@@ -245,12 +245,12 @@ export default async function handler(req, res) {
       if (action === 'settle_rider_cash') {
         const pin = String(body.riderPin || body.pin || '').trim();
         if (!pin) return res.status(400).json({ error: 'Rider PIN is required' });
-        return res.status(200).json({ success: true, pin, settledAt: body.settledAt || Date.now() });
+        return res.status(200).json({ success: true, pin, settledAt: Number(body.settledAt) || Date.now() });
       }
       if (action === 'record_rider_payout') {
         const pin = String(body.riderPin || body.pin || '').trim();
         if (!pin) return res.status(400).json({ error: 'Rider PIN is required' });
-        return res.status(200).json({ success: true, pin, paidAt: body.paidAt || Date.now(), amount: body.amount || 0 });
+        return res.status(200).json({ success: true, pin, paidAt: Number(body.paidAt) || Date.now(), amount: body.amount || 0 });
       }
       if (action === 'reset_defaults' || action === 'reset_business_data') {
         return res.status(200).json({ success: true, message: 'Store reset successfully' });
@@ -684,7 +684,7 @@ export default async function handler(req, res) {
       case 'settle_rider_cash': {
         const pin = String(body.riderPin || body.pin || '').trim();
         if (!pin) return res.status(400).json({ error: 'Rider PIN is required' });
-        const settledAt = body.settledAt ? new Date(body.settledAt).toISOString() : new Date().toISOString();
+        const settledAt = Number(body.settledAt) || Date.now();
         const updateFields = {
           cash_settled_at: settledAt,
           cash_handover_status: 'taken',
@@ -699,7 +699,7 @@ export default async function handler(req, res) {
       case 'record_rider_payout': {
         const pin = String(body.riderPin || body.pin || '').trim();
         if (!pin) return res.status(400).json({ error: 'Rider PIN is required' });
-        const paidAt = body.paidAt ? new Date(body.paidAt).toISOString() : new Date().toISOString();
+        const paidAt = Number(body.paidAt) || Date.now();
         const updateFields = { payout_paid_at: paidAt };
         if (body.amount !== undefined) updateFields.payout_amount_paid = Number(body.amount) || 0;
         const { data, error } = await sb.from('riders').update(updateFields).eq('pin', pin).select();
