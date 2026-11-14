@@ -143,4 +143,22 @@ test('OWNER PORTAL AUDIT FIXES VERIFICATION SUITE', async (t) => {
     // Verify delivery.js sorts deliveredOrders by completion time
     assert.match(deliveryContent, /tsB - tsA/, 'delivery.js must sort delivered orders chronologically');
   });
+
+  await t.test('9. Owner Portal Live Parity with Rider App & Polling Frequency', () => {
+    // 1. getFilteredOrders matches deliveredAt for completed orders
+    assert.match(ownerJsContent, /isDelivered\s*&&\s*orderDeliveredAt\s*>\s*0/, 'owner.js must include deliveredAt in date window for delivered orders');
+
+    // 2. renderKmPayoutsView prioritizes payoutSummary on live shift
+    assert.match(ownerJsContent, /deliveredCount:\s*\(isLiveShift\s*&&\s*payoutSummary\)\s*\?\s*safeNumber\(payoutSummary\.deliveredCount\)/, 'owner.js must use payoutSummary.deliveredCount on live shift');
+    assert.match(ownerJsContent, /kms:\s*\(isLiveShift\s*&&\s*payoutSummary\)\s*\?\s*safeNumber\(payoutSummary\.totalKms\)/, 'owner.js must use payoutSummary.totalKms on live shift');
+
+    // 3. updateNavigationBadges uses dataService.getOrders() for live active orders
+    assert.match(ownerJsContent, /dataService\.getOrders\(\)/, 'owner.js updateNavigationBadges must read all live orders');
+
+    // 4. dataService owner heartbeat interval is 15s
+    assert.match(dataServiceContent, /this\.portalType === 'owner'\)\s*\?\s*15000/, 'dataService must poll at 15s for owner portal');
+
+    // 5. dataService forces sync orders on owner heartbeat
+    assert.match(dataServiceContent, /syncOrdersFromSupabase\(this\.portalType === 'admin' \|\| this\.portalType === 'delivery' \|\| this\.portalType === 'owner'\)/, 'dataService must force sync orders on owner heartbeat');
+  });
 });

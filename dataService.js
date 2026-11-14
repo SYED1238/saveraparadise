@@ -4173,8 +4173,8 @@ class QuickBiteDataService {
   startLiveHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
 
-    // Admin portal: 10s fast heartbeat; Delivery portal: 20s active poll to discover newly packed orders; Other portals: 120s fallback.
-    const intervalMs = (this.portalType === 'admin') ? 10000 : (this.portalType === 'delivery' ? 20000 : 120000);
+    // Admin portal: 10s fast heartbeat; Delivery & Owner portals: 15s active poll; Other portals: 120s fallback.
+    const intervalMs = (this.portalType === 'admin') ? 10000 : ((this.portalType === 'delivery' || this.portalType === 'owner') ? 15000 : 120000);
 
     this.heartbeatTimer = setInterval(async () => {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -4187,14 +4187,15 @@ class QuickBiteDataService {
             const hasActiveOrders = Array.isArray(orders) && orders.some(
               o => o && !['delivered', 'cancelled', 'undelivered', 'pending_payment'].includes(o.status)
             );
-            if (!isOpen && !hasActiveOrders) {
+            if (!isOpen && !hasActiveOrders && this.portalType !== 'owner') {
               return;
             }
-            // Admin & Delivery portals use force=true on heartbeat because Migration 08/12 RLS
+            // Admin, Delivery & Owner portals use force=true on heartbeat because Migration 08/12 RLS
             // blocks anon postgres_changes — this active poll replaces the broken realtime feed
-            await this.syncOrdersFromSupabase(this.portalType === 'admin' || this.portalType === 'delivery');
+            await this.syncOrdersFromSupabase(this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner');
             if (this.portalType === 'delivery' || this.portalType === 'owner') {
               await this.syncSettingsFromSupabase().catch(() => {});
+              await this.syncRidersFromSupabase().catch(() => {});
             }
           }
         } else {

@@ -604,9 +604,25 @@ function getFilteredOrders() {
   const allOrders = dataService.getOrders();
   const bounds = getPeriodDateBounds(currentPeriod);
 
+  const parseTs = (val) => {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    const parsed = Date.parse(val);
+    return isNaN(parsed) ? (Number(val) || 0) : parsed;
+  };
+
   return allOrders.filter(o => {
     if (!o) return false;
-    const orderTimestamp = o.createdAt ? new Date(o.createdAt).getTime() : (o.updatedAt ? new Date(o.updatedAt).getTime() : 0);
+    const orderCreatedAt = parseTs(o.createdAt || o.created_at);
+    const orderDeliveredAt = parseTs(o.deliveredAt || o.delivered_at);
+    const orderUpdatedAt = parseTs(o.updatedAt || o.updated_at);
+
+    // For completed deliveries, if deliveredAt falls in period window, include it in that period!
+    const isDelivered = String(o.status || '').toLowerCase() === 'delivered';
+    const orderTimestamp = (isDelivered && orderDeliveredAt > 0)
+      ? orderDeliveredAt
+      : (orderCreatedAt || orderUpdatedAt || 0);
+
     if (!orderTimestamp) return currentPeriod === 'all';
     return orderTimestamp >= bounds.start.getTime() && orderTimestamp <= bounds.end.getTime();
   });
@@ -642,8 +658,8 @@ function updateCounterCashDrawerSummary(orders, codRevenue) {
 
   const ordersByRider = new Map();
   payoutOrders.forEach(o => {
-    const rPin = String(o.assignedRiderPin || '').trim();
-    const rName = (o.assignedRiderName || '').trim().toLowerCase();
+    const rPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+    const rName = (o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
     const key = rPin || rName || 'unassigned';
     if (!ordersByRider.has(key)) ordersByRider.set(key, []);
     ordersByRider.get(key).push(o);
@@ -923,9 +939,10 @@ function renderRiderFleetTable(orders) {
 
   // Tally delivered orders
   deliveredOrders.forEach(o => {
-    let riderPin = String(o.assignedRiderPin || '').trim();
-    if (!riderPin && o.assignedRiderName) {
-      const matched = riders.find(r => r.name && r.name.trim().toLowerCase() === o.assignedRiderName.trim().toLowerCase());
+    let riderPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+    const riderName = o.assignedRiderName || o.assigned_rider_name;
+    if (!riderPin && riderName) {
+      const matched = riders.find(r => r.name && r.name.trim().toLowerCase() === String(riderName).trim().toLowerCase());
       if (matched) riderPin = String(matched.pin).trim();
     }
     if (!riderPin) return;
@@ -2619,7 +2636,10 @@ function updateNavigationBadges(orders) {
   // Live orders badge (pending, accepted, cooking, ready, on_the_way)
   const badgeOrders = document.getElementById('nav-badge-orders');
   if (badgeOrders) {
-    const liveCount = orders.filter(o => ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup', 'on_the_way'].includes(String(o?.status).toLowerCase())).length;
+    const allOrders = (typeof dataService !== 'undefined' && typeof dataService.getOrders === 'function')
+      ? dataService.getOrders()
+      : (Array.isArray(orders) ? orders : []);
+    const liveCount = allOrders.filter(o => ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup', 'on_the_way'].includes(String(o?.status).toLowerCase())).length;
     badgeOrders.textContent = liveCount;
   }
 
@@ -3168,8 +3188,8 @@ function renderKmPayoutsView(orders) {
     const ordersByName = new Map();
 
     deliveredOrders.forEach(o => {
-      const oPin = String(o.assignedRiderPin || '').trim();
-      const oName = String(o.assignedRiderName || '').trim().toLowerCase();
+      const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      const oName = String(o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
       if (oPin) {
         if (!ordersByPin.has(oPin)) ordersByPin.set(oPin, []);
         ordersByPin.get(oPin).push(o);
@@ -3275,11 +3295,11 @@ function renderKmPayoutsView(orders) {
         initial: riderInitial,
         phone: riderPhone,
         vehicle: riderVehicle,
-        deliveredCount: riderOrders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length,
-        kms: roundedKms,
+        deliveredCount: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.deliveredCount) : riderOrders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length,
+        kms: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.totalKms) : roundedKms,
         modelBadge,
-        calculatedPayout,
-        exactPayout,
+        calculatedPayout: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.exactEarnings ?? payoutSummary.totalEarnings) : calculatedPayout,
+        exactPayout: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.exactEarnings ?? payoutSummary.totalEarnings) : exactPayout,
         payoutBalance,
         hasUnpaidBalance,
         currentPayable,
@@ -4355,8 +4375,8 @@ function renderReportsView() {
 
     const payoutOrders = (orders || []).filter(o => o && (String(o.status || '').toLowerCase() === 'delivered' || String(o.status || '').toLowerCase() === 'undelivered'));
     payoutOrders.forEach(o => {
-      const rPin = String(o.assignedRiderPin || '').trim();
-      const rName = (o.assignedRiderName || '').trim().toLowerCase();
+      const rPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      const rName = (o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
       const key = rPin || rName || 'unassigned';
       if (!ordersByRider.has(key)) ordersByRider.set(key, []);
       ordersByRider.get(key).push(o);
@@ -4452,8 +4472,8 @@ function renderReportRiderTable(deliveredOrders, payoutConfig) {
     const riderOrdersMap = new Map();
 
     (deliveredOrders || []).forEach(o => {
-      const rPin = String(o?.assignedRiderPin || '').trim();
-      const rName = String(o?.assignedRiderName || '').trim().toLowerCase();
+      const rPin = String(o?.assignedRiderPin || o?.assigned_rider_pin || '').trim();
+      const rName = String(o?.assignedRiderName || o?.assigned_rider_name || '').trim().toLowerCase();
       const key = rPin || rName || 'unassigned';
       if (!riderOrdersMap.has(key)) riderOrdersMap.set(key, []);
       riderOrdersMap.get(key).push(o);
@@ -4759,7 +4779,7 @@ function printCalendarReport() {
   const ordersByRider = new Map();
 
   deliveredOrders.forEach(o => {
-    const key = String(o.assignedRiderPin || o.assignedRiderName || 'unassigned').trim();
+    const key = String(o.assignedRiderPin || o.assigned_rider_pin || o.assignedRiderName || o.assigned_rider_name || 'unassigned').trim();
     if (!ordersByRider.has(key)) ordersByRider.set(key, []);
     ordersByRider.get(key).push(o);
   });

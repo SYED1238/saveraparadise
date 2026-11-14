@@ -35,7 +35,7 @@ const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
 const STORE_SETTINGS_CACHE_TTL_MS = 3600000; // 1 hour cache (auto-invalidates immediately on admin settings save)
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
-const SYNC_ORDERS_CACHE_TTL_MS = 30000;
+const SYNC_ORDERS_CACHE_TTL_MS = 10000;
 
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
