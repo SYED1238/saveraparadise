@@ -638,6 +638,12 @@ export async function initiateRiderPayout({
   const cleanTransferId = String(transferId || `payout_rd_${riderPin}_${Date.now()}`);
 
   if (!cfg.isConfigured) {
+    if (cfg.isProd) {
+      return {
+        success: false,
+        error: 'Cashfree Payout credentials are not configured in production environment'
+      };
+    }
     return {
       success: true,
       isMock: true,
@@ -647,7 +653,7 @@ export async function initiateRiderPayout({
       status: 'SUCCESS',
       utr: `UTR_MOCK_${Date.now()}`,
       paidAt: Date.now(),
-      message: `Simulated Cashfree Payout of ₹${cleanAmount} to rider ${name} (UPI: ${upiVpa || phone + '@upi'})`
+      message: `Simulated Cashfree Payout of ₹${cleanAmount} to rider ${name} (UPI: ${upiVpa || cleanPhone(phone) + '@upi'})`
     };
   }
 

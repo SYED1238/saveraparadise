@@ -7920,6 +7920,7 @@ class QuickBiteDataService {
             bankIfsc: r.bank_ifsc || r.bankIfsc || existing?.bankIfsc || null,
             payoutMethodPref: r.payout_method_pref || r.payoutMethodPref || existing?.payoutMethodPref || 'cash',
             cashSettledAt: r.cash_settled_at || existing?.cashSettledAt || null,
+            cashTakenAt: r.cash_settled_at || existing?.cashTakenAt || existing?.cashSettledAt || null,
             payoutPaidAt: r.payout_paid_at || existing?.payoutPaidAt || null,
             payoutAmountPaid: Number(r.payout_amount_paid || existing?.payoutAmountPaid || 0),
             maxActiveOrders: Math.max(1, Math.min(5, Number(r.max_active_orders ?? r.maxActiveOrders ?? existing?.maxActiveOrders ?? 1))),

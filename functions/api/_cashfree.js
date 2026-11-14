@@ -656,7 +656,7 @@ export async function initiateRiderPayout({
       status: 'SUCCESS',
       utr: `UTR_MOCK_${Date.now()}`,
       paidAt: Date.now(),
-      message: `Simulated Cashfree Payout of ₹${cleanAmount} to rider ${name} (UPI: ${upiVpa || phone + '@upi'})`
+      message: `Simulated Cashfree Payout of ₹${cleanAmount} to rider ${name} (UPI: ${upiVpa || cleanPhone(phone) + '@upi'})`
     };
   }
 

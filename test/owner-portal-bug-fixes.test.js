@@ -161,4 +161,89 @@ test('OWNER PORTAL AUDIT FIXES VERIFICATION SUITE', async (t) => {
     // 5. dataService forces sync orders on owner heartbeat
     assert.match(dataServiceContent, /syncOrdersFromSupabase\(this\.portalType === 'admin' \|\| this\.portalType === 'delivery' \|\| this\.portalType === 'owner'\)/, 'dataService must force sync orders on owner heartbeat');
   });
+
+  await t.test('10. BUG-01 Fix: Production Mock Payout Bypass & Fallback VPA Sanitization', () => {
+    const cashfreeNodePath = path.resolve(__dirname, '../api/_cashfree.js');
+    const cashfreeEdgePath = path.resolve(__dirname, '../functions/api/_cashfree.js');
+    const nodeContent = fs.readFileSync(cashfreeNodePath, 'utf8');
+    const edgeContent = fs.readFileSync(cashfreeEdgePath, 'utf8');
+
+    assert.match(nodeContent, /if\s*\(cfg\.isProd\)\s*\{\s*return\s*\{\s*success:\s*false/);
+    assert.match(edgeContent, /if\s*\(cfg\.isProd\)\s*\{\s*return\s*\{\s*success:\s*false/);
+    assert.match(ownerJsContent, /cleanDigits\.length === 10 \? `\$\{cleanDigits\}@upi` : `\$\{pin\}@upi`/);
+  });
+
+  await t.test('11. BUG-02 Fix: Undelivered orders excluded from rider cash-in-hand and KMs', () => {
+    assert.match(ownerJsContent, /const isCompletedDelivery = String\(o\.status \|\| ''\)\.toLowerCase\(\) === 'delivered';\s*if \(!isCompletedDelivery\) return;/);
+    assert.match(ownerJsContent, /if \(String\(o\?\.status \|\| ''\)\.toLowerCase\(\) !== 'delivered'\) return;\s*riderKms \+= Number/);
+  });
+
+  await t.test('12. BUG-03 Fix: Mid-handover deliveries captured via Math.max in Cash Tab UI', () => {
+    assert.match(ownerJsContent, /Math\.max\(Number\(r\.cashHandoverAmount\) \|\| 0, summaryCash\)/);
+    assert.match(ownerJsContent, /const rawCashInHand = Math\.max\(handoverAmt, summaryAmt\);/);
+  });
+
+  await t.test('13. BUG-04 Fix: cashTakenAt persisted on sync and backed by cashSettledAt fallback', () => {
+    assert.match(dataServiceContent, /cashTakenAt:\s*r\.cash_settled_at\s*\|\|\s*existing\?\.cashTakenAt/);
+    assert.match(ownerJsContent, /const takenTs = r\.cashTakenAt \|\| r\.cashSettledAt;/);
+  });
+
+  await t.test('14. BUG-05 Fix: Historical periods disable live settlement buttons to protect ledger', () => {
+    assert.match(ownerJsContent, /currentPayable = 0;\s*\/\/\s*Never allow live shift payout mutations/);
+    assert.match(ownerJsContent, /Switch to Today to Settle/);
+  });
+
+  await t.test('15. BUG-06 Fix: ISO timestamp parsing defends against NaN in cash and notifications', () => {
+    assert.match(ownerJsContent, /export function parseOrderTimestampMs\(val\)/);
+    assert.match(ownerJsContent, /const createdMs = parseOrderTimestampMs\(o\.createdAt \|\| o\.created_at\);/);
+  });
+
+  await t.test('16. BUG-07 Fix: Unassigned orders skipped and PIN/name merged in ordersByRider', () => {
+    assert.match(ownerJsContent, /if \(!key\) return; \/\/ Skip unassigned orders/);
+  });
+
+  await t.test('17. BUG-08 Fix: Print Statement renders fleet table, hides secret PINs, and hides .print-only', () => {
+    assert.match(ownerJsContent, /renderRiderFleetTable\(orders\);/);
+    assert.match(ownerJsContent, /clone\.querySelectorAll\('span'\)\.forEach\(s => \{\s*if \(s\.textContent\.includes\('PIN:'\)\) s\.remove\(\);/);
+    assert.match(ownerCssContent, /\.print-only\s*\{\s*display:\s*none\s*!important;\s*\}/);
+  });
+
+  await t.test('18. BUG-09 Fix: Date filtering and shift start bounds aligned between Overview and Reports', () => {
+    assert.match(ownerJsContent, /export function getOrderAuditTimestampMs\(o\)/);
+    assert.match(ownerJsContent, /const orderTimestamp = getOrderAuditTimestampMs\(o\);/);
+  });
+
+  await t.test('19. BUG-10 Fix: Mobile Payout cards display amber Partial badge for unpaid balance', () => {
+    assert.match(ownerJsContent, /\(st\.isPaid && st\.hasUnpaidBalance\)\s*\?\s*`<span class="badge-payout-pending"/);
+    assert.match(ownerJsContent, /border-left: 4px solid #F59E0B;/);
+  });
+
+  await t.test('20. BUG-11 Fix: Mobile Fleet cards enforce 100% COD deposit without netting payouts', () => {
+    assert.match(ownerJsContent, /if \(cash > 0\) \{\s*statusClass = 'deposit';\s*statusTitle = 'COD CASH TO DEPOSIT';/);
+    assert.doesNotMatch(ownerJsContent, /netDeposit < 0\s*\}\s*else if\s*\(netDeposit === 0/);
+  });
+
+  await t.test('21. BUG-12 Fix: Rider submit awaits server save and syncs assigned_rider_name when PIN unchanged', () => {
+    const adminStoreEdgePath = path.resolve(__dirname, '../functions/api/admin-store.js');
+    const edgeAdminContent = fs.readFileSync(adminStoreEdgePath, 'utf8');
+
+    assert.match(adminStoreContent, /else if \(userRole !== 'rider' && existingRow && existingRow\.name !== name\)/);
+    assert.match(edgeAdminContent, /else if \(userRole !== 'rider' && existingRow && existingRow\.name !== name\)/);
+  });
+
+  await t.test('22. BUG-13 Fix: navigationBackService integrated in owner.js with fallback checkers', () => {
+    assert.match(ownerJsContent, /import\s*\{\s*createBackNavigationManager\s*\}\s*from '\.\/navigationBackService\.js';/);
+    assert.match(ownerJsContent, /ownerBackNav = \(typeof window !== 'undefined'\) \? createBackNavigationManager\('owner'\)/);
+  });
+
+  await t.test('23. BUG-14 Fix: Pagination uses light background and scrolls section-orders', () => {
+    assert.match(ownerJsContent, /background:#F8FAFC;\s*border:1px solid var\(--owner-border\);/);
+    assert.match(ownerJsContent, /const scrollToOrdersTop = \(\) => \{\s*const target = document\.getElementById\('section-orders'\)/);
+    assert.match(ownerCssContent, /\.btn-owner-pagination\s*\{\s*padding:\s*6px\s*14px;\s*background:\s*#FFFFFF;/);
+  });
+
+  await t.test('24. BUG-15 Fix: Negative net drawer sub-total formatted with minus and sound test wired', () => {
+    assert.match(ownerJsContent, /drawerNetSubEl\.textContent = periodNetTotal >= 0\s*\?\s*`₹\$\{periodNetTotal\.toLocaleString\('en-IN'\)\}`\s*:\s*`−₹\$\{Math\.abs\(periodNetTotal\)\.toLocaleString\('en-IN'\)\}`;/);
+    assert.match(ownerJsContent, /setSoundEnabled\(true\);/);
+  });
 });

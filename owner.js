@@ -25,6 +25,7 @@ import {
   isSoundEnabled,
   setSoundEnabled
 } from './notificationService.js';
+import { createBackNavigationManager } from './navigationBackService.js';
 
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
@@ -33,6 +34,24 @@ function showToast(message, type = 'info') {
     appName: 'Owner Portal',
     duration: 3800
   });
+}
+
+export function parseOrderTimestampMs(val) {
+  if (!val) return 0;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  const parsed = Date.parse(val);
+  if (!isNaN(parsed)) return parsed;
+  const num = Number(val);
+  return Number.isFinite(num) ? num : 0;
+}
+
+export function getOrderAuditTimestampMs(o) {
+  if (!o) return 0;
+  const createdMs = parseOrderTimestampMs(o.createdAt || o.created_at);
+  const deliveredMs = parseOrderTimestampMs(o.deliveredAt || o.delivered_at);
+  const updatedMs = parseOrderTimestampMs(o.updatedAt || o.updated_at);
+  const isDelivered = String(o.status || '').toLowerCase() === 'delivered';
+  return (isDelivered && deliveredMs > 0) ? deliveredMs : (createdMs || updatedMs || 0);
 }
 
 export function formatInr(val) {
@@ -48,6 +67,12 @@ export function getRiderInitial(name) {
 }
 
 // --- STATE MANAGEMENT ---
+const ownerBackNav = (typeof window !== 'undefined') ? createBackNavigationManager('owner') : {
+  pushStep: () => {},
+  removeStep: () => {},
+  removeStepDirect: () => {},
+  registerFallbackChecker: () => {}
+};
 let currentPeriod = 'today'; // 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom'
 let customStartDate = null;
 let customEndDate = null;
@@ -212,6 +237,64 @@ if (typeof document !== 'undefined') {
     dataService.on('riders', () => renderDashboard());
     dataService.on('cash_settled', () => renderDashboard());
   }
+
+  // Fallback checkers for Hardware Back / Gesture Navigation
+  ownerBackNav.registerFallbackChecker({
+    isOpen: () => {
+      const modal = document.getElementById('owner-invoice-modal');
+      return modal && modal.style.display === 'flex';
+    },
+    close: () => closeInvoiceModal()
+  });
+  ownerBackNav.registerFallbackChecker({
+    isOpen: () => {
+      const modal = document.getElementById('owner-rider-modal');
+      return modal && modal.style.display === 'flex';
+    },
+    close: () => closeOwnerRiderModal()
+  });
+  ownerBackNav.registerFallbackChecker({
+    isOpen: () => {
+      const modal = document.getElementById('owner-kitchen-apk-modal');
+      return modal && modal.style.display === 'flex';
+    },
+    close: () => {
+      const m = document.getElementById('owner-kitchen-apk-modal');
+      if (m) m.style.display = 'none';
+    }
+  });
+  ownerBackNav.registerFallbackChecker({
+    isOpen: () => {
+      const menu = document.getElementById('owner-menu-dropdown');
+      return menu && menu.style.display === 'block';
+    },
+    close: () => {
+      const menu = document.getElementById('owner-menu-dropdown');
+      const backdrop = document.getElementById('owner-menu-backdrop');
+      const btn = document.getElementById('btn-owner-menu-toggle');
+      const icon = document.getElementById('owner-menu-icon');
+      if (menu) menu.style.display = 'none';
+      if (backdrop) backdrop.style.display = 'none';
+      if (btn) btn.classList.remove('active');
+      if (icon) { icon.classList.remove('fa-xmark'); icon.classList.add('fa-bars'); }
+    }
+  });
+  ownerBackNav.registerFallbackChecker({
+    isOpen: () => {
+      const wrapper = document.getElementById('owner-calendar-collapsible-wrapper');
+      return wrapper && wrapper.style.display === 'block';
+    },
+    close: () => {
+      const wrapper = document.getElementById('owner-calendar-collapsible-wrapper');
+      const bar = document.getElementById('calendar-compact-bar');
+      if (wrapper) wrapper.style.display = 'none';
+      if (bar) bar.classList.remove('is-open');
+    }
+  });
+  ownerBackNav.registerFallbackChecker({
+    isOpen: () => activeView && activeView !== 'view-overview',
+    close: () => switchOwnerView('view-overview', false)
+  });
   };
 
   if (document.readyState === 'loading') {
@@ -656,11 +739,17 @@ function updateCounterCashDrawerSummary(orders, codRevenue) {
   const payoutConfig = dataService.getPayoutConfig();
   let periodPayoutTotal = 0;
 
+  const registeredRiders = (typeof dataService !== 'undefined' && dataService.getRiders) ? (dataService.getRiders() || []) : [];
   const ordersByRider = new Map();
   payoutOrders.forEach(o => {
-    const rPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
-    const rName = (o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
-    const key = rPin || rName || 'unassigned';
+    let rPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+    const rName = String(o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
+    if (!rPin && rName) {
+      const matched = registeredRiders.find(r => r && r.name && String(r.name).trim().toLowerCase() === rName);
+      if (matched && matched.pin) rPin = String(matched.pin).trim();
+    }
+    const key = rPin || rName;
+    if (!key) return; // Skip unassigned orders
     if (!ordersByRider.has(key)) ordersByRider.set(key, []);
     ordersByRider.get(key).push(o);
   });
@@ -683,7 +772,12 @@ function updateCounterCashDrawerSummary(orders, codRevenue) {
       drawerNetEl.className = 'drawer-headline-amount num-amber';
     }
   }
-  if (drawerNetSubEl) drawerNetSubEl.textContent = `₹${periodNetTotal.toLocaleString('en-IN')}`;
+  if (drawerNetSubEl) {
+    drawerNetSubEl.textContent = periodNetTotal >= 0
+      ? `₹${periodNetTotal.toLocaleString('en-IN')}`
+      : `−₹${Math.abs(periodNetTotal).toLocaleString('en-IN')}`;
+    drawerNetSubEl.className = periodNetTotal >= 0 ? 'math-val num-emerald' : 'math-val num-amber';
+  }
 }
 
 // 6. DASHBOARD MASTER RENDERER
@@ -963,10 +1057,15 @@ function renderRiderFleetTable(orders) {
     const stat = riderStatsMap.get(riderPin);
     stat.deliveredOrders.push(o);
 
+    const isCompletedDelivery = String(o.status || '').toLowerCase() === 'delivered';
+    if (!isCompletedDelivery) return;
+
     const dist = Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0);
     stat.totalKms += dist;
 
-    const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
+    const rawTotal = (typeof o.cashCollected === 'number' && o.cashCollected > 0)
+      ? o.cashCollected
+      : (Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0);
     const isOnline = isOnlineOrderPayment(o);
 
     if (isOnline) {
@@ -975,9 +1074,10 @@ function renderRiderFleetTable(orders) {
       const riderRecord = riders.find(r => (riderPin && String(r.pin) === String(riderPin)) || (r.name || '').toLowerCase() === (o.assignedRiderName || '').toLowerCase());
       const settledAtRaw = riderRecord?.cashSettledAt;
       const settledAtMs = typeof settledAtRaw === 'number' ? settledAtRaw : (settledAtRaw ? Date.parse(settledAtRaw) || 0 : 0);
-      const deliveredAtMs = Number(o.deliveredAt || o.createdAt || 0);
+      const rawDeliveredAt = o.deliveredAt || o.delivered_at || o.updatedAt || o.claimedAt || o.createdAt || 0;
+      const deliveredAtMs = parseOrderTimestampMs(rawDeliveredAt);
       if (!settledAtMs || deliveredAtMs > settledAtMs) {
-        stat.cashInHand += rawTotal;
+        stat.cashInHand = Math.round((stat.cashInHand + rawTotal) * 100) / 100;
       }
     }
   });
@@ -1134,26 +1234,28 @@ function renderRiderFleetTable(orders) {
         const riderPayout = payoutObj.exactPayout || payoutObj.totalPayout || 0;
         const netDeposit = cash - riderPayout;
 
-        let statusClass = 'deposit';
-        let statusTitle = 'COD CASH TO DEPOSIT';
-        let statusText = `₹${cash.toLocaleString('en-IN')}`;
-        let statusFormula = `100% COD to Drawer • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}`;
+        let statusClass = 'idle';
+        let statusTitle = 'NO DELIVERIES IN PERIOD';
+        let statusText = '0 Deliveries';
+        let statusFormula = 'No cash collected or earnings owed';
 
-        if (netDeposit < 0) {
+        if (cash > 0) {
+          statusClass = 'deposit';
+          statusTitle = 'COD CASH TO DEPOSIT';
+          statusText = `₹${cash.toLocaleString('en-IN')}`;
+          statusFormula = `100% COD to Drawer • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}`;
+        } else if (riderPayout > 0) {
           statusClass = 'pay';
           statusTitle = 'PAY RIDER FROM DRAWER';
-          statusText = `Pay ₹${Math.abs(netDeposit).toLocaleString('en-IN')}`;
-          statusFormula = online > 0 ? `Delivered ${online} online orders • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}` : `COD Handed Over • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}`;
-        } else if (netDeposit === 0 && deliveryCount > 0) {
+          statusText = `Pay ₹${riderPayout.toLocaleString('en-IN')}`;
+          statusFormula = online > 0
+            ? `Delivered ${online} online orders • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}`
+            : `COD Handed Over • Rider Fee: ₹${riderPayout.toLocaleString('en-IN')}`;
+        } else if (deliveryCount > 0) {
           statusClass = 'balanced';
           statusTitle = 'ALL BALANCED & SETTLED';
-          statusText = `₹0 Balance`;
-          statusFormula = `Cash collected equals delivery earnings`;
-        } else if (deliveryCount === 0) {
-          statusClass = 'idle';
-          statusTitle = 'NO DELIVERIES IN PERIOD';
-          statusText = `0 Deliveries`;
-          statusFormula = `No cash collected or earnings owed`;
+          statusText = '₹0 Balance';
+          statusFormula = 'All COD cash & delivery earnings settled';
         }
 
         return `
@@ -1581,7 +1683,7 @@ function renderOwnerPagination(totalOrders, totalPages, currentPage, startIndex,
 
   if (totalPages <= 1) {
     paginationEl.innerHTML = `
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding:10px 16px; background:rgba(30,41,59,0.5); border-radius:10px; font-size:0.82rem; color:var(--owner-text-muted);">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding:10px 16px; background:#F8FAFC; border:1px solid var(--owner-border); border-radius:10px; font-size:0.82rem; color:var(--owner-text-muted);">
         <span>Showing all <strong>${totalOrders}</strong> order${totalOrders === 1 ? '' : 's'}</span>
       </div>
     `;
@@ -1591,7 +1693,7 @@ function renderOwnerPagination(totalOrders, totalPages, currentPage, startIndex,
 
   paginationEl.style.display = 'block';
   paginationEl.innerHTML = `
-    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:16px; padding:12px 18px; background:rgba(30,41,59,0.65); border:1px solid rgba(255,255,255,0.08); border-radius:12px; font-size:0.85rem; color:var(--owner-text-muted);">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:16px; padding:12px 18px; background:#F8FAFC; border:1px solid var(--owner-border); border-radius:12px; font-size:0.85rem; color:var(--owner-text-muted);">
       <div>
         Showing <strong>${startIndex + 1}–${endIndex}</strong> of <strong>${totalOrders}</strong> orders
       </div>
@@ -1607,22 +1709,25 @@ function renderOwnerPagination(totalOrders, totalPages, currentPage, startIndex,
     </div>
   `;
 
+  const scrollToOrdersTop = () => {
+    const target = document.getElementById('section-orders') || document.getElementById('orders-table-wrapper') || document.getElementById('orders-cards-container');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const btnPrev = document.getElementById('btn-owner-prev-page');
   const btnNext = document.getElementById('btn-owner-next-page');
   if (btnPrev && currentPage > 1) {
     btnPrev.addEventListener('click', () => {
       ownerOrdersPage--;
       renderOrdersTable(getFilteredOrders());
-      const wrapper = document.getElementById('orders-table-wrapper');
-      if (wrapper) wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollToOrdersTop();
     });
   }
   if (btnNext && currentPage < totalPages) {
     btnNext.addEventListener('click', () => {
       ownerOrdersPage++;
       renderOrdersTable(getFilteredOrders());
-      const wrapper = document.getElementById('orders-table-wrapper');
-      if (wrapper) wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollToOrdersTop();
     });
   }
 }
@@ -1730,12 +1835,14 @@ function openInvoiceModal(order) {
   `;
 
   modal.style.display = 'flex';
+  ownerBackNav.pushStep('owner-modal-invoice', () => closeInvoiceModal());
 }
 
 function closeInvoiceModal() {
   const modal = document.getElementById('owner-invoice-modal');
   if (modal) modal.style.display = 'none';
   activeModalOrder = null;
+  ownerBackNav.removeStep('owner-modal-invoice');
 }
 
 // ==============================================================
@@ -1758,6 +1865,7 @@ function initActions() {
       menuIcon.classList.remove('fa-bars');
       menuIcon.classList.add('fa-xmark');
     }
+    ownerBackNav.pushStep('owner-dropdown-menu', () => closeOwnerMenuDropdown());
   }
 
   function closeOwnerMenuDropdown() {
@@ -1770,6 +1878,7 @@ function initActions() {
       menuIcon.classList.remove('fa-xmark');
       menuIcon.classList.add('fa-bars');
     }
+    ownerBackNav.removeStep('owner-dropdown-menu');
   }
 
   function toggleOwnerMenuDropdown(e) {
@@ -1861,11 +1970,13 @@ function initActions() {
   function openKitchenApkModal() {
     if (!kitchenApkModal) return;
     kitchenApkModal.style.display = 'flex';
+    ownerBackNav.pushStep('owner-modal-apk', () => closeKitchenApkModal());
   }
 
   function closeKitchenApkModal() {
     if (!kitchenApkModal) return;
     kitchenApkModal.style.display = 'none';
+    ownerBackNav.removeStep('owner-modal-apk');
   }
 
   if (btnCloseKitchenApkModal) {
@@ -2108,11 +2219,22 @@ function initActions() {
     });
   }
 
+  const updateSoundUI = () => {
+    const soundTextEl = document.getElementById('owner-sound-text');
+    const soundIconEl = document.getElementById('owner-sound-icon');
+    const enabled = isSoundEnabled();
+    if (soundTextEl) soundTextEl.textContent = enabled ? 'Alerts: Active' : 'Alerts: Muted';
+    if (soundIconEl) soundIconEl.className = enabled ? 'fa-solid fa-bell' : 'fa-solid fa-bell-slash';
+  };
+  updateSoundUI();
+
   if (btnSoundTest) {
     btnSoundTest.addEventListener('click', () => {
+      setSoundEnabled(true);
+      updateSoundUI();
       playNotificationSound('payout_received');
       triggerDeviceVibration([80, 40, 80]);
-      showToast('🔔 Playing Executive alert sound test...', 'info');
+      showToast('🔔 Alerts active: Playing Executive alert sound test...', 'info');
       if (getSystemNotificationPermission() === 'default') {
         requestSystemNotificationPermission().catch(() => {});
       }
@@ -2129,7 +2251,8 @@ function initActions() {
     orders.forEach(o => {
       if (o && o.id && !knownOwnerOrderIds.has(o.id)) {
         knownOwnerOrderIds.add(o.id);
-        const orderAge = o.createdAt ? (now - Number(o.createdAt)) : 0;
+        const createdMs = parseOrderTimestampMs(o.createdAt || o.created_at);
+        const orderAge = createdMs ? (now - createdMs) : 0;
         // Suppress alarms for stale/historical orders (>15 mins old) or already alerted orders
         if ((o.status === 'accepted' || o.status === 'pending') && orderAge < 15 * 60 * 1000 && !isOwnerOrderAlerted(o.id)) {
           hasNewOrder = true;
@@ -2141,10 +2264,13 @@ function initActions() {
     if (hasNewOrder && latestNewOrder) {
       markOwnerOrderAlerted(latestNewOrder.id);
       playNotificationSound('order_placed');
-      flashTabTitle(`🔔 NEW ORDER: ${latestNewOrder.id}`);
-      showToast(`🔔 New order received: ${latestNewOrder.id} (${latestNewOrder.total || '₹0'})`, 'info');
+      const displayId = (typeof formatDisplayOrderId === 'function')
+        ? formatDisplayOrderId(latestNewOrder.id, latestNewOrder.pickupCode)
+        : latestNewOrder.id;
+      flashTabTitle(`🔔 NEW ORDER: ${displayId}`);
+      showToast(`🔔 New order received: ${displayId} (${latestNewOrder.total || '₹0'})`, 'info');
       sendSystemNotification({
-        title: `🔔 New Order: ${latestNewOrder.id}`,
+        title: `🔔 New Order: ${displayId}`,
         body: `Customer ${latestNewOrder.customerName || 'Guest'} placed an order for ${latestNewOrder.total || '₹0'}`,
         tag: `owner-new-${latestNewOrder.id}`,
         data: { url: '/owner.html' }
@@ -2254,12 +2380,14 @@ function openOwnerRiderModal(pin = null) {
   }
 
   modal.style.display = 'flex';
+  ownerBackNav.pushStep('owner-modal-rider', () => closeOwnerRiderModal());
   if (nameInput) setTimeout(() => nameInput.focus(), 50);
 }
 
 function closeOwnerRiderModal() {
   const modal = document.getElementById('owner-rider-modal');
   if (modal) modal.style.display = 'none';
+  ownerBackNav.removeStep('owner-modal-rider');
 }
 
 async function deleteOwnerRider(pin) {
@@ -2323,7 +2451,6 @@ async function handleOwnerRiderSubmit(e) {
 
   try {
     showToast('Saving delivery partner to server...', 'info');
-    let saved;
     if (originalPin && originalPin !== pin) {
       const existingRider = dataService.getRiderByPin(originalPin) || {};
       const updatedRider = {
@@ -2338,6 +2465,8 @@ async function handleOwnerRiderSubmit(e) {
         max_active_orders: maxActiveOrders
       };
 
+      saved = await dataService.saveOrUpdateRiderAsync(updatedRider, originalPin);
+
       const allOrders = dataService.getOrders();
       let ordersChanged = false;
       allOrders.forEach(o => {
@@ -2350,8 +2479,6 @@ async function handleOwnerRiderSubmit(e) {
       if (ordersChanged) {
         dataService.saveOrders(allOrders);
       }
-
-      saved = await dataService.saveOrUpdateRiderAsync(updatedRider, originalPin);
     } else {
       const existingRider = dataService.getRiderByPin(pin) || {};
       saved = await dataService.saveOrUpdateRiderAsync({
@@ -2365,6 +2492,18 @@ async function handleOwnerRiderSubmit(e) {
         maxActiveOrders,
         max_active_orders: maxActiveOrders
       });
+
+      const allOrders = dataService.getOrders();
+      let ordersChanged = false;
+      allOrders.forEach(o => {
+        if (o && String(o.assignedRiderPin) === String(pin)) {
+          o.assignedRiderName = name;
+          ordersChanged = true;
+        }
+      });
+      if (ordersChanged) {
+        dataService.saveOrders(allOrders);
+      }
     }
 
     closeOwnerRiderModal();
@@ -2606,7 +2745,7 @@ function initNavigation() {
   }
 }
 
-function switchOwnerView(viewId) {
+function switchOwnerView(viewId, recordStep = true) {
   activeView = viewId;
   const navBtns = document.querySelectorAll('.owner-nav-btn');
   navBtns.forEach(btn => {
@@ -2627,6 +2766,19 @@ function switchOwnerView(viewId) {
       v.classList.remove('active');
     }
   });
+
+  if (viewId === 'view-overview') {
+    ['view-fleet', 'view-orders', 'view-cash', 'view-payouts', 'view-reports'].forEach(v => {
+      ownerBackNav.removeStepDirect('owner-view-' + v);
+    });
+  } else {
+    ['view-fleet', 'view-orders', 'view-cash', 'view-payouts', 'view-reports'].forEach(v => {
+      if (v !== viewId) ownerBackNav.removeStepDirect('owner-view-' + v);
+    });
+    if (recordStep) {
+      ownerBackNav.pushStep('owner-view-' + viewId, () => switchOwnerView('view-overview', false));
+    }
+  }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
   renderDashboard();
@@ -2684,7 +2836,11 @@ function renderCashSettlementsView(orders) {
     if (alertBanner) {
       if (pendingHandovers.length > 0) {
         const names = pendingHandovers.map(r => r.name || `Rider ${r.pin || ''}`).join(', ');
-        const totalPending = pendingHandovers.reduce((sum, r) => sum + (Number(r.cashHandoverAmount) || 0), 0);
+        const totalPending = pendingHandovers.reduce((sum, r) => {
+          let summaryCash = 0;
+          try { summaryCash = Number(dataService.getRiderCashSummary(r.pin)?.cashInHand) || 0; } catch {}
+          return sum + Math.max(Number(r.cashHandoverAmount) || 0, summaryCash);
+        }, 0);
         const titleEl = document.getElementById('cash-alert-title');
         const descEl = document.getElementById('cash-alert-desc');
         if (titleEl) titleEl.textContent = `⚠️ Pending COD Cash Handover (${pendingHandovers.length} Rider${pendingHandovers.length > 1 ? 's' : ''})!`;
@@ -2724,11 +2880,14 @@ function renderCashSettlementsView(orders) {
       } catch (sumErr) {
         console.warn('[Owner] getRiderCashSummary error for rider:', r.pin, sumErr);
       }
-      const rawCashInHand = r.cashHandoverAmount ? Number(r.cashHandoverAmount) : (summary?.cashInHand ?? 0);
+      const handoverAmt = Number(r.cashHandoverAmount) || 0;
+      const summaryAmt = Number(summary?.cashInHand) || 0;
+      const rawCashInHand = Math.max(handoverAmt, summaryAmt);
       const cashInHand = isNaN(rawCashInHand) ? 0 : rawCashInHand;
       const codOrdersCount = Array.isArray(summary?.codOrders) ? summary.codOrders.length : 0;
       const isPending = r.cashHandoverStatus === 'pending_owner_approval';
-      const lastTakenTime = r.cashTakenAt ? new Date(r.cashTakenAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Not yet today';
+      const takenTs = r.cashTakenAt || r.cashSettledAt;
+      const lastTakenTime = takenTs ? new Date(Number(takenTs) || takenTs).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Not yet today';
 
       return {
         pin: String(r.pin || '').trim(),
@@ -3280,13 +3439,20 @@ function renderKmPayoutsView(orders) {
         currentPayable = (payoutBalance !== undefined && payoutBalance > 0) ? payoutBalance : (isPaid ? 0 : calculatedPayout);
         hasUnpaidBalance = currentPayable > 0;
       } else {
+        // Historical or multi-day period view: strictly read-only audit of calculated earnings for that period
         const periodBounds = getPeriodDateBounds(currentPeriod);
-        const paidInPeriod = Boolean(paidTs && paidTs >= periodBounds.start.getTime() && paidTs <= periodBounds.end.getTime());
+        const isSingleHistoricalDay = (currentPeriod === 'yesterday') || (
+          currentPeriod === 'custom' &&
+          periodBounds.start &&
+          periodBounds.end &&
+          (periodBounds.end.getTime() - periodBounds.start.getTime() <= 24 * 60 * 60 * 1000 + 1000)
+        );
+        const paidInPeriod = Boolean(isSingleHistoricalDay && paidTs && paidTs >= periodBounds.start.getTime() && paidTs <= periodBounds.end.getTime());
         isPaid = paidInPeriod || (calculatedPayout === 0);
-        paidTime = paidTs ? paidDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
-        paidAmount = safeNumber(r.payoutAmountPaid) || calculatedPayout;
-        currentPayable = isPaid ? 0 : calculatedPayout;
-        hasUnpaidBalance = currentPayable > 0;
+        paidTime = paidInPeriod && paidDate ? paidDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+        paidAmount = paidInPeriod ? (safeNumber(r.payoutAmountPaid) || calculatedPayout) : calculatedPayout;
+        currentPayable = 0; // Never allow live shift payout mutations from historical/multi-day audit views
+        hasUnpaidBalance = false;
       }
 
       return {
@@ -3325,6 +3491,10 @@ function renderKmPayoutsView(orders) {
         let actionBtn = '';
         if (activeInFlightPayoutPins && activeInFlightPayoutPins.has(st.pin)) {
           actionBtn = `<button type="button" class="btn-payout-upi" disabled style="opacity:0.7; cursor:wait;"><i class="fa-solid fa-spinner fa-spin"></i> Processing...</button>`;
+        } else if (!isLiveShift) {
+          actionBtn = st.isPaid
+            ? `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-check"></i> Paid</button>`
+            : `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-lock"></i> Switch to Today to Settle</button>`;
         } else if (st.hasUnpaidBalance) {
           actionBtn = `
             <div style="display:flex; gap:6px; justify-content:center;">
@@ -3367,14 +3537,20 @@ function renderKmPayoutsView(orders) {
     // Render Mobile Cards
     if (cardsContainer) {
       cardsContainer.innerHTML = payoutList.map(st => {
-        const statusBadge = st.isPaid
-          ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
-          : (st.calculatedPayout === 0
-            ? `<span class="badge-payout-paid" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`
-            : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`);
+        const statusBadge = (st.isPaid && st.hasUnpaidBalance)
+          ? `<span class="badge-payout-pending" style="background:#fef3c7; color:#d97706;"><i class="fa-solid fa-triangle-exclamation"></i> Partial (₹${formatInr(st.paidAmount)} paid, ₹${formatInr(st.currentPayable)} due)</span>`
+          : (st.isPaid
+            ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
+            : (st.calculatedPayout === 0
+              ? `<span class="badge-payout-paid" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`
+              : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`));
+
+        const borderStyle = (st.isPaid && !st.hasUnpaidBalance)
+          ? 'border-left: 4px solid #10B981;'
+          : ((st.isPaid && st.hasUnpaidBalance) ? 'border-left: 4px solid #F59E0B;' : 'border-left: 4px solid #8B5CF6;');
 
         return `
-          <div class="rider-card-mobile" style="${st.isPaid ? 'border-left: 4px solid #10B981;' : 'border-left: 4px solid #8B5CF6;'}">
+          <div class="rider-card-mobile" style="${borderStyle}">
             <div class="rc-header">
               <div class="rc-profile">
                 <div class="rider-avatar-bubble">${escapeHtml(st.initial)}</div>
@@ -3413,20 +3589,28 @@ function renderKmPayoutsView(orders) {
                 <button type="button" class="btn-payout-upi" disabled style="opacity:0.7; cursor:wait;">
                   <i class="fa-solid fa-spinner fa-spin"></i> Processing...
                 </button>
-              ` : (st.hasUnpaidBalance ? `
+              ` : (!isLiveShift ? (st.isPaid ? `
+                <button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;">
+                  <i class="fa-solid fa-check"></i> Paid
+                </button>
+              ` : `
+                <button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;">
+                  <i class="fa-solid fa-lock"></i> Switch to Today to Settle
+                </button>
+              `) : (st.hasUnpaidBalance ? `
                 <div style="display:flex; gap:6px;">
                   <button type="button" class="btn-mark-payout-paid" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}">
-                    <i class="fa-solid fa-money-bill-wave"></i> Cash
+                    <i class="fa-solid fa-money-bill-wave"></i> Cash (₹${formatInr(st.currentPayable)})
                   </button>
                   <button type="button" class="btn-payout-upi" data-pin="${escapeHtml(st.pin)}" data-amount="${st.currentPayable}" data-name="${escapeHtml(st.name)}" data-phone="${escapeHtml(st.phone)}">
-                    <i class="fa-solid fa-bolt"></i> UPI
+                    <i class="fa-solid fa-bolt"></i> UPI (₹${formatInr(st.currentPayable)})
                   </button>
                 </div>
               ` : `
                 <button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;">
                   <i class="fa-solid fa-check"></i> Paid
                 </button>
-              `)}
+              `))}
             </div>
           </div>
         `;
@@ -3486,7 +3670,12 @@ function renderKmPayoutsView(orders) {
               amount,
               phone,
               name,
-              upiVpa: (function() { const rd = (typeof dataService !== 'undefined' && dataService.getRiderByPin) ? dataService.getRiderByPin(pin) : null; return (rd && rd.upiVpa) ? rd.upiVpa : `${phone || pin}@upi`; })()
+              upiVpa: (function() {
+                const rd = (typeof dataService !== 'undefined' && dataService.getRiderByPin) ? dataService.getRiderByPin(pin) : null;
+                if (rd && rd.upiVpa && String(rd.upiVpa).trim()) return String(rd.upiVpa).trim();
+                const cleanDigits = String(phone || '').replace(/\D/g, '').slice(-10);
+                return cleanDigits.length === 10 ? `${cleanDigits}@upi` : `${pin}@upi`;
+              })()
             })
           });
           const res = await resp.json();
@@ -3562,6 +3751,9 @@ function printExecutiveReport() {
       totalKms += dist;
     }
   });
+
+  // Render fleet table to ensure fresh DOM elements before cloning
+  try { renderRiderFleetTable(orders); } catch {}
 
   // Sanitize Delivery Boys table for paper print: strip secret login PINs and interactive buttons
   let printRiderTableHtml = '';
@@ -3639,6 +3831,11 @@ function printExecutiveReport() {
   `;
 
   window.print();
+  const cleanupPrint = () => {
+    if (printContainer) printContainer.innerHTML = '';
+  };
+  window.addEventListener('afterprint', cleanupPrint, { once: true });
+  setTimeout(cleanupPrint, 3000);
 }
 
 /**
@@ -3768,7 +3965,10 @@ function initCalendarReportsView() {
       else bar.classList.remove('is-open');
     }
     if (nextState) {
+      ownerBackNav.pushStep('owner-calendar-wrapper', () => toggleCalPanel(false));
       renderCalendarMonth(calCurrentYear, calCurrentMonth);
+    } else {
+      ownerBackNav.removeStep('owner-calendar-wrapper');
     }
   };
 
@@ -4094,7 +4294,7 @@ function renderCalendarMonth(year, month) {
   const ordersByDateKey = new Map();
   allOrders.forEach(o => {
     if (!o) return;
-    const ts = o.createdAt ? new Date(o.createdAt).getTime() : (o.updatedAt ? new Date(o.updatedAt).getTime() : 0);
+    const ts = getOrderAuditTimestampMs(o);
     if (!ts) return;
     const dateKey = toLocalDateKey(new Date(ts));
     const rawTotal = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
@@ -4251,9 +4451,15 @@ function handleCalendarDayClick(date) {
  */
 export function getCalendarReportDateBounds() {
   if (calMode === 'single') {
-    const start = new Date(calSelectedDate.getFullYear(), calSelectedDate.getMonth(), calSelectedDate.getDate(), 0, 0, 0, 0);
+    let start = new Date(calSelectedDate.getFullYear(), calSelectedDate.getMonth(), calSelectedDate.getDate(), 0, 0, 0, 0);
     const end = new Date(calSelectedDate.getFullYear(), calSelectedDate.getMonth(), calSelectedDate.getDate(), 23, 59, 59, 999);
     const isToday = isSameCalendarDay(calSelectedDate, new Date());
+    if (isToday && typeof dataService !== 'undefined' && typeof dataService.getShiftStartTimeMs === 'function') {
+      const shiftStartMs = dataService.getShiftStartTimeMs(Date.now());
+      if (shiftStartMs < start.getTime()) {
+        start = new Date(shiftStartMs);
+      }
+    }
     const label = calSelectedDate.toLocaleDateString('en-IN', {
       weekday: 'long',
       day: 'numeric',
@@ -4300,7 +4506,7 @@ export function getOrdersForCalendarReport() {
 
   return allOrders.filter(o => {
     if (!o) return false;
-    const orderTimestamp = o.createdAt ? new Date(o.createdAt).getTime() : (o.updatedAt ? new Date(o.updatedAt).getTime() : 0);
+    const orderTimestamp = getOrderAuditTimestampMs(o);
     return orderTimestamp >= bounds.start.getTime() && orderTimestamp <= bounds.end.getTime();
   });
 }
@@ -4371,13 +4577,19 @@ function renderReportsView() {
     // 3. Rider Payouts Calculation for this period (delivered + undelivered)
     const payoutConfig = dataService.getPayoutConfig();
     let totalRiderPayouts = 0;
+    const registeredRiders = (typeof dataService !== 'undefined' && dataService.getRiders) ? (dataService.getRiders() || []) : [];
     const ordersByRider = new Map();
 
     const payoutOrders = (orders || []).filter(o => o && (String(o.status || '').toLowerCase() === 'delivered' || String(o.status || '').toLowerCase() === 'undelivered'));
     payoutOrders.forEach(o => {
-      const rPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
-      const rName = (o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
-      const key = rPin || rName || 'unassigned';
+      let rPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+      const rName = String(o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
+      if (!rPin && rName) {
+        const matched = registeredRiders.find(r => r && r.name && String(r.name).trim().toLowerCase() === rName);
+        if (matched && matched.pin) rPin = String(matched.pin).trim();
+      }
+      const key = rPin || rName;
+      if (!key) return; // Skip unassigned orders
       if (!ordersByRider.has(key)) ordersByRider.set(key, []);
       ordersByRider.get(key).push(o);
     });
@@ -4472,9 +4684,14 @@ function renderReportRiderTable(deliveredOrders, payoutConfig) {
     const riderOrdersMap = new Map();
 
     (deliveredOrders || []).forEach(o => {
-      const rPin = String(o?.assignedRiderPin || o?.assigned_rider_pin || '').trim();
+      let rPin = String(o?.assignedRiderPin || o?.assigned_rider_pin || '').trim();
       const rName = String(o?.assignedRiderName || o?.assigned_rider_name || '').trim().toLowerCase();
-      const key = rPin || rName || 'unassigned';
+      if (!rPin && rName) {
+        const matched = riders.find(r => r && r.name && String(r.name).trim().toLowerCase() === rName);
+        if (matched && matched.pin) rPin = String(matched.pin).trim();
+      }
+      const key = rPin || rName;
+      if (!key) return; // Skip unassigned orders
       if (!riderOrdersMap.has(key)) riderOrdersMap.set(key, []);
       riderOrdersMap.get(key).push(o);
     });
@@ -4521,12 +4738,13 @@ function renderReportRiderTable(deliveredOrders, payoutConfig) {
       let riderCodCash = 0;
 
       orders.forEach(o => {
+        if (String(o?.status || '').toLowerCase() !== 'delivered') return;
         riderKms += Number(o?.addressDetails?.distanceKm || o?.distance_km || o?.distanceKm || 0);
         if (!isOnlineOrderPayment(o)) {
           const cash = (typeof o?.cashCollected === 'number' && o.cashCollected > 0)
             ? o.cashCollected
             : (Number(String(o?.total || '0').replace(/[^0-9.]/g, '')) || 0);
-          riderCodCash += cash;
+          riderCodCash = Math.round((riderCodCash + cash) * 100) / 100;
         }
       });
 
@@ -4776,10 +4994,18 @@ function printCalendarReport() {
 
   const payoutConfig = dataService.getPayoutConfig();
   let totalPayouts = 0;
+  const registeredRiders = (typeof dataService !== 'undefined' && dataService.getRiders) ? (dataService.getRiders() || []) : [];
   const ordersByRider = new Map();
 
   deliveredOrders.forEach(o => {
-    const key = String(o.assignedRiderPin || o.assigned_rider_pin || o.assignedRiderName || o.assigned_rider_name || 'unassigned').trim();
+    let rPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+    const rName = String(o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
+    if (!rPin && rName) {
+      const matched = registeredRiders.find(r => r && r.name && String(r.name).trim().toLowerCase() === rName);
+      if (matched && matched.pin) rPin = String(matched.pin).trim();
+    }
+    const key = rPin || rName;
+    if (!key) return; // Skip unassigned orders
     if (!ordersByRider.has(key)) ordersByRider.set(key, []);
     ordersByRider.get(key).push(o);
   });
@@ -4843,7 +5069,15 @@ function printCalendarReport() {
       <!-- Rider Settlement Table Snapshot -->
       <div style="margin-top: 20px;">
         <h4 style="margin: 0 0 8px 0; font-size: 0.95rem; text-transform: uppercase;">Delivery Boys Settlement Breakdown</h4>
-        ${document.getElementById('report-rider-table')?.outerHTML || '<p>No delivery riders.</p>'}
+        ${(function() {
+          const rTable = document.getElementById('report-rider-table');
+          if (!rTable) return '<p>No delivery riders.</p>';
+          const clone = rTable.cloneNode(true);
+          clone.querySelectorAll('span').forEach(s => {
+            if (s.textContent.includes('PIN:')) s.remove();
+          });
+          return clone.outerHTML;
+        })()}
       </div>
 
       <!-- Dish Sales Summary Snapshot -->
@@ -4861,6 +5095,11 @@ function printCalendarReport() {
   `;
 
   window.print();
+  const cleanupPrint = () => {
+    if (printContainer) printContainer.innerHTML = '';
+  };
+  window.addEventListener('afterprint', cleanupPrint, { once: true });
+  setTimeout(cleanupPrint, 3000);
 }
 
 /**

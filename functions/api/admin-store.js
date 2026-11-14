@@ -567,6 +567,11 @@ export async function onRequest(context) {
             .eq('assigned_rider_pin', originalPin);
           await sb.from('riders').delete().eq('pin', originalPin);
           invalidateOrderActionMemoryCache();
+        } else if (userRole !== 'rider' && existingRow && existingRow.name !== name) {
+          await sb.from('orders')
+            .update({ assigned_rider_name: name })
+            .eq('assigned_rider_pin', pin);
+          invalidateOrderActionMemoryCache();
         }
 
         let maxActiveOrders;

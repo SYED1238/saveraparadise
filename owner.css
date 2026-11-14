@@ -2921,7 +2921,18 @@ body.owner-body .lock-footer-info {
 /* ============================================================== */
 /* PRINT STYLES                                                   */
 /* ============================================================== */
+.print-only {
+  display: none !important;
+}
+
 @media print {
+  /* When print report container has content, hide the main dashboard so only the formatted statement prints */
+  body.owner-body:has(#print-report-container:not(:empty)) .owner-container,
+  body.owner-body:has(#print-report-container:not(:empty)) .owner-modal-backdrop,
+  body.owner-body:has(#print-report-container:not(:empty)) .owner-floating-bar {
+    display: none !important;
+  }
+
   body.owner-body {
     background: #FFF !important;
     color: #000 !important;
@@ -5242,10 +5253,10 @@ body.owner-body .lock-footer-info {
    ============================================================== */
 .btn-owner-pagination {
   padding: 6px 14px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
   border-radius: 8px;
-  color: #F8FAFC;
+  color: #0F172A;
   font-weight: 600;
   font-size: 0.82rem;
   transition: all 0.2s ease;
@@ -5256,9 +5267,9 @@ body.owner-body .lock-footer-info {
 }
 
 .btn-owner-pagination:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: #F59E0B;
-  color: #FFFFFF;
+  background: #F1F5F9;
+  border-color: #94A3B8;
+  color: #0F172A;
 }
 
 .pm-open-hint {
