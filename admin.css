@@ -6414,7 +6414,10 @@ body.kitchen-alarm-ringing::before {
   .mobile-floating-bar,
   #admin-lock-overlay,
   #kitchen-alarm-banner,
-  #toast-container {
+  #toast-container,
+  #admin-connection-banner,
+  .admin-connection-banner,
+  #pending-overdue-alert-banner {
     display: none !important;
   }
 

@@ -8,7 +8,7 @@
  * Strictly prevents unauthenticated (anon) clients from modifying dishes, categories, or settings.
  */
 import { verifyAdminToken } from './_auth.js';
-import { invalidateOrderActionMemoryCache } from './order-action.js';
+import { invalidateOrderActionMemoryCache, purgeKitchenPollEdgeCache } from './order-action.js';
 import { hydrateEnv, jsonResponse, isOriginAllowed } from './_adapter.js';
 
 const RIDERS_CACHE_TTL_MS = 30000;
@@ -23,7 +23,7 @@ export function invalidateRidersListCache() {
 const ALLOWED_DISH_FIELDS = [
   'id', 'name', 'category', 'category_name', 'price', 'original_price',
   'badge', 'time', 'calories', 'diet', 'description', 'in_stock',
-  'image', 'available_days', 'time_restricted', 'available_from', 'available_to'
+  'image', 'available_days', 'time_restricted', 'available_from', 'available_to', 'r2_key'
 ];
 
 function sanitizeDishFields(input) {
@@ -406,6 +406,7 @@ export async function onRequest(context) {
           { id: 'main_settings', settings, updated_at: now }
         ], { onConflict: 'id' }).select();
         if (error) throw error;
+        await purgeKitchenPollEdgeCache(request, context);
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 

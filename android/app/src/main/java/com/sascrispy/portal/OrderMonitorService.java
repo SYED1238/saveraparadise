@@ -788,6 +788,11 @@ public class OrderMonitorService extends Service {
                             }
                             track.write(buffer, 0, noteSamples);
                         }
+                        if (isSirenRunning) {
+                            int pauseSamples = (int) (sampleRate * 0.45);
+                            short[] pauseBuffer = new short[pauseSamples];
+                            track.write(pauseBuffer, 0, pauseSamples);
+                        }
                     }
                 } catch (Exception e) {
                     Log.w(TAG, "Procedural siren execution error: " + e.getMessage());
@@ -933,7 +938,7 @@ public class OrderMonitorService extends Service {
             // 3. Multi-Tier Audio Playback
             boolean audioStarted = false;
 
-            // Tier 0: Custom Kitchen Music (R.raw.kitchen_alarm / Funk Criminal) for Kitchen App
+            // Tier 0: Dedicated Kitchen Audio (Funk Criminal or POS Chime) for Kitchen App
             if (!isRiderApp && !isOwnerApp) {
                 String soundMode = getKitchenAlarmSoundMode(getApplicationContext());
                 if (!"classic_chime".equalsIgnoreCase(soundMode)) {
@@ -960,6 +965,13 @@ public class OrderMonitorService extends Service {
                     } catch (Exception e) {
                         Log.w(TAG, "Could not play R.raw.kitchen_alarm: " + e.getMessage());
                     }
+                }
+                // If classic_chime mode is chosen OR if R.raw.kitchen_alarm failed to initialize:
+                // Start procedural POS chime melody so Kitchen never falls through to the phone's system alarm
+                if (!audioStarted) {
+                    Log.i(TAG, "Starting procedural POS kitchen chime AudioTrack (bypasses device system alarm)");
+                    startProceduralSiren();
+                    audioStarted = true;
                 }
             }
 
@@ -1102,7 +1114,7 @@ public class OrderMonitorService extends Service {
             PendingIntent stopPendingIntent = PendingIntent.getService(this, notifId + 1, stopIntent, pendingFlags);
 
             Uri soundUri = null;
-            if (isRiderApp || isOwnerApp || "classic_chime".equalsIgnoreCase(getKitchenAlarmSoundMode(getApplicationContext()))) {
+            if (isRiderApp || isOwnerApp) {
                 soundUri = RingtoneManager.getDefaultUri(isOwnerApp ? RingtoneManager.TYPE_NOTIFICATION : RingtoneManager.TYPE_ALARM);
                 if (soundUri == null) {
                     soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);

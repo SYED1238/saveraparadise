@@ -1240,4 +1240,77 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
     assert.match(adminSrc, /function stopKitchenAlarm[\s\S]*?window\.AndroidNative\.stopAlarm\(\)/, 'stopKitchenAlarm in admin.js must invoke window.AndroidNative.stopAlarm()');
     assert.match(adminSrc, /function startKitchenAlarm[\s\S]*?window\.AndroidNative\.startAlarm\(\)/, 'startKitchenAlarm in admin.js must invoke window.AndroidNative.startAlarm()');
   });
+
+  await t.test('28. Kitchen Alarm Sound Engine: Android APK & Web Master Coordination (Zero Device Alarm Bleed)', () => {
+    const omsSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/OrderMonitorService.java', import.meta.url),
+      'utf8'
+    );
+    const webAppSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/WebAppInterface.java', import.meta.url),
+      'utf8'
+    );
+    const adminSrc = fs.readFileSync(
+      new URL('../admin.js', import.meta.url),
+      'utf8'
+    );
+    const dataServiceSrc = fs.readFileSync(
+      new URL('../dataService.js', import.meta.url),
+      'utf8'
+    );
+
+    // 1. OrderMonitorService must synthesize procedural POS chime and never fall through to device alarm in Kitchen App
+    assert.match(
+      omsSrc,
+      /if\s*\(!isRiderApp\s*&&\s*!isOwnerApp\)[\s\S]*?startProceduralSiren\(\)[\s\S]*?audioStarted\s*=\s*true;/,
+      'OrderMonitorService must start procedural POS chime without falling through to device ringtones'
+    );
+
+    // 2. Procedural siren must have pause buffer between cycles
+    assert.match(
+      omsSrc,
+      /pauseSamples\s*=[\s\S]*?pauseBuffer[\s\S]*?track\.write\(pauseBuffer/,
+      'Procedural siren must have pause buffer between 3-tone chime cycles'
+    );
+
+    // 3. Heads-up notification soundUri must be null for Kitchen App (audio handled by continuous loop)
+    assert.match(
+      omsSrc,
+      /Uri soundUri = null;\s*if\s*\(isRiderApp \|\| isOwnerApp\)/,
+      'Heads-up notification soundUri must be null for Kitchen App'
+    );
+
+    // 4. WebAppInterface must classify custom_r2 as alarm alert and silence notification soundUri for kitchen alerts
+    assert.match(
+      webAppSrc,
+      /boolean isKitchenAlert\s*=\s*"kitchen_alarm"\.equals\(soundType\)\s*\|\|\s*"new_order"\.equals\(soundType\)\s*\|\|\s*"custom_r2"\.equals\(soundType\)/,
+      'WebAppInterface must treat custom_r2 as a kitchen alert'
+    );
+    assert.match(
+      webAppSrc,
+      /if\s*\(isKitchenAlert\)\s*\{[\s\S]*?soundUri\s*=\s*null;/,
+      'WebAppInterface must silence notification soundUri for kitchen alerts to prevent system alarm collision'
+    );
+
+    // 5. admin.js delegates audio loop to window.AndroidNative in APK without competing WebAudio intervals
+    assert.match(
+      adminSrc,
+      /const hasAndroidNative\s*=\s*typeof window !== 'undefined' && Boolean\(window\.AndroidNative\);[\s\S]*?if\s*\(!hasAndroidNative\)/,
+      'admin.js must delegate audio loop to AndroidNative when running in APK'
+    );
+
+    // 6. btnAdminSoundTest runs native test via AndroidNative in APK
+    assert.match(
+      adminSrc,
+      /if\s*\(hasAndroidNative && typeof window\.AndroidNative\.startAlarm === 'function'\)[\s\S]*?window\.AndroidNative\.startAlarm\(\)/,
+      'btnAdminSoundTest must test native alarm via AndroidNative in APK'
+    );
+
+    // 7. DEFAULT_SETTINGS in dataService.js defines kitchenAlarmMode
+    assert.match(
+      dataServiceSrc,
+      /kitchenAlarmMode:\s*['"]r2_custom['"]/,
+      'DEFAULT_SETTINGS must define kitchenAlarmMode'
+    );
+  });
 });

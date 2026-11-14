@@ -96,15 +96,16 @@ public class WebAppInterface {
 
             // Urgent alarm alerts for Kitchen (new order) and Rider (parcel ready on counter)
             boolean isCustomAudio = "custom_r2".equals(soundType) || "silent_alarm".equals(soundType);
-            boolean isAlarmAlert = !isCustomAudio && (
-                                   "kitchen_alarm".equals(soundType) ||
-                                   "new_order".equals(soundType) ||
+            boolean isKitchenAlert = "kitchen_alarm".equals(soundType) ||
+                                     "new_order".equals(soundType) ||
+                                     "custom_r2".equals(soundType) ||
+                                     (tag != null && tag.startsWith("admin-order-"));
+            boolean isAlarmAlert = isKitchenAlert ||
                                    "rider_new_task".equals(soundType) ||
                                    "rider_alarm".equals(soundType) ||
-                                   (tag != null && (tag.startsWith("admin-order-") || 
-                                                    tag.startsWith("rider-ready-") || 
+                                   (tag != null && (tag.startsWith("rider-ready-") || 
                                                     tag.startsWith("rider-task-") ||
-                                                    tag.startsWith("rider-"))));
+                                                    tag.startsWith("rider-")));
 
             int priority;
             String category;
@@ -113,12 +114,18 @@ public class WebAppInterface {
             if (isAlarmAlert) {
                 priority = NotificationCompat.PRIORITY_MAX;
                 category = NotificationCompat.CATEGORY_ALARM;
-                soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-                if (soundUri == null) {
-                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-                }
-                if (soundUri == null) {
-                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                if (isKitchenAlert) {
+                    // Kitchen alarm audio is handled exclusively by startNativeAlarm loop (Funk Criminal / POS chime)
+                    // Keep notification soundUri null to prevent phone's system alarm from firing simultaneously
+                    soundUri = null;
+                } else {
+                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                    if (soundUri == null) {
+                        soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                    }
+                    if (soundUri == null) {
+                        soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                    }
                 }
             } else {
                 priority = NotificationCompat.PRIORITY_HIGH;

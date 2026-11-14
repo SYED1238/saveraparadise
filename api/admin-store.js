@@ -37,7 +37,7 @@ function isOriginAllowed(origin) {
 const ALLOWED_DISH_FIELDS = [
   'id', 'name', 'category', 'category_name', 'price', 'original_price',
   'badge', 'time', 'calories', 'diet', 'description', 'in_stock',
-  'image', 'available_days', 'time_restricted', 'available_from', 'available_to'
+  'image', 'available_days', 'time_restricted', 'available_from', 'available_to', 'r2_key'
 ];
 
 function sanitizeDishFields(input) {
@@ -398,6 +398,7 @@ export default async function handler(req, res) {
           { id: 'main_settings', settings, updated_at: now }
         ], { onConflict: 'id' }).select();
         if (error) throw error;
+        invalidateOrderActionMemoryCache();
         return res.status(200).json({ success: true, data });
       }
 

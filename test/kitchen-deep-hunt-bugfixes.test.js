@@ -191,4 +191,45 @@ test('KITCHEN PORTAL DEEP BUG HUNT VERIFICATION SUITE (20 Verified Findings)', a
     assert.match(adminJs, /handleAdminOrderStatusSync[\s\S]*?const\s+normOrderId\s*=\s*String\(orderId\)\.replace\(\/\^#\/,\s*['"]['"]\);/, 'handleAdminOrderStatusSync must normalize # prefix on orderId');
     assert.match(adminJs, /checkOverduePendingOrders[\s\S]*?renderOrders\(\);/, 'checkOverduePendingOrders must refresh renderOrders periodically');
   });
+
+  // HARDENED KITCHEN PORTAL & DUAL-API SURGICAL AUDIT VERIFICATION (17 Fixes)
+  await t.test('21. Hardened Kitchen Portal: Overdue banner, Token recovery, Dual-API purge, Pending status gate & Print isolation', () => {
+    // 1. checkOverduePendingOrders must pass overdueOrders to updateOverdueBanner
+    assert.match(adminJs, /updateOverdueBanner\(overdueOrders\);/, 'checkOverduePendingOrders must pass overdueOrders');
+    assert.doesNotMatch(adminJs, /updateOverdueBanner\(overdueList\);/, 'checkOverduePendingOrders must not reference undeclared overdueList');
+
+    // 2. dataService._adminStoreAction must use isOwnerAction
+    assert.match(dataServiceJs, /token\s*=\s*isOwnerAction\s*\?/, 'dataService _adminStoreAction must use isOwnerAction');
+    assert.doesNotMatch(dataServiceJs, /token\s*=\s*isOwnerOnlyAction/, 'dataService _adminStoreAction must not use undeclared isOwnerOnlyAction');
+
+    // 3. Dual-API save_settings cache purge
+    assert.match(apiAdminStoreJs, /case\s*['"]save_settings['"]:[\s\S]*?invalidateOrderActionMemoryCache\(\);/, 'api/admin-store save_settings must invalidateOrderActionMemoryCache');
+    assert.match(functionsApiAdminStoreJs, /case\s*['"]save_settings['"]:[\s\S]*?await\s+purgeKitchenPollEdgeCache\(request,\s*context\);/, 'functions/api/admin-store save_settings must purgeKitchenPollEdgeCache');
+    assert.match(functionsApiOrderActionJs, /export\s+async\s+function\s+purgeKitchenPollEdgeCache/, 'functions/api/order-action must export purgeKitchenPollEdgeCache');
+
+    // 4. ALLOWED_DISH_FIELDS includes r2_key in both api and functions
+    assert.match(apiAdminStoreJs, /ALLOWED_DISH_FIELDS\s*=\s*\[[\s\S]*?['"]r2_key['"]/, 'api/admin-store must include r2_key');
+    assert.match(functionsApiAdminStoreJs, /ALLOWED_DISH_FIELDS\s*=\s*\[[\s\S]*?['"]r2_key['"]/, 'functions/api/admin-store must include r2_key');
+
+    // 5. Pending orders must provide Accept Order button
+    assert.match(adminJs, /order\.status\s*===\s*['"]pending['"][\s\S]*?data-next=["']accepted["']/, 'Pending orders must offer data-next="accepted" button');
+
+    // 6. Online payment identification for card and thermal print
+    assert.match(adminJs, /const\s+isPaidOnline\s*=\s*Boolean\([\s\S]*?order\.is_paid_online/, 'renderOrders must inspect order.is_paid_online');
+    assert.match(adminJs, /const\s+isPaidOnlineKOT\s*=\s*Boolean\([\s\S]*?order\.is_paid_online/, 'printOrderKOT must inspect order.is_paid_online');
+
+    // 7. Cancellation modal target ID binding
+    assert.match(adminJs, /openCancelOrderModal\(orderId\)[\s\S]*?activeCancellingOrderId\s*=\s*orderId/, 'openCancelOrderModal must bind activeCancellingOrderId');
+
+    // 8. @media print isolation
+    assert.match(adminCss, /@media\s+print\s*\{[\s\S]*?#admin-connection-banner[\s\S]*?display:\s*none\s*!important;/, 'admin.css @media print must hide #admin-connection-banner');
+
+    // 9. modalOrderBackdrop fallback in openOrderManageModal
+    assert.match(adminJs, /const\s+totalLabelEl\s*=[\s\S]*?modalOrderBackdrop/, 'openOrderManageModal must fallback to modalOrderBackdrop');
+    assert.doesNotMatch(adminJs, /modalManageOrder/, 'admin.js must not reference undeclared modalManageOrder');
+
+    // 10. dataService handleRealtimeOrderDelta preserves fees, safe drop, and doorstep wait
+    assert.match(dataServiceJs, /riderWaitingAtDoorstep:\s*remote\.address_details\?\.riderWaitingAtDoorstep/, 'handleRealtimeOrderDelta must preserve riderWaitingAtDoorstep');
+    assert.match(dataServiceJs, /deliveryFee:\s*remote\.delivery_fee/, 'handleRealtimeOrderDelta must preserve deliveryFee');
+  });
 });

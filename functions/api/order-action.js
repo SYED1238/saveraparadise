@@ -82,7 +82,7 @@ function getKitchenPollCacheRequest(request) {
   return new Request(cacheUrl.toString(), { method: 'GET' });
 }
 
-async function purgeKitchenPollEdgeCache(request, context) {
+export async function purgeKitchenPollEdgeCache(request, context) {
   invalidateOrderActionMemoryCache();
   try {
     if (typeof caches !== 'undefined' && caches.default) {

@@ -536,7 +536,7 @@ const initAdminApp = () => {
     }
     const capsuleDeliveryBadge = document.getElementById('capsule-delivery-badge');
     if (capsuleDeliveryBadge) {
-      capsuleDeliveryBadge.style.display = (settings.freeDeliveryEnabled || settings.deliveryRadius) ? 'inline-block' : 'none';
+      capsuleDeliveryBadge.style.display = (settings.freeDeliveryEnabled || settings.deliveryRadiusKm) ? 'inline-block' : 'none';
     }
   }
 
@@ -726,7 +726,18 @@ const initAdminApp = () => {
     catNameInput.focus();
   }
 
+  let pendingCategoryUploadedR2Key = '';
+
   function closeCategoryModal() {
+    if (pendingCategoryUploadedR2Key && (!catEditId || !catEditId.value)) {
+      const orphanKey = pendingCategoryUploadedR2Key;
+      pendingCategoryUploadedR2Key = '';
+      if (typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && typeof cloudflareR2Service.deleteImage === 'function') {
+        cloudflareR2Service.deleteImage(orphanKey).catch(() => {});
+      }
+    } else {
+      pendingCategoryUploadedR2Key = '';
+    }
     catNameInput.disabled = false;
     modalCategoryBackdrop.classList.remove('open');
     backNav.removeStep('modal-category');
@@ -749,7 +760,14 @@ const initAdminApp = () => {
 
     if (confirm(confirmMsg)) {
       try {
+        const catImgUrl = cat.image || '';
+        const catR2Key = catImgUrl.includes('key=')
+          ? decodeURIComponent(catImgUrl.split('key=')[1].split('&')[0])
+          : '';
         await dataService.deleteCategory(id);
+        if (catR2Key && typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && typeof cloudflareR2Service.deleteImage === 'function') {
+          cloudflareR2Service.deleteImage(catR2Key).catch(() => {});
+        }
         renderCategories();
         renderDishes();
         showToast(`Category "${cat.name}" removed!`, 'info');
@@ -808,22 +826,27 @@ const initAdminApp = () => {
       }
 
       try {
+        const compressedDataUrl = await compressImageFile(file, 640, 0.72);
         const reader = new FileReader();
         reader.onload = async (readEvt) => {
-          const dataUrl = readEvt.target.result;
+          const dataUrl = compressedDataUrl || readEvt.target.result;
           // Set visual preview immediately
           updateCatModalImagePreview(dataUrl);
           if (catImageInput) catImageInput.value = dataUrl;
 
-          // Upload directly to Cloudflare R2
+          // Upload directly to Cloudflare R2 (use compressed JPEG dataUrl so >10MB & HEIC/AVIF mobile photos succeed)
           try {
             if (typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && cloudflareR2Service.uploadImage) {
               if (catUploadStatus) {
                 catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Uploading photo...`;
               }
               const catFileName = `category_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-              const r2Res = await cloudflareR2Service.uploadImage(file, catFileName, 'categories');
+              const r2Res = await cloudflareR2Service.uploadImage(dataUrl, catFileName, 'categories');
               if (r2Res && r2Res.success && (r2Res.key || r2Res.url)) {
+                if (pendingCategoryUploadedR2Key && (!catEditId || !catEditId.value) && typeof cloudflareR2Service.deleteImage === 'function') {
+                  cloudflareR2Service.deleteImage(pendingCategoryUploadedR2Key).catch(() => {});
+                }
+                pendingCategoryUploadedR2Key = r2Res.key || '';
                 const finalImg = r2Res.key
                   ? `/api/r2-image?key=${encodeURIComponent(r2Res.key)}`
                   : (typeof dataService.sanitizeCategoryImageUrl === 'function'
@@ -949,6 +972,7 @@ const initAdminApp = () => {
         showToast(`Category "${name}" created!`, 'success');
       }
 
+      pendingCategoryUploadedR2Key = '';
       closeCategoryModal();
       renderCategories();
       renderDishes();
@@ -1508,9 +1532,12 @@ const initAdminApp = () => {
         showToast(`Dish "${dish.name}" removed from menu!`, 'info');
 
         // Only delete the R2 image asset after DB deletion succeeds and if no other dish shares it
-        if (dish.r2Key || dish.gdriveFileId) {
+        const extractedR2Key = (!dish.r2Key && dish.image && dish.image.includes('key='))
+          ? decodeURIComponent(dish.image.split('key=')[1].split('&')[0])
+          : '';
+        if (dish.r2Key || dish.gdriveFileId || extractedR2Key) {
           const remainingDishes = dataService.getDishes();
-          const targetKey = dish.r2Key || dish.gdriveFileId;
+          const targetKey = dish.r2Key || dish.gdriveFileId || extractedR2Key;
           const isShared = remainingDishes.some(d => d.id !== id && (d.r2Key === targetKey || (dish.image && d.image === dish.image)));
           if (!isShared) {
             try {
@@ -1813,7 +1840,7 @@ const initAdminApp = () => {
           let uploadSucceeded = false;
           try {
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
-            const r2Res = await Promise.race([cloudflareR2Service.uploadImage(file, file.name), timeoutPromise]);
+            const r2Res = await Promise.race([cloudflareR2Service.uploadImage(compressedDataUrl || file, file.name), timeoutPromise]);
             if (r2Res?.url) {
               finalUrl = r2Res.url;
               finalFileId = r2Res.key || '';
@@ -2042,7 +2069,8 @@ const initAdminApp = () => {
         const num = parseFloat(String(o.total ?? '0').replace(/[^0-9.]/g, ''));
         if (!isNaN(num)) {
           totalRevenue += num;
-          const createdMs = typeof o.createdAt === 'number' ? o.createdAt : new Date(o.createdAt).getTime();
+          const rawCreated = o.createdAt ?? o.created_at;
+          const createdMs = typeof rawCreated === 'number' ? rawCreated : new Date(rawCreated).getTime();
           if (!isNaN(createdMs) && createdMs >= todayStart) {
             todayRevenue += num;
           }
@@ -2078,17 +2106,20 @@ const initAdminApp = () => {
     const now = Date.now();
     const overdueOrders = orders.filter(o => {
       if (!o || ((o.status || 'accepted') !== 'accepted' && o.status !== 'pending')) return false;
-      const created = typeof o.createdAt === 'number' ? o.createdAt : new Date(o.createdAt).getTime();
+      const rawCreated = o.createdAt ?? o.created_at;
+      const created = typeof rawCreated === 'number' ? rawCreated : new Date(rawCreated).getTime();
       return !isNaN(created) && created > 0 && (now - created) >= 5 * 60 * 1000;
     });
 
     let newlyTriggered = false;
     overdueOrders.forEach(o => {
-      if (!alertedOverdueOrderIds.has(o.id)) {
-        alertedOverdueOrderIds.add(o.id);
+      const cleanId = String(o.id || '').replace(/^#/, '');
+      if (!alertedOverdueOrderIds.has(cleanId)) {
+        alertedOverdueOrderIds.add(cleanId);
         newlyTriggered = true;
 
-        const created = typeof o.createdAt === 'number' ? o.createdAt : new Date(o.createdAt).getTime();
+        const rawCreated = o.createdAt ?? o.created_at;
+        const created = typeof rawCreated === 'number' ? rawCreated : new Date(rawCreated).getTime();
         const waitMins = Math.max(5, Math.floor((now - created) / 60000));
 
         // Audible chime alert
@@ -2099,7 +2130,7 @@ const initAdminApp = () => {
         sendSystemNotification({
           title: `⚠️ Alert: Order ${dispId} Accepted > ${waitMins} Mins!`,
           body: `Order ${dispId} (${o.customerName || 'Guest'}) has been accepted for ${waitMins}m without kitchen preparation!`,
-          tag: `admin-overdue-${o.id}`,
+          tag: `admin-overdue-${cleanId}`,
           onClick: () => {
             switchView('view-orders');
             openOrderManageModal(o.id);
@@ -2114,14 +2145,14 @@ const initAdminApp = () => {
 
     // Clean up any alerted orders that are no longer unstarted
     alertedOverdueOrderIds.forEach(id => {
-      const stillUnstarted = orders.some(o => o && o.id === id && ((o.status || 'accepted') === 'accepted' || o.status === 'pending'));
+      const stillUnstarted = orders.some(o => o && String(o.id || '').replace(/^#/, '') === id && ((o.status || 'accepted') === 'accepted' || o.status === 'pending'));
       if (!stillUnstarted) {
         alertedOverdueOrderIds.delete(id);
       }
     });
 
     // Update banner UI
-    updateOverdueBanner(overdueList);
+    updateOverdueBanner(overdueOrders);
 
     // If active view is orders and newly triggered (or periodic 60s ticker), re-render
     const shouldPeriodicRender = (now - lastRelativeTimestampRenderAt >= 60000) && orders.some(o => ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way'].includes(o.status));
@@ -2140,7 +2171,8 @@ const initAdminApp = () => {
 
     pendingOverdueAlertBanner.style.display = 'flex';
     const first = overdueList[0];
-    const created = typeof first.createdAt === 'number' ? first.createdAt : new Date(first.createdAt).getTime();
+    const rawCreated = first.createdAt ?? first.created_at;
+    const created = typeof rawCreated === 'number' ? rawCreated : new Date(rawCreated).getTime();
     const waitMins = Math.max(5, Math.floor((Date.now() - created) / 60000));
 
     if (overdueBannerTitle) {
@@ -2155,11 +2187,13 @@ const initAdminApp = () => {
     if (btnOverdueQuickAccept) {
       btnOverdueQuickAccept.onclick = (e) => {
         e.stopPropagation();
-        const updated = dataService.updateOrderStatus(first.id, 'cooking');
+        const nextTarget = first.status === 'pending' ? 'accepted' : 'cooking';
+        const updated = dataService.updateOrderStatus(first.id, nextTarget);
         if (isKitchenAlarmRinging) {
           stopKitchenAlarm(true, { orderId: first.id });
         }
-        showToast(`🔥 Order ${first.id} moved to Preparing!`, 'success');
+        const label = nextTarget === 'accepted' ? 'Accepted' : 'Preparing';
+        showToast(`🔥 Order ${first.id} moved to ${label}!`, 'success');
         checkOverduePendingOrders();
         renderOrders();
         if (updated?.serverPromise) {
@@ -2252,12 +2286,14 @@ const initAdminApp = () => {
       else if (order.status === 'ready_for_pickup') statusLabel = 'Ready to Dispatch';
       else if (order.status === 'on_the_way') statusLabel = 'Dispatched';
       else if (order.status === 'delivered') statusLabel = 'Delivered';
-      else if (order.status === 'accepted' || order.status === 'pending') statusLabel = 'Accepted';
+      else if (order.status === 'accepted') statusLabel = 'Accepted';
+      else if (order.status === 'pending') statusLabel = 'Pending Acceptance';
       else statusLabel = order.statusLabel || 'Accepted';
 
       // Check if order has been waiting without cooking for > 5 minutes
       const isUnstarted = (order.status || 'accepted') === 'accepted' || order.status === 'pending';
-      const createdMs = typeof order.createdAt === 'number' ? order.createdAt : new Date(order.createdAt).getTime();
+      const rawCreated = order.createdAt ?? order.created_at;
+      const createdMs = typeof rawCreated === 'number' ? rawCreated : new Date(rawCreated).getTime();
       const ageMs = !isNaN(createdMs) && createdMs > 0 ? Math.max(0, Date.now() - createdMs) : 0;
       const actualAgeMins = Math.floor(ageMs / 60000);
       const isOverdue = isUnstarted && ageMs >= 5 * 60 * 1000;
@@ -2278,7 +2314,9 @@ const initAdminApp = () => {
       } else if (order.status === 'undelivered') {
         const reasonText = order.undeliveredReason || order.cancellationReason || 'Customer unreachable at doorstep';
         nextActionBtn = `<span class="btn-advance-status" style="background:#FFF7ED; color:#C2410C; border:1.5px solid #FDBA74; cursor:default;" title="${escapeHtml(reasonText)}"><i class="fa-solid fa-box-archive"></i> Returned to Kitchen</span>`;
-      } else if (order.status === 'accepted' || order.status === 'pending') {
+      } else if (order.status === 'pending') {
+        nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="accepted">✅ Accept Order</button>`;
+      } else if (order.status === 'accepted') {
         nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="cooking">🔥 Start Preparing</button>`;
       } else if (order.status === 'cooking') {
         nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="ready_for_pickup">📦 Pack & Ready to Dispatch</button>`;
@@ -2415,14 +2453,25 @@ const initAdminApp = () => {
       // Payment Method distinction (COD vs Online vs Doorstep UPI)
       let paymentStatusBadge = '';
       let totalLabel = 'Total Paid';
-      if (order.isPaidOnline === true || order.paymentMethod === 'online') {
+      const isPaidOnline = Boolean(
+        order.isPaidOnline === true ||
+        order.is_paid_online === true ||
+        order.paymentMethod === 'online' ||
+        order.payment_method === 'online' ||
+        String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
+        order.cf_payment_id ||
+        order.cfPaymentId ||
+        order.cf_order_id ||
+        order.cfOrderId
+      );
+      if (isPaidOnline) {
         paymentStatusBadge = `
           <span class="order-payment-pill is-online" title="Customer paid online via UPI/Card">
             <i class="fa-solid fa-circle-check"></i> Paid Online
           </span>
         `;
         totalLabel = 'Total Paid';
-      } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi') {
+      } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi' || order.payment_method === 'doorstep_upi') {
         paymentStatusBadge = `
           <span class="order-payment-pill is-doorstep-upi" title="Payment to be collected via Doorstep Dynamic UPI QR">
             <i class="fa-solid fa-qrcode"></i> Doorstep UPI QR
@@ -2702,13 +2751,13 @@ const initAdminApp = () => {
 
     renderOrderModalReadonlyItems(order);
 
-    const isPaid = Boolean(order.isPaidOnline || String(order.paymentStatus || '').toLowerCase() === 'paid' || order.status === 'delivered');
+    const isPaid = Boolean(order.isPaidOnline || order.is_paid_online || String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' || order.status === 'delivered');
 
     if (orderDetailTotal) {
       orderDetailTotal.textContent = order.total || '₹0';
     }
 
-    const totalLabelEl = document.getElementById('order-detail-total-label') || (modalManageOrder && modalManageOrder.querySelector('.readonly-total-label'));
+    const totalLabelEl = document.getElementById('order-detail-total-label') || (modalOrderBackdrop && modalOrderBackdrop.querySelector('.readonly-total-label'));
     if (totalLabelEl) {
       totalLabelEl.textContent = isPaid ? 'Total Amount Paid' : 'Amount to Collect';
     }
@@ -2894,7 +2943,11 @@ const initAdminApp = () => {
           btnModalRejectOrder.style.display = (status === 'accepted' || status === 'pending') ? 'inline-flex' : 'none';
         }
 
-        if (status === 'accepted' || status === 'pending') {
+        if (status === 'pending') {
+          btnModalAdvanceStatus.disabled = false;
+          btnModalAdvanceStatus.setAttribute('data-next', 'accepted');
+          btnModalAdvanceText.textContent = '✅ Accept Order';
+        } else if (status === 'accepted') {
           btnModalAdvanceStatus.disabled = false;
           btnModalAdvanceStatus.setAttribute('data-next', 'cooking');
           btnModalAdvanceText.textContent = '🔥 Start Preparing';
@@ -3071,13 +3124,24 @@ const initAdminApp = () => {
     const noteText = (order.notes || order.kitchenNotes || order.customerNotes || (order.addressDetails && order.addressDetails.instructions) || '').trim();
 
     let paymentLabel = 'CASH ON DELIVERY (COD)';
-    if (order.isPaidOnline === true || order.paymentMethod === 'online') {
+    const isPaidOnlineKOT = Boolean(
+      order.isPaidOnline === true ||
+      order.is_paid_online === true ||
+      order.paymentMethod === 'online' ||
+      order.payment_method === 'online' ||
+      String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
+      order.cf_payment_id ||
+      order.cfPaymentId ||
+      order.cf_order_id ||
+      order.cfOrderId
+    );
+    if (isPaidOnlineKOT) {
       paymentLabel = 'PAID ONLINE';
-    } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi') {
+    } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi' || order.payment_method === 'doorstep_upi') {
       paymentLabel = 'DOORSTEP UPI';
     }
 
-    const dateStr = new Date(order.createdAt || Date.now()).toLocaleString('en-IN', {
+    const dateStr = new Date(order.createdAt ?? order.created_at ?? Date.now()).toLocaleString('en-IN', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -3163,6 +3227,7 @@ const initAdminApp = () => {
   const cancelOrderIdLabel = document.getElementById('cancel-order-id-label');
   const cancelOrderNote = document.getElementById('cancel-order-note');
   let selectedCancelReason = 'Item(s) Out of Stock';
+  let activeCancellingOrderId = null;
 
   const cancelReasonPills = document.querySelectorAll('.cancel-reason-pill');
   cancelReasonPills.forEach(pill => {
@@ -3175,6 +3240,8 @@ const initAdminApp = () => {
 
   function openCancelOrderModal(orderId) {
     if (!modalCancelOrderBackdrop) return;
+    activeCancellingOrderId = orderId;
+    if (orderEditId && orderId) orderEditId.value = orderId;
     if (cancelOrderIdLabel) cancelOrderIdLabel.textContent = orderId;
     if (cancelOrderNote) cancelOrderNote.value = '';
     selectedCancelReason = 'Item(s) Out of Stock';
@@ -3229,7 +3296,7 @@ const initAdminApp = () => {
 
   if (btnConfirmCancelOrder) {
     btnConfirmCancelOrder.addEventListener('click', async () => {
-      const orderId = orderEditId ? orderEditId.value : null;
+      const orderId = activeCancellingOrderId || (orderEditId ? orderEditId.value : null);
       if (!orderId) return;
 
       const customNote = cancelOrderNote ? cancelOrderNote.value.trim() : '';
@@ -3406,6 +3473,10 @@ const initAdminApp = () => {
       }
     }
   }
+  const initialSettings = dataService.getSettings();
+  if (initialSettings && initialSettings.kitchenAlarmMode) {
+    setKitchenAlarmSoundMode(initialSettings.kitchenAlarmMode);
+  }
   updateAlarmToggleUI();
   try {
     if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setKitchenAlarmMode === 'function') {
@@ -3486,8 +3557,8 @@ const initAdminApp = () => {
 
     isKitchenAlarmRinging = true;
 
-    // Update banner UI details
-    const latestOrder = ringingOrdersQueue[ringingOrdersQueue.length - 1] || order || {};
+    // Update banner UI details (always display front of FIFO queue to match btnViewAlarmOrder)
+    const latestOrder = ringingOrdersQueue[0] || order || {};
     if (alarmBannerOrderId) alarmBannerOrderId.textContent = latestOrder.id || '#QB-NEW';
     if (alarmBannerCustomer) alarmBannerCustomer.textContent = latestOrder.customerName || 'Online Guest';
     if (alarmBannerTotal) alarmBannerTotal.textContent = latestOrder.total || '₹0';
@@ -3532,59 +3603,57 @@ const initAdminApp = () => {
     const soundMode = getKitchenAlarmSoundMode();
 
     // Trigger native Android background alarm loop if running inside Android APK
-    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
+    const hasAndroidNative = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+    if (hasAndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
       try {
-        if (soundMode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
-          window.AndroidNative.startAlarm();
-        } else {
-          // In custom music mode, ensure native Android phone siren never competes with music
-          if (typeof window.AndroidNative.stopAlarm === 'function') {
-            window.AndroidNative.stopAlarm();
-          }
-        }
+        window.AndroidNative.startAlarm();
       } catch (e) {
         console.warn('[Admin] Native startAlarm failed:', e);
       }
     }
 
-    // Trigger alarm sound based on configured mode (Custom R2 track vs Classic synthesized chime)
-    if (soundMode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
-      stopKitchenAlarmAudio();
-      playKitchenChime();
-      if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
-      kitchenAlarmInterval = setInterval(() => {
-        if (isKitchenAlarmRinging) {
-          playKitchenChime();
-        } else {
+    // In native Android APK, OrderMonitorService handles the continuous native alarm loop
+    // (playing R.raw.kitchen_alarm Funk Criminal or Procedural POS Chime without web autoplay barriers).
+    // In standard Web/PWA browsers, run HTML5 Audio / WebAudio chime engine.
+    if (!hasAndroidNative) {
+      if (soundMode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
+        stopKitchenAlarmAudio();
+        playKitchenChime();
+        if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
+        kitchenAlarmInterval = setInterval(() => {
+          if (isKitchenAlarmRinging) {
+            playKitchenChime();
+          } else {
+            clearInterval(kitchenAlarmInterval);
+            kitchenAlarmInterval = null;
+          }
+        }, 1600);
+      } else {
+        // In Custom R2 Music mode: ensure chime interval is completely dead
+        if (kitchenAlarmInterval) {
           clearInterval(kitchenAlarmInterval);
           kitchenAlarmInterval = null;
         }
-      }, 1600);
-    } else {
-      // In Custom R2 Music mode: ensure chime interval is completely dead
-      if (kitchenAlarmInterval) {
-        clearInterval(kitchenAlarmInterval);
-        kitchenAlarmInterval = null;
-      }
 
-      startKitchenAlarmAudio({
-        onFallback: () => {
-          // Only fall back to chime if custom music is paused/failed AND alarm is still ringing
-          const audio = getKitchenAlarmAudio();
-          if (isKitchenAlarmRinging && (!audio || audio.paused)) {
-            playKitchenChime();
-            if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
-            kitchenAlarmInterval = setInterval(() => {
-              if (isKitchenAlarmRinging) {
-                playKitchenChime();
-              } else {
-                clearInterval(kitchenAlarmInterval);
-                kitchenAlarmInterval = null;
-              }
-            }, 1600);
+        startKitchenAlarmAudio({
+          onFallback: () => {
+            // Only fall back to chime if custom music is paused/failed AND alarm is still ringing
+            const audio = getKitchenAlarmAudio();
+            if (isKitchenAlarmRinging && (!audio || audio.paused)) {
+              playKitchenChime();
+              if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
+              kitchenAlarmInterval = setInterval(() => {
+                if (isKitchenAlarmRinging) {
+                  playKitchenChime();
+                } else {
+                  clearInterval(kitchenAlarmInterval);
+                  kitchenAlarmInterval = null;
+                }
+              }, 1600);
+            }
           }
-        }
-      });
+        });
+      }
     }
   }
 
@@ -3600,7 +3669,12 @@ const initAdminApp = () => {
         const nextOrder = ringingOrdersQueue[0];
         if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id || 'NEW';
         if (alarmOrdersCountBadge) {
-          alarmOrdersCountBadge.textContent = `${ringingOrdersQueue.length} Order${ringingOrdersQueue.length > 1 ? 's' : ''}`;
+          if (ringingOrdersQueue.length > 1) {
+            alarmOrdersCountBadge.style.display = 'inline-block';
+            alarmOrdersCountBadge.textContent = `${ringingOrdersQueue.length} Orders`;
+          } else {
+            alarmOrdersCountBadge.style.display = 'none';
+          }
         }
         if (alarmBannerCustomer) alarmBannerCustomer.textContent = nextOrder.customerName || 'Customer';
         if (alarmBannerTotal) alarmBannerTotal.textContent = nextOrder.total || '₹0';
@@ -3745,7 +3819,28 @@ const initAdminApp = () => {
         }
 
         const mode = getKitchenAlarmSoundMode();
-        if (mode === KITCHEN_ALARM_MODES.R2_CUSTOM) {
+        const hasAndroidNative = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+
+        if (hasAndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
+          if (soundTestTimeout) {
+            clearTimeout(soundTestTimeout);
+            soundTestTimeout = null;
+            if (typeof window.AndroidNative.stopAlarm === 'function') {
+              window.AndroidNative.stopAlarm();
+            }
+            showToast('⏹️ Audio test stopped.', 'info');
+            return;
+          }
+          window.AndroidNative.startAlarm();
+          const modeName = mode === KITCHEN_ALARM_MODES.R2_CUSTOM ? 'Funk Criminal' : 'Classic Chime';
+          showToast(`🎵 Testing native ${modeName} alarm (5s)... Tap bell again to stop.`, 'success');
+          soundTestTimeout = setTimeout(() => {
+            if (typeof window.AndroidNative.stopAlarm === 'function') {
+              window.AndroidNative.stopAlarm();
+            }
+            soundTestTimeout = null;
+          }, 5000);
+        } else if (mode === KITCHEN_ALARM_MODES.R2_CUSTOM) {
           if (soundTestTimeout) {
             clearTimeout(soundTestTimeout);
             soundTestTimeout = null;
@@ -3781,11 +3876,14 @@ const initAdminApp = () => {
 
   // Header alarm sound mode toggle (Custom R2 vs Classic Chime)
   if (btnAdminAlarmToggle) {
-    btnAdminAlarmToggle.addEventListener('click', () => {
+    btnAdminAlarmToggle.addEventListener('click', async () => {
       if (soundTestTimeout) {
         clearTimeout(soundTestTimeout);
         soundTestTimeout = null;
         stopKitchenAlarmAudio();
+        if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.stopAlarm === 'function') {
+          window.AndroidNative.stopAlarm();
+        }
       }
       const newMode = toggleKitchenAlarmSoundMode();
       updateAlarmToggleUI();
@@ -3794,6 +3892,16 @@ const initAdminApp = () => {
       } else {
         stopKitchenAlarmAudio();
         showToast('🔔 Kitchen Alarm reverted to: Classic POS Chime', 'info');
+      }
+
+      try {
+        const curSettings = dataService.getSettings() || {};
+        await dataService.saveSettings({
+          ...curSettings,
+          kitchenAlarmMode: newMode
+        });
+      } catch (err) {
+        console.warn('[Admin] Failed to persist kitchenAlarmMode to cloud settings:', err);
       }
     });
   }
@@ -3975,6 +4083,16 @@ const initAdminApp = () => {
           const nextOrder = ringingOrdersQueue[0];
           if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id;
           if (alarmBannerCustomer) alarmBannerCustomer.textContent = nextOrder.customerName || 'Customer';
+          if (alarmBannerTotal) alarmBannerTotal.textContent = nextOrder.total || '₹0';
+          if (alarmBannerItems) alarmBannerItems.textContent = nextOrder.itemsSummary || 'Order Items';
+          if (alarmOrdersCountBadge) {
+            if (ringingOrdersQueue.length > 1) {
+              alarmOrdersCountBadge.style.display = 'inline-block';
+              alarmOrdersCountBadge.textContent = `${ringingOrdersQueue.length} Orders`;
+            } else {
+              alarmOrdersCountBadge.style.display = 'none';
+            }
+          }
         }
       }
     }
@@ -4182,11 +4300,23 @@ const initAdminApp = () => {
       renderOffers();
       renderDeliveryOptions();
       updateRushUI();
+      const st = dataService.getSettings();
+      if (st && st.kitchenAlarmMode) {
+        setKitchenAlarmSoundMode(st.kitchenAlarmMode);
+        updateAlarmToggleUI();
+      }
     }
   });
 
   // Custom event listener within same window
   window.addEventListener('quickbite_data_changed', (e) => {
+    if (e.detail?.type === 'settings') {
+      const st = e.detail?.settings || dataService.getSettings();
+      if (st && st.kitchenAlarmMode) {
+        setKitchenAlarmSoundMode(st.kitchenAlarmMode);
+        updateAlarmToggleUI();
+      }
+    }
     if (e.detail?.type === 'kitchen_alarm') {
       if (e.detail?.action === 'stop_alarm') {
         stopKitchenAlarm(false, e.detail);
@@ -5104,16 +5234,13 @@ const initAdminApp = () => {
 
       try {
         const res = await dataService.saveSettings(updated);
+        assertCloudSettingsSynced(res);
         if (typeof syncHoursSummaryChips === 'function') {
           syncHoursSummaryChips();
         }
         // Auto-close operating timings panel on save
         document.querySelector('.btn-close-hours-panel[data-target="hours-card-schedule"]')?.click();
-        if (res?._localOnly) {
-          showToast('⚠️ Operating timings updated locally (Cloud database sync requires Owner role).', 'warning');
-        } else {
-          showToast('💾 Store operating timings, notice & helpline updated!', 'success');
-        }
+        showToast('💾 Store operating timings, notice & helpline updated!', 'success');
         if (saveBtn) {
           saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
           setTimeout(() => {
@@ -5123,6 +5250,11 @@ const initAdminApp = () => {
         }
       } catch (err) {
         console.error('[Admin] Error saving store settings:', err);
+        dataService.settingsCache = current;
+        localStorage.setItem('quickbite_settings', JSON.stringify(current));
+        if (typeof syncHoursSummaryChips === 'function') {
+          syncHoursSummaryChips();
+        }
         showToast(`⚠️ Settings error: ${err?.message || 'Failed to persist to cloud'}`, 'error');
         if (saveBtn) {
           saveBtn.disabled = false;

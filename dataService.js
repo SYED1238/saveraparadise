@@ -223,7 +223,9 @@ export const DEFAULT_SETTINGS = {
   unlockedDealsMinOrder: 299,
   unlockedDealsDiscountPct: 15,
   unlockedDealsTitle: 'Wholesale Club Deals',
-  unlockedDealsSubtext: 'Shop for ₹299 to unlock special menu prices!'
+  unlockedDealsSubtext: 'Shop for ₹299 to unlock special menu prices!',
+  // Kitchen Alarm Sound Engine: 'r2_custom' (Funk Criminal) | 'classic_chime' (Synthesized POS bell)
+  kitchenAlarmMode: 'r2_custom'
 };
 
 // ========================================================
@@ -2965,7 +2967,7 @@ class QuickBiteDataService {
 
           const mapped = data.map(d => {
             const finalImage = sanitizeDishImageUrl(d.image) || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=80';
-            return {
+            const mappedItem = {
               id: d.id,
               name: d.name,
               category: d.category,
@@ -2985,6 +2987,10 @@ class QuickBiteDataService {
                 availableTo: d.available_to || '',
                 r2Key: d.r2_key || d.r2Key || ''
             };
+            if (!mappedItem.r2Key && finalImage && finalImage.includes('key=')) {
+              mappedItem.r2Key = decodeURIComponent(finalImage.split('key=')[1].split('&')[0]);
+            }
+            return mappedItem;
           });
 
           // Order dishes deterministically matching DEFAULT_DISHES storefront order so Admin matches Storefront
@@ -3753,8 +3759,17 @@ class QuickBiteDataService {
         itemsSummary: remote.items_summary || local?.itemsSummary || '',
         items: remote.items || local?.items || [],
         total: remote.total || local?.total || '₹0',
+        deliveryFee: remote.delivery_fee !== undefined && remote.delivery_fee !== null ? Number(remote.delivery_fee) : (remote.address_details?.deliveryFee !== undefined ? Number(remote.address_details.deliveryFee) : (local?.deliveryFee || 0)),
+        packagingFee: remote.packaging_fee !== undefined && remote.packaging_fee !== null ? Number(remote.packaging_fee) : (remote.address_details?.packagingFee !== undefined ? Number(remote.address_details.packagingFee) : (local?.packagingFee || 0)),
+        discount: remote.discount !== undefined && remote.discount !== null ? Number(remote.discount) : (remote.address_details?.discount !== undefined ? Number(remote.address_details.discount) : (local?.discount || 0)),
+        distanceKm: remote.distance_km ?? remote.address_details?.distanceKm ?? remote.address_details?.distance_km ?? local?.distanceKm ?? null,
         claimedAt: remote.claimed_at ? parseTimestampMs(remote.claimed_at) : (local?.claimedAt || null),
+        pickedUpAt: remote.address_details?.pickedUpAt ? parseTimestampMs(remote.address_details.pickedUpAt) : (local?.pickedUpAt || null),
         deliveredAt: remote.delivered_at ? parseTimestampMs(remote.delivered_at) : (local?.deliveredAt || null),
+        waitingStartedAt: remote.address_details?.waitingStartedAt ? parseTimestampMs(remote.address_details.waitingStartedAt) : (local?.waitingStartedAt || null),
+        riderWaitingAtDoorstep: remote.address_details?.riderWaitingAtDoorstep !== undefined ? Boolean(remote.address_details.riderWaitingAtDoorstep) : Boolean(local?.riderWaitingAtDoorstep),
+        safeDrop: remote.address_details?.safeDrop !== undefined ? Boolean(remote.address_details.safeDrop) : Boolean(local?.safeDrop),
+        safeDropNote: remote.address_details?.safeDropNote || local?.safeDropNote || '',
         cashCollected: remote.cash_collected !== undefined && remote.cash_collected !== null ? Number(remote.cash_collected) : local?.cashCollected,
         isPaidOnline: Boolean(remote.is_paid_online || local?.isPaidOnline),
         doorstepUpi: Boolean(remote.doorstep_upi || local?.doorstepUpi),
@@ -4787,7 +4802,7 @@ class QuickBiteDataService {
       token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token');
     }
     if (!token && typeof localStorage !== 'undefined') {
-      token = isOwnerOnlyAction
+      token = isOwnerAction
         ? (localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_admin_token'))
         : (localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token') || localStorage.getItem('quickbite_rider_token'));
       if (token && typeof sessionStorage !== 'undefined') {
@@ -5048,10 +5063,7 @@ class QuickBiteDataService {
 
     // Dual-resolution: synchronous callers get map immediately, async callers await authoritative server confirmation for both keys in one request
     const serverPromise = (async () => {
-      const token = (typeof sessionStorage !== 'undefined')
-        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
-        : null;
-      if (!token) {
+      if (!this.isStaffAuthorized()) {
         console.warn('[DataService] setAllCategoryImage: Staff token missing. Saved to localStorage only.');
         return { ...map, _syncedToCloud: false, _localOnly: true };
       }
@@ -5095,10 +5107,7 @@ class QuickBiteDataService {
 
     // Dual-resolution: synchronous callers get the map immediately, async callers await authoritative server confirmation
     const serverPromise = (async () => {
-      const token = (typeof sessionStorage !== 'undefined')
-        ? (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))
-        : null;
-      if (!token) {
+      if (!this.isStaffAuthorized()) {
         console.warn('[DataService] saveCategoryImage: Staff token missing. Saved to localStorage only.');
         return { ...map, _syncedToCloud: false, _localOnly: true };
       }
@@ -5252,12 +5261,14 @@ class QuickBiteDataService {
       this.saveCategories(list);
 
       // Cascade category name change to dishes
+      const affectedDishIds = [];
       if (updatedData.name && updatedData.name !== prevCat.name) {
         const dishes = this.getDishes();
         let changed = false;
         dishes.forEach(d => {
           if (d && (d.category === list[idx].id || d.category === list[idx].slug)) {
             d.categoryName = updatedData.name;
+            affectedDishIds.push(d.id);
             changed = true;
           }
         });
@@ -5275,6 +5286,13 @@ class QuickBiteDataService {
         try {
           if (this.isStaffAuthorized() && typeof window !== 'undefined') {
             await this._adminStoreAction('update_category', { id: list[idx].id, updates: updatePayload });
+            if (affectedDishIds.length > 0) {
+              await Promise.all(
+                affectedDishIds.map(dishId =>
+                  this._adminStoreAction('update_dish', { id: dishId, updates: { category_name: updatedData.name } }).catch(() => {})
+                )
+              );
+            }
           } else if (supabase) {
             const { error } = await supabase.from('categories').update(updatePayload).eq('id', list[idx].id);
             if (error) console.warn('[DataService] Direct supabase updateCategory error:', error.message);
