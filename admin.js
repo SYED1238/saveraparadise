@@ -544,7 +544,7 @@ const initAdminApp = () => {
     }
     const capsuleDeliveryBadge = document.getElementById('capsule-delivery-badge');
     if (capsuleDeliveryBadge) {
-      capsuleDeliveryBadge.style.display = (settings.freeDeliveryEnabled || settings.deliveryRadiusKm) ? 'inline-block' : 'none';
+      capsuleDeliveryBadge.style.display = (settings.freeDeliveryEnabled) ? 'inline-block' : 'none';
     }
   }
 
@@ -754,14 +754,6 @@ const initAdminApp = () => {
       if (typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && typeof cloudflareR2Service.deleteImage === 'function') {
         cloudflareR2Service.deleteImage(orphanKey).catch(() => {});
       }
-      const activeEditId = catEditId ? catEditId.value : '';
-      if (activeEditId === 'all' || activeEditId === 'cat-all') {
-        if (typeof dataService.setAllCategoryImage === 'function') {
-          dataService.setAllCategoryImage(initialCategoryModalImage).catch(() => {});
-        }
-      } else if (activeEditId) {
-        dataService.updateCategory(activeEditId, { image: initialCategoryModalImage }).catch(() => {});
-      }
     } else {
       pendingCategoryUploadedR2Key = '';
     }
@@ -793,7 +785,14 @@ const initAdminApp = () => {
           ? decodeURIComponent(catImgUrl.split('key=')[1].split('&')[0])
           : '';
         await dataService.deleteCategory(id);
-        if (catR2Key && typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && typeof cloudflareR2Service.deleteImage === 'function') {
+
+        const canonicalImages = Object.values(dataService.CANONICAL_CATEGORY_IMAGES || {});
+        const isCanonical = canonicalImages.some(img => img === catImgUrl || (catR2Key && img.includes(catR2Key)));
+        const remainingCategories = dataService.getCategories();
+        const remainingDishes = dataService.getDishes();
+        const isShared = remainingCategories.some(c => c.image === catImgUrl) || remainingDishes.some(d => d.image === catImgUrl);
+
+        if (catR2Key && !isCanonical && !isShared && typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && typeof cloudflareR2Service.deleteImage === 'function') {
           cloudflareR2Service.deleteImage(catR2Key).catch(() => {});
         }
         renderCategories();
@@ -883,29 +882,7 @@ const initAdminApp = () => {
 
                 if (catImageInput) catImageInput.value = finalImg;
                 updateCatModalImagePreview(finalImg);
-
-                // If editing an existing category, persist immediately so image is saved right away
-                const activeEditId = catEditId ? catEditId.value : null;
-                if (activeEditId === 'all' || activeEditId === 'cat-all') {
-                  const saveRes = (typeof dataService.setAllCategoryImage === 'function')
-                    ? await dataService.setAllCategoryImage(finalImg)
-                    : await dataService.saveCategoryImage('all', finalImg);
-                  if (saveRes?._localOnly) {
-                    showToast('⚠️ "All" category photo saved locally (Cloud sync requires active Staff session).', 'warning');
-                  } else {
-                    showToast('✓ "All" category photo uploaded and saved!', 'success');
-                  }
-                } else if (activeEditId) {
-                  const saveRes = await dataService.saveCategoryImage(activeEditId, finalImg);
-                  await dataService.updateCategory(activeEditId, { image: finalImg });
-                  if (saveRes?._localOnly) {
-                    showToast('⚠️ Category photo saved locally (Cloud sync requires active Staff session).', 'warning');
-                  } else {
-                    showToast('✓ Category photo uploaded and saved!', 'success');
-                  }
-                } else {
-                  showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
-                }
+                showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
               } else {
                 showToast('⚠️ Could not save photo to cloud. Please retry.', 'error');
               }
@@ -951,6 +928,7 @@ const initAdminApp = () => {
     if (btnSaveCat) btnSaveCat.disabled = true;
 
     try {
+      const previousImageUrl = initialCategoryModalImage;
       const emoji = catEmojiInput.value.trim() || '🍽️';
       let image = catImageInput ? catImageInput.value.trim() : '';
       const editId = catEditId.value;
@@ -999,6 +977,19 @@ const initAdminApp = () => {
       closeCategoryModal();
       renderCategories();
       renderDishes();
+
+      // Clean up old R2 image if replaced and not shared or canonical
+      if (previousImageUrl && previousImageUrl !== image && previousImageUrl.includes('key=')) {
+        const oldR2Key = decodeURIComponent(previousImageUrl.split('key=')[1].split('&')[0]);
+        const canonicalImages = Object.values(dataService.CANONICAL_CATEGORY_IMAGES || {});
+        const isCanonical = canonicalImages.some(img => img === previousImageUrl || (oldR2Key && img.includes(oldR2Key)));
+        const remainingCategories = dataService.getCategories();
+        const remainingDishes = dataService.getDishes();
+        const isShared = remainingCategories.some(c => c.id !== editId && c.image === previousImageUrl) || remainingDishes.some(d => d.image === previousImageUrl);
+        if (oldR2Key && !isCanonical && !isShared && typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && typeof cloudflareR2Service.deleteImage === 'function') {
+          cloudflareR2Service.deleteImage(oldR2Key).catch(() => {});
+        }
+      }
     } catch (err) {
       console.error('[Category Save Error]:', err);
       showToast(`Error saving category: ${err?.message || err}`, 'error');
@@ -1436,8 +1427,8 @@ const initAdminApp = () => {
     
     if (defaultCategorySlug) {
       dishCategorySelect.value = defaultCategorySlug;
-    } else if (activeCategoryFilter !== 'all') {
-      dishCategorySelect.value = activeCategoryFilter;
+    } else if (currentOpenedCategorySlug && currentOpenedCategorySlug !== 'all') {
+      dishCategorySelect.value = currentOpenedCategorySlug;
     }
 
     dishPriceInput.value = '199';
@@ -1556,7 +1547,7 @@ const initAdminApp = () => {
   async function deleteDishPrompt(id) {
     const dishes = dataService.getDishes();
     const dish = dishes.find(d => d.id === id);
-    if (!dish) return;
+    if (!dish) return false;
 
     if (confirm(`Are you sure you want to remove dish "${dish.name}" from your restaurant menu?`)) {
       try {
@@ -1581,19 +1572,23 @@ const initAdminApp = () => {
             }
           }
         }
+        return true;
       } catch (err) {
         showToast(`Error deleting dish: ${err?.message || err}`, 'error');
+        return false;
       }
     }
+    return false;
   }
 
   if (btnModalDeleteDish) {
-    btnModalDeleteDish.addEventListener('click', () => {
+    btnModalDeleteDish.addEventListener('click', async () => {
       const id = dishEditId.value;
       if (id) {
-        deleteDishPrompt(id);
-        pendingDishUploadedR2Key = '';
-      closeDishModal();
+        const deleted = await deleteDishPrompt(id);
+        if (deleted) {
+          closeDishModal();
+        }
       }
     });
   }
@@ -4025,14 +4020,19 @@ const initAdminApp = () => {
         showToast('🔔 Kitchen Alarm reverted to: Classic POS Chime', 'info');
       }
 
+      const prevMode = (newMode === KITCHEN_ALARM_MODES.R2_CUSTOM) ? KITCHEN_ALARM_MODES.CLASSIC : KITCHEN_ALARM_MODES.R2_CUSTOM;
+      const curSettings = dataService.getSettings() || {};
       try {
-        const curSettings = dataService.getSettings() || {};
-        await dataService.saveSettings({
+        const res = await dataService.saveSettings({
           ...curSettings,
           kitchenAlarmMode: newMode
         });
+        assertCloudSettingsSynced(res);
       } catch (err) {
         console.warn('[Admin] Failed to persist kitchenAlarmMode to cloud settings:', err);
+        setKitchenAlarmSoundMode(curSettings.kitchenAlarmMode || prevMode);
+        updateAlarmToggleUI();
+        showToast(`⚠️ Could not save alarm mode to cloud: ${err?.message || 'Check connection'}`, 'error');
       }
     });
   }
@@ -5559,6 +5559,7 @@ const initAdminApp = () => {
         saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
       }
 
+      const prevSettings = { ...(dataService.getSettings() || {}) };
       try {
         const res = await dataService.setOffer({
           offerActive: active,
@@ -5588,7 +5589,10 @@ const initAdminApp = () => {
         }
       } catch (err) {
         console.error('[Admin] Error saving offer settings:', err);
-        showToast('⚠️ Settings updated locally.', 'warning');
+        dataService.settingsCache = prevSettings;
+        try { localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings)); } catch (_) {}
+        updateOfferPreview();
+        showToast(`⚠️ Could not sync settings to cloud: ${err?.message || 'Check connection'}`, 'error');
         if (saveBtn) {
           saveBtn.disabled = false;
           saveBtn.innerHTML = origHtml;
@@ -5627,6 +5631,7 @@ const initAdminApp = () => {
         saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
       }
 
+      const prevSettings = { ...(dataService.getSettings() || {}) };
       try {
         const res = await dataService.setUnlockedDeals({
           unlockedDealsEnabled: isEnabled,
@@ -5651,7 +5656,10 @@ const initAdminApp = () => {
         }
       } catch (err) {
         console.error('[Admin] Error saving unlocked deals settings:', err);
-        showToast('⚠️ Settings updated locally.', 'warning');
+        dataService.settingsCache = prevSettings;
+        try { localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings)); } catch (_) {}
+        updateUnlockedDealsPreview();
+        showToast(`⚠️ Could not sync deals settings to cloud: ${err?.message || 'Check connection'}`, 'error');
         if (saveBtn) {
           saveBtn.disabled = false;
           saveBtn.innerHTML = origHtml;
@@ -5810,7 +5818,6 @@ const initAdminApp = () => {
     const summaryRushStatus = document.getElementById('summary-rush-status');
     const summaryRushMins = document.getElementById('summary-rush-mins');
     const summaryRushReason = document.getElementById('summary-rush-reason');
-    const rushModeBadge = document.getElementById('rush-mode-badge');
 
     if (summaryRushStatus) {
       if (isClosed) {
@@ -6212,6 +6219,7 @@ const initAdminApp = () => {
         saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
       }
 
+      const prevSettings = { ...(dataService.getSettings() || {}) };
       try {
         const res = await dataService.setDeliverySettings({
           freeDeliveryEnabled: freeDelivEnabled,
@@ -6243,7 +6251,11 @@ const initAdminApp = () => {
         }
       } catch (err) {
         console.error('[Admin] Error saving delivery settings:', err);
-        showToast('⚠️ Settings updated locally.', 'warning');
+        dataService.settingsCache = prevSettings;
+        try { localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings)); } catch (_) {}
+        updateDeliveryPreview();
+        if (typeof syncDeliverySummaryChips === 'function') syncDeliverySummaryChips();
+        showToast(`⚠️ Could not sync delivery settings to cloud: ${err?.message || 'Check connection'}`, 'error');
         if (saveBtn) {
           saveBtn.disabled = false;
           saveBtn.innerHTML = origHtml;

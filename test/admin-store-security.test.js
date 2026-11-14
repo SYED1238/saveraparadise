@@ -1211,9 +1211,9 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(zeroCashRes.statusCode, 400, 'Zero cash on physical COD delivery must be rejected');
     assert.match(zeroCashRes.responseData?.error, /less than payable order total/i);
 
-    // 3f. Doorstep UPI on COD order sets payment_status = 'Paid', is_paid_online = true, and cash_collected = 0
+    // 3f. Doorstep UPI on COD order (verified via cf_payment_status = 'SUCCESS') sets payment_status = 'Paid', is_paid_online = true, and cash_collected = 0
     const doorstepCodOrders = [
-      { id: '#QB-COD-UPI', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹400', numeric_total: 400, payment_status: 'Pending', is_paid_online: false }
+      { id: '#QB-COD-UPI', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹400', numeric_total: 400, payment_status: 'Pending', is_paid_online: false, cf_payment_status: 'SUCCESS' }
     ];
     const { req: doorstepReq, res: doorstepRes } = createMockReqRes({
       method: 'POST',
@@ -1236,9 +1236,9 @@ test('ADMIN STORE & MENU SECURITY SUITE', async (t) => {
     assert.equal(doorstepRes.responseData?.order?.doorstep_upi, true);
     assert.equal(doorstepRes.responseData?.order?.cash_collected, 0);
 
-    // 3g. Cloudflare Pages Functions: Doorstep UPI on COD order
+    // 3g. Cloudflare Pages Functions: Doorstep UPI on COD order (verified via cf_payment_status = 'SUCCESS')
     const cfDoorstepCodOrders = [
-      { id: '#QB-CF-UPI', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹400', numeric_total: 400, payment_status: 'Pending', is_paid_online: false }
+      { id: '#QB-CF-UPI', status: 'on_the_way', assigned_rider_pin: '5566', total: '₹400', numeric_total: 400, payment_status: 'Pending', is_paid_online: false, cf_payment_status: 'SUCCESS' }
     ];
     const cfDoorstepReq = new Request('https://saveraparadise.com/api/order-action', {
       method: 'POST',

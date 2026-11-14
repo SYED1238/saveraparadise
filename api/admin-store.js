@@ -228,6 +228,33 @@ export default async function handler(req, res) {
       if (action === 'clear_orders') {
         return res.status(200).json({ success: true, message: 'All orders cleared successfully', deletedCount: 0 });
       }
+      if (action === 'save_dish' || action === 'add_dish' || action === 'update_dish') {
+        const dish = body.dish || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
+        if (!dish || (!dish.id && !body.id)) {
+          return res.status(400).json({ error: 'Valid dish payload is required' });
+        }
+        return res.status(200).json({ success: true, data: [sanitizeDishFields(dish)] });
+      }
+      if (action === 'save_category' || action === 'add_category' || action === 'update_category') {
+        const cat = body.category || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
+        if (!cat || (!cat.id && !body.id)) {
+          return res.status(400).json({ error: 'Valid category payload is required' });
+        }
+        return res.status(200).json({ success: true, data: [sanitizeCategoryFields(cat)] });
+      }
+      if (action === 'settle_rider_cash') {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        if (!pin) return res.status(400).json({ error: 'Rider PIN is required' });
+        return res.status(200).json({ success: true, pin, settledAt: body.settledAt || Date.now() });
+      }
+      if (action === 'record_rider_payout') {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        if (!pin) return res.status(400).json({ error: 'Rider PIN is required' });
+        return res.status(200).json({ success: true, pin, paidAt: body.paidAt || Date.now(), amount: body.amount || 0 });
+      }
+      if (action === 'reset_defaults' || action === 'reset_business_data') {
+        return res.status(200).json({ success: true, message: 'Store reset successfully' });
+      }
     }
     return res.status(503).json({ error: 'Database service credentials not configured on server' });
   }
@@ -237,6 +264,23 @@ export default async function handler(req, res) {
     const sb = createClient(supabaseUrl, serviceKey);
 
     switch (action) {
+      case 'save_dish': {
+        const rawDish = body.dish || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
+        if (!rawDish || !rawDish.id || !rawDish.name) {
+          return res.status(400).json({ error: 'Valid dish payload (id, name) is required' });
+        }
+        let dish = sanitizeDishFields(rawDish);
+        let { data, error } = await sb.from('dishes').upsert([dish]).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key'))) {
+          delete dish.r2_key;
+          const retry = await sb.from('dishes').upsert([dish]).select();
+          data = retry.data;
+          error = retry.error;
+        }
+        if (error) throw error;
+        return res.status(200).json({ success: true, data });
+      }
+
       case 'add_dish': {
         const rawDish = body.dish;
         if (!rawDish || !rawDish.id || !rawDish.name) {
@@ -318,6 +362,23 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, deletedCount: data.length });
       }
 
+      case 'save_category': {
+        const category = body.category || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
+        if (!category || !category.id || !category.name) {
+          return res.status(400).json({ error: 'Valid category payload (id, name) is required' });
+        }
+        const catPayload = sanitizeCategoryFields(category);
+        let { data, error } = await sb.from('categories').upsert([catPayload]).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
+          delete catPayload.image;
+          const retry = await sb.from('categories').upsert([catPayload]).select();
+          data = retry.data;
+          error = retry.error;
+        }
+        if (error) throw error;
+        return res.status(200).json({ success: true, data });
+      }
+
       case 'add_category': {
         const category = body.category;
         if (!category || !category.id || !category.name) {
@@ -362,6 +423,12 @@ export default async function handler(req, res) {
         }
         if (!data || data.length === 0) {
           return res.status(404).json({ error: `Category '${id}' not found in database to update` });
+        }
+        if (cleanUpdates.name) {
+          const catSlug = cleanUpdates.slug || id;
+          await sb.from('dishes')
+            .update({ category_name: cleanUpdates.name })
+            .or(`category.eq.${id},category.eq.${catSlug}`);
         }
         return res.status(200).json({ success: true, data });
       }
@@ -612,6 +679,49 @@ export default async function handler(req, res) {
         invalidateOrderActionMemoryCache();
         invalidateKitchenPollCache();
         return res.status(200).json({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 });
+      }
+
+      case 'settle_rider_cash': {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        if (!pin) return res.status(400).json({ error: 'Rider PIN is required' });
+        const settledAt = body.settledAt ? new Date(body.settledAt).toISOString() : new Date().toISOString();
+        const updateFields = {
+          cash_settled_at: settledAt,
+          cash_handover_status: 'taken',
+          cash_handover_amount: 0
+        };
+        const { data, error } = await sb.from('riders').update(updateFields).eq('pin', pin).select();
+        if (error) throw error;
+        invalidateRidersListCache();
+        return res.status(200).json({ success: true, pin, settledAt, data });
+      }
+
+      case 'record_rider_payout': {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        if (!pin) return res.status(400).json({ error: 'Rider PIN is required' });
+        const paidAt = body.paidAt ? new Date(body.paidAt).toISOString() : new Date().toISOString();
+        const updateFields = { payout_paid_at: paidAt };
+        if (body.amount !== undefined) updateFields.payout_amount_paid = Number(body.amount) || 0;
+        const { data, error } = await sb.from('riders').update(updateFields).eq('pin', pin).select();
+        if (error) throw error;
+        invalidateRidersListCache();
+        return res.status(200).json({ success: true, pin, paidAt, data });
+      }
+
+      case 'reset_defaults':
+      case 'reset_business_data': {
+        const { data, error } = await sb.rpc('clear_all_orders');
+        if (error) {
+          await sb.from('orders').update({
+            status: 'cancelled',
+            status_label: 'Cancelled',
+            step_index: -1,
+            cancellation_reason: 'Reset by restaurant owner'
+          }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
+        }
+        invalidateOrderActionMemoryCache();
+        invalidateKitchenPollCache();
+        return res.status(200).json({ success: true, message: 'Store reset successfully', deletedCount: data || 0 });
       }
 
       default:

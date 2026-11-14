@@ -2665,10 +2665,10 @@ class QuickBiteDataService {
    * @returns {boolean}
    */
   isStaffAuthorized() {
-    if (this.portalType === 'admin') return isStaffSessionActive('admin');
+    if (this.portalType === 'admin') return isStaffSessionActive('admin') || isStaffSessionActive('owner');
     if (this.portalType === 'delivery') return isStaffSessionActive('rider');
     if (this.portalType === 'owner') return isStaffSessionActive('owner');
-    return false;
+    return isStaffSessionActive('admin') || isStaffSessionActive('owner') || isStaffSessionActive('rider');
   }
 
   sanitizeDishImageUrl(url) {
@@ -2965,6 +2965,8 @@ class QuickBiteDataService {
             return;
           }
 
+          const localDishes = this.getDishes();
+          const localMap = new Map(localDishes.map(d => [String(d.id), d]));
           const mapped = data.map(d => {
             const finalImage = sanitizeDishImageUrl(d.image) || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=80';
             const mappedItem = {
@@ -2985,7 +2987,8 @@ class QuickBiteDataService {
                 timeRestricted: Boolean(d.time_restricted),
                 availableFrom: d.available_from || '',
                 availableTo: d.available_to || '',
-                r2Key: d.r2_key || d.r2Key || ''
+                r2Key: d.r2_key || d.r2Key || '',
+                createdAt: d.created_at || localMap.get(String(d.id))?.createdAt || undefined
             };
             if (!mappedItem.r2Key && finalImage && finalImage.includes('key=')) {
               mappedItem.r2Key = decodeURIComponent(finalImage.split('key=')[1].split('&')[0]);
@@ -2994,13 +2997,8 @@ class QuickBiteDataService {
           });
 
           // Order dishes deterministically matching DEFAULT_DISHES storefront order so Admin matches Storefront
-          const defaultDishOrderMap = new Map(DEFAULT_DISHES.map((dish, i) => [dish.id, i]));
-          mapped.sort((a, b) => {
-            const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : -1;
-            const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : -1;
-            return posA - posB;
-          });
-          this.saveDishes(mapped);
+          const sorted = this._sortDishesList(mapped);
+          this.saveDishes(sorted);
           this.populateUploadedImagesFromDishes();
           this.isSupabaseConnected = true;
           this._lastDishesSyncTime = Date.now();
@@ -3191,7 +3189,9 @@ class QuickBiteDataService {
               assignedRiderVehicle: remote.assigned_rider_vehicle || (isOptimisticStage1 ? local?.assignedRiderVehicle : null) || null,
               riderPickupStage: effectivePickupStage,
               cancellationReason: remote.cancellation_reason || local?.cancellationReason || null,
-              riderWaitingAtDoorstep: isWaitingAtDoorstep,
+              riderWaitingAtDoorstep: remote.address_details?.riderWaitingAtDoorstep !== undefined
+          ? Boolean(remote.address_details.riderWaitingAtDoorstep)
+          : isWaitingAtDoorstep,
               waitingStartedAt: waitingStartedAt,
               safeDrop: Boolean(remote.address_details?.safeDrop || (isOptimistic && local?.safeDrop)),
               safeDropNote: remote.address_details?.safeDropNote || (isOptimistic ? (local?.safeDropNote || '') : ''),
@@ -3743,6 +3743,18 @@ class QuickBiteDataService {
       const digits = String(remote.id || '').replace(/\D/g, '');
       const fallbackPickupCode = digits.length >= 4 ? digits.slice(-4) : (digits || '1001');
 
+      const hasDoorstepWaitTag = Boolean(
+        remote.cancellation_reason &&
+        String(remote.cancellation_reason).includes('[DOORSTEP_WAIT]') &&
+        effectiveStatus === 'on_the_way'
+      );
+      const isWaitingAtDoorstep = effectiveStatus === 'on_the_way' && (
+        hasDoorstepWaitTag ||
+        (remote.address_details?.riderWaitingAtDoorstep !== undefined
+          ? Boolean(remote.address_details.riderWaitingAtDoorstep)
+          : (remote.cancellation_reason === undefined ? Boolean(local?.riderWaitingAtDoorstep) : false))
+      );
+
       const mergedOrder = {
         ...(local || {}),
         id: remote.id || local?.id,
@@ -3768,8 +3780,12 @@ class QuickBiteDataService {
         claimedAt: remote.claimed_at ? parseTimestampMs(remote.claimed_at) : (local?.claimedAt || null),
         pickedUpAt: remote.address_details?.pickedUpAt ? parseTimestampMs(remote.address_details.pickedUpAt) : (local?.pickedUpAt || null),
         deliveredAt: remote.delivered_at ? parseTimestampMs(remote.delivered_at) : (local?.deliveredAt || null),
-        waitingStartedAt: remote.address_details?.waitingStartedAt ? parseTimestampMs(remote.address_details.waitingStartedAt) : (local?.waitingStartedAt || null),
-        riderWaitingAtDoorstep: remote.address_details?.riderWaitingAtDoorstep !== undefined ? Boolean(remote.address_details.riderWaitingAtDoorstep) : Boolean(local?.riderWaitingAtDoorstep),
+        waitingStartedAt: isWaitingAtDoorstep
+          ? (remote.address_details?.waitingStartedAt ? parseTimestampMs(remote.address_details.waitingStartedAt) : (local?.waitingStartedAt || Date.now()))
+          : null,
+        riderWaitingAtDoorstep: remote.address_details?.riderWaitingAtDoorstep !== undefined
+          ? Boolean(remote.address_details.riderWaitingAtDoorstep)
+          : isWaitingAtDoorstep,
         safeDrop: remote.address_details?.safeDrop !== undefined ? Boolean(remote.address_details.safeDrop) : Boolean(local?.safeDrop),
         safeDropNote: remote.address_details?.safeDropNote || local?.safeDropNote || '',
         cashCollected: remote.cash_collected !== undefined && remote.cash_collected !== null ? Number(remote.cash_collected) : local?.cashCollected,
@@ -5336,6 +5352,7 @@ class QuickBiteDataService {
     const idx = list.findIndex(c => c.id === id || c.slug === id);
     if (idx !== -1) {
       const prevCat = { ...list[idx] };
+      const prevDishes = this.getDishes().map(d => ({ ...d }));
       list[idx] = { ...list[idx], ...updatedData };
       if (list[idx].image !== undefined) {
         const sanitized = sanitizeCategoryImageUrl(list[idx].image);
@@ -5346,18 +5363,16 @@ class QuickBiteDataService {
       this.saveCategories(list);
 
       // Cascade category name change to dishes
-      const affectedDishIds = [];
+      let dishesChanged = false;
       if (updatedData.name && updatedData.name !== prevCat.name) {
         const dishes = this.getDishes();
-        let changed = false;
         dishes.forEach(d => {
           if (d && (d.category === list[idx].id || d.category === list[idx].slug)) {
             d.categoryName = updatedData.name;
-            affectedDishIds.push(d.id);
-            changed = true;
+            dishesChanged = true;
           }
         });
-        if (changed) this.saveDishes(dishes);
+        if (dishesChanged) this.saveDishes(dishes);
       }
 
       const updatePayload = {
@@ -5371,22 +5386,20 @@ class QuickBiteDataService {
         try {
           if (this.isStaffAuthorized() && typeof window !== 'undefined') {
             await this._adminStoreAction('update_category', { id: list[idx].id, updates: updatePayload });
-            if (affectedDishIds.length > 0) {
-              await Promise.all(
-                affectedDishIds.map(dishId =>
-                  this._adminStoreAction('update_dish', { id: dishId, updates: { category_name: updatedData.name } }).catch(() => {})
-                )
-              );
-            }
           } else if (supabase) {
             const { error } = await supabase.from('categories').update(updatePayload).eq('id', list[idx].id);
             if (error) console.warn('[DataService] Direct supabase updateCategory error:', error.message);
+            if (updatedData.name && updatedData.name !== prevCat.name) {
+              const catSlug = list[idx].slug || list[idx].id;
+              await supabase.from('dishes').update({ category_name: updatedData.name }).or(`category.eq.${list[idx].id},category.eq.${catSlug}`);
+            }
           }
         } catch (err) {
           console.warn('[DataService] updateCategory server error:', err?.message || err);
           if (this.isStaffAuthorized()) {
             list[idx] = prevCat;
             this.saveCategories(list);
+            if (dishesChanged) this.saveDishes(prevDishes);
             throw err;
           }
         }
@@ -5456,6 +5469,31 @@ class QuickBiteDataService {
     return result;
   }
 
+  _getCustomDishTimestamp(dish) {
+    if (dish?.createdAt) {
+      const t = new Date(dish.createdAt).getTime();
+      if (Number.isFinite(t)) return t;
+    }
+    const m = /^(?:d_|item-)(\d{10,})$/.exec(String(dish?.id || ''));
+    return m ? Number(m[1]) : 0;
+  }
+
+  _sortDishesList(list) {
+    if (!Array.isArray(list)) return [];
+    const defaultDishOrderMap = new Map(DEFAULT_DISHES.map((dish, i) => [dish.id, i]));
+    return list.slice().sort((a, b) => {
+      const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : -1;
+      const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : -1;
+      if (posA !== posB) return posA - posB;
+      if (posA === -1 && posB === -1) {
+        const tsA = this._getCustomDishTimestamp(a);
+        const tsB = this._getCustomDishTimestamp(b);
+        if (tsA && tsB && tsA !== tsB) return tsB - tsA;
+      }
+      return 0;
+    });
+  }
+
   getDishes() {
     if (this.dishesCache && Array.isArray(this.dishesCache) && this.dishesCache.length > 0) {
       return this.dishesCache;
@@ -5470,7 +5508,6 @@ class QuickBiteDataService {
     if (!Array.isArray(list) || list.length === 0) {
       list = [...DEFAULT_DISHES];
     }
-    const defaultDishOrderMap = new Map(DEFAULT_DISHES.map((dish, i) => [dish.id, i]));
     const defaultDishMap = new Map(DEFAULT_DISHES.map(d => [d.id, d]));
     list = list.map(d => {
       const def = defaultDishMap.get(d.id);
@@ -5479,11 +5516,7 @@ class QuickBiteDataService {
       }
       return d;
     });
-    list.sort((a, b) => {
-      const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : -1;
-      const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : -1;
-      return posA - posB;
-    });
+    list = this._sortDishesList(list);
     this.dishesCache = list.map(d => ({
       ...d,
       image: sanitizeDishImageUrl(d.image),
@@ -5504,7 +5537,8 @@ class QuickBiteDataService {
 
   saveDishes(dishes) {
     if (!Array.isArray(dishes)) return;
-    const sanitizedDishes = dishes.map(d => ({
+    const sorted = this._sortDishesList(dishes);
+    const sanitizedDishes = sorted.map(d => ({
       ...d,
       image: sanitizeDishImageUrl(d.image)
     }));
@@ -5606,6 +5640,7 @@ class QuickBiteDataService {
     const sanitizedImage = sanitizeDishImageUrl(dishData.image) || '/api/r2-image?key=dishes/crispy-chicken.jpg';
     const newDish = {
       id: 'item-' + Date.now(),
+      createdAt: new Date().toISOString(),
       name: dishData.name.trim(),
       category: dishData.category,
       categoryName: dishData.categoryName || '',
@@ -5779,6 +5814,7 @@ class QuickBiteDataService {
   deleteDish(id) {
     const list = this.getDishes();
     const dish = list.find(d => d.id === id);
+    const prevList = list.map(d => ({ ...d }));
     const filtered = list.filter(d => d.id !== id);
     this.saveDishes(filtered);
 
@@ -5793,8 +5829,7 @@ class QuickBiteDataService {
       } catch (err) {
         console.warn('[DataService] deleteDish server error:', err?.message || err);
         if (this.isStaffAuthorized() && dish) {
-          list.push(dish);
-          this.saveDishes(list);
+          this.saveDishes(prevList);
           throw err;
         }
       }

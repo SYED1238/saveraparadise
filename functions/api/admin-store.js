@@ -230,6 +230,33 @@ export async function onRequest(context) {
       if (action === 'clear_orders') {
         return jsonResponse({ success: true, message: 'All orders cleared successfully', deletedCount: 0 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
+      if (action === 'save_dish' || action === 'add_dish' || action === 'update_dish') {
+        const dish = body.dish || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
+        if (!dish || (!dish.id && !body.id)) {
+          return jsonResponse({ error: 'Valid dish payload is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        return jsonResponse({ success: true, data: [sanitizeDishFields(dish)] }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+      if (action === 'save_category' || action === 'add_category' || action === 'update_category') {
+        const cat = body.category || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
+        if (!cat || (!cat.id && !body.id)) {
+          return jsonResponse({ error: 'Valid category payload is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        return jsonResponse({ success: true, data: [sanitizeCategoryFields(cat)] }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+      if (action === 'settle_rider_cash') {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        if (!pin) return jsonResponse({ error: 'Rider PIN is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        return jsonResponse({ success: true, pin, settledAt: body.settledAt || Date.now() }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+      if (action === 'record_rider_payout') {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        if (!pin) return jsonResponse({ error: 'Rider PIN is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        return jsonResponse({ success: true, pin, paidAt: body.paidAt || Date.now(), amount: body.amount || 0 }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+      if (action === 'reset_defaults' || action === 'reset_business_data') {
+        return jsonResponse({ success: true, message: 'Store reset successfully' }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
     }
     console.warn('[AdminStore] Supabase service credentials missing');
     return jsonResponse({ error: 'Database service credentials not configured on server' }, 503, Object.fromEntries(corsHeaders.entries()));
@@ -240,6 +267,23 @@ export async function onRequest(context) {
     const sb = createClient(supabaseUrl, serviceKey);
 
     switch (action) {
+      case 'save_dish': {
+        const rawDish = body.dish || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
+        if (!rawDish || !rawDish.id || !rawDish.name) {
+          return jsonResponse({ error: 'Valid dish payload (id, name) is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        let dish = sanitizeDishFields(rawDish);
+        let { data, error } = await sb.from('dishes').upsert([dish]).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key'))) {
+          delete dish.r2_key;
+          const retry = await sb.from('dishes').upsert([dish]).select();
+          data = retry.data;
+          error = retry.error;
+        }
+        if (error) throw error;
+        return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
       case 'add_dish': {
         const rawDish = body.dish;
         if (!rawDish || !rawDish.id || !rawDish.name) {
@@ -323,6 +367,23 @@ export async function onRequest(context) {
         return jsonResponse({ success: true, deletedCount: data.length }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
+      case 'save_category': {
+        const category = body.category || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
+        if (!category || !category.id || !category.name) {
+          return jsonResponse({ error: 'Valid category payload (id, name) is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const catPayload = sanitizeCategoryFields(category);
+        let { data, error } = await sb.from('categories').upsert([catPayload]).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
+          delete catPayload.image;
+          const retry = await sb.from('categories').upsert([catPayload]).select();
+          data = retry.data;
+          error = retry.error;
+        }
+        if (error) throw error;
+        return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
       case 'add_category': {
         const category = body.category;
         if (!category || !category.id || !category.name) {
@@ -367,6 +428,12 @@ export async function onRequest(context) {
         }
         if (!data || data.length === 0) {
           return jsonResponse({ error: `Category '${id}' not found in database to update` }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (cleanUpdates.name) {
+          const catSlug = cleanUpdates.slug || id;
+          await sb.from('dishes')
+            .update({ category_name: cleanUpdates.name })
+            .or(`category.eq.${id},category.eq.${catSlug}`);
         }
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
@@ -620,6 +687,49 @@ export async function onRequest(context) {
         invalidateOrderActionMemoryCache();
         await purgeKitchenPollEdgeCache(request, context);
         return jsonResponse({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      case 'settle_rider_cash': {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        if (!pin) return jsonResponse({ error: 'Rider PIN is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        const settledAt = body.settledAt ? new Date(body.settledAt).toISOString() : new Date().toISOString();
+        const updateFields = {
+          cash_settled_at: settledAt,
+          cash_handover_status: 'taken',
+          cash_handover_amount: 0
+        };
+        const { data, error } = await sb.from('riders').update(updateFields).eq('pin', pin).select();
+        if (error) throw error;
+        invalidateRidersListCache();
+        return jsonResponse({ success: true, pin, settledAt, data }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      case 'record_rider_payout': {
+        const pin = String(body.riderPin || body.pin || '').trim();
+        if (!pin) return jsonResponse({ error: 'Rider PIN is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        const paidAt = body.paidAt ? new Date(body.paidAt).toISOString() : new Date().toISOString();
+        const updateFields = { payout_paid_at: paidAt };
+        if (body.amount !== undefined) updateFields.payout_amount_paid = Number(body.amount) || 0;
+        const { data, error } = await sb.from('riders').update(updateFields).eq('pin', pin).select();
+        if (error) throw error;
+        invalidateRidersListCache();
+        return jsonResponse({ success: true, pin, paidAt, data }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      case 'reset_defaults':
+      case 'reset_business_data': {
+        const { data, error } = await sb.rpc('clear_all_orders');
+        if (error) {
+          await sb.from('orders').update({
+            status: 'cancelled',
+            status_label: 'Cancelled',
+            step_index: -1,
+            cancellation_reason: 'Reset by restaurant owner'
+          }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
+        }
+        invalidateOrderActionMemoryCache();
+        await purgeKitchenPollEdgeCache(request, context);
+        return jsonResponse({ success: true, message: 'Store reset successfully', deletedCount: data || 0 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       default:

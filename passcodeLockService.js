@@ -76,6 +76,8 @@ export function initIosPasscodeLock(options) {
           // Reset internal state for next session/lock
           setTimeout(() => {
             enteredPin = '';
+            failedAttempts = 0;
+            lockoutUntil = 0;
             updateDots();
             dotsEl.classList.remove('success');
             if (subtitleEl) subtitleEl.textContent = defaultSubtitle;
@@ -89,6 +91,7 @@ export function initIosPasscodeLock(options) {
           setTimeout(() => {
             if (Date.now() >= lockoutUntil && subtitleEl) {
               lockoutUntil = 0;
+              failedAttempts = 0;
               subtitleEl.textContent = defaultSubtitle;
               subtitleEl.classList.remove('error');
             }
@@ -136,6 +139,7 @@ export function initIosPasscodeLock(options) {
     }
     if (lockoutUntil > 0 && Date.now() >= lockoutUntil) {
       lockoutUntil = 0;
+      failedAttempts = 0;
       if (subtitleEl) {
         subtitleEl.textContent = defaultSubtitle;
         subtitleEl.classList.remove('error');
@@ -195,6 +199,8 @@ export function initIosPasscodeLock(options) {
   return {
     reset() {
       enteredPin = '';
+      failedAttempts = 0;
+      lockoutUntil = 0;
       updateDots();
       dotsEl.classList.remove('error', 'success');
       if (subtitleEl) {

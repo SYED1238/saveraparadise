@@ -152,6 +152,7 @@ export default async function handler(req, res) {
       if (status === 200 || status === 206) {
         if (!res.headersSent) {
           res.setHeader('Content-Type', r2Res.headers['content-type'] || 'video/mp4');
+          res.setHeader('X-Content-Type-Options', 'nosniff');
           res.setHeader('Accept-Ranges', 'bytes');
           if (r2Res.headers['content-range']) {
             res.setHeader('Content-Range', r2Res.headers['content-range']);

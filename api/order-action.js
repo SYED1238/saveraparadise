@@ -620,7 +620,7 @@ export default async function handler(req, res) {
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
           const isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
-          const isDoorstep = isCfSuccess || (auth.payload?.role !== 'admin' && (typeof inputDoorstepUpi === 'boolean' ? inputDoorstepUpi : Boolean(existing.doorstep_upi)));
+          const isDoorstep = isCfSuccess || (auth.payload?.role === 'owner' && (typeof inputDoorstepUpi === 'boolean' ? inputDoorstepUpi : Boolean(existing.doorstep_upi)));
           enforcedDoorstepUpi = isDoorstep;
 
           if (isPrepaid || isDoorstep) {
@@ -656,6 +656,17 @@ export default async function handler(req, res) {
           }
         }
 
+        const testCancelReason = body.cancellationReason !== undefined ? body.cancellationReason : body.cancellation_reason;
+        const testWaitingStartedAt = typeof body.waitingStartedAt === 'number' ? body.waitingStartedAt : undefined;
+        let testAddressDetails = { ...(existing.address_details || {}) };
+        if (testWaitingStartedAt || (testCancelReason && String(testCancelReason).includes('[DOORSTEP_WAIT]'))) {
+          testAddressDetails.waitingStartedAt = testWaitingStartedAt || Date.now();
+          testAddressDetails.riderWaitingAtDoorstep = true;
+        } else if (testCancelReason === null || status === 'delivered' || status === 'undelivered' || status === 'cancelled') {
+          delete testAddressDetails.waitingStartedAt;
+          testAddressDetails.riderWaitingAtDoorstep = false;
+        }
+
         const updated = {
           ...existing,
           status,
@@ -666,6 +677,7 @@ export default async function handler(req, res) {
           is_paid_online: enforcedIsPaidOnline,
           doorstep_upi: enforcedDoorstepUpi,
           payment_method: enforcedPaymentMethod,
+          address_details: testAddressDetails,
           ...(body.cancellationReason !== undefined || body.cancellation_reason !== undefined ? { cancellation_reason: body.cancellationReason !== undefined ? body.cancellationReason : body.cancellation_reason } : {}),
           ...(status === 'delivered' ? { delivered_at: Date.now() } : {}),
           ...(status === 'undelivered' ? { undelivered_at: Date.now() } : {})
@@ -1184,12 +1196,21 @@ export default async function handler(req, res) {
           const waitTs = waitingStartedAt || Date.now();
           updatePayload.address_details = {
             ...(existing.address_details || {}),
-            waitingStartedAt: waitTs
+            waitingStartedAt: waitTs,
+            riderWaitingAtDoorstep: true
           };
-        } else if (hasCancellationReason && cancellationReason === null && existing.address_details?.waitingStartedAt) {
+        } else if (hasCancellationReason && cancellationReason === null && (existing.address_details?.waitingStartedAt || existing.address_details?.riderWaitingAtDoorstep)) {
           const cleanedAddr = { ...(existing.address_details || {}) };
           delete cleanedAddr.waitingStartedAt;
+          cleanedAddr.riderWaitingAtDoorstep = false;
           updatePayload.address_details = cleanedAddr;
+        } else if (status === 'delivered' || status === 'undelivered' || status === 'cancelled') {
+          if (existing.address_details?.waitingStartedAt || existing.address_details?.riderWaitingAtDoorstep) {
+            const cleanedAddr = { ...(existing.address_details || {}) };
+            delete cleanedAddr.waitingStartedAt;
+            cleanedAddr.riderWaitingAtDoorstep = false;
+            updatePayload.address_details = cleanedAddr;
+          }
         }
 
         if (safeDrop !== undefined || safeDropNote !== undefined) {

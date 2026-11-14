@@ -177,21 +177,21 @@ describe('ADMIN MENU & DISH UPLOAD INTEGRITY SUITE', () => {
   });
 
   it('12. admin.js strictly awaits category photo upload mutations', () => {
-    // Verifies category photo upload reader awaits persistence
+    // Verifies category photo save awaits persistence
     assert.match(
       adminJsContent,
       /await\s+dataService\.saveCategoryImage\(/,
-      'admin.js must await dataService.saveCategoryImage during photo upload'
+      'admin.js must await dataService.saveCategoryImage'
     );
     assert.match(
       adminJsContent,
       /await\s+dataService\.setAllCategoryImage\(/,
-      'admin.js must await dataService.setAllCategoryImage during "all" photo upload'
+      'admin.js must await dataService.setAllCategoryImage'
     );
     assert.match(
       adminJsContent,
-      /await\s+dataService\.updateCategory\(activeEditId,\s*\{\s*image:\s*finalImg\s*\}\)/,
-      'admin.js must await dataService.updateCategory for active category photo upload'
+      /await\s+dataService\.updateCategory\(editId,\s*\{\s*name,\s*emoji,\s*image\s*\}\)/,
+      'admin.js must await dataService.updateCategory for category save'
     );
   });
 
