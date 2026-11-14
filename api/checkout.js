@@ -32,7 +32,9 @@ function isOriginAllowed(origin) {
 
 const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
 const FALLBACK_SUPABASE_URL = isTestEnv ? '' : 'https://zrgkglwqkdxmwrgepnqh.supabase.co';
-const FALLBACK_SUPABASE_ANON_KEY = isTestEnv ? '' : 'sb_publishable_obyAWrTPc2oIxF3V9Bp23Q_cd_WxEZk';
+const FALLBACK_SUPABASE_ANON_KEY = isTestEnv
+  ? ''
+  : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpyZ2tnbHdxa2R4bXdyZ2VwbnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4MTQ2NzIsImV4cCI6MjEwODM5MDY3Mn0.yBECp5V7Fo8emd9mq85k4ES6vk85av1mOtv8fcWQgJY';
 
 let authoritativeDishesCache = null;
 let authoritativeDishesCachedAt = 0;
@@ -499,14 +501,15 @@ export default async function handler(req, res) {
     if (hasCustomSettings && cleanCode === configCode) {
       const minOrder = (settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
       if (computedSubtotal >= minOrder) {
-        if (settings.offerDiscountType === 'fixed' || settings.offerDiscountType === 'amount' || settings.offerDiscountType === 'flat') {
-          discount = Number(settings.offerDiscountAmount) || 50;
+        const discType = String(settings.offerDiscountType || 'percentage').toLowerCase();
+        if (discType === 'fixed' || discType === 'amount' || discType === 'flat') {
+          discount = Math.min(computedSubtotal, Number(settings.offerDiscountAmount) || 50);
         } else {
-          const pct = Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20;
+          const pct = Math.min(100, Math.max(1, Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20));
           discount = Math.round((computedSubtotal * pct) / 100);
         }
         activeAppliedPromo = cleanCode;
-        if (settings.offerFreeDelivery) {
+        if (settings.offerFreeDelivery !== false) {
           deliveryFee = 0;
         }
       }

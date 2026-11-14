@@ -580,11 +580,57 @@ function initStorefrontApp() {
     }
   }
 
+  const FAVORITE_DISHES_KEY = 'quickbite_favorite_dishes';
+  function getFavoriteDishIds() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(FAVORITE_DISHES_KEY) || '[]');
+      return new Set(Array.isArray(parsed) ? parsed.map(s => String(s).trim().toLowerCase()) : []);
+    } catch (e) {
+      return new Set();
+    }
+  }
+
+  function toggleFavoriteDishId(dishId, dishName) {
+    const favs = getFavoriteDishIds();
+    const idKey = String(dishId || '').trim().toLowerCase();
+    const nameKey = String(dishName || '').trim().toLowerCase();
+    const key = idKey || nameKey;
+    if (!key) return false;
+
+    const isFav = (idKey && favs.has(idKey)) || (nameKey && favs.has(nameKey));
+    const isNowFav = !isFav;
+    if (isNowFav) {
+      if (idKey) favs.add(idKey);
+      if (nameKey) favs.add(nameKey);
+    } else {
+      if (idKey) favs.delete(idKey);
+      if (nameKey) favs.delete(nameKey);
+    }
+    try {
+      localStorage.setItem(FAVORITE_DISHES_KEY, JSON.stringify(Array.from(favs)));
+    } catch (e) {}
+
+    document.querySelectorAll('.recipe-card').forEach(card => {
+      const cId = String(card.getAttribute('data-id') || card.id?.replace(/^card-/, '') || '').trim().toLowerCase();
+      const cName = String(card.querySelector('.recipe-title')?.textContent || '').trim().toLowerCase();
+      if ((idKey && cId === idKey) || (nameKey && cName === nameKey)) {
+        card.classList.toggle('is-favorite', isNowFav);
+      }
+    });
+
+    if (foodModalFavBtn) {
+      foodModalFavBtn.classList.toggle('active', isNowFav);
+    }
+
+    return isNowFav;
+  }
+
   function filterDishes(filter) {
     const cards = document.querySelectorAll('.recipe-card');
     let visibleIndex = 0;
     let totalMatches = 0;
     const normFilter = (filter || 'all').toLowerCase().trim();
+    const favDishIds = (normFilter === 'favorites') ? getFavoriteDishIds() : null;
 
     cards.forEach(card => {
       const cardCat = (card.getAttribute('data-category') || '').toLowerCase().trim();
@@ -597,7 +643,9 @@ function initStorefrontApp() {
       } else if (normFilter === 'popular') {
         match = cardTags.split(/[\s,]+/).includes('popular') || badgeText.includes('popular') || badgeText.includes('bestseller');
       } else if (normFilter === 'favorites') {
-        match = cardTags.split(/[\s,]+/).includes('favorites') || card.classList.contains('is-favorite');
+        const cId = String(card.getAttribute('data-id') || card.id?.replace(/^card-/, '') || '').trim().toLowerCase();
+        const cName = String(card.querySelector('.recipe-title')?.textContent || '').trim().toLowerCase();
+        match = cardTags.split(/[\s,]+/).includes('favorites') || card.classList.contains('is-favorite') || (cId && favDishIds.has(cId)) || (cName && favDishIds.has(cName));
       } else {
         const catTokens = cardCat.split(/[\s,]+/);
         match = catTokens.includes(normFilter) || cardCat === normFilter;
@@ -1595,6 +1643,16 @@ function initStorefrontApp() {
 
     // Empty state handling
     if (cart.length === 0) {
+      // Clean up promo state on empty cart so badges/messages do not linger
+      setAppliedPromo(null);
+      if (btnApplyPromo) {
+        btnApplyPromo.textContent = 'Apply';
+        btnApplyPromo.classList.remove('applied');
+      }
+      if (promoStatusMsg) {
+        promoStatusMsg.textContent = '';
+      }
+
       cartItemsList.innerHTML = '';
       cartItemsList.appendChild(cartEmptyState);
       cartEmptyState.style.display = 'block';
@@ -1609,19 +1667,20 @@ function initStorefrontApp() {
       meterText.innerHTML = minOrderVal > 0
         ? `Min order <strong>₹${minOrderVal}</strong> • FREE delivery above <strong>₹${Math.round(currentThreshold)}</strong>!`
         : `FREE delivery on orders above <strong>₹${Math.round(currentThreshold)}</strong>!`;
-      if (btnCheckout) btnCheckout.classList.remove('disabled-min-order');
-      if (btnCheckoutLabel) btnCheckoutLabel.textContent = 'Proceed to Checkout';
+      if (btnCheckout) {
+        btnCheckout.classList.remove('disabled-min-order', 'disabled-sold-out');
+        if (!btnCheckout.classList.contains('disabled-limit') && !btnCheckout.classList.contains('disabled-closed')) {
+          btnCheckout.disabled = false;
+        }
+        if (btnCheckoutLabel && !btnCheckout.classList.contains('disabled-limit') && !btnCheckout.classList.contains('disabled-closed')) {
+          btnCheckoutLabel.textContent = 'Proceed to Checkout';
+        }
+        if (checkoutArrowIcon && !btnCheckout.classList.contains('disabled-limit') && !btnCheckout.classList.contains('disabled-closed')) {
+          checkoutArrowIcon.style.display = 'inline';
+        }
+      }
       updateFloatingUnlockedDealsBar(0, settings);
 
-      // Clean up promo state on empty cart so badges/messages do not linger
-      setAppliedPromo(null);
-      if (btnApplyPromo) {
-        btnApplyPromo.textContent = 'Apply';
-        btnApplyPromo.classList.remove('applied');
-      }
-      if (promoStatusMsg) {
-        promoStatusMsg.textContent = '';
-      }
       if (cartPromoInput) {
         const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
         cartPromoInput.value = (settings.offerActive !== false && activeCode) ? activeCode : '';
@@ -2198,6 +2257,12 @@ function initStorefrontApp() {
     }
 
     updateModalSubmitPrice();
+    const favs = getFavoriteDishIds();
+    const dId = String(dish.id || '').trim().toLowerCase();
+    const dName = String(dish.name || '').trim().toLowerCase();
+    const isFav = (dId && favs.has(dId)) || (dName && favs.has(dName));
+    if (foodModalFavBtn) foodModalFavBtn.classList.toggle('active', isFav);
+
     if (foodDetailBackdrop) {
       foodDetailBackdrop.classList.add('open');
       document.body.classList.add('food-modal-open');
@@ -2232,8 +2297,8 @@ function initStorefrontApp() {
 
   if (foodModalFavBtn) {
     foodModalFavBtn.addEventListener('click', () => {
-      foodModalFavBtn.classList.toggle('active');
-      const isFav = foodModalFavBtn.classList.contains('active');
+      if (!activeDetailItem) return;
+      const isFav = toggleFavoriteDishId(activeDetailItem.id, activeDetailItem.name);
       showToast(isFav ? '❤️ Saved to your favorite dishes!' : 'Removed from favorites', 'info');
     });
   }
@@ -2292,11 +2357,15 @@ function initStorefrontApp() {
         }
         return;
       }
+      const selectedSpice = spicePillsGroup?.querySelector('.custom-choice-pill.active')?.textContent?.trim() || 'Medium';
+      const selectedSauce = saucePillsGroup?.querySelector('.custom-choice-pill.active')?.textContent?.trim() || 'Mint Chutney';
       addToCart({
         id: activeDetailItem.id,
         name: activeDetailItem.name,
         price: activeDetailItem.price,
-        image: activeDetailItem.image
+        image: activeDetailItem.image,
+        spice: selectedSpice,
+        sauce: selectedSauce
       }, btnModalAddCart, activeDetailQty);
 
       closeFoodDetail();
@@ -2403,6 +2472,7 @@ function initStorefrontApp() {
     const dishes = dataService.getDishes();
     const settings = dataService.getSettings();
     const recipeGrid = document.getElementById('recipe-grid');
+    const favDishIds = getFavoriteDishIds();
 
     dishes.forEach(dish => {
       let card = document.getElementById(`card-${dish.id}`) || document.querySelector(`.recipe-card[data-id="${dish.id}"]`);
@@ -2447,6 +2517,12 @@ function initStorefrontApp() {
       }
 
       if (!card) return;
+
+      // 0. Live Sync Favorite Status
+      const dId = String(dish.id || '').trim().toLowerCase();
+      const dName = String(dish.name || '').trim().toLowerCase();
+      const isFav = (dId && favDishIds.has(dId)) || (dName && favDishIds.has(dName));
+      card.classList.toggle('is-favorite', Boolean(isFav));
 
       // 1. Live Sync Dish Image (Updates storefront whenever admin changes photo)
       const imgEl = card.querySelector('.recipe-img') || card.querySelector('img');
@@ -4002,7 +4078,9 @@ function initStorefrontApp() {
     const method = String(order.paymentMethod || order.payment_method || '').toLowerCase();
     const status = String(order.paymentStatus || order.payment_status || '').toLowerCase();
     const cfStatus = String(order.cf_payment_status || order.cfPaymentStatus || '').toLowerCase();
-    const addr = (order.address_details && typeof order.address_details === 'object') ? order.address_details : {};
+    const addr = (order.address_details && typeof order.address_details === 'object')
+      ? order.address_details
+      : ((order.addressDetails && typeof order.addressDetails === 'object') ? order.addressDetails : {});
     return Boolean(
       order.is_paid_online ||
       order.isPaidOnline ||
@@ -4024,7 +4102,9 @@ function initStorefrontApp() {
 
   function getOrderRefundState(order) {
     if (!order) return { isOnline: false, isRefunded: false, isInitiated: false, arn: '', amount: '' };
-    const addr = (order.address_details && typeof order.address_details === 'object') ? order.address_details : {};
+    const addr = (order.address_details && typeof order.address_details === 'object')
+      ? order.address_details
+      : ((order.addressDetails && typeof order.addressDetails === 'object') ? order.addressDetails : {});
     const cfStatus = String(order.cf_payment_status || order.cfPaymentStatus || '').toUpperCase();
     const refundStatus = String(addr.refund_status || order.refundStatus || '').toUpperCase();
     const isOnline = isOrderPaidOnline(order);
@@ -4905,7 +4985,7 @@ function initStorefrontApp() {
 
       let cardCallBtnHtml = '';
       if (!isPast) {
-        if (order.status === 'on_the_way') {
+        if (order.status === 'on_the_way' || isOrderRiderGoingToStore(order)) {
           const rider = order.assignedRiderPin ? dataService.getRiderByPin(order.assignedRiderPin) : null;
           const riderPhone = order.assignedRiderPhone || rider?.phone || '+91 98765 43210';
           const cleanPhone = riderPhone.replace(/\D/g, '');
@@ -5032,15 +5112,21 @@ function initStorefrontApp() {
         const orderToReorder = allUserOrders.find(o => o.id === id);
         if (orderToReorder && orderToReorder.items) {
           const catalogDishes = dataService.getDishes() || [];
+          let addedCount = 0;
           const skippedDishes = [];
           orderToReorder.items.forEach(item => {
             const matchedCatalog = catalogDishes.find(d => d.id === item.id || (item.name && d.name && d.name.toLowerCase() === item.name.toLowerCase()));
             if (!matchedCatalog) {
-              skippedDishes.push(`"${item.name || 'Item'}" (unavailable)`);
+              skippedDishes.push(`"${item.name || 'Item'}" (no longer on menu)`);
               return;
             }
             if (matchedCatalog.inStock === false) {
-              skippedDishes.push(`"${matchedCatalog.name}" (sold out)`);
+              skippedDishes.push(`"${matchedCatalog.name}" (currently sold out)`);
+              return;
+            }
+            const sched = getDishScheduleStatus(matchedCatalog, new Date());
+            if (!sched.isAvailable) {
+              skippedDishes.push(`"${matchedCatalog.name}" (${sched.badgeText || 'outside serving hours'})`);
               return;
             }
             const cleanPrice = Number(matchedCatalog.price);
@@ -5058,16 +5144,28 @@ function initStorefrontApp() {
                 quantity: addQty
               });
             }
+            addedCount += addQty;
           });
-          if (skippedDishes.length > 0) {
-            showToast(`Note: ${skippedDishes.join(', ')} could not be added.`, 'info', 5000);
+
+          if (addedCount === 0) {
+            if (skippedDishes.length > 0) {
+              showToast(`⚠️ Unavailable right now: ${skippedDishes.join(', ')}`, 'info', 5000);
+            } else {
+              showToast('⚠️ Could not reorder items from this order.', 'info');
+            }
+            return;
           }
+
           saveCart();
           renderCart();
           closeMyOrdersModalInternal();
           backNav.removeStepDirect('my-orders-modal');
           openCartDrawer();
-          showToast(`🛍️ Added items from ${orderToReorder.id} to your basket!`, 'success');
+          if (skippedDishes.length > 0) {
+            showToast(`⚠️ Added available items. Skipped: ${skippedDishes.join(', ')}`, 'info', 5000);
+          } else {
+            showToast(`🛍️ Added items from ${orderToReorder.id} to your basket!`, 'success');
+          }
         }
       });
     });
@@ -5816,6 +5914,7 @@ function initStorefrontApp() {
     }
 
     cart = [];
+    setAppliedPromo(null);
     saveCart();
     renderCart();
 
@@ -6063,7 +6162,12 @@ function initStorefrontApp() {
           newOrderId = `#QB-${randomOrderNum}`;
         }
         const pickupCode = randomOrderNum.toString();
-        const itemsSummary = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
+        const itemsSummary = cart.map(i => {
+          const custom = [];
+          if (i.spice && i.spice !== 'Medium') custom.push(i.spice);
+          if (i.sauce && i.sauce !== 'Mint Chutney') custom.push(i.sauce);
+          return `${i.quantity}x ${i.name}${custom.length ? ` (${custom.join(', ')})` : ''}`;
+        }).join(', ');
         const cartSubtotal = cart.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
         let calculatedTotal = cartSubtotal;
         let calculatedDiscount = 0;
@@ -8393,11 +8497,21 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   const checkoutArrowIcon = document.getElementById('checkout-arrow-icon');
 
   function renderCartOrderLimitUI(activeOrders = null, maxAllowed = null) {
+    const hasOtherBlock = Boolean(
+      btnCheckout && (
+        btnCheckout.classList.contains('disabled-sold-out') ||
+        btnCheckout.classList.contains('disabled-min-order') ||
+        btnCheckout.classList.contains('disabled-closed')
+      )
+    );
+
     if (!currentUser) {
       if (cartOrderLimitBanner) cartOrderLimitBanner.style.display = 'none';
       if (btnCheckout) btnCheckout.classList.remove('disabled-limit');
-      if (btnCheckoutLabel) btnCheckoutLabel.textContent = 'Proceed to Checkout';
-      if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'inline';
+      if (!hasOtherBlock) {
+        if (btnCheckoutLabel) btnCheckoutLabel.textContent = 'Proceed to Checkout';
+        if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'inline';
+      }
       return;
     }
 
@@ -8435,8 +8549,10 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     } else {
       if (cartOrderLimitBanner) cartOrderLimitBanner.style.display = 'none';
       if (btnCheckout) btnCheckout.classList.remove('disabled-limit');
-      if (btnCheckoutLabel) btnCheckoutLabel.textContent = 'Proceed to Checkout';
-      if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'inline';
+      if (!hasOtherBlock) {
+        if (btnCheckoutLabel) btnCheckoutLabel.textContent = 'Proceed to Checkout';
+        if (checkoutArrowIcon) checkoutArrowIcon.style.display = 'inline';
+      }
     }
   }
 
@@ -9142,7 +9258,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     }
     localStorage.removeItem('quickbite_custom_user');
     localStorage.removeItem('quickbite_active_user_context');
-    localStorage.removeItem('quickbite_my_order_ids');
+    // Preserve quickbite_my_order_ids and quickbite_tracking_tokens for ongoing order tracking on device
     updateUserStateUI(null);
     showToast('Signed out successfully. Browsing as Guest.', 'info');
   }

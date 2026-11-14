@@ -3773,13 +3773,22 @@ class QuickBiteDataService {
         safeDrop: remote.address_details?.safeDrop !== undefined ? Boolean(remote.address_details.safeDrop) : Boolean(local?.safeDrop),
         safeDropNote: remote.address_details?.safeDropNote || local?.safeDropNote || '',
         cashCollected: remote.cash_collected !== undefined && remote.cash_collected !== null ? Number(remote.cash_collected) : local?.cashCollected,
-        isPaidOnline: Boolean(remote.is_paid_online || local?.isPaidOnline),
-        doorstepUpi: Boolean(remote.doorstep_upi || local?.doorstepUpi),
+        isPaidOnline: Boolean(remote.is_paid_online ?? local?.isPaidOnline),
+        is_paid_online: Boolean(remote.is_paid_online ?? local?.is_paid_online ?? local?.isPaidOnline),
+        doorstepUpi: Boolean(remote.doorstep_upi ?? local?.doorstepUpi),
         paymentMethod: (local?.doorstepUpi || remote.doorstep_upi) ? 'doorstep_upi' : (remote.payment_method || local?.paymentMethod || 'Cash on Delivery (COD)'),
         paymentStatus: remote.payment_status || local?.paymentStatus || 'Cash on Delivery',
+        cfOrderId: remote.cf_order_id || local?.cfOrderId || null,
+        cf_order_id: remote.cf_order_id || local?.cf_order_id || local?.cfOrderId || null,
+        cfPaymentId: remote.cf_payment_id || local?.cfPaymentId || null,
+        cf_payment_id: remote.cf_payment_id || local?.cf_payment_id || local?.cfPaymentId || null,
+        cfPaymentStatus: remote.cf_payment_status || local?.cfPaymentStatus || null,
+        cf_payment_status: remote.cf_payment_status || local?.cf_payment_status || local?.cfPaymentStatus || null,
+        refundStatus: remote.address_details?.refund_status || local?.refundStatus || null,
         lat: remote.lat ? Number(remote.lat) : (local?.lat || local?.addressDetails?.lat || null),
         lng: remote.lng ? Number(remote.lng) : (local?.lng || local?.addressDetails?.lng || null),
         addressDetails: remote.address_details || local?.addressDetails || null,
+        address_details: remote.address_details || local?.address_details || local?.addressDetails || null,
         pickupCode: remote.pickup_code || local?.pickupCode || fallbackPickupCode,
         assignedRiderPin: remote.assigned_rider_pin || local?.assignedRiderPin || null,
         assignedRiderName: remote.assigned_rider_name || local?.assignedRiderName || null,
@@ -3796,9 +3805,14 @@ class QuickBiteDataService {
         const prevStatus = local.status;
         const hasDiff = local.status !== effectiveStatus ||
                         local.eta !== effectiveEta ||
+                        local.statusLabel !== effectiveStatusLabel ||
                         local.stepIndex !== effectiveStepIndex ||
                         local.assignedRiderPin !== mergedOrder.assignedRiderPin ||
-                        local.riderPickupStage !== mergedOrder.riderPickupStage;
+                        local.riderPickupStage !== mergedOrder.riderPickupStage ||
+                        local.riderWaitingAtDoorstep !== mergedOrder.riderWaitingAtDoorstep ||
+                        local.paymentStatus !== mergedOrder.paymentStatus ||
+                        local.cfPaymentStatus !== mergedOrder.cfPaymentStatus ||
+                        (local.addressDetails?.refund_status || null) !== (mergedOrder.addressDetails?.refund_status || null);
         orders[localIdx] = mergedOrder;
         this.ordersCache = orders;
         try { localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders)); } catch {}
@@ -4233,18 +4247,33 @@ class QuickBiteDataService {
   }
 
   /**
+   * Retrieves order IDs placed by customer on this device,
+   * merged with all token-backed orders in quickbite_tracking_tokens.
+   */
+  getMyOrderIds() {
+    try {
+      const stored = localStorage.getItem('quickbite_my_order_ids');
+      const list = stored ? JSON.parse(stored) : [];
+      const idSet = new Set(Array.isArray(list) ? list.filter(Boolean) : []);
+      const rawTokens = typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_tracking_tokens') : null;
+      const tokens = rawTokens ? JSON.parse(rawTokens) : {};
+      if (tokens && typeof tokens === 'object') {
+        Object.keys(tokens).forEach(orderId => {
+          if (orderId && tokens[orderId]) idSet.add(orderId);
+        });
+      }
+      return Array.from(idSet);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Securely sync only orders belonging to the authenticated customer.
    * Prevents leaking other customer names, phones, and addresses.
    */
   async syncCustomerOrdersFromSupabase(userId = null, email = null, phone = null, force = false) {
-    let sessionIds = [];
-    try {
-      const stored = localStorage.getItem('quickbite_my_order_ids');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) sessionIds = parsed;
-      }
-    } catch {}
+    let sessionIds = this.getMyOrderIds();
 
     if (!userId && !email && !phone && sessionIds.length === 0) return;
 
@@ -4327,6 +4356,20 @@ class QuickBiteDataService {
         data.forEach(remote => {
           if (remote && remote.id) {
             remoteMap.set(normalizeId(remote.id), remote);
+            if (remote.tracking_token) {
+              try {
+                const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
+                tokens[remote.id] = remote.tracking_token;
+                localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
+              } catch {}
+            }
+            try {
+              const myIds = JSON.parse(localStorage.getItem('quickbite_my_order_ids') || '[]');
+              if (!myIds.includes(remote.id)) {
+                myIds.push(remote.id);
+                localStorage.setItem('quickbite_my_order_ids', JSON.stringify(myIds));
+              }
+            } catch {}
           }
         });
 
@@ -4395,11 +4438,23 @@ class QuickBiteDataService {
               assignedRiderPhone: remote.assigned_rider_phone || lo.assignedRiderPhone,
               assignedRiderVehicle: remote.assigned_rider_vehicle || lo.assignedRiderVehicle,
               addressDetails: remote.address_details || lo.addressDetails || null,
+              address_details: remote.address_details || lo.address_details || lo.addressDetails || null,
               riderPickupStage: loRemoteStage || (effectiveStatus === 'on_the_way' ? 'picked_up' : null),
               claimedAt: remote.claimed_at || lo.claimedAt,
               deliveredAt: remote.delivered_at || lo.deliveredAt,
-              paymentMethod: remote.payment_method || lo.paymentMethod,
-              paymentStatus: remote.payment_status || lo.paymentStatus,
+              paymentMethod: remote.payment_method || lo.paymentMethod || 'cod',
+              paymentStatus: remote.payment_status || lo.paymentStatus || 'pending',
+              isPaidOnline: Boolean(remote.is_paid_online ?? lo.isPaidOnline),
+              is_paid_online: Boolean(remote.is_paid_online ?? lo.is_paid_online ?? lo.isPaidOnline),
+              doorstepUpi: Boolean(remote.doorstep_upi ?? lo.doorstepUpi),
+              cfOrderId: remote.cf_order_id || lo.cfOrderId || null,
+              cf_order_id: remote.cf_order_id || lo.cf_order_id || lo.cfOrderId || null,
+              cfPaymentId: remote.cf_payment_id || lo.cfPaymentId || null,
+              cf_payment_id: remote.cf_payment_id || lo.cf_payment_id || lo.cfPaymentId || null,
+              cfPaymentStatus: remote.cf_payment_status || lo.cfPaymentStatus || null,
+              cf_payment_status: remote.cf_payment_status || lo.cf_payment_status || lo.cfPaymentStatus || null,
+              refundStatus: remote.address_details?.refund_status || lo.refundStatus || null,
+              trackingToken: remote.tracking_token || lo.trackingToken || null,
               cancellationReason: remote.cancellation_reason || lo.cancellationReason || null,
               riderWaitingAtDoorstep: (Boolean(remote.cancellation_reason && remote.cancellation_reason.includes('[DOORSTEP_WAIT]') && effectiveStatus === 'on_the_way')) || Boolean(isOptimisticLo && lo.riderWaitingAtDoorstep),
               safeDrop: Boolean(remote.address_details?.safeDrop || (isOptimisticLo && lo?.safeDrop)),
@@ -4412,7 +4467,11 @@ class QuickBiteDataService {
                                 lo.statusLabel !== mappedRemote.statusLabel ||
                                 lo.stepIndex !== mappedRemote.stepIndex ||
                                 lo.assignedRiderPin !== mappedRemote.assignedRiderPin ||
-                                lo.riderPickupStage !== mappedRemote.riderPickupStage;
+                                lo.riderPickupStage !== mappedRemote.riderPickupStage ||
+                                lo.riderWaitingAtDoorstep !== mappedRemote.riderWaitingAtDoorstep ||
+                                lo.paymentStatus !== mappedRemote.paymentStatus ||
+                                lo.cfPaymentStatus !== mappedRemote.cfPaymentStatus ||
+                                (lo.addressDetails?.refund_status || null) !== (mappedRemote.addressDetails?.refund_status || null);
             if (isDifferent) {
               const prevStatus = lo.status;
               Object.assign(lo, mappedRemote);
@@ -4449,6 +4508,16 @@ class QuickBiteDataService {
               total: remote.total || '₹0',
               paymentMethod: remote.payment_method || 'Cash on Delivery (COD)',
               paymentStatus: remote.payment_status || 'Cash on Delivery',
+              isPaidOnline: Boolean(remote.is_paid_online),
+              is_paid_online: Boolean(remote.is_paid_online),
+              doorstepUpi: Boolean(remote.doorstep_upi),
+              cfOrderId: remote.cf_order_id || null,
+              cf_order_id: remote.cf_order_id || null,
+              cfPaymentId: remote.cf_payment_id || null,
+              cf_payment_id: remote.cf_payment_id || null,
+              cfPaymentStatus: remote.cf_payment_status || null,
+              cf_payment_status: remote.cf_payment_status || null,
+              refundStatus: remote.address_details?.refund_status || null,
               pickupCode: remote.pickup_code || null,
               assignedRiderPin: remote.assigned_rider_pin || null,
               assignedRiderName: remote.assigned_rider_name || null,
@@ -4459,6 +4528,8 @@ class QuickBiteDataService {
               lat: remote.lat ? Number(remote.lat) : null,
               lng: remote.lng ? Number(remote.lng) : null,
               addressDetails: remote.address_details || null,
+              address_details: remote.address_details || null,
+              trackingToken: remote.tracking_token || null,
               riderPickupStage: remote.address_details?.riderPickupStage || (remote.status === 'on_the_way' ? 'picked_up' : (remote.assigned_rider_pin && remote.status === 'ready_for_pickup' ? 'going_to_restaurant' : null)),
               cancellationReason: remote.cancellation_reason || null,
               riderWaitingAtDoorstep: Boolean(remote.cancellation_reason && remote.cancellation_reason.includes('[DOORSTEP_WAIT]') && remote.status === 'on_the_way')
@@ -6032,13 +6103,14 @@ class QuickBiteDataService {
       const minOrder = Number(settings.offerMinOrder) || 0;
       if (appliedCode === settingsCode) {
         if (computedSubtotal >= minOrder) {
-          if (settings.offerDiscountType === 'fixed' || settings.offerDiscountType === 'amount' || settings.offerDiscountType === 'flat') {
-            discount = Number(settings.offerDiscountAmount) || 50;
+          const discType = String(settings.offerDiscountType || 'percentage').toLowerCase();
+          if (discType === 'fixed' || discType === 'amount' || discType === 'flat') {
+            discount = Math.min(computedSubtotal, Number(settings.offerDiscountAmount) || 50);
           } else {
-            const pct = Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20;
+            const pct = Math.min(100, Math.max(1, Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20));
             discount = Math.round((computedSubtotal * pct) / 100);
           }
-          if (settings.offerFreeDelivery) {
+          if (settings.offerFreeDelivery !== false) {
             deliveryFee = 0;
           }
         }
@@ -7401,8 +7473,8 @@ class QuickBiteDataService {
         name: addr.name || 'Customer',
         phone: addr.phone || '',
         tag: addr.tag || 'Home',
-        flat_no: (addr.details || addr.flatNo || 'Pinned Doorstep').slice(0, 100),
-        area: addr.details || addr.area || 'Ramanagara',
+        flat_no: (addr.flatNo || addr.street || addr.details || 'Pinned Doorstep').slice(0, 100),
+        area: (addr.area || addr.details || 'Ramanagara'),
         city: addr.city || 'Ramanagara',
         pincode: addr.pincode || '',
         lat: (addr.lat !== null && addr.lat !== undefined && !isNaN(Number(addr.lat)) && Number(addr.lat) !== 0) ? Number(addr.lat) : null,
@@ -7616,6 +7688,21 @@ class QuickBiteDataService {
 
         if (!error && Array.isArray(data) && data.length > 0) {
           data.forEach(row => {
+            const rawFlat = (row.flat_no || 'Pinned Doorstep').trim();
+            const rawArea = (row.area || 'Ramanagara').trim();
+            const rawCity = (row.city || 'Ramanagara').trim();
+            const rawPin = (row.pincode || '').trim();
+
+            // Deduplicate overlapping segments (including legacy rows where flat_no === area)
+            const cleanArea = (rawArea.toLowerCase() === rawFlat.toLowerCase()) ? 'Ramanagara' : rawArea;
+            const fullParts = [];
+            [rawFlat, cleanArea, rawCity, rawPin].forEach(part => {
+              if (part && !fullParts.some(existing => existing.toLowerCase().includes(part.toLowerCase()))) {
+                fullParts.push(part);
+              }
+            });
+            const reconstructedFull = fullParts.join(', ') || 'Doorstep Delivery';
+
             const cloudAddr = {
               id: row.id,
               userId: row.user_id || safeUserId || null,
@@ -7623,12 +7710,13 @@ class QuickBiteDataService {
               name: row.name,
               phone: row.phone,
               tag: row.tag || 'Home',
-              flatNo: row.flat_no,
-              area: row.area,
-              city: row.city || 'Ramanagara',
-              pincode: row.pincode || '',
-              details: row.area || row.flat_no || 'Doorstep Delivery',
-              fullText: row.area || row.flat_no || 'Doorstep Delivery',
+              flatNo: rawFlat,
+              street: rawFlat,
+              area: cleanArea,
+              city: rawCity,
+              pincode: rawPin,
+              details: reconstructedFull,
+              fullText: reconstructedFull,
               lat: Number(row.lat) || RESTAURANT_COORDINATES.lat,
               lng: Number(row.lng) || RESTAURANT_COORDINATES.lng,
               distanceKm: Number(row.distance_km) || 0,

@@ -8,7 +8,9 @@ import { hydrateEnv, isOriginAllowed, jsonResponse } from './_adapter.js';
 
 const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
 const FALLBACK_SUPABASE_URL = isTestEnv ? '' : 'https://zrgkglwqkdxmwrgepnqh.supabase.co';
-const FALLBACK_SUPABASE_ANON_KEY = isTestEnv ? '' : 'sb_publishable_obyAWrTPc2oIxF3V9Bp23Q_cd_WxEZk';
+const FALLBACK_SUPABASE_ANON_KEY = isTestEnv
+  ? ''
+  : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpyZ2tnbHdxa2R4bXdyZ2VwbnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4MTQ2NzIsImV4cCI6MjEwODM5MDY3Mn0.yBECp5V7Fo8emd9mq85k4ES6vk85av1mOtv8fcWQgJY';
 
 let authoritativeDishesCache = null;
 let authoritativeDishesCachedAt = 0;
@@ -452,7 +454,7 @@ export async function onRequest(context) {
     if (activePromo && typeof activePromo === 'string' && isOfferActive) {
       const code = activePromo.trim().toUpperCase();
       if (code === configuredCode) {
-        const discountType = storeSettings?.offerDiscountType || 'percent';
+        const discountType = String(storeSettings?.offerDiscountType || 'percent').toLowerCase();
         const rawPct = Number(storeSettings?.offerDiscountPercent);
         const discountPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 20;
         const discountAmt = Math.max(0, Number(storeSettings?.offerDiscountAmount || 50));
@@ -465,7 +467,7 @@ export async function onRequest(context) {
             : Math.round((subtotal * discountPct) / 100);
           appliedPromo = code;
           if (storeSettings?.offerFreeDelivery !== false) {
-            promoFreeDelivery = Boolean(storeSettings?.offerFreeDelivery);
+            promoFreeDelivery = true;
           }
         }
       } else if (code === 'SAVERA20' && subtotal >= 199) {

@@ -198,9 +198,18 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Message Listener from Web Pages (Allows background tabs to trigger notifications)
+const trackedOrderIds = new Set();
+
+// Message Listener from Web Pages (Allows background tabs to trigger notifications & track orders)
 self.addEventListener('message', (event) => {
   if (!event.data) return;
+
+  if (event.data.type === 'TRACK_ORDERS' && Array.isArray(event.data.orderIds)) {
+    event.data.orderIds.forEach((id) => {
+      if (id) trackedOrderIds.add(String(id));
+    });
+    return;
+  }
 
   if (event.data.type === 'SHOW_NOTIFICATION') {
     const { title, options } = event.data;
