@@ -610,6 +610,7 @@ export default async function handler(req, res) {
           }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
         }
         invalidateOrderActionMemoryCache();
+        invalidateKitchenPollCache();
         return res.status(200).json({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 });
       }
 

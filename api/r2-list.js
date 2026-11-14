@@ -117,7 +117,13 @@ export default async function handler(req, res) {
           const regex = /<Key>([^<]+)<\/Key>/g;
           let match;
           while ((match = regex.exec(body)) !== null) {
-            const k = match[1];
+            const k = match[1]
+              .replace(/&amp;/g, '&')
+              .replace(/&apos;/g, "'")
+              .replace(/&#39;/g, "'")
+              .replace(/&quot;/g, '"')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>');
             if (k.startsWith(sanitizedPrefix)) {
               keys.push(k);
             }

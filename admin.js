@@ -499,8 +499,16 @@ const initAdminApp = () => {
       renderDeliveryOptions();
     }
 
-    if (recordStep && targetView !== 'view-orders') {
-      backNav.pushStep('admin-view-' + targetView, () => switchView('view-orders', false));
+    if (targetView !== 'view-orders') {
+      ['view-menu', 'view-hours', 'view-offers', 'view-delivery'].forEach(v => {
+        if (v !== targetView) backNav.removeStepDirect('admin-view-' + v);
+      });
+      if (targetView !== 'view-menu') {
+        backNav.removeStepDirect('category-detail');
+      }
+      if (recordStep) {
+        backNav.pushStep('admin-view-' + targetView, () => switchView('view-orders', false));
+      }
     }
 
     try {
@@ -2011,6 +2019,9 @@ const initAdminApp = () => {
 
     try {
       if (editId) {
+        const prevDish = dataService.getDishes().find(d => d.id === editId);
+        const prevImg = prevDish?.image || '';
+        const prevR2Key = prevDish?.r2Key || prevDish?.gdriveFileId || (prevImg.includes('key=') ? decodeURIComponent(prevImg.split('key=')[1].split('&')[0]) : '');
         await dataService.updateDish(editId, {
           name,
           category,
@@ -2030,6 +2041,13 @@ const initAdminApp = () => {
           r2Key: currentDishGdriveFileId,
           gdriveFileId
         });
+        if (prevR2Key && prevImg !== image) {
+          const remaining = dataService.getDishes();
+          const isShared = remaining.some(d => d.id !== editId && (d.r2Key === prevR2Key || d.image === prevImg));
+          if (!isShared && typeof cloudflareR2Service !== 'undefined' && typeof cloudflareR2Service.deleteImage === 'function') {
+            cloudflareR2Service.deleteImage(prevR2Key).catch(() => {});
+          }
+        }
         showToast(`Dish "${name}" updated successfully!`, 'success');
       } else {
         await dataService.addDish({
@@ -2673,12 +2691,13 @@ const initAdminApp = () => {
             stopKitchenAlarm(true, { orderId: id });
           }
           if (updated) {
-            showToast(`Order ${id} advanced to "${next.replace(/_/g, ' ')}"!`, 'success');
+            const dispId = formatDisplayOrderId(id, updated.pickupCode);
+            showToast(`Order ${dispId} advanced to "${next.replace(/_/g, ' ')}"!`, 'success');
             checkOverduePendingOrders();
             renderOrders();
             if (updated.serverPromise) {
               updated.serverPromise.catch(err => {
-                showToast(`⚠️ Could not advance order ${id}: ${err?.message || 'Server rejected transition'}`, 'error');
+                showToast(`⚠️ Could not advance order ${dispId}: ${err?.message || 'Server rejected transition'}`, 'error');
                 renderOrders();
                 checkOverduePendingOrders();
               });
@@ -3338,7 +3357,7 @@ const initAdminApp = () => {
     if (!modalCancelOrderBackdrop) return;
     activeCancellingOrderId = orderId;
     if (orderEditId && orderId) orderEditId.value = orderId;
-    if (cancelOrderIdLabel) cancelOrderIdLabel.textContent = orderId;
+    if (cancelOrderIdLabel) cancelOrderIdLabel.textContent = formatDisplayOrderId(orderId);
     if (cancelOrderNote) cancelOrderNote.value = '';
     selectedCancelReason = 'Item(s) Out of Stock';
     cancelReasonPills.forEach((p, idx) => {
@@ -3410,7 +3429,7 @@ const initAdminApp = () => {
 
       closeCancelOrderModal();
       closeOrderManageModal();
-      showToast(`❌ Order ${orderId} has been cancelled.`, 'info');
+      showToast(`❌ Order ${formatDisplayOrderId(orderId, updated.pickupCode)} has been cancelled.`, 'info');
       renderOrders();
 
       if (updated && updated.serverPromise) {
@@ -3647,7 +3666,8 @@ const initAdminApp = () => {
       return;
     }
 
-    if (!ringingOrdersQueue.some(o => o.id === order.id)) {
+    const normIncomingId = String(order.id || '').trim().replace(/^#/, '');
+    if (!ringingOrdersQueue.some(o => o && String(o.id || '').trim().replace(/^#/, '') === normIncomingId)) {
       ringingOrdersQueue.push(order);
     }
 
@@ -3655,7 +3675,10 @@ const initAdminApp = () => {
 
     // Update banner UI details (always display front of FIFO queue to match btnViewAlarmOrder)
     const latestOrder = ringingOrdersQueue[0] || order || {};
-    if (alarmBannerOrderId) alarmBannerOrderId.textContent = latestOrder.id || '#QB-NEW';
+    if (alarmBannerOrderId) {
+      alarmBannerOrderId.dataset.orderId = latestOrder.id || '';
+      alarmBannerOrderId.textContent = latestOrder.id || '#QB-NEW';
+    }
     if (alarmBannerCustomer) alarmBannerCustomer.textContent = latestOrder.customerName || 'Online Guest';
     if (alarmBannerTotal) alarmBannerTotal.textContent = latestOrder.total || '₹0';
     if (alarmBannerItems) alarmBannerItems.textContent = latestOrder.itemsSummary || 'Customer Meal Order';
@@ -3764,6 +3787,7 @@ const initAdminApp = () => {
       if (ringingOrdersQueue.length > 0) {
         const nextOrder = ringingOrdersQueue[0];
         if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id;
+        if (alarmBannerOrderId && nextOrder) alarmBannerOrderId.dataset.orderId = nextOrder.id;
         if (alarmOrdersCountBadge) {
           if (ringingOrdersQueue.length > 1) {
             alarmOrdersCountBadge.style.display = 'inline-block';
@@ -3882,8 +3906,10 @@ const initAdminApp = () => {
     btnViewAlarmOrder.addEventListener('click', (e) => {
       e.stopPropagation();
       const displayedId = alarmBannerOrderId ? alarmBannerOrderId.textContent.trim() : null;
-      const targetOrder = (displayedId && ringingOrdersQueue.find(o => o && o.id === displayedId)) || ringingOrdersQueue[0] || ringingOrdersQueue[ringingOrdersQueue.length - 1];
-      const targetId = targetOrder?.id || displayedId;
+      const rawBannerId = alarmBannerOrderId ? (alarmBannerOrderId.dataset.orderId || displayedId) : null;
+      const normDisplayedId = (rawBannerId || displayedId) ? String(rawBannerId || displayedId).trim().replace(/^#/, '') : null;
+      const targetOrder = (normDisplayedId && ringingOrdersQueue.find(o => o && String(o.id || '').trim().replace(/^#/, '') === normDisplayedId)) || ringingOrdersQueue[0] || ringingOrdersQueue[ringingOrdersQueue.length - 1];
+      const targetId = targetOrder?.id || rawBannerId || displayedId;
       stopKitchenAlarm(true, { orderId: targetId });
       switchView('view-orders');
       if (targetId) {
@@ -4146,7 +4172,7 @@ const initAdminApp = () => {
     const initOrders = dataService.getOrders();
     if (Array.isArray(initOrders)) {
       initOrders.forEach(o => {
-        if (o && o.id && (o.status === 'delivered' || o.status === 'cancelled')) {
+        if (o && o.id && (o.status === 'delivered' || o.status === 'cancelled' || o.status === 'undelivered')) {
           markAdminAlerted(o.id, o.status);
         }
       });
@@ -4187,6 +4213,7 @@ const initAdminApp = () => {
         } else if (ringingOrdersQueue.length > 0 && isKitchenAlarmRinging) {
           const nextOrder = ringingOrdersQueue[0];
           if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id;
+          if (alarmBannerOrderId && nextOrder) alarmBannerOrderId.dataset.orderId = nextOrder.id;
           if (alarmBannerCustomer) alarmBannerCustomer.textContent = nextOrder.customerName || 'Customer';
           if (alarmBannerTotal) alarmBannerTotal.textContent = nextOrder.total || '₹0';
           if (alarmBannerItems) alarmBannerItems.textContent = nextOrder.itemsSummary || 'Order Items';
@@ -4217,7 +4244,7 @@ const initAdminApp = () => {
     // 1. Stale Order Age Guard: If order is older than 20 minutes and status is delivered or cancelled,
     // NEVER alert it to the admin tab on reconnect, refresh, or tab restore!
     const orderAgeMs = order?.createdAt ? (Date.now() - parseTimestampMs(order.createdAt)) : 0;
-    if ((status === 'delivered' || status === 'cancelled') && orderAgeMs > 20 * 60 * 1000) {
+    if ((status === 'delivered' || status === 'cancelled' || status === 'undelivered') && orderAgeMs > 20 * 60 * 1000) {
       markAdminAlerted(orderId, status);
       renderOrders();
       updateOrderBadges();
@@ -4324,7 +4351,7 @@ const initAdminApp = () => {
   }
 
   // Simulated Test Order Generator (Simulates customer order placement with full alarm)
-  function generateTestOrder() {
+  async function generateTestOrder() {
     const dishes = dataService.getDishes();
     const availableDishes = dishes.filter(d => d.inStock !== false);
     const list = availableDishes.length > 0 ? availableDishes : dishes;
@@ -4349,6 +4376,7 @@ const initAdminApp = () => {
       eta: '25 - 35 Minutes',
       isDemo: true,
       bypassClosedCheck: true,
+      bypassGeofenceCheck: true,
       itemsSummary: `1x ${randomDish1.name}, 1x ${randomDish2.name}`,
       items: [
         { name: randomDish1.name, quantity: 1, price: randomDish1.price },
@@ -4357,9 +4385,8 @@ const initAdminApp = () => {
       total: `₹${Math.round(total)}`
     };
 
-    // addOrder automatically dispatches 'new_order' event which triggers handleIncomingOrderAlert cleanly once
-    dataService.addOrder(newOrder);
     knownOrderIds.add(newOrderId);
+    await dataService.addOrder(newOrder);
     renderOrders();
   }
 

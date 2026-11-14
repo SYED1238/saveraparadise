@@ -3450,8 +3450,10 @@ class QuickBiteDataService {
               ? payload.orderIds
               : orders.filter(o => (o.status === 'accepted' || o.status === 'pending') && !o.alarmAcknowledged).map(o => o.id);
 
+            const normId = (val) => String(val || '').trim().replace(/^#/, '');
             targetIds.forEach(id => {
-              const o = orders.find(ord => ord.id === id);
+              const cleanTarget = normId(id);
+              const o = orders.find(ord => ord && normId(ord.id) === cleanTarget);
               if (o && !o.alarmAcknowledged) {
                 o.alarmAcknowledged = true;
                 o.alarmStoppedAt = payload.timestamp || Date.now();
@@ -4000,6 +4002,7 @@ class QuickBiteDataService {
                 const hashId = `#${cleanId}`;
 
                 let orderActionSuccess = false;
+                let authoritativeRejection = false;
                 try {
                   const res = await this._orderAction('update_status', {
                     orderId: orderData.id,
@@ -4020,10 +4023,19 @@ class QuickBiteDataService {
                     anySynced = true;
                   }
                 } catch (actionErr) {
-                  // Fall through to supabase fallback below
+                  const errStatus = Number(actionErr?.status || actionErr?.statusCode) || 0;
+                  const errMsg = String(actionErr?.message || '').toLowerCase();
+                  if ([400, 403, 404, 409].includes(errStatus) || errMsg.includes('cannot reverse') || errMsg.includes('terminal') || errMsg.includes('illegal')) {
+                    authoritativeRejection = true;
+                    console.warn('[DataService] Authoritative rejection during pending status sync, discarding stale mutation:', actionErr?.message);
+                    delete orderData.pendingStatusSync;
+                    anySynced = true;
+                  } else {
+                    console.warn('[DataService] Pending status sync via /api/order-action failed, attempting fallback:', actionErr?.message);
+                  }
                 }
 
-                if (!orderActionSuccess && supabase) {
+                if (!orderActionSuccess && !authoritativeRejection && supabase) {
                   const query = supabase.from('orders')
                     .update(fullPayload)
                     .or(`id.eq.${cleanId},id.eq.${hashId}`)
@@ -4585,8 +4597,10 @@ class QuickBiteDataService {
     // 2. Mark orders as alarmAcknowledged so DB sync won't trigger alarm on other devices
     if (data.orderIds && data.orderIds.length > 0) {
       let changed = false;
+      const normId = (val) => String(val || '').trim().replace(/^#/, '');
       data.orderIds.forEach(id => {
-        const o = orders.find(ord => ord.id === id);
+        const cleanTarget = normId(id);
+        const o = orders.find(ord => ord && normId(ord.id) === cleanTarget);
         if (o && !o.alarmAcknowledged) {
           o.alarmAcknowledged = true;
           o.alarmStoppedAt = data.timestamp;
@@ -5525,6 +5539,7 @@ class QuickBiteDataService {
       category: dishData.category,
       categoryName: dishData.categoryName || '',
       price: parseFloat(dishData.price) || 199,
+      originalPrice: dishData.originalPrice !== undefined ? (parseFloat(dishData.originalPrice) || null) : null,
       rating: '',
       image: sanitizedImage,
       badge: dishData.badge !== undefined ? dishData.badge : '',
@@ -5553,6 +5568,7 @@ class QuickBiteDataService {
       category: newDish.category,
       category_name: newDish.categoryName,
       price: newDish.price,
+      original_price: newDish.originalPrice !== undefined ? newDish.originalPrice : null,
       rating: newDish.rating,
       image: remoteDishImage,
       badge: newDish.badge,
@@ -5610,6 +5626,7 @@ class QuickBiteDataService {
         category: d.category,
         category_name: d.categoryName,
         price: d.price,
+        original_price: d.originalPrice !== undefined ? d.originalPrice : null,
         badge: d.badge,
         time: d.time,
         calories: d.calories,

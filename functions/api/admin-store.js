@@ -618,6 +618,7 @@ export async function onRequest(context) {
           }).in('status', ['pending', 'accepted', 'cooking', 'ready_for_pickup', 'on_the_way']);
         }
         invalidateOrderActionMemoryCache();
+        await purgeKitchenPollEdgeCache(request, context);
         return jsonResponse({ success: true, message: 'All orders cleared successfully', deletedCount: data || 0 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 

@@ -250,6 +250,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (intent != null && OrderMonitorService.ACTION_STOP_ALARM.equals(intent.getAction())) {
+            OrderMonitorService.stopNativeAlarm();
+            triggerWebAlarmStop();
+            intent.setAction(null);
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         activeActivityRef = new java.lang.ref.WeakReference<>(this);

@@ -511,7 +511,7 @@ public class OrderMonitorService extends Service {
                     String id = order.optString("id");
                     if (id.isEmpty()) continue;
 
-                    long createdAt = order.optLong("created_at", 0);
+                    long createdAt = parseCreatedAtMillis(order);
                     String status = order.optString("status");
                     String assignedRider = order.optString("assigned_rider_pin", "").trim();
                     boolean isClaimed = !assignedRider.isEmpty();
@@ -524,7 +524,7 @@ public class OrderMonitorService extends Service {
                         if ("pending".equalsIgnoreCase(status) || "accepted".equalsIgnoreCase(status)) {
                             String custName = order.optString("customer_name", "Customer");
                             String total = order.optString("total", "");
-                            String pickupCode = order.optString("pickup_code", "");
+                            String pickupCode = extractPickupCode(order, id);
                             fireHeadsUpNotification(
                                 "\uD83C\uDF57 NEW ORDER " + id + "!",
                                 custName + " • " + total + (pickupCode.isEmpty() ? "" : " • Code: " + pickupCode),
@@ -560,9 +560,9 @@ public class OrderMonitorService extends Service {
                 String status = order.optString("status");
                 String custName = order.optString("customer_name", "Customer");
                 String total = order.optString("total", "");
-                String pickupCode = order.optString("pickup_code", "");
+                String pickupCode = extractPickupCode(order, id);
                 String address = order.optString("delivery_address", "");
-                long createdAt = order.optLong("created_at", 0);
+                long createdAt = parseCreatedAtMillis(order);
 
                 // Ignore orders older than 12 hours
                 if (createdAt > 0 && (now - createdAt > 12 * 60 * 60 * 1000L)) {
@@ -1100,8 +1100,9 @@ public class OrderMonitorService extends Service {
             if (manager == null) return;
 
             Intent intent = new Intent(this, MainActivity.class);
+            intent.setAction(ACTION_STOP_ALARM);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            intent.putExtra("order_id", orderId);
+            intent.putExtra("order_id", orderId != null ? orderId : "");
 
             int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -1260,6 +1261,38 @@ public class OrderMonitorService extends Service {
             activeInstance = null;
         }
         super.onDestroy();
+    }
+
+    private String extractPickupCode(JSONObject order, String orderId) {
+        String code = order != null ? order.optString("pickup_code", "").trim() : "";
+        if (!code.isEmpty()) return code;
+        if (orderId == null) return "";
+        String digits = orderId.replaceAll("\\D+", "");
+        if (digits.length() >= 4) {
+            return digits.substring(digits.length() - 4);
+        }
+        return digits;
+    }
+
+    private long parseCreatedAtMillis(JSONObject order) {
+        if (order == null) return 0L;
+        long numeric = order.optLong("created_at", 0L);
+        if (numeric > 0L) return numeric;
+        String raw = order.optString("created_at", "").trim();
+        if (raw.isEmpty()) return 0L;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                return java.time.Instant.parse(raw).toEpochMilli();
+            }
+        } catch (Exception ignored) {}
+        try {
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US);
+            sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            java.util.Date d = sdf.parse(raw.length() >= 19 ? raw.substring(0, 19) : raw);
+            return d != null ? d.getTime() : 0L;
+        } catch (Exception ignored) {
+            return 0L;
+        }
     }
 
     @Nullable
