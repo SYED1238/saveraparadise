@@ -677,6 +677,10 @@ const initAdminApp = () => {
     }
   }
 
+  let pendingCategoryUploadedR2Key = '';
+  let initialCategoryModalImage = '';
+  let categoryModalSaved = false;
+
   function openAddCategoryModal() {
     catNameInput.disabled = false;
     catModalTitle.textContent = 'Add New Category';
@@ -685,6 +689,9 @@ const initAdminApp = () => {
     catEmojiInput.value = '🍗';
     if (catImageInput) catImageInput.value = '';
     if (catUploadStatus) catUploadStatus.style.display = 'none';
+    pendingCategoryUploadedR2Key = '';
+    initialCategoryModalImage = '';
+    categoryModalSaved = false;
     updateCatModalImagePreview('', '🍗');
     modalCategoryBackdrop.classList.add('open');
     backNav.pushStep('modal-category', () => modalCategoryBackdrop.classList.remove('open'));
@@ -703,6 +710,9 @@ const initAdminApp = () => {
       catEmojiInput.value = '🍽️';
       if (catImageInput) catImageInput.value = allImg;
       if (catUploadStatus) catUploadStatus.style.display = 'none';
+      pendingCategoryUploadedR2Key = '';
+      initialCategoryModalImage = allImg || '';
+      categoryModalSaved = false;
       updateCatModalImagePreview(allImg, '🍽️');
       modalCategoryBackdrop.classList.add('open');
       backNav.pushStep('modal-category', () => modalCategoryBackdrop.classList.remove('open'));
@@ -720,24 +730,34 @@ const initAdminApp = () => {
     catEmojiInput.value = cat.emoji || '🍽️';
     if (catImageInput) catImageInput.value = cat.image || '';
     if (catUploadStatus) catUploadStatus.style.display = 'none';
+    pendingCategoryUploadedR2Key = '';
+    initialCategoryModalImage = cat.image || '';
+    categoryModalSaved = false;
     updateCatModalImagePreview(cat.image || '', cat.emoji || '🍽️');
     modalCategoryBackdrop.classList.add('open');
     backNav.pushStep('modal-category', () => modalCategoryBackdrop.classList.remove('open'));
     catNameInput.focus();
   }
 
-  let pendingCategoryUploadedR2Key = '';
-
   function closeCategoryModal() {
-    if (pendingCategoryUploadedR2Key && (!catEditId || !catEditId.value)) {
+    if (!categoryModalSaved && pendingCategoryUploadedR2Key) {
       const orphanKey = pendingCategoryUploadedR2Key;
       pendingCategoryUploadedR2Key = '';
       if (typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && typeof cloudflareR2Service.deleteImage === 'function') {
         cloudflareR2Service.deleteImage(orphanKey).catch(() => {});
       }
+      const activeEditId = catEditId ? catEditId.value : '';
+      if (activeEditId === 'all' || activeEditId === 'cat-all') {
+        if (typeof dataService.setAllCategoryImage === 'function') {
+          dataService.setAllCategoryImage(initialCategoryModalImage).catch(() => {});
+        }
+      } else if (activeEditId) {
+        dataService.updateCategory(activeEditId, { image: initialCategoryModalImage }).catch(() => {});
+      }
     } else {
       pendingCategoryUploadedR2Key = '';
     }
+    categoryModalSaved = false;
     catNameInput.disabled = false;
     modalCategoryBackdrop.classList.remove('open');
     backNav.removeStep('modal-category');
@@ -843,7 +863,7 @@ const initAdminApp = () => {
               const catFileName = `category_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
               const r2Res = await cloudflareR2Service.uploadImage(dataUrl, catFileName, 'categories');
               if (r2Res && r2Res.success && (r2Res.key || r2Res.url)) {
-                if (pendingCategoryUploadedR2Key && (!catEditId || !catEditId.value) && typeof cloudflareR2Service.deleteImage === 'function') {
+                if (pendingCategoryUploadedR2Key && typeof cloudflareR2Service.deleteImage === 'function') {
                   cloudflareR2Service.deleteImage(pendingCategoryUploadedR2Key).catch(() => {});
                 }
                 pendingCategoryUploadedR2Key = r2Res.key || '';
@@ -869,13 +889,7 @@ const initAdminApp = () => {
                   }
                 } else if (activeEditId) {
                   const saveRes = await dataService.saveCategoryImage(activeEditId, finalImg);
-                  const cats = dataService.getCategories();
-                  const matchedCat = cats.find(c => c.id === activeEditId || c.slug === activeEditId);
-                  if (matchedCat) {
-                    if (matchedCat.id) await dataService.saveCategoryImage(matchedCat.id, finalImg);
-                    if (matchedCat.slug) await dataService.saveCategoryImage(matchedCat.slug, finalImg);
-                    await dataService.updateCategory(activeEditId, { image: finalImg });
-                  }
+                  await dataService.updateCategory(activeEditId, { image: finalImg });
                   if (saveRes?._localOnly) {
                     showToast('⚠️ Category photo saved locally (Cloud sync requires active Staff session).', 'warning');
                   } else {
@@ -972,6 +986,7 @@ const initAdminApp = () => {
         showToast(`Category "${name}" created!`, 'success');
       }
 
+      categoryModalSaved = true;
       pendingCategoryUploadedR2Key = '';
       closeCategoryModal();
       renderCategories();
@@ -1441,6 +1456,7 @@ const initAdminApp = () => {
     dishImageUrl.value = defaultImg;
     dishPreviewImg.src = defaultImg;
     fileChosenText.textContent = 'No custom file chosen';
+    pendingDishUploadedR2Key = '';
 
     renderPresetGalleryStrip(defaultImg);
     modalDishBackdrop.classList.add('open');
@@ -1507,6 +1523,7 @@ const initAdminApp = () => {
     dishImageUrl.value = currentImg.startsWith('data:') ? '' : currentImg;
     dishPreviewImg.src = currentImg;
     fileChosenText.textContent = currentImg.startsWith('data:') ? 'Photo upload required' : 'Current active dish photo';
+    pendingDishUploadedR2Key = '';
 
     renderPresetGalleryStrip(currentImg);
     modalDishBackdrop.classList.add('open');
@@ -1514,7 +1531,16 @@ const initAdminApp = () => {
     dishNameInput.focus();
   }
 
+  let pendingDishUploadedR2Key = '';
+
   function closeDishModal() {
+    if (pendingDishUploadedR2Key) {
+      const orphanKey = pendingDishUploadedR2Key;
+      pendingDishUploadedR2Key = '';
+      if (typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && typeof cloudflareR2Service.deleteImage === 'function') {
+        cloudflareR2Service.deleteImage(orphanKey).catch(() => {});
+      }
+    }
     modalDishBackdrop.classList.remove('open');
     backNav.removeStep('modal-dish');
   }
@@ -1558,7 +1584,8 @@ const initAdminApp = () => {
       const id = dishEditId.value;
       if (id) {
         deleteDishPrompt(id);
-        closeDishModal();
+        pendingDishUploadedR2Key = '';
+      closeDishModal();
       }
     });
   }
@@ -1679,9 +1706,10 @@ const initAdminApp = () => {
               ${safeBadge ? `<div class="dish-category-badge-chip">${safeBadge}</div>` : ''}
               ${(dish.timeRestricted && dish.availableFrom && dish.availableTo) ? `<div class="dish-schedule-badge time-badge"><i class="fa-regular fa-clock"></i> ${formatTime12h(dish.availableFrom)} - ${formatTime12h(dish.availableTo)}</div>` : ''}
               ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
-              <h3 class="dish-title-text">${safeName}</h3>
-              <div class="dish-price-rating-row">
-                <span class="dish-price-highlight">₹${safePrice}</span>
+              <h3 class="dish-title" title="${safeName}">${safeName}</h3>
+              <div class="dish-meta-sub">
+                <span class="meta-price">₹${safePrice}</span>
+                ${!isStock ? '<span class="meta-dot">•</span><span class="meta-sold-tag">Sold Out</span>' : ''}
               </div>
             </div>
           </div>
@@ -1824,10 +1852,7 @@ const initAdminApp = () => {
           let finalUrl = compressedDataUrl;
           let finalFileId = '';
 
-          // 2. Persist to dataService uploaded photos gallery immediately
-          await dataService.saveUploadedImage(finalUrl, file.name);
-
-          // 3. Set UI preview immediately so user NEVER waits
+          // 2. Set UI preview immediately so user NEVER waits
           if (!firstUploadedUrl) {
             firstUploadedUrl = compressedDataUrl;
             dishPreviewImg.src = compressedDataUrl;
@@ -1836,14 +1861,18 @@ const initAdminApp = () => {
             fileChosenText.style.display = 'inline';
           }
 
-          // 4. Cloud photo upload
+          // 3. Cloud photo upload
           let uploadSucceeded = false;
           try {
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
             const r2Res = await Promise.race([cloudflareR2Service.uploadImage(compressedDataUrl || file, file.name), timeoutPromise]);
             if (r2Res?.url) {
+              if (pendingDishUploadedR2Key && typeof cloudflareR2Service.deleteImage === 'function') {
+                cloudflareR2Service.deleteImage(pendingDishUploadedR2Key).catch(() => {});
+              }
               finalUrl = r2Res.url;
               finalFileId = r2Res.key || '';
+              pendingDishUploadedR2Key = finalFileId;
               await dataService.saveUploadedImage(finalUrl, file.name);
               dishPreviewImg.src = finalUrl;
               dishImageUrl.value = finalUrl;
@@ -1857,6 +1886,10 @@ const initAdminApp = () => {
           } catch (r2Err) {
             console.warn('[Upload] Photo storage notice:', r2Err?.message || r2Err);
             fileChosenText.textContent = `⚠️ Photo upload issue. Please retry.`;
+          }
+
+          if (!uploadSucceeded) {
+            await dataService.saveUploadedImage(finalUrl, file.name);
           }
 
           if (!uploadSucceeded) {
@@ -2021,6 +2054,7 @@ const initAdminApp = () => {
         showToast(`New dish "${name}" added to menu!`, 'success');
       }
 
+      pendingDishUploadedR2Key = '';
       closeDishModal();
       renderDishes();
       renderCategories();
@@ -2171,13 +2205,14 @@ const initAdminApp = () => {
 
     pendingOverdueAlertBanner.style.display = 'flex';
     const first = overdueList[0];
+    const firstDisplayId = formatDisplayOrderId(first.id, first.pickupCode);
     const rawCreated = first.createdAt ?? first.created_at;
     const created = typeof rawCreated === 'number' ? rawCreated : new Date(rawCreated).getTime();
     const waitMins = Math.max(5, Math.floor((Date.now() - created) / 60000));
 
     if (overdueBannerTitle) {
       overdueBannerTitle.textContent = overdueList.length === 1
-        ? `⚠️ Order ${first.id} Accepted > ${waitMins} Minutes!`
+        ? `⚠️ Order ${firstDisplayId} Accepted > ${waitMins} Minutes!`
         : `⚠️ ${overdueList.length} Orders Waiting for Preparation > 5 Mins!`;
     }
     if (overdueBannerSub) {
@@ -2193,12 +2228,12 @@ const initAdminApp = () => {
           stopKitchenAlarm(true, { orderId: first.id });
         }
         const label = nextTarget === 'accepted' ? 'Accepted' : 'Preparing';
-        showToast(`🔥 Order ${first.id} moved to ${label}!`, 'success');
+        showToast(`🔥 Order ${firstDisplayId} moved to ${label}!`, 'success');
         checkOverduePendingOrders();
         renderOrders();
         if (updated?.serverPromise) {
           updated.serverPromise.catch(err => {
-            showToast(`⚠️ Could not update order ${first.id}: ${err?.message || 'Server rejected transition'}`, 'error');
+            showToast(`⚠️ Could not update order ${firstDisplayId}: ${err?.message || 'Server rejected transition'}`, 'error');
             renderOrders();
             checkOverduePendingOrders();
           });
@@ -2453,16 +2488,29 @@ const initAdminApp = () => {
       // Payment Method distinction (COD vs Online vs Doorstep UPI)
       let paymentStatusBadge = '';
       let totalLabel = 'Total Paid';
+      const rawPayMethodCard = String(order.paymentMethod || order.payment_method || '').toLowerCase();
+      const isDoorstepUpiCard = Boolean(
+        order.doorstepUpi === true ||
+        order.doorstep_upi === true ||
+        rawPayMethodCard === 'doorstep_upi' ||
+        rawPayMethodCard.includes('doorstep')
+      );
+      const isExplicitCodCard = /cash|cod|pay on delivery/i.test(rawPayMethodCard) && !isDoorstepUpiCard;
       const isPaidOnline = Boolean(
-        order.isPaidOnline === true ||
-        order.is_paid_online === true ||
-        order.paymentMethod === 'online' ||
-        order.payment_method === 'online' ||
-        String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
-        order.cf_payment_id ||
-        order.cfPaymentId ||
-        order.cf_order_id ||
-        order.cfOrderId
+        !isDoorstepUpiCard &&
+        !isExplicitCodCard && (
+          order.isPaidOnline === true ||
+          order.is_paid_online === true ||
+          order.paymentMethod === 'online' ||
+          order.payment_method === 'online' ||
+          rawPayMethodCard.includes('online') ||
+          rawPayMethodCard.includes('cashfree') ||
+          String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
+          order.cf_payment_id ||
+          order.cfPaymentId ||
+          order.cf_order_id ||
+          order.cfOrderId
+        )
       );
       if (isPaidOnline) {
         paymentStatusBadge = `
@@ -2471,20 +2519,20 @@ const initAdminApp = () => {
           </span>
         `;
         totalLabel = 'Total Paid';
-      } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi' || order.payment_method === 'doorstep_upi') {
+      } else if (isDoorstepUpiCard) {
         paymentStatusBadge = `
           <span class="order-payment-pill is-doorstep-upi" title="Payment to be collected via Doorstep Dynamic UPI QR">
             <i class="fa-solid fa-qrcode"></i> Doorstep UPI QR
           </span>
         `;
-        totalLabel = 'To Collect';
+        totalLabel = order.status === 'delivered' ? 'Total Paid' : 'To Collect';
       } else {
         paymentStatusBadge = `
           <span class="order-payment-pill is-cod" title="Cash to be collected upon doorstep delivery">
             <i class="fa-solid fa-hand-holding-dollar"></i> Collect Cash (COD)
           </span>
         `;
-        totalLabel = 'To Collect';
+        totalLabel = order.status === 'delivered' ? 'Total Paid' : 'To Collect';
       }
 
       // Kitchen Urgency Timer
@@ -2751,7 +2799,31 @@ const initAdminApp = () => {
 
     renderOrderModalReadonlyItems(order);
 
-    const isPaid = Boolean(order.isPaidOnline || order.is_paid_online || String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' || order.status === 'delivered');
+    const rawModalPayMethod = String(order.paymentMethod || order.payment_method || '').toLowerCase();
+    const isModalDoorstepUpi = Boolean(
+      order.doorstepUpi === true ||
+      order.doorstep_upi === true ||
+      order.paymentMethod === 'doorstep_upi' ||
+      rawModalPayMethod === 'doorstep_upi' ||
+      rawModalPayMethod.includes('doorstep')
+    );
+    const isModalExplicitCod = /cash|cod|pay on delivery/i.test(rawModalPayMethod) && !isModalDoorstepUpi;
+    const isModalOnline = Boolean(
+      !isModalDoorstepUpi &&
+      !isModalExplicitCod && (
+        order.isPaidOnline === true ||
+        order.is_paid_online === true ||
+        order.paymentMethod === 'online' ||
+        rawModalPayMethod === 'online' ||
+        rawModalPayMethod.includes('online') ||
+        rawModalPayMethod.includes('cashfree') ||
+        order.cf_payment_id ||
+        order.cfPaymentId ||
+        order.cf_order_id ||
+        order.cfOrderId
+      )
+    );
+    const isPaid = Boolean(order.isPaidOnline || order.is_paid_online || isModalOnline || String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' || order.status === 'delivered');
 
     if (orderDetailTotal) {
       orderDetailTotal.textContent = order.total || '₹0';
@@ -2764,10 +2836,10 @@ const initAdminApp = () => {
 
     const orderDetailPaymentTag = document.getElementById('order-detail-payment-tag');
     if (orderDetailPaymentTag) {
-      if (order.isPaidOnline === true || order.paymentMethod === 'online') {
+      if (order.isPaidOnline === true || order.paymentMethod === 'online' || isModalOnline) {
         orderDetailPaymentTag.className = 'readonly-payment-tag payment-online';
         orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-circle-check"></i> Paid Online';
-      } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi') {
+      } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi' || isModalDoorstepUpi) {
         orderDetailPaymentTag.className = 'readonly-payment-tag payment-upi';
         if (isPaid) {
           orderDetailPaymentTag.innerHTML = '<i class="fa-solid fa-qrcode"></i> Paid via Doorstep UPI';
@@ -2848,17 +2920,27 @@ const initAdminApp = () => {
   function updateModalStatusUI(order) {
     const status = order.status || 'accepted';
     const cfStatusLower = String(order.cf_payment_status || order.cfPaymentStatus || '').toLowerCase();
+    const rawModalStatusPayMethod = String(order.paymentMethod || order.payment_method || '').toLowerCase();
+    const isModalStatusDoorstepOrCod = Boolean(
+      order.doorstepUpi === true ||
+      order.doorstep_upi === true ||
+      rawModalStatusPayMethod.includes('doorstep') ||
+      /cash|cod|pay on delivery/i.test(rawModalStatusPayMethod)
+    );
     const isOnline = Boolean(
-      order.isPaidOnline === true ||
-      order.is_paid_online === true ||
-      order.cf_payment_id ||
-      order.cfPaymentId ||
-      order.cf_order_id ||
-      order.cfOrderId ||
-      String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
-      String(order.paymentMethod || order.payment_method || '').toLowerCase().includes('online') ||
-      cfStatusLower === 'refund_initiated' ||
-      cfStatusLower === 'refunded'
+      !isModalStatusDoorstepOrCod && (
+        order.isPaidOnline === true ||
+        order.is_paid_online === true ||
+        order.cf_payment_id ||
+        order.cfPaymentId ||
+        order.cf_order_id ||
+        order.cfOrderId ||
+        String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
+        rawModalStatusPayMethod.includes('online') ||
+        rawModalStatusPayMethod.includes('cashfree') ||
+        cfStatusLower === 'refund_initiated' ||
+        cfStatusLower === 'refunded'
+      )
     );
     const isRefundCompleted = isOnline && (
       cfStatusLower === 'refunded' ||
@@ -3124,20 +3206,34 @@ const initAdminApp = () => {
     const noteText = (order.notes || order.kitchenNotes || order.customerNotes || (order.addressDetails && order.addressDetails.instructions) || '').trim();
 
     let paymentLabel = 'CASH ON DELIVERY (COD)';
+    const rawKotPayMethod = String(order.paymentMethod || order.payment_method || '').toLowerCase();
+    const isDoorstepUpiKOT = Boolean(
+      order.doorstepUpi === true ||
+      order.doorstep_upi === true ||
+      order.paymentMethod === 'doorstep_upi' ||
+      order.payment_method === 'doorstep_upi' ||
+      rawKotPayMethod.includes('doorstep')
+    );
+    const isExplicitCodKOT = /cash|cod|pay on delivery/i.test(rawKotPayMethod) && !isDoorstepUpiKOT;
     const isPaidOnlineKOT = Boolean(
-      order.isPaidOnline === true ||
-      order.is_paid_online === true ||
-      order.paymentMethod === 'online' ||
-      order.payment_method === 'online' ||
-      String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
-      order.cf_payment_id ||
-      order.cfPaymentId ||
-      order.cf_order_id ||
-      order.cfOrderId
+      !isDoorstepUpiKOT &&
+      !isExplicitCodKOT && (
+        order.isPaidOnline === true ||
+        order.is_paid_online === true ||
+        order.paymentMethod === 'online' ||
+        order.payment_method === 'online' ||
+        rawKotPayMethod.includes('online') ||
+        rawKotPayMethod.includes('cashfree') ||
+        String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
+        order.cf_payment_id ||
+        order.cfPaymentId ||
+        order.cf_order_id ||
+        order.cfOrderId
+      )
     );
     if (isPaidOnlineKOT) {
       paymentLabel = 'PAID ONLINE';
-    } else if (order.doorstepUpi === true || order.paymentMethod === 'doorstep_upi' || order.payment_method === 'doorstep_upi') {
+    } else if (isDoorstepUpiKOT) {
       paymentLabel = 'DOORSTEP UPI';
     }
 
@@ -3667,7 +3763,7 @@ const initAdminApp = () => {
 
       if (ringingOrdersQueue.length > 0) {
         const nextOrder = ringingOrdersQueue[0];
-        if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id || 'NEW';
+        if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id;
         if (alarmOrdersCountBadge) {
           if (ringingOrdersQueue.length > 1) {
             alarmOrdersCountBadge.style.display = 'inline-block';
@@ -3679,6 +3775,15 @@ const initAdminApp = () => {
         if (alarmBannerCustomer) alarmBannerCustomer.textContent = nextOrder.customerName || 'Customer';
         if (alarmBannerTotal) alarmBannerTotal.textContent = nextOrder.total || '₹0';
         if (alarmBannerItems) alarmBannerItems.textContent = nextOrder.itemsSummary || 'Order Items';
+        if (shouldBroadcast && typeof dataService !== 'undefined' && dataService.broadcastStopAlarm) {
+          try {
+            dataService.broadcastStopAlarm({
+              orderIds: [targetId],
+              timestamp: Date.now(),
+              sourceDevice: 'admin_portal'
+            });
+          } catch {}
+        }
         return; // Retain alarm loop active for remaining orders
       }
     }
@@ -3868,7 +3973,7 @@ const initAdminApp = () => {
           title: '🍗 Kitchen Alert System Active',
           body: 'Savera Paradise Admin Portal is connected and ready for live orders.',
           tag: 'admin-test-alert',
-          soundType: mode === KITCHEN_ALARM_MODES.R2_CUSTOM ? 'custom_r2' : 'new_order'
+          soundType: 'silent'
         });
       }
     });

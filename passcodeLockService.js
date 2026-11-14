@@ -86,6 +86,13 @@ export function initIosPasscodeLock(options) {
         failedAttempts += 1;
         if (failedAttempts >= 5) {
           lockoutUntil = Date.now() + 30000;
+          setTimeout(() => {
+            if (Date.now() >= lockoutUntil && subtitleEl) {
+              lockoutUntil = 0;
+              subtitleEl.textContent = defaultSubtitle;
+              subtitleEl.classList.remove('error');
+            }
+          }, 30000);
         }
         dotsEl.classList.add('error');
         triggerHaptic('error');
@@ -126,6 +133,13 @@ export function initIosPasscodeLock(options) {
         subtitleEl.classList.add('error');
       }
       return;
+    }
+    if (lockoutUntil > 0 && Date.now() >= lockoutUntil) {
+      lockoutUntil = 0;
+      if (subtitleEl) {
+        subtitleEl.textContent = defaultSubtitle;
+        subtitleEl.classList.remove('error');
+      }
     }
     enteredPin += digit;
     updateDots();

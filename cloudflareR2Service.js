@@ -73,7 +73,13 @@ class CloudflareR2Service {
       }
       arrayBuffer = bytes.buffer;
       const ext = mimeType.split('/')[1] || 'jpg';
-      fileName = `${filePrefix}${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+      const cleanName = (originalFileName || '')
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[^a-zA-Z0-9_-]/g, '_')
+        .slice(0, 45);
+      fileName = cleanName
+        ? `${filePrefix}${Date.now()}_${cleanName}.${ext}`
+        : `${filePrefix}${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
     } else {
       arrayBuffer = await fileOrDataUrl.arrayBuffer();
       mimeType = fileOrDataUrl.type || 'image/jpeg';

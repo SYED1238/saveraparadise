@@ -37,6 +37,8 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'OPTIONS') {
       res.setHeader('Allow', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(200).end();
     }
 
@@ -99,8 +101,12 @@ export default async function handler(req, res) {
           res.setHeader('Content-Type', r2Res.headers['content-type'] || 'image/jpeg');
           res.setHeader('X-Content-Type-Options', 'nosniff');
           res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+          res.setHeader('Access-Control-Allow-Origin', '*');
           if (r2Res.headers['content-length']) {
             res.setHeader('Content-Length', r2Res.headers['content-length']);
+          }
+          if (r2Res.headers['etag']) {
+            res.setHeader('ETag', r2Res.headers['etag']);
           }
           // Cache-Control: 1-year browser & Global Edge CDN cache
           res.setHeader('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');

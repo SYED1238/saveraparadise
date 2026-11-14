@@ -232,4 +232,35 @@ test('KITCHEN PORTAL DEEP BUG HUNT VERIFICATION SUITE (20 Verified Findings)', a
     assert.match(dataServiceJs, /riderWaitingAtDoorstep:\s*remote\.address_details\?\.riderWaitingAtDoorstep/, 'handleRealtimeOrderDelta must preserve riderWaitingAtDoorstep');
     assert.match(dataServiceJs, /deliveryFee:\s*remote\.delivery_fee/, 'handleRealtimeOrderDelta must preserve deliveryFee');
   });
+
+  await t.test('22. Kitchen Portal Audit Wave 2: COD/Online classification, Alarm soundType guard, Dish r2_key sync & Global search styling', () => {
+    // BUG-01: Delivered COD orders must not be classified as Paid Online
+    assert.match(adminJs, /!isDoorstepUpiCard\s*&&\s*!isExplicitCodCard/, 'renderOrders must exclude COD and Doorstep UPI before marking isPaidOnline');
+    assert.match(adminJs, /!isDoorstepUpiKOT\s*&&\s*!isExplicitCodKOT/, 'printOrderKOT must exclude COD and Doorstep UPI before marking isPaidOnlineKOT');
+
+    // BUG-02: playNotificationSound must treat custom_r2 and silent as no-ops
+    const notifJs = fs.readFileSync(path.join(rootDir, 'notificationService.js'), 'utf-8');
+    assert.match(notifJs, /case\s*['"]custom_r2['"]:[\s\S]*?return;/, 'playNotificationSound must treat custom_r2 as no-op');
+
+    // BUG-05 & BUG-06: Dish photo upload and r2_key sync
+    assert.match(dataServiceJs, /r2_key:\s*newDish\.r2Key\s*\|\|\s*['"]['"]/, 'addDish payload must include r2_key');
+    assert.match(dataServiceJs, /r2_key:\s*d\.r2Key\s*\|\|\s*['"]['"]/, 'updateDish payload must include r2_key');
+
+    // BUG-07: sendSystemNotification must pass notifData with url
+    assert.match(notifJs, /const\s+notifData\s*=\s*\{\s*url:\s*defaultUrl/, 'sendSystemNotification must attach defaultUrl in notification data');
+
+    // BUG-08: renderGlobalDishes must use .dish-title and .meta-price
+    assert.doesNotMatch(adminJs, /class="dish-title-text"/, 'renderGlobalDishes must not use unstyled .dish-title-text class');
+
+    // BUG-09: Passcode lock recovers when lockout expires
+    const passcodeJs = fs.readFileSync(path.join(rootDir, 'passcodeLockService.js'), 'utf-8');
+    assert.match(passcodeJs, /Date\.now\(\)\s*>=\s*lockoutUntil[\s\S]*?defaultSubtitle/, 'passcodeLockService must restore defaultSubtitle when lockout expires');
+
+    // BUG-10: Overdue banner formats order ID
+    assert.match(adminJs, /const\s+firstDisplayId\s*=\s*formatDisplayOrderId\(first\.id,\s*first\.pickupCode\)/, 'updateOverdueBanner must format display order ID');
+
+    // BUG-11: api/r2-image.js has CORS headers
+    const r2ImageJs = fs.readFileSync(path.join(rootDir, 'api/r2-image.js'), 'utf-8');
+    assert.match(r2ImageJs, /res\.setHeader\(['"]Access-Control-Allow-Origin['"],\s*['"]\*['"]\)/, 'api/r2-image.js must set Access-Control-Allow-Origin');
+  });
 });

@@ -245,8 +245,14 @@ export async function onRequest(context) {
         if (!rawDish || !rawDish.id || !rawDish.name) {
           return jsonResponse({ error: 'Valid dish payload (id, name) is required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        const dish = sanitizeDishFields(rawDish);
-        const { data, error } = await sb.from('dishes').insert([dish]).select();
+        let dish = sanitizeDishFields(rawDish);
+        let { data, error } = await sb.from('dishes').insert([dish]).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key'))) {
+          delete dish.r2_key;
+          const retry = await sb.from('dishes').insert([dish]).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) throw error;
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
@@ -256,13 +262,23 @@ export async function onRequest(context) {
         if (!id || !rawUpdates || typeof rawUpdates !== 'object') {
           return jsonResponse({ error: 'Dish ID and updates payload are required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        const updates = sanitizeDishFields(rawUpdates);
+        let updates = sanitizeDishFields(rawUpdates);
         let { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key'))) {
+          delete updates.r2_key;
+          const retry = await sb.from('dishes').update(updates).eq('id', id).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) throw error;
         if (!data || data.length === 0) {
           // If dish record was not yet in table, upsert it with ID to ensure persistence
           const upsertPayload = { id, ...updates };
-          const upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+          let upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key'))) {
+            delete upsertPayload.r2_key;
+            upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+          }
           if (upsertRes.error) throw upsertRes.error;
           data = upsertRes.data;
         }

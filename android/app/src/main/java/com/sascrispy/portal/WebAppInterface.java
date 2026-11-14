@@ -174,7 +174,9 @@ public class WebAppInterface {
             if (isAlarmAlert) {
                 OrderMonitorService.setLastAlertNotifId(notifId);
                 // Start continuous looping MediaPlayer + repeating Vibrator waveform & acquire audio focus
-                OrderMonitorService.startNativeAlarm();
+                if (!OrderMonitorService.isAlarmRinging()) {
+                    OrderMonitorService.startNativeAlarm();
+                }
             } else {
                 // One-shot haptic vibration for non-alarm notifications (e.g. cash settled)
                 Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);

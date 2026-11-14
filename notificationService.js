@@ -144,6 +144,12 @@ export function playNotificationSound(type = 'general_alert') {
     let notes = [];
 
     switch (type) {
+      case 'custom_r2':
+      case 'silent':
+      case 'none':
+        // Handled by dedicated looping kitchen alarm controller (startKitchenAlarmAudio)
+        return;
+
       case 'new_order':
       case 'order_incoming':
       case 'kitchen_alarm':
@@ -486,8 +492,9 @@ export function sendSystemNotification({
 
   const portalMeta = getDefaultPortalMeta();
   const effectiveIcon = icon || portalMeta.icon;
-  const effectiveUrl = data?.url || portalMeta.url;
-  const effectiveData = { ...data, url: effectiveUrl };
+  const defaultUrl = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : (portalMeta.url || '/');
+  const notifData = { url: defaultUrl, ...(data && typeof data === 'object' ? data : {}) };
+  const effectiveData = notifData;
 
   // Real app haptic feedback
   triggerDeviceVibration([180, 90, 180, 90, 240]);

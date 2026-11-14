@@ -841,6 +841,10 @@ public class OrderMonitorService extends Service {
         }
     }
 
+    public static boolean isAlarmRinging() {
+        return isAlarmActive();
+    }
+
     public static void stopNativeAlarm() {
         synchronized (alarmLock) {
             if (alarmTimeoutHandler != null && alarmTimeoutRunnable != null) {

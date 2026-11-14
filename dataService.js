@@ -5564,7 +5564,8 @@ class QuickBiteDataService {
       available_days: newDish.availableDays,
       time_restricted: newDish.timeRestricted,
       available_from: newDish.availableFrom,
-      available_to: newDish.availableTo
+      available_to: newDish.availableTo,
+      r2_key: newDish.r2Key || ''
     };
     const serverPromise = (async () => {
       try {
@@ -5618,7 +5619,8 @@ class QuickBiteDataService {
         available_days: d.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
         time_restricted: Boolean(d.timeRestricted),
         available_from: d.availableFrom || '',
-        available_to: d.availableTo || ''
+        available_to: d.availableTo || '',
+        r2_key: d.r2Key || ''
       };
       if (d.image && !d.image.startsWith('data:')) {
         updatePayload.image = sanitizeDishImageUrl(d.image);

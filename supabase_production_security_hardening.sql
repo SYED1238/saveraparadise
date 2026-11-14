@@ -198,6 +198,7 @@ DO $$
 BEGIN
   -- 5.1 Dishes (Public Read, Service Role Write)
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'dishes') THEN
+    ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS r2_key TEXT DEFAULT '';
     ALTER TABLE public.dishes ENABLE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS "app_manage_dishes" ON public.dishes;
     DROP POLICY IF EXISTS "dishes_public_read" ON public.dishes;
