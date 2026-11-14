@@ -336,6 +336,97 @@ export async function recordVerifiedCashfreePayment({
   return { updated: true, order: savedOrder || { ...existingOrder, ...updateFields } };
 }
 
+export async function recordVerifiedCashfreeRefund({
+  cfOrderId,
+  cfRefundId,
+  refundId,
+  refundStatus,
+  refundArn,
+  refundAmount,
+  cleanOrderId = '',
+  env = null
+}) {
+  const { supabaseUrl, serviceKey } = getSupabaseServiceCreds(env);
+  if (!supabaseUrl || !serviceKey) {
+    return { updated: false, order: null };
+  }
+
+  const safeCfOrderId = String(cfOrderId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const safeOrderId = String(cleanOrderId || '').replace(/^#+/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeCfOrderId && !safeOrderId) {
+    return { updated: false, order: null };
+  }
+
+  const { createClient } = await import('@supabase/supabase-js');
+  const sb = createClient(supabaseUrl, serviceKey);
+
+  let existingOrder = null;
+  if (safeCfOrderId) {
+    const { data } = await sb
+      .from('orders')
+      .select('*')
+      .eq('cf_order_id', safeCfOrderId)
+      .maybeSingle();
+    existingOrder = data || null;
+  }
+
+  if (!existingOrder && safeOrderId) {
+    const { data } = await sb
+      .from('orders')
+      .select('*')
+      .or(`id.eq.${safeOrderId},id.eq.#${safeOrderId}`)
+      .maybeSingle();
+    existingOrder = data || null;
+  }
+
+  if (!existingOrder) {
+    return { updated: false, order: null };
+  }
+
+  const isSuccess = String(refundStatus || '').toUpperCase() === 'SUCCESS';
+  let currentAddr = {};
+  if (existingOrder.address_details && typeof existingOrder.address_details === 'object') {
+    currentAddr = { ...existingOrder.address_details };
+  } else if (typeof existingOrder.address_details === 'string') {
+    try { currentAddr = JSON.parse(existingOrder.address_details); } catch {}
+  }
+
+  const refundDetails = {
+    ...currentAddr,
+    refund_status: isSuccess ? 'SUCCESS' : (refundStatus || 'FAILED'),
+    refund_id: refundId || currentAddr.refund_id || null,
+    cf_refund_id: cfRefundId || currentAddr.cf_refund_id || null,
+    refund_arn: refundArn || currentAddr.refund_arn || null,
+    refund_amount: Number(refundAmount) || currentAddr.refund_amount || null,
+    refund_completed_at: isSuccess ? (currentAddr.refund_completed_at || Date.now()) : null,
+    refund_message: isSuccess
+      ? 'Refund completed and credited to your original payment account.'
+      : 'Refund could not be processed automatically. Contact support.'
+  };
+
+  const updateFields = {
+    address_details: refundDetails,
+    cf_payment_status: isSuccess ? 'REFUNDED' : 'REFUND_FAILED'
+  };
+
+  const { data: savedOrder, error } = await sb
+    .from('orders')
+    .update(updateFields)
+    .eq('id', existingOrder.id)
+    .select('*')
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  try {
+    invalidateOrderActionMemoryCache();
+  } catch {}
+
+  return { updated: true, order: savedOrder || { ...existingOrder, ...updateFields } };
+}
+
 /**
  * Generates a Dynamic UPI QR Code for Doorstep COD-to-PhonePe Collection
  */

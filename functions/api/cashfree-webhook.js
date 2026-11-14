@@ -7,7 +7,7 @@
  * 3. Payment amount and order ID verification before updating status to 'Paid'.
  * 4. Production protection: Strictly rejects unauthenticated or mismatched callbacks.
  */
-import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment } from './_cashfree.js';
+import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment, recordVerifiedCashfreeRefund } from './_cashfree.js';
 import { hydrateEnv, jsonResponse } from './_adapter.js';
 
 export async function onRequest(context) {
@@ -121,6 +121,45 @@ export async function onRequest(context) {
         paymentAmount,
         paymentMethod,
         message: 'Payment verified and recorded successfully'
+      }, 200);
+    }
+
+    // Process refund status webhook from Cashfree
+    if (eventType === 'REFUND_STATUS_WEBHOOK') {
+      const refundObj = eventData.refund || eventData;
+      const cfOrderId = String(refundObj.order_id || eventData.order?.order_id || '');
+      const cfRefundId = String(refundObj.cf_refund_id || '');
+      const refundId = String(refundObj.refund_id || '');
+      const refundStatus = String(refundObj.refund_status || '').toUpperCase();
+      const refundArn = String(refundObj.refund_arn || refundObj.arn || '');
+      const refundAmount = Number(refundObj.refund_amount || 0);
+
+      const cleanOrderId = cfOrderId
+        .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
+        .replace(/_\d{4}$/, '');
+
+      try {
+        await recordVerifiedCashfreeRefund({
+          cfOrderId,
+          cfRefundId,
+          refundId,
+          refundStatus,
+          refundArn,
+          refundAmount,
+          cleanOrderId,
+          env
+        });
+      } catch (err) {
+        console.warn('[Cashfree Webhook] Refund sync error:', err.message);
+      }
+
+      return jsonResponse({
+        success: true,
+        orderId: cleanOrderId,
+        refundId,
+        refundStatus,
+        refundArn,
+        message: `Refund webhook processed (${refundStatus})`
       }, 200);
     }
 

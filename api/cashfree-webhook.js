@@ -3,7 +3,7 @@
  * POST /api/cashfree-webhook
  * Cryptographically verifies and processes Cashfree payment notifications.
  */
-import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment } from './_cashfree.js';
+import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment, recordVerifiedCashfreeRefund } from './_cashfree.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -113,6 +113,44 @@ export default async function handler(req, res) {
         paymentAmount,
         paymentMethod,
         message: 'Payment verified successfully'
+      });
+    }
+
+    // Process refund status webhook from Cashfree
+    if (eventType === 'REFUND_STATUS_WEBHOOK') {
+      const refundObj = eventData.refund || eventData;
+      const cfOrderId = String(refundObj.order_id || eventData.order?.order_id || '');
+      const cfRefundId = String(refundObj.cf_refund_id || '');
+      const refundId = String(refundObj.refund_id || '');
+      const refundStatus = String(refundObj.refund_status || '').toUpperCase();
+      const refundArn = String(refundObj.refund_arn || refundObj.arn || '');
+      const refundAmount = Number(refundObj.refund_amount || 0);
+
+      const cleanOrderId = cfOrderId
+        .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
+        .replace(/_\d{4}$/, '');
+
+      try {
+        await recordVerifiedCashfreeRefund({
+          cfOrderId,
+          cfRefundId,
+          refundId,
+          refundStatus,
+          refundArn,
+          refundAmount,
+          cleanOrderId
+        });
+      } catch (err) {
+        console.warn('[Cashfree Webhook] Refund sync error:', err.message);
+      }
+
+      return res.status(200).json({
+        success: true,
+        orderId: cleanOrderId,
+        refundId,
+        refundStatus,
+        refundArn,
+        message: `Refund webhook processed (${refundStatus})`
       });
     }
 

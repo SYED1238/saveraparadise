@@ -12,12 +12,14 @@ import {
   initiateRiderPayout,
   sanitizeCashfreeReturnUrl,
   recordVerifiedCashfreePayment,
+  recordVerifiedCashfreeRefund,
   initiatePgOrderRefund
 } from '../api/_cashfree.js';
 import { createAdminToken, signPayload } from '../api/_auth.js';
 import cashfreePayoutHandler from '../api/cashfree-payout.js';
 import cashfreeCreateOrderHandler from '../api/cashfree-create-order.js';
 import cashfreeGenerateQrHandler from '../api/cashfree-generate-qr.js';
+import cashfreeWebhookHandler from '../api/cashfree-webhook.js';
 import orderActionHandler from '../api/order-action.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -672,12 +674,69 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
 
       // main.js verifies online refund display
       assert.ok(mainJs.includes('isOrderPaidOnline'), 'main.js must define isOrderPaidOnline helper');
+      assert.ok(mainJs.includes('getOrderRefundState'), 'main.js must define getOrderRefundState helper');
       assert.ok(mainJs.includes('Within 1 Hour'), 'main.js tracker must display "Within 1 Hour" badge');
       assert.ok(mainJs.includes('Refund Initiated'), 'main.js must display Refund Initiated banner');
+      assert.ok(mainJs.includes('Refund Completed'), 'main.js must display Refund Completed banner');
       assert.ok(mainJs.includes('my-orders-refund-pill'), 'main.js must render my-orders-refund-pill');
 
       // admin.js verifies kitchen modal awareness
       assert.ok(adminJs.includes('Refund Initiated'), 'admin.js must indicate Refund Initiated on cancelled online orders');
+      assert.ok(adminJs.includes('Refund Completed'), 'admin.js must indicate Refund Completed on settled online orders');
+    });
+
+    test('POST /api/cashfree-webhook processes REFUND_STATUS_WEBHOOK and acknowledges event', async () => {
+      const refundEvent = {
+        type: 'REFUND_STATUS_WEBHOOK',
+        data: {
+          refund: {
+            cf_refund_id: 'cf_rf_12345678',
+            refund_id: 'rf_test_123',
+            order_id: 'qb_TEST_ORD_99_1234',
+            refund_amount: 450,
+            refund_currency: 'INR',
+            refund_status: 'SUCCESS',
+            refund_arn: 'ARN9988776655',
+            status_description: 'Refund processed successfully by bank'
+          }
+        }
+      };
+
+      const rawBody = JSON.stringify(refundEvent);
+      const req = {
+        method: 'POST',
+        headers: {
+          'x-webhook-signature': 'mock_sig',
+          'x-webhook-timestamp': String(Date.now())
+        },
+        rawBody,
+        body: refundEvent
+      };
+
+      let statusCode = 200;
+      let responseData = null;
+      const res = {
+        status(code) { statusCode = code; return this; },
+        setHeader() { return this; },
+        json(data) { responseData = data; return this; }
+      };
+
+      await cashfreeWebhookHandler(req, res);
+
+      assert.strictEqual(statusCode, 200);
+      assert.strictEqual(responseData?.success, true);
+      assert.strictEqual(responseData?.refundStatus, 'SUCCESS');
+      assert.strictEqual(responseData?.refundArn, 'ARN9988776655');
+    });
+
+    test('api/cashfree-webhook.js and functions/api/cashfree-webhook.js maintain REFUND_STATUS_WEBHOOK parity', () => {
+      const nodeWebhook = fs.readFileSync(path.join(rootDir, 'api', 'cashfree-webhook.js'), 'utf8');
+      const cfWebhook = fs.readFileSync(path.join(rootDir, 'functions', 'api', 'cashfree-webhook.js'), 'utf8');
+
+      assert.ok(nodeWebhook.includes('REFUND_STATUS_WEBHOOK'), 'Node webhook must handle REFUND_STATUS_WEBHOOK');
+      assert.ok(cfWebhook.includes('REFUND_STATUS_WEBHOOK'), 'Cloudflare webhook must handle REFUND_STATUS_WEBHOOK');
+      assert.ok(nodeWebhook.includes('recordVerifiedCashfreeRefund'), 'Node webhook must import recordVerifiedCashfreeRefund');
+      assert.ok(cfWebhook.includes('recordVerifiedCashfreeRefund'), 'Cloudflare webhook must import recordVerifiedCashfreeRefund');
     });
   });
 });

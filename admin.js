@@ -2798,6 +2798,7 @@ const initAdminApp = () => {
 
   function updateModalStatusUI(order) {
     const status = order.status || 'accepted';
+    const cfStatusLower = String(order.cf_payment_status || order.cfPaymentStatus || '').toLowerCase();
     const isOnline = Boolean(
       order.isPaidOnline === true ||
       order.is_paid_online === true ||
@@ -2807,10 +2808,18 @@ const initAdminApp = () => {
       order.cfOrderId ||
       String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
       String(order.paymentMethod || order.payment_method || '').toLowerCase().includes('online') ||
-      String(order.cf_payment_status || order.cfPaymentStatus || '').toLowerCase() === 'refund_initiated'
+      cfStatusLower === 'refund_initiated' ||
+      cfStatusLower === 'refunded'
+    );
+    const isRefundCompleted = isOnline && (
+      cfStatusLower === 'refunded' ||
+      Boolean(order.address_details?.refund_completed_at) ||
+      (order.address_details?.refund_status === 'SUCCESS' && Boolean(order.address_details?.refund_arn))
     );
     let statusLabel = '';
-    if (status === 'cancelled') statusLabel = isOnline ? 'Cancelled • Refund Initiated' : 'Cancelled';
+    if (status === 'cancelled') {
+      statusLabel = isRefundCompleted ? 'Cancelled • Refund Completed' : (isOnline ? 'Cancelled • Refund Initiated' : 'Cancelled');
+    }
     else if (status === 'undelivered') statusLabel = 'Undelivered (Returned)';
     else if (status === 'cooking') statusLabel = 'Preparing';
     else if (status === 'ready_for_pickup') statusLabel = 'Ready to Dispatch';
@@ -2874,7 +2883,7 @@ const initAdminApp = () => {
         btnModalAdvanceStatus.style.color = '#DC2626';
         btnModalAdvanceStatus.style.border = '1px solid #FECACA';
         btnModalAdvanceText.textContent = status === 'cancelled'
-          ? (isOnline ? '❌ Cancelled (Refund Initiated)' : '❌ Order Cancelled')
+          ? (isRefundCompleted ? '❌ Cancelled (Refund Credited)' : (isOnline ? '❌ Cancelled (Refund Initiated)' : '❌ Order Cancelled'))
           : '⚠️ Undelivered (Returned)';
         if (btnModalRejectOrder) btnModalRejectOrder.style.display = 'none';
       } else {
