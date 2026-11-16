@@ -251,4 +251,13 @@ test('OWNER PORTAL AUDIT FIXES VERIFICATION SUITE', async (t) => {
     assert.match(ownerJsContent, /drawerNetSubEl\.textContent = periodNetTotal >= 0\s*\?\s*`₹\$\{periodNetTotal\.toLocaleString\('en-IN'\)\}`\s*:\s*`−₹\$\{Math\.abs\(periodNetTotal\)\.toLocaleString\('en-IN'\)\}`;/);
     assert.match(ownerJsContent, /setSoundEnabled\(true\);/);
   });
+
+  await t.test('25. Rider UPI ID (VPA) Onboarding & Payout Integration in Owner Portal', () => {
+    const ownerHtmlPath = path.resolve(__dirname, '../owner.html');
+    const ownerHtmlContent = fs.readFileSync(ownerHtmlPath, 'utf8');
+
+    assert.match(ownerHtmlContent, /id="owner-rider-upi"/, 'owner.html must contain owner-rider-upi input');
+    assert.match(ownerJsContent, /owner-rider-upi/, 'owner.js must bind owner-rider-upi input');
+    assert.match(ownerJsContent, /upiVpa:\s*upiVpa/, 'owner.js must save upiVpa in rider payload');
+  });
 });

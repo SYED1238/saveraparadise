@@ -1023,6 +1023,7 @@ function renderRiderFleetTable(orders) {
       name: r.name || 'Unnamed Rider',
       phone: r.phone || '',
       vehicle: r.vehicle || '🏍️ Bike',
+      upiVpa: r.upiVpa || r.upi_vpa || '',
       maxActiveOrders: Math.max(1, Math.min(5, Number(r.maxActiveOrders ?? r.max_active_orders ?? 1) || 1)),
       deliveredOrders: [],
       totalKms: 0,
@@ -1146,6 +1147,7 @@ function renderRiderFleetTable(orders) {
             <div class="rider-name-box">
               <span class="rider-name">${escapeHtml(st.name || 'Delivery Partner')}</span>
               ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : '<span style="font-size:0.74rem;color:#64748b;">No phone</span>'}
+              ${st.upiVpa ? `<span style="font-size:0.72rem; color:#2563EB; font-weight:600;"><i class="fa-solid fa-bolt"></i> ${escapeHtml(st.upiVpa)}</span>` : ''}
             </div>
           </div>
         </td>
@@ -1266,6 +1268,7 @@ function renderRiderFleetTable(orders) {
                 <div>
                   <h4 class="rc-name">${escapeHtml(st.name || 'Delivery Partner')}</h4>
                   <span class="rc-vehicle">${escapeHtml(st.vehicle || '🏍️ Bike')} • Max ${st.maxActiveOrders || 1} order${(st.maxActiveOrders || 1) > 1 ? 's' : ''}</span>
+                  ${st.upiVpa ? `<div style="font-size:0.72rem; color:#2563EB; font-weight:600; margin-top:2px;"><i class="fa-solid fa-bolt"></i> UPI: ${escapeHtml(st.upiVpa)}</div>` : ''}
                 </div>
               </div>
               ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rc-call-btn" title="Call ${escapeHtml(st.name)}"><i class="fa-solid fa-phone"></i> Call</a>` : ''}
@@ -2348,6 +2351,7 @@ function openOwnerRiderModal(pin = null) {
   const pinInput = document.getElementById('owner-rider-pin');
   const nameInput = document.getElementById('owner-rider-name');
   const phoneInput = document.getElementById('owner-rider-phone');
+  const upiInput = document.getElementById('owner-rider-upi');
   const vehicleSelect = document.getElementById('owner-rider-vehicle');
   const vehicleNameInput = document.getElementById('owner-rider-vehicle-name');
   const maxOrdersSelect = document.getElementById('owner-rider-max-orders');
@@ -2361,6 +2365,7 @@ function openOwnerRiderModal(pin = null) {
     if (pinInput) pinInput.value = rider.pin;
     if (nameInput) nameInput.value = rider.name || '';
     if (phoneInput) phoneInput.value = rider.phone || '';
+    if (upiInput) upiInput.value = rider.upiVpa || rider.upi_vpa || '';
 
     const parsed = parseRiderVehicle(rider.vehicle);
     if (vehicleSelect) vehicleSelect.value = rider.vehicleType || parsed.type;
@@ -2374,6 +2379,7 @@ function openOwnerRiderModal(pin = null) {
     if (pinInput) pinInput.value = generatedPin;
     if (nameInput) nameInput.value = '';
     if (phoneInput) phoneInput.value = '';
+    if (upiInput) upiInput.value = '';
     if (vehicleSelect) vehicleSelect.value = '🏍️ Bike';
     if (vehicleNameInput) vehicleNameInput.value = '';
     if (maxOrdersSelect) maxOrdersSelect.value = '1';
@@ -2412,6 +2418,7 @@ async function handleOwnerRiderSubmit(e) {
   const pinInput = document.getElementById('owner-rider-pin');
   const nameInput = document.getElementById('owner-rider-name');
   const phoneInput = document.getElementById('owner-rider-phone');
+  const upiInput = document.getElementById('owner-rider-upi');
   const vehicleSelect = document.getElementById('owner-rider-vehicle');
   const vehicleNameInput = document.getElementById('owner-rider-vehicle-name');
   const maxOrdersSelect = document.getElementById('owner-rider-max-orders');
@@ -2420,6 +2427,7 @@ async function handleOwnerRiderSubmit(e) {
   let pin = (pinInput?.value || '').trim();
   const name = (nameInput?.value || '').trim();
   const phone = (phoneInput?.value || '').trim();
+  const upiVpa = (upiInput?.value || '').trim() || null;
   const vehicleType = (vehicleSelect?.value || '🏍️ Bike').trim();
   const vehicleName = (vehicleNameInput?.value || '').trim();
   const maxActiveOrders = Math.max(1, Math.min(4, parseInt(maxOrdersSelect?.value || '1', 10) || 1));
@@ -2462,7 +2470,9 @@ async function handleOwnerRiderSubmit(e) {
         vehicleType,
         vehicleName,
         maxActiveOrders,
-        max_active_orders: maxActiveOrders
+        max_active_orders: maxActiveOrders,
+        upiVpa: upiVpa,
+        upi_vpa: upiVpa
       };
 
       saved = await dataService.saveOrUpdateRiderAsync(updatedRider, originalPin);
@@ -2490,7 +2500,9 @@ async function handleOwnerRiderSubmit(e) {
         vehicleType,
         vehicleName,
         maxActiveOrders,
-        max_active_orders: maxActiveOrders
+        max_active_orders: maxActiveOrders,
+        upiVpa: upiVpa,
+        upi_vpa: upiVpa
       });
 
       const allOrders = dataService.getOrders();
@@ -2934,6 +2946,7 @@ function renderCashSettlementsView(orders) {
                 <div class="rider-name-box">
                   <span class="rider-name">${escapeHtml(st.name)}</span>
                   ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : ''}
+                  ${st.upiVpa ? `<span style="font-size:0.72rem; color:#2563EB; font-weight:600;"><i class="fa-solid fa-bolt"></i> ${escapeHtml(st.upiVpa)}</span>` : ''}
                 </div>
               </div>
             </td>
@@ -2961,6 +2974,7 @@ function renderCashSettlementsView(orders) {
                 <div>
                   <h4 class="rc-name">${escapeHtml(st.name)}</h4>
                   <span class="rc-vehicle">${escapeHtml(st.vehicle)}</span>
+                  ${st.upiVpa ? `<div style="font-size:0.72rem; color:#2563EB; font-weight:600; margin-top:2px;"><i class="fa-solid fa-bolt"></i> UPI: ${escapeHtml(st.upiVpa)}</div>` : ''}
                 </div>
               </div>
               ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rc-call-btn"><i class="fa-solid fa-phone"></i> Call</a>` : ''}
@@ -3461,6 +3475,7 @@ export function renderKmPayoutsView(orders) {
         initial: riderInitial,
         phone: riderPhone,
         vehicle: riderVehicle,
+        upiVpa: (r.upiVpa || r.upi_vpa || '').trim(),
         deliveredCount: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.deliveredCount) : riderOrders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length,
         kms: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.totalKms) : roundedKms,
         modelBadge,
@@ -3518,6 +3533,7 @@ export function renderKmPayoutsView(orders) {
                 <div class="rider-name-box">
                   <span class="rider-name">${escapeHtml(st.name)}</span>
                   ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : ''}
+                  ${st.upiVpa ? `<span style="font-size:0.72rem; color:#2563EB; font-weight:600;"><i class="fa-solid fa-bolt"></i> ${escapeHtml(st.upiVpa)}</span>` : ''}
                 </div>
               </div>
             </td>
@@ -3557,6 +3573,7 @@ export function renderKmPayoutsView(orders) {
                 <div>
                   <h4 class="rc-name">${escapeHtml(st.name)}</h4>
                   <span class="rc-vehicle">${escapeHtml(st.vehicle)}</span>
+                  ${st.upiVpa ? `<div style="font-size:0.72rem; color:#2563EB; font-weight:600; margin-top:2px;"><i class="fa-solid fa-bolt"></i> UPI: ${escapeHtml(st.upiVpa)}</div>` : ''}
                 </div>
               </div>
               ${statusBadge}
@@ -3643,7 +3660,27 @@ export function renderKmPayoutsView(orders) {
         const phone = btn.getAttribute('data-phone') || '';
         if (!pin || amount <= 0 || (activeInFlightPayoutPins && activeInFlightPayoutPins.has(pin))) return;
 
-        const confirmed = confirm(`⚡ Initiate Cashfree Instant UPI Payout of ₹${amount.toLocaleString('en-IN')} to ${name} (${phone || 'Rider'})?`);
+        const rd = (typeof dataService !== 'undefined' && dataService.getRiderByPin) ? dataService.getRiderByPin(pin) : null;
+        let targetUpi = (rd && (rd.upiVpa || rd.upi_vpa)) ? String(rd.upiVpa || rd.upi_vpa).trim() : '';
+
+        if (!targetUpi) {
+          const cleanDigits = String(phone || '').replace(/\D/g, '').slice(-10);
+          const promptDefault = cleanDigits.length === 10 ? `${cleanDigits}@ybl` : '';
+          const entered = prompt(`⚡ Rider ${name} does not have a UPI ID saved.\n\nEnter their PhonePe, Google Pay, or Paytm UPI ID (or tap Cancel to pay in Cash):`, promptDefault);
+          if (!entered || !entered.trim()) {
+            return;
+          }
+          targetUpi = entered.trim();
+          if (rd) {
+            rd.upiVpa = targetUpi;
+            rd.upi_vpa = targetUpi;
+            dataService.saveOrUpdateRiderAsync({ ...rd, upiVpa: targetUpi, upi_vpa: targetUpi }).catch(err => {
+              console.warn('[OwnerPayout] Failed to persist rider UPI VPA:', err);
+            });
+          }
+        }
+
+        const confirmed = confirm(`⚡ Initiate Cashfree Instant UPI Payout of ₹${amount.toLocaleString('en-IN')} to ${name}?\n\nTarget UPI VPA: ${targetUpi}`);
         if (!confirmed) return;
 
         if (activeInFlightPayoutPins) activeInFlightPayoutPins.add(pin);
@@ -3670,9 +3707,9 @@ export function renderKmPayoutsView(orders) {
               amount,
               phone,
               name,
-              upiVpa: (function() {
-                const rd = (typeof dataService !== 'undefined' && dataService.getRiderByPin) ? dataService.getRiderByPin(pin) : null;
-                if (rd && rd.upiVpa && String(rd.upiVpa).trim()) return String(rd.upiVpa).trim();
+              upiVpa: targetUpi || (function() {
+                const rdObj = (typeof dataService !== 'undefined' && dataService.getRiderByPin) ? dataService.getRiderByPin(pin) : null;
+                if (rdObj && rdObj.upiVpa && String(rdObj.upiVpa).trim()) return String(rdObj.upiVpa).trim();
                 const cleanDigits = String(phone || '').replace(/\D/g, '').slice(-10);
                 return cleanDigits.length === 10 ? `${cleanDigits}@upi` : `${pin}@upi`;
               })()
