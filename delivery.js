@@ -731,25 +731,6 @@ const initDeliveryApp = () => {
       renderPortal();
     }
 
-    // Throttle micro-jitter broadcasts if stationary (< 5m displacement and < 3s elapsed)
-    const now = Date.now();
-    const timeDelta = now - lastGpsBroadcastTime;
-    let distanceMoved = 999;
-    if (lastGpsBroadcastLat && lastGpsBroadcastLng) {
-      distanceMoved = calculateStraightDistanceMeters(
-        lastGpsBroadcastLat,
-        lastGpsBroadcastLng,
-        pos.coords.latitude,
-        pos.coords.longitude
-      );
-    }
-    if (timeDelta < 3000 && distanceMoved < 5 && lastGpsBroadcastTime > 0) {
-      return;
-    }
-    lastGpsBroadcastTime = now;
-    lastGpsBroadcastLat = pos.coords.latitude;
-    lastGpsBroadcastLng = pos.coords.longitude;
-
     // Broadcast live rider location for customer map tracking sync
     try {
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
@@ -761,6 +742,26 @@ const initDeliveryApp = () => {
           (oPin === myPin || !oPin);
       });
       if (activeOrders.length === 0) return;
+
+      // Throttle micro-jitter broadcasts if stationary (< 5m displacement and < 3s elapsed)
+      const now = Date.now();
+      const timeDelta = now - lastGpsBroadcastTime;
+      let distanceMoved = 999;
+      if (lastGpsBroadcastLat && lastGpsBroadcastLng) {
+        distanceMoved = calculateStraightDistanceMeters(
+          lastGpsBroadcastLat,
+          lastGpsBroadcastLng,
+          pos.coords.latitude,
+          pos.coords.longitude
+        );
+      }
+      if (timeDelta < 3000 && distanceMoved < 5 && lastGpsBroadcastTime > 0) {
+        return;
+      }
+      lastGpsBroadcastTime = now;
+      lastGpsBroadcastLat = pos.coords.latitude;
+      lastGpsBroadcastLng = pos.coords.longitude;
+
       const orderIds = activeOrders.map(o => o.id);
       const activeOrderId = activeOrders[0] ? activeOrders[0].id : null;
       dataService.broadcastRiderLocation({

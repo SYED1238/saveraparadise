@@ -3829,8 +3829,14 @@ function initStorefrontApp() {
     precacheNearbyMapTiles(routeTargetLat, routeTargetLng);
 
     const liveRider = dataService.getRiderLiveLocation(order.id, order.assignedRiderPin);
-    let riderLat = liveRider?.lat ?? (goingToStore ? (restLat - 0.008) : (restLat + (dropCoords.lat - restLat) * 0.55));
-    let riderLng = liveRider?.lng ?? (goingToStore ? (restLng - 0.006) : (restLng + (dropCoords.lng - restLng) * 0.55));
+    const details = order.addressDetails || order.address_details || {};
+    const savedRiderLat = Number(details.riderLat ?? order.riderLat);
+    const savedRiderLng = Number(details.riderLng ?? order.riderLng);
+    const hasSavedRiderCoords = Number.isFinite(savedRiderLat) && Number.isFinite(savedRiderLng) && !(savedRiderLat === 0 && savedRiderLng === 0);
+    const hasRealRiderGps = Boolean(liveRider) || hasSavedRiderCoords;
+
+    let riderLat = liveRider?.lat ?? (hasSavedRiderCoords ? savedRiderLat : (goingToStore ? (restLat - 0.008) : (restLat + (dropCoords.lat - restLat) * 0.55)));
+    let riderLng = liveRider?.lng ?? (hasSavedRiderCoords ? savedRiderLng : (goingToStore ? (restLng - 0.006) : (restLng + (dropCoords.lng - restLng) * 0.55)));
     lastRiderCoords = { lat: riderLat, lng: riderLng };
 
     if (trackerLiveMap) {
@@ -3847,7 +3853,7 @@ function initStorefrontApp() {
         lat: riderLat,
         lng: riderLng,
         riderName: order.assignedRiderName || 'Delivery Partner',
-        isLiveGps: Boolean(liveRider),
+        isLiveGps: hasRealRiderGps,
         order,
         isGoingToStore: goingToStore
       });
@@ -3953,11 +3959,11 @@ function initStorefrontApp() {
       if (cachedRoute) {
         const distKm = Math.round((cachedRoute.distanceMeters / 1000) * 10) / 10;
         const estMins = Math.max(2, Math.ceil(cachedRoute.durationSeconds / 60));
-        updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider), goingToStore);
+        updateTrackerDistanceAndEta(distKm, estMins, hasRealRiderGps, goingToStore);
       } else {
         const initDistKm = calculateDistanceKm(riderLat, riderLng, routeTargetLat, routeTargetLng);
         const initMins = Math.max(3, Math.ceil(initDistKm * 3.2 + 2));
-        updateTrackerDistanceAndEta(initDistKm, initMins, Boolean(liveRider), goingToStore);
+        updateTrackerDistanceAndEta(initDistKm, initMins, hasRealRiderGps, goingToStore);
       }
 
       // Fetch turn-by-turn road route and fade in smoothly
@@ -3977,7 +3983,7 @@ function initStorefrontApp() {
 
           const distKm = Math.round((routeData.distanceMeters / 1000) * 10) / 10;
           const estMins = Math.max(2, Math.ceil(routeData.durationSeconds / 60));
-          updateTrackerDistanceAndEta(distKm, estMins, Boolean(liveRider), goingToStore);
+          updateTrackerDistanceAndEta(distKm, estMins, hasRealRiderGps, goingToStore);
         }
       });
 
@@ -4027,7 +4033,7 @@ function initStorefrontApp() {
       }
 
       // If no live rider GPS has arrived yet, simulate rider moving along actual street network
-      if (!liveRider) {
+      if (!hasRealRiderGps) {
         const simOriginLat = goingToStore ? riderLat : restLat;
         const simOriginLng = goingToStore ? riderLng : restLng;
         fetchRoadRoute(simOriginLat, simOriginLng, routeTargetLat, routeTargetLng).then(fullRoute => {

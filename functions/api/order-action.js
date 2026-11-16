@@ -809,10 +809,18 @@ export async function onRequest(context) {
             }, 409, Object.fromEntries(corsHeaders.entries()));
           }
 
+          const hasValidRiderCoords =
+            body.riderLat !== undefined && body.riderLat !== null &&
+            body.riderLng !== undefined && body.riderLng !== null &&
+            Number.isFinite(Number(body.riderLat)) &&
+            Number.isFinite(Number(body.riderLng)) &&
+            !(Number(body.riderLat) === 0 && Number(body.riderLng) === 0);
+
           const mergedDetails = {
             ...(existing.address_details || existing.addressDetails || {}),
             riderPickupStage: 'going_to_restaurant',
-            riderAssignedAt: Date.now()
+            riderAssignedAt: Date.now(),
+            ...(hasValidRiderCoords ? { riderLat: Number(body.riderLat), riderLng: Number(body.riderLng) } : {})
           };
           const updated = {
             ...existing,
@@ -912,10 +920,18 @@ export async function onRequest(context) {
             }, 409, Object.fromEntries(corsHeaders.entries()));
           }
 
+          const hasValidRiderCoords =
+            body.riderLat !== undefined && body.riderLat !== null &&
+            body.riderLng !== undefined && body.riderLng !== null &&
+            Number.isFinite(Number(body.riderLat)) &&
+            Number.isFinite(Number(body.riderLng)) &&
+            !(Number(body.riderLat) === 0 && Number(body.riderLng) === 0);
+
           const mergedDetails = {
             ...(existing.address_details || existing.addressDetails || {}),
             riderPickupStage: 'picked_up',
-            pickedUpAt: Date.now()
+            pickedUpAt: Date.now(),
+            ...(hasValidRiderCoords ? { riderLat: Number(body.riderLat), riderLng: Number(body.riderLng) } : {})
           };
           const updated = {
             ...existing,
@@ -1402,6 +1418,13 @@ export async function onRequest(context) {
             : null;
           const withinCounterZone = pickupDistKm !== null && pickupDistKm <= MAX_RIDER_PICKUP_RADIUS_KM;
 
+          const hasValidRiderCoords =
+            body.riderLat !== undefined && body.riderLat !== null &&
+            body.riderLng !== undefined && body.riderLng !== null &&
+            Number.isFinite(Number(body.riderLat)) &&
+            Number.isFinite(Number(body.riderLng)) &&
+            !(Number(body.riderLat) === 0 && Number(body.riderLng) === 0);
+
           if (typeof sb.rpc === 'function') {
             try {
               const { data: rpcRes, error: rpcErr } = await sb.rpc('rider_assign_or_claim_order', {
@@ -1419,6 +1442,17 @@ export async function onRequest(context) {
               if (!rpcErr && rpcRes && typeof rpcRes.ok === 'boolean') {
                 if (rpcRes.ok) {
                   await purgeKitchenPollEdgeCache(request, context);
+                  if (hasValidRiderCoords && rpcRes.order) {
+                    rpcRes.order.address_details = {
+                      ...(rpcRes.order.address_details || {}),
+                      riderLat: Number(body.riderLat),
+                      riderLng: Number(body.riderLng)
+                    };
+                    sb.from('orders')
+                      .update({ address_details: rpcRes.order.address_details })
+                      .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+                      .catch(() => {});
+                  }
                   return jsonResponse({ success: true, order: rpcRes.order }, 200, Object.fromEntries(corsHeaders.entries()));
                 }
                 return jsonResponse({
@@ -1506,7 +1540,8 @@ export async function onRequest(context) {
           const mergedDetails = {
             ...(existing.address_details || {}),
             riderPickupStage: 'going_to_restaurant',
-            riderAssignedAt: Date.now()
+            riderAssignedAt: Date.now(),
+            ...(hasValidRiderCoords ? { riderLat: Number(body.riderLat), riderLng: Number(body.riderLng) } : {})
           };
           const updatePayload = {
             status_label: 'Rider Going to Restaurant',
@@ -1625,6 +1660,13 @@ export async function onRequest(context) {
             }
           }
 
+          const hasValidRiderCoords =
+            body.riderLat !== undefined && body.riderLat !== null &&
+            body.riderLng !== undefined && body.riderLng !== null &&
+            Number.isFinite(Number(body.riderLat)) &&
+            Number.isFinite(Number(body.riderLng)) &&
+            !(Number(body.riderLat) === 0 && Number(body.riderLng) === 0);
+
           if (typeof sb.rpc === 'function') {
             try {
               const { data: rpcRes, error: rpcErr } = await sb.rpc('rider_assign_or_claim_order', {
@@ -1642,6 +1684,17 @@ export async function onRequest(context) {
               if (!rpcErr && rpcRes && typeof rpcRes.ok === 'boolean') {
                 if (rpcRes.ok) {
                   await purgeKitchenPollEdgeCache(request, context);
+                  if (hasValidRiderCoords && rpcRes.order) {
+                    rpcRes.order.address_details = {
+                      ...(rpcRes.order.address_details || {}),
+                      riderLat: Number(body.riderLat),
+                      riderLng: Number(body.riderLng)
+                    };
+                    sb.from('orders')
+                      .update({ address_details: rpcRes.order.address_details })
+                      .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+                      .catch(() => {});
+                  }
                   return jsonResponse({ success: true, order: rpcRes.order }, 200, Object.fromEntries(corsHeaders.entries()));
                 }
                 return jsonResponse({
@@ -1685,7 +1738,8 @@ export async function onRequest(context) {
           const mergedDetails = {
             ...(existing.address_details || {}),
             riderPickupStage: 'picked_up',
-            pickedUpAt: Date.now()
+            pickedUpAt: Date.now(),
+            ...(hasValidRiderCoords ? { riderLat: Number(body.riderLat), riderLng: Number(body.riderLng) } : {})
           };
           const updatePayload = {
             status: 'on_the_way',

@@ -3503,10 +3503,13 @@ class QuickBiteDataService {
                 for (const key of safeAllowedProps) {
                   if (payload.order[key] !== undefined) orders[idx][key] = payload.order[key];
                 }
-                if (payload.order.riderPickupStage !== undefined) {
+                const incomingDetails = payload.order.addressDetails || payload.order.address_details;
+                if (payload.order.riderPickupStage !== undefined || (incomingDetails && (incomingDetails.riderLat !== undefined || incomingDetails.riderLng !== undefined))) {
                   orders[idx].addressDetails = {
                     ...(orders[idx].addressDetails || {}),
-                    riderPickupStage: payload.order.riderPickupStage
+                    ...(payload.order.riderPickupStage !== undefined ? { riderPickupStage: payload.order.riderPickupStage } : {}),
+                    ...(incomingDetails?.riderLat !== undefined ? { riderLat: Number(incomingDetails.riderLat) } : {}),
+                    ...(incomingDetails?.riderLng !== undefined ? { riderLng: Number(incomingDetails.riderLng) } : {})
                   };
                 }
               }
@@ -3525,11 +3528,17 @@ class QuickBiteDataService {
               if (payload.orderId) {
                 localStorage.setItem(`quickbite_rider_location_${payload.orderId}`, JSON.stringify(payload));
               }
-              if (Array.isArray(payload.orderIds)) {
-                payload.orderIds.forEach(id => {
-                  if (id) localStorage.setItem(`quickbite_rider_location_${id}`, JSON.stringify(payload));
-                });
-              }
+              const targetIds = Array.isArray(payload.orderIds) && payload.orderIds.length > 0
+                ? payload.orderIds
+                : (payload.orderId ? [payload.orderId] : []);
+              targetIds.forEach(id => {
+                if (!id) return;
+                const rawId = String(id).trim();
+                const cleanId = rawId.replace(/^#/, '');
+                localStorage.setItem(`quickbite_rider_location_${rawId}`, JSON.stringify(payload));
+                localStorage.setItem(`quickbite_rider_location_${cleanId}`, JSON.stringify(payload));
+                localStorage.setItem(`quickbite_rider_location_#${cleanId}`, JSON.stringify(payload));
+              });
               if (payload.riderPin) {
                 localStorage.setItem(`quickbite_rider_location_pin_${payload.riderPin}`, JSON.stringify(payload));
               }
@@ -4727,20 +4736,25 @@ class QuickBiteDataService {
     if (!this.sharedBroadcastChannel) return;
 
     // Wait for channel to reach 'joined' state if not already
-    if (this.sharedBroadcastChannel.state !== 'joined') {
+    if (this.sharedBroadcastChannel.state && this.sharedBroadcastChannel.state !== 'joined' && typeof this.sharedBroadcastChannel.subscribe === 'function') {
       await new Promise((resolve) => {
         const timeout = setTimeout(resolve, 3000); // 3s max wait
-        this.sharedBroadcastChannel.subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            clearTimeout(timeout);
-            resolve();
-          }
-        });
+        try {
+          this.sharedBroadcastChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              clearTimeout(timeout);
+              resolve();
+            }
+          });
+        } catch {
+          clearTimeout(timeout);
+          resolve();
+        }
       });
     }
 
     // Send the broadcast event
-    if (this.sharedBroadcastChannel.state === 'joined') {
+    if (this.sharedBroadcastChannel.state === 'joined' || !this.sharedBroadcastChannel.state || typeof this.sharedBroadcastChannel.subscribe !== 'function') {
       await this.sharedBroadcastChannel.send({
         type: 'broadcast',
         event: event,
@@ -4801,11 +4815,17 @@ class QuickBiteDataService {
 
     try {
       if (this.sharedBroadcastChannel) {
-        this.sharedBroadcastChannel.send({
-          type: 'broadcast',
-          event: 'rider_location',
-          payload: cleanPayload
-        }).catch(err => console.warn('[DataService] Rider location broadcast failed:', err));
+        if (this.sharedBroadcastChannel.state === 'joined' || typeof this.sharedBroadcastChannel.subscribe !== 'function') {
+          this.sharedBroadcastChannel.send({
+            type: 'broadcast',
+            event: 'rider_location',
+            payload: cleanPayload
+          }).catch(err => console.warn('[DataService] Rider location broadcast failed:', err));
+        } else {
+          this._ensureBroadcastSubscribedAndSend('rider_location', cleanPayload).catch(err =>
+            console.warn('[DataService] Rider location ensured broadcast failed:', err)
+          );
+        }
       }
     } catch (err) {
       console.warn('[DataService] Error sending rider location broadcast:', err);
@@ -4842,10 +4862,31 @@ class QuickBiteDataService {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed && parsed.lat && parsed.lng) {
-          const matchesOrder = !orderId || parsed.orderId === orderId || (Array.isArray(parsed.orderIds) && parsed.orderIds.includes(orderId));
+          const norm = (val) => String(val || '').trim().replace(/^#/, '');
+          const targetNorm = orderId ? norm(orderId) : '';
+          const matchesOrder = !orderId ||
+            norm(parsed.orderId) === targetNorm ||
+            (Array.isArray(parsed.orderIds) && parsed.orderIds.some(id => norm(id) === targetNorm));
           if (matchesOrder && Date.now() - (parsed.timestamp || 0) < 900000) {
             return parsed;
           }
+        }
+      }
+      if (orderId) {
+        const ord = this.getOrderById(orderId);
+        const details = ord?.addressDetails || ord?.address_details;
+        const rLat = Number(details?.riderLat ?? ord?.riderLat);
+        const rLng = Number(details?.riderLng ?? ord?.riderLng);
+        if (Number.isFinite(rLat) && Number.isFinite(rLng) && !(rLat === 0 && rLng === 0)) {
+          return {
+            orderId: ord.id,
+            riderPin: ord.assignedRiderPin || ord.assigned_rider_pin || riderPin || null,
+            riderName: ord.assignedRiderName || ord.assigned_rider_name || 'Delivery Partner',
+            lat: rLat,
+            lng: rLng,
+            accuracy: 15,
+            timestamp: Number(details?.riderAssignedAt || details?.pickedUpAt || Date.now())
+          };
         }
       }
     } catch {}
@@ -8355,7 +8396,8 @@ class QuickBiteDataService {
     order.addressDetails = {
       ...(order.addressDetails || {}),
       riderPickupStage: 'going_to_restaurant',
-      riderAssignedAt: Date.now()
+      riderAssignedAt: Date.now(),
+      ...(hasValidCoords ? { riderLat: Number(options.riderLat), riderLng: Number(options.riderLng) } : {})
     };
     order._optimisticTimestamp = Date.now();
 
@@ -8392,11 +8434,27 @@ class QuickBiteDataService {
     }).then((serverRes) => {
       try {
         if (this.sharedBroadcastChannel) {
-          this.sharedBroadcastChannel.send({
-            type: 'broadcast',
-            event: 'order_status_updated',
-            payload: syncPayload
-          }).catch(() => {});
+          if (this.sharedBroadcastChannel.state === 'joined' || typeof this.sharedBroadcastChannel.subscribe !== 'function') {
+            this.sharedBroadcastChannel.send({
+              type: 'broadcast',
+              event: 'order_status_updated',
+              payload: syncPayload
+            }).catch(() => {});
+          } else {
+            this._ensureBroadcastSubscribedAndSend('order_status_updated', syncPayload).catch(() => {});
+          }
+        }
+        if (hasValidCoords) {
+          this.broadcastRiderLocation({
+            orderId: order.id,
+            orderIds: [order.id],
+            riderPin: rider.pin,
+            riderName: rider.name,
+            lat: Number(options.riderLat),
+            lng: Number(options.riderLng),
+            accuracy: 15,
+            timestamp: Date.now()
+          });
         }
       } catch {}
       return { success: true, order: serverRes?.order || order };
@@ -8531,7 +8589,8 @@ class QuickBiteDataService {
     order.addressDetails = {
       ...(order.addressDetails || {}),
       riderPickupStage: 'picked_up',
-      pickedUpAt
+      pickedUpAt,
+      ...(nonZeroCoords ? { riderLat: rawLat, riderLng: rawLng } : {})
     };
     order._optimisticTimestamp = Date.now();
 
