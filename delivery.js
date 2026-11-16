@@ -4421,6 +4421,37 @@ const initDeliveryApp = () => {
   // Initial render & Live Geolocation tracking start
   checkRiderSession();
   attachBagInputListeners();
+
+  // Handle Cashfree doorstep UPI redirect return (?payment_return=1&cf_order_id=...)
+  try {
+    const returnParams = new URLSearchParams(window.location.search);
+    if (returnParams.get('payment_return') === '1' && returnParams.get('cf_order_id')) {
+      const cfOrderIdParam = returnParams.get('cf_order_id');
+      const orderIdParam = returnParams.get('order_id') || '';
+      window.history.replaceState({}, document.title, window.location.pathname);
+      showToast('⏳ Verifying doorstep Cashfree payment...', 'info');
+      fetch('/api/cashfree-create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify_payment',
+          cfOrderId: cfOrderIdParam,
+          orderId: orderIdParam ? `#${orderIdParam.replace(/^#+/, '')}` : ''
+        })
+      })
+        .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+        .then(async ({ ok, data }) => {
+          if (ok && data?.success && data?.paid) {
+            showToast('🎉 Doorstep UPI payment confirmed by Cashfree!', 'success');
+            await dataService.syncOrdersFromSupabase(true);
+            renderPortal();
+          } else {
+            showToast(`⚠️ Doorstep payment not completed (${data?.paymentStatus || 'PENDING'}).`, 'warning');
+          }
+        })
+        .catch(() => {});
+    }
+  } catch {}
 };
 
 if (typeof document !== 'undefined') {

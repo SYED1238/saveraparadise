@@ -3,7 +3,7 @@
  * POST /api/cashfree-webhook
  * Cryptographically verifies and processes Cashfree payment notifications.
  */
-import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment, recordVerifiedCashfreeRefund } from './_cashfree.js';
+import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment, recordVerifiedCashfreeRefund, recordVerifiedCashfreePayoutWebhook } from './_cashfree.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -41,6 +41,16 @@ export default async function handler(req, res) {
       const transferStatus = String(eventData.status || eventType.replace('TRANSFER_', '')).toUpperCase();
       const utr = String(eventData.utr || '');
       const amount = Number(eventData.transfer_amount || eventData.amount || 0);
+
+      try {
+        await recordVerifiedCashfreePayoutWebhook({
+          transferId,
+          transferStatus,
+          amount
+        });
+      } catch (payoutErr) {
+        console.warn('[Cashfree Webhook] Payout update error:', payoutErr?.message);
+      }
 
       return res.status(200).json({
         success: true,

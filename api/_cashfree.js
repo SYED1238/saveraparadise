@@ -811,3 +811,40 @@ export function cleanPhone(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : '';
 }
+
+export async function recordVerifiedCashfreePayoutWebhook({
+  transferId,
+  transferStatus,
+  amount = 0,
+  env = null
+}) {
+  const { supabaseUrl, serviceKey } = getSupabaseServiceCreds(env);
+  if (!supabaseUrl || !serviceKey) {
+    return { updated: false };
+  }
+  const match = String(transferId || '').match(/^payout_(?:rd_)?([0-9]{4,6})(?:_|$)/);
+  const riderPin = match ? match[1] : '';
+  if (!riderPin) {
+    return { updated: false };
+  }
+  const { createClient } = await import('@supabase/supabase-js');
+  const sb = createClient(supabaseUrl, serviceKey);
+  const upperStatus = String(transferStatus || '').toUpperCase();
+
+  if (upperStatus === 'SUCCESS') {
+    const updateFields = { payout_paid_at: Date.now() };
+    if (Number(amount) > 0) updateFields.payout_amount_paid = Number(amount);
+    await sb.from('riders').update(updateFields).eq('pin', riderPin);
+    return { updated: true, riderPin, status: upperStatus };
+  }
+
+  if (['FAILED', 'REJECTED', 'REVERSED'].includes(upperStatus)) {
+    await sb.from('riders').update({
+      payout_paid_at: null,
+      payout_amount_paid: 0
+    }).eq('pin', riderPin);
+    return { updated: true, riderPin, status: upperStatus };
+  }
+
+  return { updated: false, riderPin, status: upperStatus };
+}

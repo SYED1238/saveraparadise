@@ -7,7 +7,7 @@
  * 3. Payment amount and order ID verification before updating status to 'Paid'.
  * 4. Production protection: Strictly rejects unauthenticated or mismatched callbacks.
  */
-import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment, recordVerifiedCashfreeRefund } from './_cashfree.js';
+import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment, recordVerifiedCashfreeRefund, recordVerifiedCashfreePayoutWebhook } from './_cashfree.js';
 import { hydrateEnv, jsonResponse } from './_adapter.js';
 
 export async function onRequest(context) {
@@ -49,6 +49,17 @@ export async function onRequest(context) {
       const transferStatus = String(eventData.status || eventType.replace('TRANSFER_', '')).toUpperCase();
       const utr = String(eventData.utr || '');
       const amount = Number(eventData.transfer_amount || eventData.amount || 0);
+
+      try {
+        await recordVerifiedCashfreePayoutWebhook({
+          transferId,
+          transferStatus,
+          amount,
+          env
+        });
+      } catch (payoutErr) {
+        console.warn('[Cashfree Webhook] Payout update error:', payoutErr?.message);
+      }
 
       return jsonResponse({
         success: true,

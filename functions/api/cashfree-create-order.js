@@ -9,7 +9,7 @@ import {
   getSupabaseServiceCreds,
   recordVerifiedCashfreePayment
 } from './_cashfree.js';
-import { verifySignedPayload } from './_auth.js';
+import { verifySignedPayload, verifyAdminToken } from './_auth.js';
 import { verifyTurnstileToken, getClientIp } from './_turnstile.js';
 import { hydrateEnv, isOriginAllowed, jsonResponse } from './_adapter.js';
 
@@ -85,17 +85,31 @@ export async function onRequest(context) {
       }
 
       const updatedOrder = recorded?.order || null;
-      return jsonResponse({
+      const providedToken = String(body?.trackingToken || body?.tracking_token || '').trim();
+      const orderToken = String(updatedOrder?.tracking_token || updatedOrder?.trackingToken || '').trim();
+      const staffAuth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+      const isAuthorized = Boolean(
+        !updatedOrder ||
+        (providedToken && orderToken && providedToken === orderToken) ||
+        (staffAuth && staffAuth.valid)
+      );
+
+      const responsePayload = {
         success: true,
         paid: true,
         cfOrderId,
         cfPaymentId: verifyRes.cfPaymentId,
         paymentAmount: verifyRes.paymentAmount,
         paymentMethod: verifyRes.paymentMethod,
-        orderId: updatedOrder?.id || body?.orderId || null,
-        trackingToken: updatedOrder?.tracking_token || body?.trackingToken || null,
-        order: updatedOrder
-      }, 200, Object.fromEntries(corsHeaders.entries()));
+        orderId: updatedOrder?.id || body?.orderId || null
+      };
+
+      if (isAuthorized) {
+        responsePayload.trackingToken = updatedOrder?.tracking_token || body?.trackingToken || null;
+        responsePayload.order = updatedOrder;
+      }
+
+      return jsonResponse(responsePayload, 200, Object.fromEntries(corsHeaders.entries()));
     }
 
     const { orderId, customerPhone, customerName, customerEmail, returnUrl, checkoutToken, turnstileToken, order: orderDraft } = body || {};

@@ -2520,9 +2520,7 @@ const initAdminApp = () => {
           rawPayMethodCard.includes('cashfree') ||
           String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
           order.cf_payment_id ||
-          order.cfPaymentId ||
-          order.cf_order_id ||
-          order.cfOrderId
+          order.cfPaymentId
         )
       );
       if (isPaidOnline) {
@@ -2832,9 +2830,7 @@ const initAdminApp = () => {
         rawModalPayMethod.includes('online') ||
         rawModalPayMethod.includes('cashfree') ||
         order.cf_payment_id ||
-        order.cfPaymentId ||
-        order.cf_order_id ||
-        order.cfOrderId
+        order.cfPaymentId
       )
     );
     const isPaid = Boolean(order.isPaidOnline || order.is_paid_online || isModalOnline || String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' || order.status === 'delivered');
@@ -2947,8 +2943,7 @@ const initAdminApp = () => {
         order.is_paid_online === true ||
         order.cf_payment_id ||
         order.cfPaymentId ||
-        order.cf_order_id ||
-        order.cfOrderId ||
+        cfStatusLower === 'success' ||
         String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
         rawModalStatusPayMethod.includes('online') ||
         rawModalStatusPayMethod.includes('cashfree') ||
@@ -3240,9 +3235,7 @@ const initAdminApp = () => {
         rawKotPayMethod.includes('cashfree') ||
         String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
         order.cf_payment_id ||
-        order.cfPaymentId ||
-        order.cf_order_id ||
-        order.cfOrderId
+        order.cfPaymentId
       )
     );
     if (isPaidOnlineKOT) {

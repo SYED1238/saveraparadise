@@ -479,15 +479,14 @@ export async function onRequest(context) {
         return jsonResponse({ error: `Cannot cancel order once kitchen preparation has begun (${existing.status})` }, 400, Object.fromEntries(corsHeaders.entries()));
       }
 
-      const isOnline = Boolean(
+      const isPaidOnlineOrder = Boolean(
         existing.is_paid_online ||
-        existing.payment_status === 'Paid' ||
+        String(existing.payment_status || '').toLowerCase() === 'paid' ||
         existing.cf_payment_id ||
-        (existing.payment_method && String(existing.payment_method).toLowerCase() === 'online') ||
-        (existing.payment_method && String(existing.payment_method).toLowerCase().includes('cashfree'))
+        String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS'
       );
       let refundInfo = null;
-      if (isOnline) {
+      if (isPaidOnlineOrder) {
         const orderTotalNum = parseFloat(String(existing.total || '0').replace(/[^0-9.]/g, '')) || 0;
         refundInfo = {
           refund_status: 'SUCCESS',
@@ -505,7 +504,7 @@ export async function onRequest(context) {
         status: 'cancelled',
         status_label: 'Order Cancelled',
         cancellation_reason: reason || (isStaff ? 'Cancelled by restaurant management' : 'Cancelled by customer'),
-        ...(isOnline ? { cf_payment_status: 'REFUND_INITIATED' } : {}),
+        ...(isPaidOnlineOrder ? { cf_payment_status: 'REFUND_INITIATED' } : {}),
         address_details: {
           ...(existing.address_details || {}),
           ...(refundInfo || {})
@@ -541,14 +540,20 @@ export async function onRequest(context) {
       ];
 
       if (action === 'sync_rider_profile') {
-        const riderPin = String(auth.payload?.riderPin || body.riderPin || '').trim();
+        let riderPin = String(auth.payload?.riderPin || body.riderPin || '').trim();
+        if (auth.payload?.role === 'rider') {
+          riderPin = String(auth.payload?.riderPin || '').trim();
+          if (!riderPin) {
+            return jsonResponse({ error: 'Forbidden: Rider PIN missing from token' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
         const testRiders = body.simulateRiders || [
-          { pin: '2233', name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-1.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0 },
-          { pin: '4422', name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-2.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0 }
+          { pin: '2233', name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-1.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0, upi_vpa: '9845122334@upi', bank_account_no: '1234567890', bank_ifsc: 'HDFC0001234', payout_method_pref: 'upi' },
+          { pin: '4422', name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-2.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0, upi_vpa: '9777766666@upi', bank_account_no: '0987654321', bank_ifsc: 'SBIN0005678', payout_method_pref: 'bank' }
         ];
         const matched = riderPin ? testRiders.filter(r => String(r.pin).trim() === riderPin) : testRiders;
         const safeRiders = matched.map(r => {
-          if (auth.payload?.role === 'owner' || auth.payload?.role === 'rider') return r;
+          if (auth.payload?.role === 'owner' || (auth.payload?.role === 'rider' && r.pin === riderPin)) return r;
           const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
           return { ...rest, pin_masked: true };
         });
@@ -656,19 +661,30 @@ export async function onRequest(context) {
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
           const isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
-          const isDoorstep = isCfSuccess || (auth.payload?.role === 'owner' && (typeof inputDoorstepUpi === 'boolean' ? inputDoorstepUpi : Boolean(existing.doorstep_upi)));
-          enforcedDoorstepUpi = isDoorstep;
+          const hasDoorstepCfId = String(existing.cf_order_id || '').startsWith('doorstep_') || String(existing.cf_order_id || '').includes('_doorstep_');
+          const wasPrepaidStorefront = Boolean(
+            isPrepaid &&
+            !existing.doorstep_upi &&
+            !hasDoorstepCfId &&
+            String(existing.payment_method || '').toLowerCase() !== 'doorstep_upi'
+          );
 
-          if (isPrepaid || isDoorstep) {
+          const isDoorstep = isCfSuccess || (auth.payload?.role === 'owner' && (typeof inputDoorstepUpi === 'boolean' ? inputDoorstepUpi : Boolean(existing.doorstep_upi)));
+          const effectiveDoorstep = !wasPrepaidStorefront && inputDoorstepUpi !== false && (hasDoorstepCfId || existing.doorstep_upi || inputDoorstepUpi === true ? isDoorstep : (auth.payload?.role === 'owner' && isDoorstep));
+          enforcedDoorstepUpi = effectiveDoorstep;
+
+          if (wasPrepaidStorefront || isPrepaid || effectiveDoorstep) {
             enforcedPaymentStatus = 'Paid';
             enforcedCash = 0;
             enforcedIsPaidOnline = true;
-            if (isDoorstep) {
+            if (effectiveDoorstep) {
               enforcedDoorstepUpi = true;
               enforcedPaymentMethod = 'doorstep_upi';
             }
           } else {
             enforcedIsPaidOnline = false;
+            enforcedDoorstepUpi = false;
+            enforcedPaymentMethod = 'cod';
             const orderTotal = Math.round(
               typeof existing.numeric_total === 'number'
                 ? existing.numeric_total
@@ -1111,15 +1127,21 @@ export async function onRequest(context) {
         if (!auth || !auth.valid) {
           return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
         }
-        const riderPin = String(auth.payload?.riderPin || body.riderPin || '').trim();
-        let query = sb.from('riders').select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at');
+        let riderPin = String(auth.payload?.riderPin || body.riderPin || '').trim();
+        if (auth.payload?.role === 'rider') {
+          riderPin = String(auth.payload?.riderPin || '').trim();
+          if (!riderPin) {
+            return jsonResponse({ error: 'Forbidden: Rider PIN missing from token' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
+        let query = sb.from('riders').select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at, upi_vpa, bank_account_no, bank_ifsc, payout_method_pref');
         if (riderPin) {
           query = query.eq('pin', riderPin);
         }
         const { data: riderRows, error } = await query;
         if (error) throw error;
         const safeRows = (riderRows || []).map(r => {
-          if (auth.payload?.role === 'owner' || auth.payload?.role === 'rider') return r;
+          if (auth.payload?.role === 'owner' || (auth.payload?.role === 'rider' && r.pin === riderPin)) return r;
           const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
           return { ...rest, pin_masked: true };
         });
@@ -1260,7 +1282,7 @@ export async function onRequest(context) {
 
         if (deliveredAt || status === 'delivered') updatePayload.delivered_at = Number(deliveredAt) || Date.now();
         if (hasCancellationReason || status === 'undelivered') updatePayload.cancellation_reason = hasCancellationReason ? cancellationReason : (status === 'undelivered' ? 'Marked undelivered by rider' : existing.cancellation_reason);
-        if (typeof doorstepUpi === 'boolean') updatePayload.doorstep_upi = doorstepUpi;
+        if (status !== 'delivered' && typeof doorstepUpi === 'boolean') updatePayload.doorstep_upi = doorstepUpi;
         if (typeof isPaidOnline === 'boolean') updatePayload.is_paid_online = isPaidOnline;
 
         const waitingStartedAt = typeof body.waitingStartedAt === 'number' ? body.waitingStartedAt : undefined;
@@ -1297,6 +1319,13 @@ export async function onRequest(context) {
         if (status === 'delivered') {
           const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
           let isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
+          const hasDoorstepCfId = String(existing.cf_order_id || '').startsWith('doorstep_') || String(existing.cf_order_id || '').includes('_doorstep_');
+          const wasPrepaidStorefront = Boolean(
+            isPrepaid &&
+            !existing.doorstep_upi &&
+            !hasDoorstepCfId &&
+            String(existing.payment_method || '').toLowerCase() !== 'doorstep_upi'
+          );
 
           if (auth.payload?.role === 'rider' && doorstepUpi === true && !isCfSuccess && !existing.doorstep_upi && !isTestEnv) {
             if (existing.cf_order_id) {
@@ -1314,13 +1343,14 @@ export async function onRequest(context) {
           }
 
           const isDoorstep = isCfSuccess || (auth.payload?.role === 'owner' && Boolean(doorstepUpi ?? existing.doorstep_upi));
-          updatePayload.doorstep_upi = isDoorstep;
+          const effectiveDoorstep = !wasPrepaidStorefront && doorstepUpi !== false && (hasDoorstepCfId || existing.doorstep_upi || doorstepUpi === true ? isDoorstep : (auth.payload?.role === 'owner' && isDoorstep));
+          updatePayload.doorstep_upi = effectiveDoorstep;
 
-          if (isPrepaid || isDoorstep) {
+          if (wasPrepaidStorefront || isPrepaid || effectiveDoorstep) {
             updatePayload.payment_status = 'Paid';
             updatePayload.cash_collected = 0;
             updatePayload.is_paid_online = true;
-            if (isDoorstep) {
+            if (effectiveDoorstep) {
               updatePayload.doorstep_upi = true;
               updatePayload.payment_method = 'doorstep_upi';
               if (existing.cf_payment_status !== 'SUCCESS') {
@@ -1329,6 +1359,8 @@ export async function onRequest(context) {
             }
           } else {
             updatePayload.is_paid_online = false;
+            updatePayload.doorstep_upi = false;
+            updatePayload.payment_method = 'cod';
             const orderTotal = Math.round(
               typeof existing.numeric_total === 'number'
                 ? existing.numeric_total
@@ -1828,17 +1860,16 @@ export async function onRequest(context) {
         const cancellationReason = reason || (isStaff ? 'Cancelled by restaurant management' : 'Cancelled by customer');
 
         // Automated Cashfree PG Refund for Online-Paid Orders
-        const isOnlineOrder = Boolean(
+        const isPaidOnlineOrder = Boolean(
           order.is_paid_online ||
-          order.payment_status === 'Paid' ||
+          String(order.payment_status || '').toLowerCase() === 'paid' ||
           order.cf_payment_id ||
-          (order.payment_method && String(order.payment_method).toLowerCase() === 'online') ||
-          (order.payment_method && String(order.payment_method).toLowerCase().includes('cashfree'))
+          String(order.cf_payment_status || '').toUpperCase() === 'SUCCESS'
         );
         const orderTotalNum = parseFloat(String(order.total || '0').replace(/[^0-9.]/g, '')) || 0;
 
         let refundInfo = null;
-        if (isOnlineOrder && order.cf_order_id) {
+        if (isPaidOnlineOrder && order.cf_order_id) {
           try {
             const refundRes = await initiatePgOrderRefund({
               cfOrderId: order.cf_order_id,
@@ -1866,7 +1897,7 @@ export async function onRequest(context) {
               refund_message: 'Refund queued for manual review.'
             };
           }
-        } else if (isOnlineOrder && !order.cf_order_id) {
+        } else if (isPaidOnlineOrder && !order.cf_order_id) {
           refundInfo = {
             refund_status: 'INITIATED',
             refund_initiated_at: Date.now(),

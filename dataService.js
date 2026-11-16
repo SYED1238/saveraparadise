@@ -3696,6 +3696,11 @@ class QuickBiteDataService {
       const localIdx = orders.findIndex(o => o && normalizeId(o.id) === remoteCleanId);
       const local = localIdx !== -1 ? orders[localIdx] : null;
 
+      // Unpaid pending_payment drafts must never leak into local ordersCache or trigger spurious events
+      if (remote.status === 'pending_payment' && localIdx === -1) {
+        return;
+      }
+
       if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
         if (!this.isStaffAuthorized()) return;
       } else {
@@ -3843,7 +3848,14 @@ class QuickBiteDataService {
         this.ordersCache = orders;
         try { localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders)); } catch {}
         if (hasDiff) {
-          this.notifyChange('orders', { action: 'status_updated', orderId: mergedOrder.id, order: mergedOrder, prevStatus, source: 'supabase_delta' });
+          const becameNewActiveOrder = prevStatus === 'pending_payment' && (effectiveStatus === 'accepted' || effectiveStatus === 'pending');
+          this.notifyChange('orders', {
+            action: becameNewActiveOrder ? 'new_order' : 'status_updated',
+            orderId: mergedOrder.id,
+            order: mergedOrder,
+            prevStatus,
+            source: 'supabase_delta'
+          });
         }
       } else {
         orders.unshift(mergedOrder);

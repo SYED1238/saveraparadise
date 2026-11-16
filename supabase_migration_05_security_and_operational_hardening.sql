@@ -150,7 +150,7 @@ BEGIN
   SELECT COUNT(*)
   INTO v_active_count
   FROM public.orders
-  WHERE status NOT IN ('delivered', 'cancelled', 'undelivered')
+  WHERE status NOT IN ('delivered', 'cancelled', 'undelivered', 'pending_payment')
     AND (
       (NEW.user_id IS NOT NULL AND user_id = NEW.user_id)
       OR (v_clean_phone IS NOT NULL AND LENGTH(v_clean_phone) = 10

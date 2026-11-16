@@ -4081,8 +4081,10 @@ function initStorefrontApp() {
 
   function isOrderPaidOnline(order) {
     if (!order) return false;
-    const method = String(order.paymentMethod || order.payment_method || '').toLowerCase();
-    const status = String(order.paymentStatus || order.payment_status || '').toLowerCase();
+    const status = String(order.payment_status || order.paymentStatus || '').toLowerCase();
+    const orderStatus = String(order.status || '').toLowerCase();
+    if (orderStatus === 'pending_payment' || status === 'pending payment') return false;
+    const method = String(order.payment_method || order.paymentMethod || '').toLowerCase();
     const cfStatus = String(order.cf_payment_status || order.cfPaymentStatus || '').toLowerCase();
     const addr = (order.address_details && typeof order.address_details === 'object')
       ? order.address_details
@@ -4091,16 +4093,14 @@ function initStorefrontApp() {
       order.is_paid_online ||
       order.isPaidOnline ||
       status === 'paid' ||
+      cfStatus === 'success' ||
       cfStatus === 'refund_initiated' ||
       cfStatus === 'refunded' ||
       order.cf_payment_id ||
       order.cfPaymentId ||
-      order.cf_order_id ||
-      order.cfOrderId ||
       order.doorstep_upi ||
       order.doorstepUpi ||
-      method.includes('online') ||
-      method.includes('cashfree') ||
+      method === 'online' ||
       addr.refund_status ||
       addr.refund_initiated_at
     );

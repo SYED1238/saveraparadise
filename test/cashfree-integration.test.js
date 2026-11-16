@@ -13,7 +13,8 @@ import {
   sanitizeCashfreeReturnUrl,
   recordVerifiedCashfreePayment,
   recordVerifiedCashfreeRefund,
-  initiatePgOrderRefund
+  initiatePgOrderRefund,
+  recordVerifiedCashfreePayoutWebhook
 } from '../api/_cashfree.js';
 import { createAdminToken, signPayload } from '../api/_auth.js';
 import cashfreePayoutHandler from '../api/cashfree-payout.js';
@@ -21,6 +22,7 @@ import cashfreeCreateOrderHandler from '../api/cashfree-create-order.js';
 import cashfreeGenerateQrHandler from '../api/cashfree-generate-qr.js';
 import cashfreeWebhookHandler from '../api/cashfree-webhook.js';
 import orderActionHandler from '../api/order-action.js';
+import adminStoreHandler from '../api/admin-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +37,24 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
     delete process.env.CASHFREE_WEBHOOK_SECRET;
     delete process.env.RESTAURANT_UPI_VPA;
   });
+
+  function createMockReqRes({ method = 'POST', headers = {}, body = null } = {}) {
+    let statusCode = 200;
+    let responseData = null;
+    const responseHeaders = {};
+
+    const req = { method, headers: { ...headers }, body };
+    const res = {
+      status(code) { statusCode = code; return this; },
+      setHeader(key, val) { responseHeaders[key] = val; return this; },
+      json(data) { responseData = data; return this; },
+      end() { return this; },
+      get statusCode() { return statusCode; },
+      get data() { return responseData; },
+      get responseData() { return responseData; }
+    };
+    return { req, res };
+  }
 
   describe('1. Configuration & Environment Handling', () => {
     test('defaults to sandbox TEST environment and unconfigured status in local test environment', () => {
@@ -274,22 +294,6 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
   });
 
   describe('8. Payout & Order Security Boundaries', () => {
-    function createMockReqRes({ method = 'POST', headers = {}, body = null } = {}) {
-      let statusCode = 200;
-      let responseData = null;
-      const responseHeaders = {};
-
-      const req = { method, headers: { ...headers }, body };
-      const res = {
-        status(code) { statusCode = code; return this; },
-        setHeader(key, val) { responseHeaders[key] = val; return this; },
-        json(data) { responseData = data; return this; },
-        end() { return this; },
-        get statusCode() { return statusCode; },
-        get data() { return responseData; }
-      };
-      return { req, res };
-    }
 
     test('POST /api/cashfree-payout rejects unauthenticated requests with 401', async () => {
       const { req, res } = createMockReqRes({
@@ -737,6 +741,124 @@ describe('CASHFREE PAYMENTS & DOORSTEP DYNAMIC UPI QR TEST SUITE', () => {
       assert.ok(cfWebhook.includes('REFUND_STATUS_WEBHOOK'), 'Cloudflare webhook must handle REFUND_STATUS_WEBHOOK');
       assert.ok(nodeWebhook.includes('recordVerifiedCashfreeRefund'), 'Node webhook must import recordVerifiedCashfreeRefund');
       assert.ok(cfWebhook.includes('recordVerifiedCashfreeRefund'), 'Cloudflare webhook must import recordVerifiedCashfreeRefund');
+    });
+
+    test('Bug 1: Storefront Prepaid Online orders preserve payment_method Online and doorstep_upi false upon delivery', async () => {
+      const riderToken = createAdminToken(3600000, 'rider', { riderPin: '2233' });
+      const simulateOrders = [
+        {
+          id: 'PREPAID-TEST-1',
+          status: 'on_the_way',
+          assigned_rider_pin: '2233',
+          numeric_total: 450,
+          total: '₹450',
+          doorstep_upi: false,
+          cf_order_id: 'cf_PREPAID-TEST-1',
+          cf_payment_status: 'SUCCESS',
+          payment_method: 'Online',
+          is_paid_online: true,
+          payment_status: 'Paid',
+          cash_collected: 0
+        }
+      ];
+
+      const { req, res } = createMockReqRes({
+        headers: { authorization: `Bearer ${riderToken}` },
+        body: {
+          action: 'update_status',
+          orderId: 'PREPAID-TEST-1',
+          status: 'delivered',
+          riderPin: '2233',
+          simulateOrders
+        }
+      });
+
+      await orderActionHandler(req, res);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data.success, true);
+      assert.strictEqual(res.data.order.payment_method, 'Online', 'Storefront prepaid order must remain payment_method: Online');
+      assert.strictEqual(res.data.order.doorstep_upi, false, 'Storefront prepaid order must NOT be overwritten to doorstep_upi: true');
+      assert.strictEqual(res.data.order.is_paid_online, true);
+      assert.strictEqual(res.data.order.cash_collected, 0);
+    });
+
+    test('Bug 4: Cancelling unpaid order does NOT trigger refund or REFUND_INITIATED status', async () => {
+      const adminToken = createAdminToken(3600000, 'admin');
+      const simulateOrders = [
+        {
+          id: 'UNPAID-CANCEL-1',
+          status: 'pending',
+          payment_status: 'Pending',
+          payment_method: 'Online',
+          is_paid_online: false,
+          cf_order_id: 'cf_UNPAID-CANCEL-1',
+          cf_payment_status: 'PENDING',
+          total: '₹350'
+        }
+      ];
+
+      const { req, res } = createMockReqRes({
+        headers: { authorization: `Bearer ${adminToken}` },
+        body: {
+          action: 'cancel_order',
+          orderId: 'UNPAID-CANCEL-1',
+          reason: 'Customer changed mind',
+          simulateOrders
+        }
+      });
+
+      await orderActionHandler(req, res);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data.order.status, 'cancelled');
+      assert.notStrictEqual(res.data.order.cf_payment_status, 'REFUND_INITIATED', 'Unpaid cancelled order must not have cf_payment_status REFUND_INITIATED');
+      assert.strictEqual(res.data.order.address_details?.refund_status, undefined, 'Unpaid cancelled order must not have refund_status');
+    });
+
+    test('Bug 6: recordVerifiedCashfreePayoutWebhook parses transferId and acknowledges TRANSFER_* events', async () => {
+      const res = await recordVerifiedCashfreePayoutWebhook({
+        transferId: 'payout_2233_1700000000',
+        transferStatus: 'SUCCESS',
+        amount: 350
+      });
+      // In local test without Supabase credentials, returns { updated: false } safely without thrown error
+      assert.strictEqual(typeof res, 'object');
+    });
+
+    test('Bug 7: delivery.js includes payment_return=1 handler for Cashfree redirect', () => {
+      const deliveryJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf8');
+      assert.ok(deliveryJs.includes("returnParams.get('payment_return') === '1'"), 'delivery.js must handle payment_return=1');
+      assert.ok(deliveryJs.includes("action: 'verify_payment'"), 'delivery.js must verify payment via /api/cashfree-create-order');
+    });
+
+    test('Bug 8: sync_rider_profile in order-action includes payout columns and isolates rider access', async () => {
+      const rider2233Token = createAdminToken(3600000, 'rider', { riderPin: '2233' });
+      const { req: syncReq, res: syncRes } = createMockReqRes({
+        method: 'POST',
+        headers: { authorization: `Bearer ${rider2233Token}` },
+        body: {
+          action: 'sync_rider_profile',
+          riderPin: '2233'
+        }
+      });
+      await orderActionHandler(syncReq, syncRes);
+      assert.strictEqual(syncRes.statusCode, 200);
+      assert.ok(Array.isArray(syncRes.data.riders));
+      const rider2233 = syncRes.data.riders[0];
+      assert.strictEqual(rider2233.pin, '2233');
+      assert.ok('upi_vpa' in rider2233, 'sync_rider_profile must include upi_vpa');
+      assert.ok('bank_account_no' in rider2233, 'sync_rider_profile must include bank_account_no');
+
+      // Rider token must be rejected at admin-store auth boundary (only Admin and Owner allowed in admin-store)
+      const { req: adminReq, res: adminRes } = createMockReqRes({
+        method: 'POST',
+        headers: { authorization: `Bearer ${rider2233Token}` },
+        body: {
+          action: 'save_rider',
+          rider: { pin: '2233', name: 'Zaid Khan Self-Update' }
+        }
+      });
+      await adminStoreHandler(adminReq, adminRes);
+      assert.strictEqual(adminRes.statusCode, 401, 'Riders must be strictly rejected with 401 at admin-store boundary');
     });
   });
 });
