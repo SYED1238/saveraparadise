@@ -86,6 +86,11 @@ test('OWNER PORTAL AUDIT FIXES VERIFICATION SUITE', async (t) => {
 
     assert.match(payoutsFn, /isLiveShift\s*=\s*\(currentPeriod\s*===\s*'today'\)/, 'renderKmPayoutsView must distinguish live shift from historical periods');
     assert.match(payoutsFn, /paidInPeriod/, 'renderKmPayoutsView must evaluate payment status against period bounds for historical views');
+
+    // Verify isLiveShift is scoped to renderKmPayoutsView so both map functions and render loops have access without ReferenceError
+    const validRidersIndex = payoutsFn.indexOf("validRiders.map");
+    const isLiveShiftIndex = payoutsFn.indexOf("isLiveShift = (currentPeriod === 'today')");
+    assert.ok(isLiveShiftIndex > 0 && isLiveShiftIndex < validRidersIndex, 'isLiveShift must be declared at renderKmPayoutsView function scope before validRiders.map');
   });
 
   await t.test('5. Bug 5 Fix: printExecutiveReport sanitizes table and hides PIN and action columns in print styles', () => {

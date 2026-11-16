@@ -1265,6 +1265,10 @@ const initAdminApp = () => {
         const path = btn.getAttribute('data-path');
         const r2Key = btn.getAttribute('data-r2');
         const uploadId = btn.getAttribute('data-upload-id');
+        if (pendingDishUploadedR2Key && pendingDishUploadedR2Key !== r2Key && typeof cloudflareR2Service !== 'undefined' && typeof cloudflareR2Service.deleteImage === 'function') {
+          cloudflareR2Service.deleteImage(pendingDishUploadedR2Key).catch(() => {});
+          pendingDishUploadedR2Key = '';
+        }
         dishImageUrl.value = path;
         dishPreviewImg.src = path;
         currentDishGdriveFileId = r2Key || '';
@@ -1892,10 +1896,7 @@ const initAdminApp = () => {
           }
 
           if (!uploadSucceeded) {
-            await dataService.saveUploadedImage(finalUrl, file.name);
-          }
-
-          if (!uploadSucceeded) {
+            dishPreviewImg.src = dishImageUrl.value || '/images/crispy-chicken.jpg';
             showToast('⚠️ Cloud photo upload could not be completed. Please ensure admin session is active and retry.', 'warning');
           }
         } catch (err) {
@@ -4013,8 +4014,8 @@ const initAdminApp = () => {
         showToast('🔔 Kitchen Alarm reverted to: Classic POS Chime', 'info');
       }
 
-      const prevMode = (newMode === KITCHEN_ALARM_MODES.R2_CUSTOM) ? KITCHEN_ALARM_MODES.CLASSIC : KITCHEN_ALARM_MODES.R2_CUSTOM;
-      const curSettings = dataService.getSettings() || {};
+      const prevMode = (newMode === KITCHEN_ALARM_MODES.R2_CUSTOM) ? KITCHEN_ALARM_MODES.CLASSIC_CHIME : KITCHEN_ALARM_MODES.R2_CUSTOM;
+      const curSettings = { ...(dataService.getSettings() || {}) };
       try {
         const res = await dataService.saveSettings({
           ...curSettings,
@@ -4023,6 +4024,9 @@ const initAdminApp = () => {
         assertCloudSettingsSynced(res);
       } catch (err) {
         console.warn('[Admin] Failed to persist kitchenAlarmMode to cloud settings:', err);
+        const rollbackSettings = { ...curSettings, kitchenAlarmMode: curSettings.kitchenAlarmMode || prevMode };
+        dataService.settingsCache = rollbackSettings;
+        localStorage.setItem('quickbite_settings', JSON.stringify(rollbackSettings));
         setKitchenAlarmSoundMode(curSettings.kitchenAlarmMode || prevMode);
         updateAlarmToggleUI();
         showToast(`⚠️ Could not save alarm mode to cloud: ${err?.message || 'Check connection'}`, 'error');
@@ -5230,6 +5234,7 @@ const initAdminApp = () => {
     btnTriggerRush.addEventListener('click', async () => {
       const mins = Number(rushRangeSlider?.value || 20);
       const reason = rushReasonInput?.value?.trim() || 'High kitchen rush — orders temporarily paused';
+      const prevSettings = { ...(dataService.getSettings() || {}) };
 
       try {
         const res = await dataService.setRushPause(mins, reason);
@@ -5238,6 +5243,8 @@ const initAdminApp = () => {
         showToast(`⚡ Orders paused for ${mins} minutes! Homepage customer notice is now live.`, 'warning');
       } catch (err) {
         console.error('[Admin] setRushPause error:', err);
+        dataService.settingsCache = prevSettings;
+        localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings));
         updateRushUI();
         showToast(`⚠️ Rush pause error: ${err?.message || 'Failed to sync to cloud'}`, 'error');
       }
@@ -5247,6 +5254,7 @@ const initAdminApp = () => {
   // Extend rush by 10 mins
   if (btnExtendRush10) {
     btnExtendRush10.addEventListener('click', async () => {
+      const prevSettings = { ...(dataService.getSettings() || {}) };
       try {
         const res = await dataService.extendRushPause(10);
         assertCloudSettingsSynced(res);
@@ -5254,6 +5262,8 @@ const initAdminApp = () => {
         showToast('➕ Rush extended by 10 minutes!', 'info');
       } catch (err) {
         console.error('[Admin] extendRushPause error:', err);
+        dataService.settingsCache = prevSettings;
+        localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings));
         updateRushUI();
         showToast(`⚠️ Rush extend error: ${err?.message || 'Failed to sync to cloud'}`, 'error');
       }
@@ -5263,6 +5273,7 @@ const initAdminApp = () => {
   // Resume orders now
   if (btnResumeOrders) {
     btnResumeOrders.addEventListener('click', async () => {
+      const prevSettings = { ...(dataService.getSettings() || {}) };
       try {
         const res = await dataService.resumeOrders();
         assertCloudSettingsSynced(res);
@@ -5270,6 +5281,8 @@ const initAdminApp = () => {
         showToast('🟢 Kitchen reopened! Customers can now place orders on the homepage.', 'success');
       } catch (err) {
         console.error('[Admin] resumeOrders error:', err);
+        dataService.settingsCache = prevSettings;
+        localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings));
         updateRushUI();
         showToast(`⚠️ Resume orders error: ${err?.message || 'Failed to sync to cloud'}`, 'error');
       }
@@ -5425,6 +5438,7 @@ const initAdminApp = () => {
   if (btnSaveRadius) {
     btnSaveRadius.addEventListener('click', async () => {
       const km = Number(deliveryRadiusSlider?.value || 7);
+      const prevSettings = { ...(dataService.getSettings() || {}) };
       try {
         const res = await dataService.setDeliveryRadius(km);
         assertCloudSettingsSynced(res);
@@ -5436,6 +5450,11 @@ const initAdminApp = () => {
         showToast(`🛵 Maximum delivery radius saved: Delivering within ${km} km!`, 'success');
       } catch (err) {
         console.error('[Admin] setDeliveryRadius error:', err);
+        dataService.settingsCache = prevSettings;
+        localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings));
+        if (typeof syncDeliverySummaryChips === 'function') {
+          syncDeliverySummaryChips();
+        }
         showToast(`⚠️ Delivery radius error: ${err?.message || 'Failed to sync to cloud'}`, 'error');
       }
     });

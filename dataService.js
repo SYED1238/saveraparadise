@@ -5362,9 +5362,10 @@ class QuickBiteDataService {
       image: imageVal,
       slug: slug
     };
+    const prevCatImages = this.getCategoryImages();
     if (newCat.image) {
-      this.saveCategoryImage(newCat.id, newCat.image);
-      this.saveCategoryImage(newCat.slug, newCat.image);
+      this.saveCategoryImage(newCat.id, newCat.image)?.catch?.(() => {});
+      this.saveCategoryImage(newCat.slug, newCat.image)?.catch?.(() => {});
     }
     list.push(newCat);
     this.saveCategories(list);
@@ -5390,6 +5391,7 @@ class QuickBiteDataService {
         if (this.isStaffAuthorized()) {
           const curList = this.getCategories().filter(c => c.id !== newCat.id);
           this.saveCategories(curList);
+          localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(prevCatImages));
           throw err;
         }
       }
@@ -5408,12 +5410,13 @@ class QuickBiteDataService {
     if (idx !== -1) {
       const prevCat = { ...list[idx] };
       const prevDishes = this.getDishes().map(d => ({ ...d }));
+      const prevCatImages = this.getCategoryImages();
       list[idx] = { ...list[idx], ...updatedData };
       if (list[idx].image !== undefined) {
         const sanitized = sanitizeCategoryImageUrl(list[idx].image);
         list[idx].image = sanitized;
-        this.saveCategoryImage(list[idx].id, sanitized);
-        if (list[idx].slug) this.saveCategoryImage(list[idx].slug, sanitized);
+        this.saveCategoryImage(list[idx].id, sanitized)?.catch?.(() => {});
+        if (list[idx].slug) this.saveCategoryImage(list[idx].slug, sanitized)?.catch?.(() => {});
       }
       this.saveCategories(list);
 
@@ -5455,6 +5458,7 @@ class QuickBiteDataService {
             list[idx] = prevCat;
             this.saveCategories(list);
             if (dishesChanged) this.saveDishes(prevDishes);
+            localStorage.setItem(STORAGE_KEYS.CATEGORY_IMAGES, JSON.stringify(prevCatImages));
             throw err;
           }
         }
@@ -5492,19 +5496,19 @@ class QuickBiteDataService {
       try {
         if (this.isStaffAuthorized() && typeof window !== 'undefined') {
           await this._adminStoreAction('delete_category', { id: cat.id, catKey });
-          this.removeCategoryImage(cat.id);
-          if (cat.slug) this.removeCategoryImage(cat.slug);
+          this.removeCategoryImage(cat.id)?.catch?.(() => {});
+          if (cat.slug) this.removeCategoryImage(cat.slug)?.catch?.(() => {});
         } else if (supabase) {
           if (catKey) {
             await supabase.from('dishes').delete().or(`category.eq.${catKey},category.eq.${cat?.id || ''}`);
           }
           const { error } = await supabase.from('categories').delete().eq('id', cat.id);
           if (error) console.warn('[DataService] Direct supabase deleteCategory error:', error.message);
-          this.removeCategoryImage(cat.id);
-          if (cat.slug) this.removeCategoryImage(cat.slug);
+          this.removeCategoryImage(cat.id)?.catch?.(() => {});
+          if (cat.slug) this.removeCategoryImage(cat.slug)?.catch?.(() => {});
         } else {
-          this.removeCategoryImage(cat.id);
-          if (cat.slug) this.removeCategoryImage(cat.slug);
+          this.removeCategoryImage(cat.id)?.catch?.(() => {});
+          if (cat.slug) this.removeCategoryImage(cat.slug)?.catch?.(() => {});
         }
       } catch (err) {
         console.warn('[DataService] deleteCategory server error:', err?.message || err);

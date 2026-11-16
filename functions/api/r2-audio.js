@@ -95,6 +95,7 @@ export async function onRequest(context) {
     if (status === 200 || status === 206) {
       const responseHeaders = new Headers();
       responseHeaders.set('Content-Type', r2Res.headers.get('content-type') || getAudioContentType(cleanKey));
+      responseHeaders.set('X-Content-Type-Options', 'nosniff');
       responseHeaders.set('Accept-Ranges', 'bytes');
       responseHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
       responseHeaders.set('Access-Control-Allow-Origin', '*');

@@ -5,15 +5,20 @@
  */
 import { verifyAdminToken } from './_auth.js';
 import { getR2Config, buildSigV4Headers, generatePresignedGetUrl } from './_r2.js';
-import { hydrateEnv, jsonResponse } from './_adapter.js';
+import { hydrateEnv, jsonResponse, isOriginAllowed } from './_adapter.js';
 
 export async function onRequest(context) {
   hydrateEnv(context);
   const { request, env } = context;
 
   const corsHeaders = new Headers();
+  const origin = request.headers.get('Origin') || request.headers.get('origin');
+  if (origin && isOriginAllowed(origin)) {
+    corsHeaders.set('Access-Control-Allow-Origin', origin);
+    corsHeaders.set('Access-Control-Allow-Credentials', 'true');
+  }
   corsHeaders.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  corsHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  corsHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-token');
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 200, headers: corsHeaders });

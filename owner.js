@@ -3305,7 +3305,7 @@ function updateLiveSimulatorPreview() {
   }
 }
 
-function renderKmPayoutsView(orders) {
+export function renderKmPayoutsView(orders) {
   const cardsContainer = document.getElementById('payout-cards-container');
   const tbody = document.getElementById('payout-table-body');
   if (!cardsContainer && !tbody) return;
@@ -3314,6 +3314,7 @@ function renderKmPayoutsView(orders) {
     // Sync Payout Method UI
     syncPayoutConfigUI();
 
+    const isLiveShift = (currentPeriod === 'today');
     const rawRiders = dataService.getRiders();
     const payoutConfig = dataService.getPayoutConfig() || DEFAULT_PAYOUT_CONFIG;
     const validRiders = Array.isArray(rawRiders) ? rawRiders.filter(r => r && typeof r === 'object') : [];
@@ -3418,7 +3419,6 @@ function renderKmPayoutsView(orders) {
         console.warn('[Owner] Payout summary warning for rider:', riderPinStr, sumErr);
       }
 
-      const isLiveShift = (currentPeriod === 'today');
       const payoutBalance = payoutSummary ? safeNumber(payoutSummary.payoutBalance) : calculatedPayout;
       const paidDate = r.payoutPaidAt ? new Date(r.payoutPaidAt) : null;
       const paidTs = paidDate && !isNaN(paidDate.getTime()) ? paidDate.getTime() : 0;

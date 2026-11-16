@@ -45,12 +45,38 @@ function generatePresignedGetUrl(key) {
   return `/api/r2-image?key=${encodeURIComponent(key)}`;
 }
 
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000'
+];
+
+function isOriginAllowed(origin) {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    if (host === 'saveraparadise.com' || host.endsWith('.saveraparadise.com')) return true;
+    if (host === 'foodbliz.in' || host.endsWith('.foodbliz.in')) return true;
+    if (host === 'saveraparadise.vercel.app' || (host.startsWith('saveraparadise-') && host.endsWith('.vercel.app'))) return true;
+  } catch {}
+  return false;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
+  const origin = req.headers.origin;
+  if (origin && isOriginAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-key, x-filename');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-token, x-key, x-filename');
     return res.status(200).end();
   }
 
