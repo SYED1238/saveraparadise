@@ -3698,6 +3698,24 @@ body.pwa-customer-installed .header-pwa-dock {
   font-weight: 800;
   color: var(--brand-primary);
   font-size: 0.92rem;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.cart-item-deal-price {
+  font-weight: 850;
+  color: #10B981;
+  font-size: 0.95rem;
+  letter-spacing: -0.2px;
+}
+
+.cart-item-strike-price {
+  font-size: 0.78rem;
+  color: #9CA3AF;
+  text-decoration: line-through;
+  font-weight: 600;
 }
 
 .cart-qty-ctrl {
@@ -14023,6 +14041,13 @@ body.gender-prompt-open {
   }
   .cart-item-price {
     font-size: 0.88rem;
+    gap: 5px;
+  }
+  .cart-item-deal-price {
+    font-size: 0.90rem;
+  }
+  .cart-item-strike-price {
+    font-size: 0.74rem;
   }
   .cart-drawer-footer {
     padding: 10px 14px max(14px, calc(8px + env(safe-area-inset-bottom, 0px)));

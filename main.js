@@ -1742,6 +1742,13 @@ function initStorefrontApp() {
     cartEmptyState.style.display = 'none';
     cartItemsList.innerHTML = '';
 
+    // Calculations & Dynamic Offer Settings
+    const settings = dataService.getSettings();
+    const isUnlockedDealsEnabled = Boolean(settings.unlockedDealsEnabled);
+    const unlockedMinOrder = Number(settings.unlockedDealsMinOrder || 299);
+    const unlockedDiscountPct = Number(settings.unlockedDealsDiscountPct || 15);
+    const isDealsUnlocked = isUnlockedDealsEnabled && subtotal >= unlockedMinOrder;
+
     cart.forEach(item => {
       const el = document.createElement('div');
       el.className = 'cart-item';
@@ -1768,6 +1775,11 @@ function initStorefrontApp() {
         el.classList.add('cart-item-sold-out');
       }
       const safePrice = Math.round((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1));
+      let priceHTML = `₹${safePrice}`;
+      if (isDealsUnlocked && unlockedDiscountPct > 0) {
+        const dealPrice = Math.max(1, Math.round(safePrice * (1 - unlockedDiscountPct / 100)));
+        priceHTML = `<span class="cart-item-deal-price">₹${dealPrice}</span><span class="cart-item-strike-price">₹${safePrice}</span>`;
+      }
 
       let statusBadge = '';
       if (isSoldOut) {
@@ -1788,7 +1800,7 @@ function initStorefrontApp() {
         </div>
         <div class="cart-item-info">
           <div class="cart-item-title">${safeName}${statusBadge}</div>
-          <div class="cart-item-price">₹${safePrice}</div>
+          <div class="cart-item-price">${priceHTML}</div>
         </div>
         <div class="cart-qty-ctrl">
           <button class="qty-btn btn-minus" data-id="${safeId}">-</button>
@@ -1810,8 +1822,7 @@ function initStorefrontApp() {
       cartItemsList.appendChild(el);
     });
 
-    // Calculations & Dynamic Offer Sync
-    const settings = dataService.getSettings();
+    // Dynamic Offer Sync
     const activeCode = (settings.offerCode || 'SAVERA20').trim().toUpperCase();
     const promoResult = appliedPromo ? evaluatePromoCode(appliedPromo, subtotal, settings) : null;
     const isPromoValid = Boolean(promoResult && promoResult.valid);
@@ -1878,10 +1889,6 @@ function initStorefrontApp() {
     }
 
     // Unlocked Deals (Threshold Pricing) Calculation
-    const isUnlockedDealsEnabled = Boolean(settings.unlockedDealsEnabled);
-    const unlockedMinOrder = Number(settings.unlockedDealsMinOrder || 299);
-    const unlockedDiscountPct = Number(settings.unlockedDealsDiscountPct || 15);
-    const isDealsUnlocked = isUnlockedDealsEnabled && subtotal >= unlockedMinOrder;
     let unlockedDealDiscount = 0;
     if (isDealsUnlocked) {
       unlockedDealDiscount = Math.round((subtotal * unlockedDiscountPct) / 100);
