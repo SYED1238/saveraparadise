@@ -36,7 +36,7 @@
 .admin-header {
   position: sticky;
   top: 0;
-  z-index: 1000;
+  z-index: 100000 !important;
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
@@ -5263,7 +5263,7 @@ body.kitchen-alarm-ringing::before {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   user-select: none;
-  z-index: 100001;
+  z-index: 100003 !important;
 }
 
 .btn-admin-menu-toggle i,
@@ -5292,7 +5292,7 @@ body.kitchen-alarm-ringing::before {
   background: rgba(15, 23, 42, 0.35);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
-  z-index: 99999;
+  z-index: 99990 !important;
   animation: adminFadeIn 0.15s ease-out;
 }
 
@@ -5311,9 +5311,10 @@ body.kitchen-alarm-ringing::before {
   border: 1px solid #E2E8F0;
   border-radius: 14px;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
-  z-index: 100000;
+  z-index: 100002 !important;
   overflow: hidden;
   animation: adminDropdownFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
 }
 
 @keyframes adminDropdownFadeIn {
@@ -5449,6 +5450,10 @@ body.kitchen-alarm-ringing::before {
   color: #BE123C;
 }
 
+.admin-dropdown-item * {
+  pointer-events: none;
+}
+
 @media (max-width: 768px) {
   .admin-menu-dropdown {
     position: fixed !important;
@@ -5457,7 +5462,7 @@ body.kitchen-alarm-ringing::before {
     left: auto !important;
     width: 285px !important;
     max-width: calc(100vw - 24px) !important;
-    z-index: 100000 !important;
+    z-index: 100002 !important;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08);
   }
 }

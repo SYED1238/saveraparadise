@@ -101,11 +101,13 @@ const initAdminApp = () => {
       }, { passive: true });
     }
 
-    adminMenuDropdown.querySelectorAll('.admin-dropdown-item').forEach(item => {
-      item.addEventListener('click', () => {
+    // Explicit close on lock or refresh actions
+    const btnLogout = document.getElementById('btn-admin-logout');
+    if (btnLogout) {
+      btnLogout.addEventListener('click', () => {
         closeAdminMenuDropdown();
       });
-    });
+    }
 
     document.addEventListener('click', (e) => {
       if (adminMenuDropdown.style.display === 'none') return;
@@ -125,6 +127,7 @@ const initAdminApp = () => {
   const btnAdminMenuRefresh = document.getElementById('btn-admin-menu-refresh');
   if (btnAdminMenuRefresh) {
     btnAdminMenuRefresh.addEventListener('click', async () => {
+      closeAdminMenuDropdown();
       const refreshIcon = document.getElementById('admin-menu-refresh-icon');
       if (refreshIcon) refreshIcon.classList.add('fa-spin');
       try {
