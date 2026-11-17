@@ -3,33 +3,30 @@
    Shared across: Customer Storefront, Admin Portal, Delivery Rider Portal
    ========================================================================== */
 
-/* Compact Animated App Download Button - Frosted Glass Website Vibe */
+/* Compact Animated App Download Button - Pill Button With Visible "Get Web App" */
 .btn-app-download-compact {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  height: 38px;
-  min-width: 38px;
-  padding: 0 4px;
+  height: 36px;
+  padding: 0 12px 0 4px;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1.5px solid rgba(255, 90, 38, 0.35);
-  box-shadow: 0 3px 12px rgba(255, 90, 38, 0.12), inset 0 1px 1.5px rgba(255, 255, 255, 0.95);
+  background: #FFFFFF;
+  border: 1.5px solid rgba(255, 90, 38, 0.45);
+  box-shadow: 0 2px 10px rgba(255, 90, 38, 0.16);
   cursor: pointer;
-  overflow: hidden;
   white-space: nowrap;
   font-family: inherit;
   font-size: 0.82rem;
   font-weight: 800;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
   user-select: none;
   flex-shrink: 0;
   position: relative;
   z-index: 10;
   text-decoration: none;
   line-height: 1;
+  gap: 6px;
 }
 
 .btn-app-download-compact:hover {
@@ -78,56 +75,20 @@
   box-shadow: 0 3px 10px rgba(255, 90, 38, 0.6);
 }
 
-/* Text expands out ("Get Web App") for ~3s and retracts back in for ~3s (6s cycle) */
+/* High-Visibility Label ("Get Web App") - Always clearly visible and styled */
 .btn-app-download-compact .pwa-animated-label {
-  display: inline-block;
-  overflow: hidden;
-  max-width: 0px;
-  opacity: 0;
-  transform: translateX(-4px);
-  margin-left: 0;
-  padding-right: 0;
-  color: #1E1B18;
-  font-weight: 800;
-  font-size: 0.82rem;
-  letter-spacing: -0.2px;
-  white-space: nowrap;
-  animation: pwa-label-peek 6s infinite cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: max-width, opacity, transform, padding-right, margin-left;
-}
-
-@keyframes pwa-label-peek {
-  0%, 15% {
-    max-width: 0px;
-    opacity: 0;
-    transform: translateX(-4px);
-    margin-left: 0;
-    padding-right: 0;
-  }
-  25%, 72% {
-    max-width: 105px;
-    opacity: 1;
-    transform: translateX(0);
-    margin-left: 6px;
-    padding-right: 8px;
-  }
-  82%, 100% {
-    max-width: 0px;
-    opacity: 0;
-    transform: translateX(-4px);
-    margin-left: 0;
-    padding-right: 0;
-  }
-}
-
-.btn-app-download-compact:hover .pwa-animated-label,
-.btn-app-download-compact:focus-visible .pwa-animated-label {
-  animation-play-state: paused;
-  max-width: 105px !important;
+  display: inline-block !important;
   opacity: 1 !important;
-  transform: translateX(0) !important;
-  margin-left: 6px !important;
-  padding-right: 8px !important;
+  max-width: none !important;
+  transform: none !important;
+  animation: none !important;
+  color: #FF5A26 !important;
+  font-weight: 800 !important;
+  font-size: 0.80rem !important;
+  letter-spacing: -0.2px;
+  white-space: nowrap !important;
+  margin-left: 2px !important;
+  padding-right: 0 !important;
 }
 
 /* Admin Kitchen Hub Glass Variant */
@@ -215,33 +176,38 @@
   }
 
   .header-pwa-dock .btn-app-download-compact {
-    width: 36px !important;
-    min-width: 36px !important;
-    max-width: 36px !important;
-    height: 36px !important;
-    padding: 0 !important;
+    width: auto !important;
+    min-width: unset !important;
+    max-width: none !important;
+    height: 34px !important;
+    padding: 0 10px 0 3px !important;
     display: inline-flex !important;
     align-items: center !important;
-    justify-content: center !important;
-    border-radius: 50% !important;
-    overflow: hidden !important;
+    justify-content: flex-start !important;
+    border-radius: 9999px !important;
+    gap: 5px !important;
+    overflow: visible !important;
   }
 
   .header-pwa-dock .btn-app-download-compact .pwa-icon-glow {
-    width: 28px !important;
-    height: 28px !important;
+    width: 26px !important;
+    height: 26px !important;
   }
 
   .header-pwa-dock .btn-app-download-compact .pwa-animated-label,
   .header-pwa-dock .btn-app-download-compact:hover .pwa-animated-label,
   .header-pwa-dock .btn-app-download-compact:focus-visible .pwa-animated-label,
   .header-pwa-dock .btn-app-download-compact:active .pwa-animated-label {
-    display: none !important;
-    max-width: 0 !important;
-    opacity: 0 !important;
-    margin-left: 0 !important;
-    padding-right: 0 !important;
+    display: inline-block !important;
+    max-width: none !important;
+    opacity: 1 !important;
+    color: #FF5A26 !important;
+    font-size: 0.76rem !important;
+    font-weight: 800 !important;
+    white-space: nowrap !important;
     animation: none !important;
+    margin-left: 2px !important;
+    padding-right: 0 !important;
   }
 }
 
@@ -644,6 +610,192 @@ body.pwa-rider-installed #btn-rider-download-app {
   stroke: #FF5A26;
   display: block;
   flex-shrink: 0;
+}
+
+/* ==========================================================================
+   PWA Downloading Animation & Interactive Progress UI
+   ========================================================================== */
+.pwa-downloading-section {
+  margin: 12px 0 16px 0;
+  background: rgba(255, 90, 38, 0.08);
+  border: 1px solid rgba(255, 90, 38, 0.28);
+  border-radius: 16px;
+  padding: 14px 16px;
+  transition: all 0.3s ease;
+}
+
+.pwa-downloading-section.is-ready {
+  background: rgba(16, 185, 129, 0.09);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.pwa-downloading-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pwa-downloading-icon-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pwa-download-arrow-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FF5A26, #F97316);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  box-shadow: 0 3px 10px rgba(255, 90, 38, 0.4);
+  z-index: 2;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.pwa-downloading-section.is-ready .pwa-download-arrow-wrap {
+  background: linear-gradient(135deg, #10B981, #059669);
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.4);
+}
+
+.pwa-download-arrow-icon {
+  width: 18px;
+  height: 18px;
+  stroke: #FFFFFF;
+  animation: pwa-download-bounce 1s infinite ease-in-out;
+}
+
+.pwa-downloading-section.is-ready .pwa-download-arrow-icon {
+  animation: none;
+}
+
+@keyframes pwa-download-bounce {
+  0%, 100% { transform: translateY(-2px); }
+  50% { transform: translateY(2px); }
+}
+
+.pwa-download-spinner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255, 90, 38, 0.2);
+  border-top-color: #FF5A26;
+  animation: pwa-spin 0.9s linear infinite;
+  z-index: 1;
+}
+
+.pwa-downloading-section.is-ready .pwa-download-spinner {
+  border-color: rgba(16, 185, 129, 0.2);
+  border-top-color: #10B981;
+  animation: none;
+}
+
+@keyframes pwa-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pwa-downloading-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.pwa-downloading-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.pwa-downloading-title {
+  font-size: 0.94rem;
+  font-weight: 800;
+  color: #FFFFFF;
+}
+
+.pwa-downloading-section.is-ready .pwa-downloading-title {
+  color: #34D399;
+}
+
+.pwa-downloading-percent {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #FF5A26;
+  font-variant-numeric: tabular-nums;
+}
+
+.pwa-downloading-section.is-ready .pwa-downloading-percent {
+  color: #34D399;
+}
+
+.pwa-downloading-caption {
+  margin: 0 0 8px 0;
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.25;
+}
+
+.pwa-progress-track {
+  width: 100%;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.pwa-downloading-section.is-ready .pwa-progress-track {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.pwa-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #FF5A26, #FF8A00);
+  border-radius: 9999px;
+  transition: width 0.12s linear;
+}
+
+.pwa-progress-bar.is-finished {
+  background: linear-gradient(90deg, #10B981, #059669);
+}
+
+.pwa-modal-actions {
+  margin: 12px 0 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pwa-btn-install {
+  width: 100%;
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.pwa-btn-install.pwa-btn-pulse {
+  animation: pwa-pulse-glow 2s infinite;
+}
+
+@keyframes pwa-pulse-glow {
+  0%, 100% { box-shadow: 0 8px 24px rgba(255, 90, 38, 0.4); }
+  50% { box-shadow: 0 10px 30px rgba(255, 90, 38, 0.7), 0 0 0 4px rgba(255, 90, 38, 0.25); }
+}
+
+.pwa-install-subtext {
+  text-align: center;
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 4px 0 0 0;
 }
 
 /* Chrome Auto-Install Prominent Bottom Sheet / Toast Banner */

@@ -16,11 +16,10 @@ html.perf-tier-lite *::after {
   -webkit-backdrop-filter: none !important;
 }
 
-/* 2. Remove the 4 heavy ambient animated jelly waves from the GPU compositing tree */
+/* 2. Keep ambient jelly waves visible across all tiers */
 html.perf-tier-lite .jelly-shape {
-  display: none !important;
-  animation: none !important;
-  will-change: auto !important;
+  display: block !important;
+  opacity: 0.85;
 }
 
 /* 3. Solid, high-contrast, clean acrylic surfaces for elements that previously had glass blur */

@@ -718,13 +718,11 @@ export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
 }
 
 /**
- * Creates and opens the PWA Installation Guide Modal for iOS
+ * Creates and opens the PWA Installation Modal with live downloading animation
  */
 export function openPwaInstallModal(forcedEnv) {
   if (typeof document === 'undefined') return;
   const env = forcedEnv || detectPlatformEnvironment();
-  // Only iOS gets the smart guide modal; old desktop/android dark modal is deleted
-  if (!env.startsWith('ios-')) return;
 
   let modal = document.getElementById('pwa-install-modal-backdrop');
   if (modal) {
@@ -733,23 +731,80 @@ export function openPwaInstallModal(forcedEnv) {
   modal = createPwaInstallModalElement(env);
   document.body.appendChild(modal);
 
+  if (typeof window !== 'undefined' && window.navigationBackService) {
+    window.navigationBackService.pushStep('pwa-install-modal', () => {
+      closePwaInstallModal();
+    });
+  }
+
   modal.classList.add('open');
   modal.style.display = 'flex';
+
+  const portalConfig = getPortalConfig();
+  startDownloadingProgress(modal, portalConfig);
 }
 
 export function closePwaInstallModal() {
   if (typeof document === 'undefined') return;
+  if (typeof window !== 'undefined' && window.navigationBackService) {
+    window.navigationBackService.removeStep('pwa-install-modal');
+  }
   const modal = document.getElementById('pwa-install-modal-backdrop');
   if (modal) {
     modal.classList.remove('open');
     setTimeout(() => {
       modal.style.display = 'none';
+      modal.remove();
     }, 250);
   }
 }
 
+function startDownloadingProgress(container, portalConfig) {
+  const titleEl = container.querySelector('#pwa-download-title');
+  const percentEl = container.querySelector('#pwa-download-percent');
+  const captionEl = container.querySelector('#pwa-download-caption');
+  const barEl = container.querySelector('#pwa-download-progress-bar');
+  const sectionEl = container.querySelector('#pwa-downloading-section');
+  const installBtn = container.querySelector('#btn-pwa-install-action');
+
+  if (!titleEl || !percentEl || !barEl) return;
+
+  const startTime = Date.now();
+  const totalDuration = 1200; // 1.2s smooth simulated download
+
+  const step = () => {
+    if (!document.body.contains(container)) return;
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(100, Math.round((elapsed / totalDuration) * 100));
+
+    percentEl.textContent = `${progress}%`;
+    barEl.style.width = `${progress}%`;
+
+    if (progress < 45) {
+      if (captionEl) captionEl.textContent = 'Caching dishes, photos & offline resources...';
+    } else if (progress < 90) {
+      if (captionEl) captionEl.textContent = 'Configuring fast 1-tap ordering engine...';
+    } else if (progress < 100) {
+      if (captionEl) captionEl.textContent = 'Finalizing package verification...';
+    } else {
+      titleEl.textContent = '✅ Web App Ready to Install!';
+      if (captionEl) captionEl.textContent = 'Package verified & ready for 1-tap installation';
+      percentEl.textContent = '100%';
+      if (sectionEl) sectionEl.classList.add('is-ready');
+      barEl.classList.add('is-finished');
+      if (installBtn) installBtn.classList.add('pwa-btn-pulse');
+      return;
+    }
+
+    requestAnimationFrame(step);
+  };
+
+  requestAnimationFrame(step);
+}
+
 function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
   const isIOS = env.startsWith('ios-');
+  const isAndroidOther = env === 'android-other';
   const portalConfig = getPortalConfig();
 
   const container = document.createElement('div');
@@ -846,7 +901,7 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
         </div>
       </div>
     `;
-  } else {
+  } else if (isIOS) {
     // Default iOS in-app or other iOS webviews
     subtitleText = 'Open in Safari to add to your iPhone Home Screen';
     stepsHtml = `
@@ -879,6 +934,46 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
     `;
   }
 
+  // Action block based on platform
+  let actionsBlockHtml = '';
+  if (isIOS) {
+    actionsBlockHtml = `
+      <div class="pwa-install-steps">
+        ${stepsHtml}
+      </div>
+      <div class="pwa-modal-footer">
+        <button type="button" class="btn btn-pwa-primary" id="btn-pwa-modal-primary">
+          <i class="fa-solid fa-check" style="margin-right: 6px;"></i>
+          <span>Got It</span>
+        </button>
+      </div>
+    `;
+  } else if (isAndroidOther) {
+    actionsBlockHtml = `
+      <div class="pwa-modal-actions" id="pwa-modal-actions">
+        <button type="button" class="btn btn-pwa-primary" id="btn-pwa-open-chrome">
+          <i class="fa-brands fa-chrome" style="margin-right: 8px;"></i>
+          <span>Open &amp; Install in Chrome</span>
+        </button>
+        <p class="pwa-install-subtext">Google Chrome provides native 1-tap installation</p>
+      </div>
+    `;
+  } else {
+    actionsBlockHtml = `
+      <div class="pwa-modal-actions" id="pwa-modal-actions">
+        <button type="button" class="btn btn-pwa-primary pwa-btn-install" id="btn-pwa-install-action">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Install Savera Paradise App</span>
+        </button>
+        <p class="pwa-install-subtext">Adds directly to your Home Screen • Instant 1-tap ordering</p>
+      </div>
+    `;
+  }
+
   container.innerHTML = `
     <div class="pwa-install-modal ${isIOS ? 'pwa-modal-ios-sheet' : ''}" role="dialog" aria-modal="true" aria-labelledby="pwa-modal-title">
       <div class="pwa-sheet-drag-handle" aria-hidden="true"></div>
@@ -895,19 +990,36 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
         </div>
       </div>
 
+      <!-- Live Downloading Animation Section -->
+      <div class="pwa-downloading-section" id="pwa-downloading-section">
+        <div class="pwa-downloading-card">
+          <div class="pwa-downloading-icon-wrap">
+            <div class="pwa-download-arrow-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="pwa-download-arrow-icon">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </div>
+            <div class="pwa-download-spinner" aria-hidden="true"></div>
+          </div>
+          <div class="pwa-downloading-details">
+            <div class="pwa-downloading-status-row">
+              <span class="pwa-downloading-title" id="pwa-download-title">Downloading Web App...</span>
+              <span class="pwa-downloading-percent" id="pwa-download-percent">0%</span>
+            </div>
+            <p class="pwa-downloading-caption" id="pwa-download-caption">Preparing offline menu &amp; fast ordering assets</p>
+            <div class="pwa-progress-track">
+              <div class="pwa-progress-bar" id="pwa-download-progress-bar" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      ${actionsBlockHtml}
+
       <div class="pwa-features-grid">
         ${featurePillsHtml}
-      </div>
-
-      <div class="pwa-install-steps">
-        ${stepsHtml}
-      </div>
-
-      <div class="pwa-modal-footer">
-        <button type="button" class="btn btn-pwa-primary" id="btn-pwa-modal-primary">
-          <i class="fa-solid fa-check"></i>
-          <span>Got It / Close</span>
-        </button>
       </div>
     </div>
   `;
@@ -923,6 +1035,43 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
   if (primaryBtn) {
     primaryBtn.addEventListener('click', () => {
       closePwaInstallModal();
+    });
+  }
+
+  const chromeBtn = container.querySelector('#btn-pwa-open-chrome');
+  if (chromeBtn) {
+    chromeBtn.addEventListener('click', () => {
+      closePwaInstallModal();
+      openInChrome();
+    });
+  }
+
+  const installActionBtn = container.querySelector('#btn-pwa-install-action');
+  if (installActionBtn) {
+    installActionBtn.addEventListener('click', async () => {
+      installActionBtn.disabled = true;
+      try {
+        const result = await triggerAppDownload({
+          onInstalled: () => {
+            hideAllInstallButtons();
+            closePwaInstallModal();
+            showPwaToast(portalConfig.installToast, 'success');
+          },
+          onCancel: () => {
+            installActionBtn.disabled = false;
+          }
+        });
+        if (result === 'accepted' || result === 'already_installed') {
+          closePwaInstallModal();
+        } else if (result === 'unsupported') {
+          showPwaToast('Tap the install icon in your browser address bar or menu to add the app', 'info');
+          installActionBtn.disabled = false;
+        } else {
+          installActionBtn.disabled = false;
+        }
+      } catch {
+        installActionBtn.disabled = false;
+      }
     });
   }
 
@@ -960,12 +1109,6 @@ export function setupAppDownloadButton(buttonElement) {
 
   buttonElement.addEventListener('click', (e) => {
     e.preventDefault();
-    const portalConfig = getPortalConfig();
-    triggerAppDownload({
-      onInstalled: () => {
-        hideAllInstallButtons();
-        showPwaToast(portalConfig.installToast, 'success');
-      }
-    });
+    openPwaInstallModal();
   });
 }

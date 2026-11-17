@@ -31,26 +31,17 @@
   <script>
     (function() {
       try {
-        // Early Zero-Permission Performance Tier Pre-classifier
-      try {
+        // High Quality Performance Standard (Ultra glass & ambient bubbles)
         var params = new URLSearchParams(window.location.search);
         var urlOverride = params.get('perf');
         var stored = localStorage.getItem('savera_perf_override');
         var ov = (urlOverride || stored || '').toLowerCase();
-        var tier = 'balanced';
-        if (ov === 'ultra' || ov === 'high') tier = 'ultra';
-        else if (ov === 'lite' || ov === 'low' || ov === 'potato') tier = 'lite';
+        var tier = 'ultra';
+        if (ov === 'lite' || ov === 'low' || ov === 'potato') tier = 'lite';
         else if (ov === 'balanced' || ov === 'mid') tier = 'balanced';
-        else {
-          var ram = navigator.deviceMemory || 4;
-          var cores = navigator.hardwareConcurrency || 4;
-          if (ram >= 6 && cores >= 6) tier = 'ultra';
-          else if (ram >= 4) tier = 'balanced';
-          else tier = 'lite';
-        }
         document.documentElement.classList.add('perf-tier-' + tier);
         document.documentElement.setAttribute('data-perf-tier', tier);
-      } catch(e) {}
+
         if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
           document.documentElement.classList.add('pwa-customer-installed');
         } else {

@@ -10,7 +10,7 @@
 class PerformanceGovernor {
   constructor() {
     this.STORAGE_KEY = 'savera_perf_override';
-    this.currentTier = 'balanced'; // safe default
+    this.currentTier = 'ultra'; // Fixed High Quality across all devices
     this.fps = 60;
     this.isMonitoring = false;
     this.hudElement = null;
@@ -90,25 +90,8 @@ class PerformanceGovernor {
       return;
     }
 
-    // 2. Battery / Save-Data / Reduced Motion heuristic
-    if (isSaveData || prefersReducedMotion) {
-      this.currentTier = 'lite';
-      return;
-    }
-
-    // 3. Automated Hardware Tiering
-    // Flagships (e.g. Xiaomi 14/15/17 Ultra, Poco F6, iPhone 12+, 8GB+ RAM, 8-cores):
-    if ((ram && ram >= 6) || (cores >= 8 && /adreno\s*(7|8)|mali-g7|apple/i.test(gpuRenderer))) {
-      this.currentTier = 'ultra';
-    } 
-    // Standard Mid-Range (4GB - 6GB RAM, 6-8 cores):
-    else if ((ram && ram >= 4) || cores >= 6) {
-      this.currentTier = 'balanced';
-    } 
-    // Budget or Memory Constrained (<4GB RAM or <=4 cores):
-    else {
-      this.currentTier = 'lite';
-    }
+    // Modern phones can easily handle full rendering and bubbles — fixed permanently at Ultra (High Quality)
+    this.currentTier = 'ultra';
   }
 
   /**
@@ -160,31 +143,19 @@ class PerformanceGovernor {
   }
 
   /**
-   * Real-time frame rate (FPS) watchdog.
-   * If background tasks on a 4GB/6GB phone cause heavy frame drops,
-   * it steps down fidelity so the customer never suffers frozen touch input.
+   * Real-time frame rate (FPS) monitor.
+   * Tracks live FPS for HUD diagnostics without degrading UI fidelity.
    */
   startFpsWatchdog() {
     if (typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') return;
 
-    let lastTime = performance.now();
     let frameCount = 0;
     let fpsTimer = performance.now();
-    let consecutiveJanks = 0;
 
     const loop = (now) => {
-      const delta = now - lastTime;
-      lastTime = now;
       frameCount++;
 
-      // Frame time > 38ms corresponds to < 26 FPS (visible stutter)
-      if (delta > 38) {
-        consecutiveJanks++;
-      } else if (consecutiveJanks > 0 && frameCount % 60 === 0) {
-        consecutiveJanks = Math.max(0, consecutiveJanks - 1);
-      }
-
-      // Calculate rolling FPS once every 500ms
+      // Calculate rolling FPS once every 500ms for diagnostic HUD display
       if (now - fpsTimer >= 500) {
         this.fps = Math.round((frameCount * 1000) / (now - fpsTimer));
         frameCount = 0;
@@ -192,19 +163,6 @@ class PerformanceGovernor {
 
         if (this.hudElement) {
           this.updateFpsDisplay();
-        }
-
-        // Automatic throttling under real load (only if not manually locked by user)
-        if (!this.isManual) {
-          if (consecutiveJanks >= 6 && this.currentTier === 'ultra') {
-            console.warn('[PerfGovernor] Frame drops detected. Stepping down to Balanced.');
-            this.applyTier('balanced', false);
-            consecutiveJanks = 0;
-          } else if (consecutiveJanks >= 10 && this.currentTier === 'balanced') {
-            console.warn('[PerfGovernor] Heavy background load detected. Stepping down to Lite.');
-            this.applyTier('lite', false);
-            consecutiveJanks = 0;
-          }
         }
       }
 
