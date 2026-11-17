@@ -1355,4 +1355,45 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
     assert.match(deliverySrc, /function\s+stopRiderAlarm\([\s\S]*?markRiderStatusAlerted\(o\.id,\s*'ready_for_pickup'\)/,
       'stopRiderAlarm must mark ringing ready_for_pickup orders as alerted so foreground sync does not re-trigger the alarm');
   });
+
+  await t.test('30. Customer welcome toast cooldown (48h), 24h notification expiration, single active toast cap, and startup pre-seeding', () => {
+    const mainSrc = fs.readFileSync(
+      new URL('../main.js', import.meta.url),
+      'utf8'
+    );
+    const dataServiceSrc = fs.readFileSync(
+      new URL('../dataService.js', import.meta.url),
+      'utf8'
+    );
+    const notifSrc = fs.readFileSync(
+      new URL('../notificationService.js', import.meta.url),
+      'utf8'
+    );
+
+    // 1. Welcome toast 48h cooldown
+    assert.match(mainSrc, /savera_last_welcome_timestamp/,
+      'main.js must track savera_last_welcome_timestamp for welcome toast cooldown');
+    assert.match(mainSrc, /48\s*\*\s*60\s*\*\s*60\s*\*\s*1000/,
+      'main.js must enforce at least 48 hours cooldown before repeating welcome toast');
+
+    // 2. 24-hour expiration on customer alerted map in localStorage
+    assert.match(mainSrc, /now\s*-\s*Number\(ts\s*\|\|\s*0\)\s*<\s*24\s*\*\s*60\s*\*\s*60\s*\*\s*1000/,
+      'markCustomerAlerted in main.js must expire alerted status entries after 24 hours');
+
+    // 3. Pre-seed all existing orders on startup
+    assert.match(mainSrc, /initOrders\.forEach\(o\s*=>\s*\{[\s\S]*?o\s*&&\s*o\.id\s*&&\s*o\.status[\s\S]*?markCustomerAlerted\(o\.id,\s*o\.status\)/,
+      'main.js must pre-seed all existing orders on startup to prevent replaying past notifications on web open');
+
+    // 4. 24-Hour expiration guard on storefront order status sync
+    assert.match(mainSrc, /orderAgeMs\s*>\s*24\s*\*\s*60\s*\*\s*60\s*\*\s*1000/,
+      'handleStorefrontOrderStatusSync in main.js must block notifications for orders older than 24 hours');
+
+    // 5. DataService remote sync does not blast status_updated alerts for historical orders
+    assert.doesNotMatch(dataServiceSrc, /syncCustomerOrdersFromSupabase[\s\S]*?localList\.unshift\(mapped\)[\s\S]*?this\.notifyChange\('orders',\s*\{\s*action:\s*'status_updated'/,
+      'syncCustomerOrdersFromSupabase must not emit status_updated alert for fetched remote orders');
+
+    // 6. notificationService caps visible toasts to 1
+    assert.match(notifSrc, /existingToasts\.length\s*>=\s*1/,
+      'showSamsungToast must cap visible toasts to at most 1 to prevent covering full interface');
+  });
 });

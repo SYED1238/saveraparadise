@@ -750,13 +750,14 @@ export function showSamsungToast(message, type = 'info', options = {}) {
     }
   }
 
-  // Cap visible toasts to maximum 3 to prevent screen clutter
-  if (existingToasts.length >= 3) {
-    const oldest = existingToasts[0];
-    if (oldest && typeof oldest._dismissToast === 'function') {
-      oldest._dismissToast('up');
-    } else if (oldest) {
-      oldest.remove();
+  // Cap visible toasts to maximum 1 to prevent screen clutter / full interface takeover
+  if (existingToasts.length >= 1) {
+    for (const existing of existingToasts) {
+      if (typeof existing._dismissToast === 'function') {
+        existing._dismissToast('up');
+      } else if (existing) {
+        existing.remove();
+      }
     }
   }
 

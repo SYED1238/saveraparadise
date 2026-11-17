@@ -4583,11 +4583,11 @@ class QuickBiteDataService {
               localList.unshift(mapped);
               changed = true;
               const orderAge = mapped.createdAt ? (Date.now() - Number(mapped.createdAt)) : 0;
-              if (orderAge < 15 * 60 * 1000 && (mapped.status === 'accepted' || mapped.status === 'pending')) {
+              // Only broadcast new_order if it was freshly placed in another tab/window within 2 minutes
+              if (orderAge < 2 * 60 * 1000 && (mapped.status === 'accepted' || mapped.status === 'pending')) {
                 this.notifyChange('orders', { action: 'new_order', order: mapped, source: 'supabase' });
-              } else {
-                this.notifyChange('orders', { action: 'status_updated', orderId: mapped.id, order: mapped, source: 'supabase' });
               }
+              // Historical/pre-existing orders fetched from remote must NEVER fire status_updated alerts!
             }
           }
         });

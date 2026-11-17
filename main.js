@@ -6882,7 +6882,7 @@ function initStorefrontApp() {
       const map = getCustomerAlertedMap();
       map[`${orderId}_${status}`] = Date.now();
       const now = Date.now();
-      const entries = Object.entries(map).filter(([, ts]) => now - Number(ts || 0) < 7 * 24 * 60 * 60 * 1000);
+      const entries = Object.entries(map).filter(([, ts]) => now - Number(ts || 0) < 24 * 60 * 60 * 1000);
       localStorage.setItem(CUSTOMER_ALERTED_STATUSES_KEY, JSON.stringify(Object.fromEntries(entries.slice(-100))));
     } catch {}
   }
@@ -6897,13 +6897,13 @@ function initStorefrontApp() {
     }
   }
 
-  // Pre-seed any existing delivered or cancelled orders in local cache as acknowledged on startup
-  // so opening/reloading the web app NEVER replays past delivery notifications!
+  // Pre-seed ALL existing orders in local cache as acknowledged on startup
+  // so opening/reloading the web app NEVER replays past notifications!
   try {
     const initOrders = dataService.getOrders();
     if (Array.isArray(initOrders)) {
       initOrders.forEach(o => {
-        if (o && o.id && (o.status === 'delivered' || o.status === 'cancelled')) {
+        if (o && o.id && o.status) {
           markCustomerAlerted(o.id, o.status);
         }
       });
@@ -6950,10 +6950,11 @@ function initStorefrontApp() {
       return;
     }
 
-    // 2. Stale Order Age Guard: If order is older than 20 minutes and status is delivered or cancelled,
-    // it is a past historical record! NEVER alert it to the customer on page reload, reconnect, or app launch!
+    // 2. 24-Hour Expiration & Stale Order Age Guard:
+    // Any order older than 24 hours must NEVER trigger notifications!
+    // For delivered or cancelled orders, anything older than 20 minutes is also considered historical.
     const orderAgeMs = order.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
-    if ((order.status === 'delivered' || order.status === 'cancelled') && orderAgeMs > 20 * 60 * 1000) {
+    if (orderAgeMs > 24 * 60 * 60 * 1000 || ((order.status === 'delivered' || order.status === 'cancelled') && orderAgeMs > 20 * 60 * 1000)) {
       markCustomerAlerted(order.id, order.status);
       return;
     }
@@ -10521,7 +10522,14 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
           }
 
           const name = session.user.user_metadata?.full_name?.split(' ')[0] || session.user.user_metadata?.name?.split(' ')[0] || 'Friend';
-          showToast(`👋 Welcome back, ${name}!`, 'success');
+          const LAST_WELCOME_KEY = 'savera_last_welcome_timestamp';
+          const WELCOME_COOLDOWN_MS = 48 * 60 * 60 * 1000; // 48 hours cooldown
+          const lastWelcome = localStorage.getItem(LAST_WELCOME_KEY);
+          const now = Date.now();
+          if (!lastWelcome || (now - Number(lastWelcome)) >= WELCOME_COOLDOWN_MS) {
+            showToast(`👋 Welcome back, ${name}!`, 'success');
+            localStorage.setItem(LAST_WELCOME_KEY, String(now));
+          }
 
           if (pendingCheckoutAfterAuth || sessionStorage.getItem('quickbite_pending_checkout') === 'true') {
             pendingCheckoutAfterAuth = false;
