@@ -7599,9 +7599,10 @@ body.order-modal-open .unlocked-deals-floating-bar {
 /* ==========================================================================
    Google Sign-In & User Profile Authentication Styles
    ========================================================================== */
-.user-profile-menu {
-  position: relative;
-  display: inline-flex;
+.user-profile-menu,
+.navbar .user-profile-menu,
+#user-profile-menu {
+  display: none !important;
 }
 
 .user-profile-btn {

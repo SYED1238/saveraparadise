@@ -10083,7 +10083,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     currentUser = user;
     if (user) {
       if (btnLogin) btnLogin.style.display = 'none';
-      if (userProfileMenu) userProfileMenu.style.display = 'inline-flex';
+      if (userProfileMenu) userProfileMenu.style.display = 'none';
 
       const meta = user.user_metadata || {};
       const identities = Array.isArray(user.identities) ? user.identities : [];
