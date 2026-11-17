@@ -255,6 +255,39 @@ public class WebAppInterface {
     }
 
     @JavascriptInterface
+    public boolean hasLocationPermission() {
+        try {
+            boolean fine = ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            boolean coarse = ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            return fine || coarse;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @JavascriptInterface
+    public boolean isLocationEnabled() {
+        try {
+            android.location.LocationManager lm = (android.location.LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) return false;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                return lm.isLocationEnabled();
+            }
+            return lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) ||
+                   lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @JavascriptInterface
+    public void requestEnableGps() {
+        try {
+            MainActivity.triggerNativeGpsEnablePrompt();
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
     public void openExternalUrl(String url) {
         if (url == null) return;
         String trimmed = url.trim();

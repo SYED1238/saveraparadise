@@ -7,10 +7,13 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentSender;
 import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.GeolocationPermissions;
@@ -23,10 +26,20 @@ import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+
+import com.google.android.gms.common.api.ResolvableApiException;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.LocationSettingsRequest;
+import com.google.android.gms.location.LocationSettingsResponse;
+import com.google.android.gms.location.Priority;
+import com.google.android.gms.location.SettingsClient;
+import com.google.android.gms.tasks.Task;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -34,6 +47,7 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private SwipeRefreshLayout swipeRefresh;
     private static final int PERMISSION_REQUEST_CODE = 1001;
+    private static final int GPS_ENABLE_REQUEST_CODE = 1003;
     private static java.lang.ref.WeakReference<MainActivity> activeActivityRef = null;
 
     public static void triggerWebAlarmStop() {
@@ -42,6 +56,13 @@ public class MainActivity extends AppCompatActivity {
             act.runOnUiThread(() -> {
                 act.webView.evaluateJavascript("if (typeof window.__stopRiderAlarmFromNative === 'function') window.__stopRiderAlarmFromNative(); if (typeof window.__stopKitchenAlarmFromNative === 'function') window.__stopKitchenAlarmFromNative();", null);
             });
+        }
+    }
+
+    public static void triggerNativeGpsEnablePrompt() {
+        MainActivity act = activeActivityRef != null ? activeActivityRef.get() : null;
+        if (act != null) {
+            act.runOnUiThread(act::promptToEnableDeviceGps);
         }
     }
 
@@ -241,11 +262,103 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public boolean isDeviceLocationEnabled() {
+        try {
+            LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) return false;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                return lm.isLocationEnabled();
+            }
+            return lm.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                   lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void promptToEnableDeviceGps() {
+        boolean isRider = getPackageName().toLowerCase().contains("rider");
+        if (!isRider) return;
+
+        // 1. Ensure OS runtime location permission is granted first
+        boolean hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        boolean hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        if (!hasFine && !hasCoarse) {
+            ActivityCompat.requestPermissions(this, new String[]{
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            }, PERMISSION_REQUEST_CODE);
+            return;
+        }
+
+        // 2. Request Google Play Services native one-tap "Turn on device location" system dialog
+        try {
+            LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
+                .setMinUpdateIntervalMillis(2000)
+                .build();
+            LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder()
+                .addLocationRequest(locationRequest)
+                .setAlwaysShow(true);
+
+            SettingsClient client = LocationServices.getSettingsClient(this);
+            Task<LocationSettingsResponse> task = client.checkLocationSettings(builder.build());
+
+            task.addOnSuccessListener(this, response -> notifyWebViewGpsEnabled());
+            task.addOnFailureListener(this, e -> {
+                if (e instanceof ResolvableApiException) {
+                    try {
+                        ResolvableApiException resolvable = (ResolvableApiException) e;
+                        resolvable.startResolutionForResult(MainActivity.this, GPS_ENABLE_REQUEST_CODE);
+                        return;
+                    } catch (IntentSender.SendIntentException ignored) {}
+                }
+                openSystemLocationSettingsFallback();
+            });
+        } catch (Exception e) {
+            openSystemLocationSettingsFallback();
+        }
+    }
+
+    private void openSystemLocationSettingsFallback() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+            startActivityForResult(intent, GPS_ENABLE_REQUEST_CODE);
+        } catch (Exception ignored) {}
+    }
+
+    private void notifyWebViewGpsEnabled() {
+        if (webView != null) {
+            webView.post(() -> webView.evaluateJavascript(
+                "if (typeof window.__onNativeGpsEnabled === 'function') window.__onNativeGpsEnabled();",
+                null
+            ));
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == GPS_ENABLE_REQUEST_CODE) {
+            if (resultCode == RESULT_OK || isDeviceLocationEnabled()) {
+                notifyWebViewGpsEnabled();
+            }
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE && shouldRunOrderMonitorService()) {
-            startOrderMonitorService();
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (shouldRunOrderMonitorService()) {
+                startOrderMonitorService();
+            }
+            if (getPackageName().toLowerCase().contains("rider")) {
+                if (!isDeviceLocationEnabled()) {
+                    promptToEnableDeviceGps();
+                } else {
+                    notifyWebViewGpsEnabled();
+                }
+            }
         }
     }
 
@@ -269,6 +382,9 @@ public class MainActivity extends AppCompatActivity {
             OrderMonitorService.stopNativeAlarm();
             triggerWebAlarmStop();
             getIntent().setAction(null);
+        }
+        if (getPackageName().toLowerCase().contains("rider") && isDeviceLocationEnabled()) {
+            notifyWebViewGpsEnabled();
         }
     }
 

@@ -456,6 +456,9 @@ const initDeliveryApp = () => {
         try { navigator.geolocation.clearWatch(activeGpsWatchId); } catch {}
         activeGpsWatchId = null;
       }
+      stopGpsAutoRetryLoop();
+      pendingGpsSyncCallback = null;
+      gpsLastFailureReason = 'none';
       riderLiveLocation.hasGps = false;
       riderLiveLocation.lastUpdated = 0;
       clearPersistedRiderGpsState();
@@ -693,6 +696,107 @@ const initDeliveryApp = () => {
   let lastGpsBroadcastTime = 0;
   let lastGpsBroadcastLat = 0;
   let lastGpsBroadcastLng = 0;
+  let gpsLastFailureReason = 'none'; // 'none' | 'gps_off' | 'permission_denied'
+  let gpsAutoRetryTimer = null;
+  let pendingGpsSyncCallback = null;
+
+  function stopGpsAutoRetryLoop() {
+    if (gpsAutoRetryTimer !== null) {
+      clearInterval(gpsAutoRetryTimer);
+      gpsAutoRetryTimer = null;
+    }
+  }
+
+  function startGpsAutoRetryLoop() {
+    if (gpsAutoRetryTimer !== null) return;
+    gpsAutoRetryTimer = setInterval(() => {
+      if (riderLiveLocation.hasGps && isRiderGpsSyncedAndFresh()) {
+        stopGpsAutoRetryLoop();
+        return;
+      }
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (!isStaffSessionActive('rider')) return;
+      initRiderLiveGeolocation(true);
+    }, 3000);
+  }
+
+  function isNativeAndroidBridgeAvailable() {
+    return typeof window !== 'undefined' && Boolean(window.AndroidNative);
+  }
+
+  function triggerNativeGpsResolutionPrompt() {
+    if (!isNativeAndroidBridgeAvailable()) return false;
+    try {
+      if (typeof window.AndroidNative.requestEnableGps === 'function') {
+        window.AndroidNative.requestEnableGps();
+        return true;
+      }
+    } catch (e) {
+      console.warn('[Rider GPS] Native requestEnableGps bridge error:', e);
+    }
+    return false;
+  }
+
+  async function classifyGeolocationFailure(err) {
+    if (isNativeAndroidBridgeAvailable()) {
+      try {
+        if (
+          typeof window.AndroidNative.hasLocationPermission === 'function' &&
+          !window.AndroidNative.hasLocationPermission()
+        ) {
+          return 'permission_denied';
+        }
+        if (
+          typeof window.AndroidNative.isLocationEnabled === 'function' &&
+          !window.AndroidNative.isLocationEnabled()
+        ) {
+          return 'gps_off';
+        }
+      } catch {}
+    }
+
+    const code = err && typeof err.code === 'number' ? err.code : 0;
+    const msg = String((err && err.message) || '').toLowerCase();
+
+    // Code 2 (POSITION_UNAVAILABLE) or Code 3 (TIMEOUT) means device GPS/Location switch is OFF or acquiring lock
+    if (code === 2 || code === 3) {
+      return 'gps_off';
+    }
+
+    // Some Android WebViews/browsers emit code 1 when system-wide Location toggle is disabled
+    if (/location.*disabled|provider|location services|turned off|system location/i.test(msg)) {
+      return 'gps_off';
+    }
+
+    if (code === 1) {
+      if (typeof navigator !== 'undefined' && navigator.permissions && typeof navigator.permissions.query === 'function') {
+        try {
+          const status = await navigator.permissions.query({ name: 'geolocation' });
+          if (status && (status.state === 'granted' || status.state === 'prompt')) {
+            return 'gps_off';
+          }
+        } catch {}
+      }
+      return 'permission_denied';
+    }
+
+    return 'gps_off';
+  }
+
+  // Global callback invoked by MainActivity.java when rider taps "OK" on Android system Turn-On-GPS dialog
+  if (typeof window !== 'undefined') {
+    window.__onNativeGpsEnabled = () => {
+      gpsLastFailureReason = 'none';
+      updateGpsStatusBadge('inactive', '📍 Acquiring GPS lock...');
+      if (pendingGpsSyncCallback) {
+        const cb = pendingGpsSyncCallback;
+        pendingGpsSyncCallback = null;
+        requestLiveGpsSyncForPickup(cb, { skipNativePrompt: true });
+      } else {
+        initRiderLiveGeolocation(true);
+      }
+    };
+  }
 
   function updateGpsStatusBadge(status, label) {
     if (riderGpsPill && gpsStatusText) {
@@ -712,6 +816,9 @@ const initDeliveryApp = () => {
     const prevGpsReady = isRiderGpsSyncedAndFresh();
     const prevWithinZone = isRiderWithinRestaurantPickupRadius();
 
+    gpsLastFailureReason = 'none';
+    stopGpsAutoRetryLoop();
+
     riderLiveLocation.lat = pos.coords.latitude;
     riderLiveLocation.lng = pos.coords.longitude;
     riderLiveLocation.accuracy = Math.round(pos.coords.accuracy || 10);
@@ -722,6 +829,12 @@ const initDeliveryApp = () => {
     updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
     updatePickupGpsGateUI();
     updateLivePositionsOnMiniMaps();
+
+    if (typeof pendingGpsSyncCallback === 'function') {
+      const cb = pendingGpsSyncCallback;
+      pendingGpsSyncCallback = null;
+      try { cb(); } catch (e) { console.warn('[Rider GPS] Pending sync callback error:', e); }
+    }
 
     if (
       activeTab === 'ready' &&
@@ -783,6 +896,23 @@ const initDeliveryApp = () => {
 
   let gpsFallbackTimeout = null;
 
+  function applyGpsFailureState(reason) {
+    gpsLastFailureReason = reason;
+    if (reason === 'permission_denied') {
+      riderLiveLocation.hasGps = false;
+      clearPersistedRiderGpsState();
+      updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
+      startGpsAutoRetryLoop();
+    } else {
+      // 'gps_off': Device GPS switch is turned off or signal is temporarily unavailable — do NOT show Permission Blocked!
+      if (!riderLiveLocation.hasGps) {
+        updateGpsStatusBadge('inactive', '📍 GPS Off — Tap to Turn On');
+      }
+      startGpsAutoRetryLoop();
+    }
+    updatePickupGpsGateUI();
+  }
+
   function initRiderLiveGeolocation(forceRetry = false) {
     if (!('geolocation' in navigator)) {
       updateGpsStatusBadge('error', '⚠️ GPS Not Supported');
@@ -796,6 +926,8 @@ const initDeliveryApp = () => {
 
     if (riderLiveLocation.hasGps) {
       updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
+    } else if (gpsLastFailureReason === 'gps_off') {
+      updateGpsStatusBadge('inactive', '📍 GPS Off — Tap to Turn On');
     } else {
       updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
     }
@@ -804,7 +936,10 @@ const initDeliveryApp = () => {
     clearTimeout(gpsFallbackTimeout);
     gpsFallbackTimeout = setTimeout(() => {
       if (!riderLiveLocation.hasGps) {
-        updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
+        updateGpsStatusBadge(
+          'inactive',
+          gpsLastFailureReason === 'gps_off' ? '📍 GPS Off — Tap to Turn On' : '📍 Waiting for GPS...'
+        );
       }
     }, 2000);
 
@@ -816,33 +951,21 @@ const initDeliveryApp = () => {
       },
       (err) => {
         console.warn('[Rider GPS] High-accuracy fix standby:', err.message);
-        if (err && err.code === 1) {
-          clearTimeout(gpsFallbackTimeout);
-          riderLiveLocation.hasGps = false;
-          clearPersistedRiderGpsState();
-          updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
-          return;
-        }
-        // Fallback attempt: low accuracy (resolves instantly via Wi-Fi/cell in mobile browsers)
+        // Fallback attempt: low accuracy (resolves via network/Wi-Fi or confirms GPS state)
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             clearTimeout(gpsFallbackTimeout);
             handleGpsPosition(pos);
           },
-          (fallbackErr) => {
+          async (fallbackErr) => {
             clearTimeout(gpsFallbackTimeout);
-            if (fallbackErr && fallbackErr.code === 1) {
-              riderLiveLocation.hasGps = false;
-              clearPersistedRiderGpsState();
-              updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
-            } else if (!riderLiveLocation.hasGps) {
-              updateGpsStatusBadge('inactive', '📍 Waiting for GPS...');
-            }
+            const reason = await classifyGeolocationFailure(fallbackErr || err);
+            applyGpsFailureState(reason);
           },
-          { enableHighAccuracy: false, timeout: 2500, maximumAge: 60000 }
+          { enableHighAccuracy: false, timeout: 2500, maximumAge: forceRetry ? 0 : 60000 }
         );
       },
-      { enableHighAccuracy: true, timeout: 3000, maximumAge: 10000 }
+      { enableHighAccuracy: true, timeout: 3000, maximumAge: forceRetry ? 0 : 10000 }
     );
 
     // Watch position continuously as rider moves
@@ -853,8 +976,12 @@ const initDeliveryApp = () => {
     try {
       activeGpsWatchId = navigator.geolocation.watchPosition(
         (pos) => handleGpsPosition(pos),
-        (err) => {
+        async (err) => {
           console.warn('[Rider GPS] Watch update error:', err.message);
+          if (!riderLiveLocation.hasGps) {
+            const reason = await classifyGeolocationFailure(err);
+            applyGpsFailureState(reason);
+          }
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
       );
@@ -881,8 +1008,12 @@ const initDeliveryApp = () => {
     riderGpsPill.style.cursor = 'pointer';
     riderGpsPill.title = 'Click to refresh GPS location fix';
     riderGpsPill.onclick = () => {
-      showToast(`📍 Location: ${riderLiveLocation.lat.toFixed(4)}, ${riderLiveLocation.lng.toFixed(4)} (Accuracy ±${riderLiveLocation.accuracy || 10}m)`, 'info');
-      initRiderLiveGeolocation(true);
+      if (riderLiveLocation.hasGps && isRiderGpsSyncedAndFresh()) {
+        showToast(`📍 Location: ${riderLiveLocation.lat.toFixed(4)}, ${riderLiveLocation.lng.toFixed(4)} (Accuracy ±${riderLiveLocation.accuracy || 10}m)`, 'info');
+        initRiderLiveGeolocation(true);
+      } else {
+        requestLiveGpsSyncForPickup();
+      }
     };
   }
 
@@ -1113,8 +1244,16 @@ const initDeliveryApp = () => {
     const gpsReady = isRiderGpsSyncedAndFresh();
     if (!gpsReady) {
       gateBar.className = 'pickup-gps-gate-bar gps-required';
-      gateText.textContent = '📍 Turn on Live GPS within 3 km of restaurant to accept orders.';
-      if (gateBtnLabel) gateBtnLabel.textContent = 'Turn On & Sync GPS';
+      if (gpsLastFailureReason === 'gps_off') {
+        gateText.textContent = '📍 Device GPS is OFF — Tap button to turn on device Location (retrying automatically...).';
+        if (gateBtnLabel) gateBtnLabel.textContent = 'Turn On Device GPS';
+      } else if (gpsLastFailureReason === 'permission_denied') {
+        gateText.textContent = '⚠️ Location permission is blocked. Tap button to allow Location access.';
+        if (gateBtnLabel) gateBtnLabel.textContent = 'Allow Location Access';
+      } else {
+        gateText.textContent = '📍 Turn on Live GPS within 3 km of restaurant to accept orders.';
+        if (gateBtnLabel) gateBtnLabel.textContent = 'Turn On & Sync GPS';
+      }
       return;
     }
 
@@ -1130,13 +1269,39 @@ const initDeliveryApp = () => {
     if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
   }
 
-  function requestLiveGpsSyncForPickup(onSynced) {
+  function requestLiveGpsSyncForPickup(onSynced, options = {}) {
     if (!('geolocation' in navigator)) {
       showToast('⚠️ Location Required: GPS is not supported on this device.', 'error');
       return;
     }
-    showToast('📍 Syncing your live GPS location...', 'info');
+
+    if (typeof onSynced === 'function') {
+      pendingGpsSyncCallback = onSynced;
+    }
+
+    // If inside the Native Android Rider APK and OS GPS or permission is off, immediately trigger the native system Turn-On-Location popup
+    if (!options.skipNativePrompt && isNativeAndroidBridgeAvailable()) {
+      try {
+        const hasPerm = typeof window.AndroidNative.hasLocationPermission === 'function'
+          ? Boolean(window.AndroidNative.hasLocationPermission())
+          : true;
+        const gpsOn = typeof window.AndroidNative.isLocationEnabled === 'function'
+          ? Boolean(window.AndroidNative.isLocationEnabled())
+          : true;
+        if (!hasPerm || !gpsOn) {
+          triggerNativeGpsResolutionPrompt();
+        }
+      } catch {}
+    }
+
+    showToast('📍 Requesting live GPS location...', 'info');
+    updateGpsStatusBadge('inactive', '📍 Requesting GPS...');
+
     const handleSuccess = (pos) => {
+      gpsLastFailureReason = 'none';
+      stopGpsAutoRetryLoop();
+      pendingGpsSyncCallback = null;
+
       // Accept explicit user sync even if coarse up to 500m, preferring handleGpsPosition when accurate
       if (pos?.coords) {
         if (!pos.coords.accuracy || pos.coords.accuracy <= 150) {
@@ -1170,26 +1335,36 @@ const initDeliveryApp = () => {
         }
       }
     };
-    const handleFailure = () => {
-      updateGpsStatusBadge('error', '⚠️ GPS Permission Blocked');
-      updatePickupGpsGateUI();
-      showToast('⚠️ Location Required: Please turn on device Location / GPS permission and sync your live location to pick an order.', 'error');
+
+    const handleFailure = async (err) => {
+      const reason = await classifyGeolocationFailure(err);
+      applyGpsFailureState(reason);
+
+      if (reason === 'permission_denied') {
+        if (!options.skipNativePrompt) {
+          triggerNativeGpsResolutionPrompt();
+        }
+        showToast('⚠️ Location Permission Blocked: Please allow Location access in your browser or app settings.', 'error');
+      } else {
+        // Device GPS hardware toggle is OFF (or acquiring satellites) — prompt system dialog & auto-retry every 3s
+        if (!options.skipNativePrompt) {
+          triggerNativeGpsResolutionPrompt();
+        }
+        showToast('📍 Device GPS is OFF: Please turn on Location in the system popup or top settings shade — retrying automatically...', 'warning');
+      }
     };
 
+    // Use maximumAge: 0 on explicit user tap so Mobile Chrome / WebView triggers the OS "Turn on device location" prompt
     navigator.geolocation.getCurrentPosition(
       handleSuccess,
       (err) => {
-        if (err && err.code === 1) {
-          handleFailure();
-          return;
-        }
         navigator.geolocation.getCurrentPosition(
           handleSuccess,
-          handleFailure,
-          { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
+          (fallbackErr) => handleFailure(fallbackErr || err),
+          { enableHighAccuracy: false, timeout: 4000, maximumAge: 0 }
         );
       },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
     );
   }
 
