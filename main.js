@@ -9032,7 +9032,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
               <span class="profile-tag-badge">${tagEmoji} ${safeTag}</span>
               ${addr.isDefault ? '<span class="profile-default-badge"><i class="fa-solid fa-star"></i> Default</span>' : ''}
             </div>
-            <span class="profile-dist-badge"><i class="fa-solid fa-location-dot"></i> ${dist} km from kitchen</span>
+            <span class="profile-dist-badge" title="${dist} km from kitchen"><i class="fa-solid fa-location-dot"></i> ${dist} km</span>
           </div>
           <div class="profile-addr-contact">
             <strong>${safeName}</strong> • <span>${safePhone}</span>
