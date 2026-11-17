@@ -226,7 +226,7 @@ function r2DevMiddlewarePlugin() {
           const searchParams = new URL(req.url, 'http://localhost').searchParams;
           const key = searchParams.get('key');
           const cleanKey = key ? key.replace(/^\/+/, '') : '';
-          if (!cleanKey || (!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/')) || cleanKey.includes('..') || !/^[a-zA-Z0-9_\-./() %]+$/.test(cleanKey)) {
+          if (!cleanKey || (!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/') && !cleanKey.startsWith('profile/')) || cleanKey.includes('..') || !/^[a-zA-Z0-9_\-./() %]+$/.test(cleanKey)) {
             res.statusCode = 400;
             res.setHeader('Content-Type', 'application/json');
             return res.end(JSON.stringify({ error: 'Invalid or missing image key' }));

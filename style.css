@@ -6650,6 +6650,21 @@ body.order-modal-open .unlocked-deals-floating-bar {
 }
 
 /* Standalone Floating Profile Action Button Elements */
+.floating-circle-action.floating-profile-action {
+  background: #FFFFFF !important;
+  border: 2px solid #FFFFFF !important;
+  box-shadow: 
+    0 10px 28px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.10) !important;
+  overflow: hidden !important;
+}
+
+.floating-circle-action.floating-profile-action:hover {
+  background: #FFFFFF !important;
+  transform: scale(1.06);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24) !important;
+}
+
 .circle-avatar-wrap {
   width: 100%;
   height: 100%;
@@ -6659,14 +6674,20 @@ body.order-modal-open .unlocked-deals-floating-bar {
   border-radius: 50%;
   overflow: hidden;
   position: relative;
+  background: #FFFFFF;
 }
 
 .circle-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 50% !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
   display: none;
+  transform: scale(1.22);
+  transform-origin: center center;
 }
 
 .circle-avatar-letter {
@@ -7048,7 +7069,9 @@ body.order-modal-open .unlocked-deals-floating-bar {
     height: 28px;
     border-radius: 50%;
     object-fit: cover;
-    border: 1.5px solid var(--brand-primary);
+    border: none;
+    transform: scale(1.2);
+    transform-origin: center center;
   }
 
   .user-name-track {
@@ -7644,8 +7667,10 @@ body.order-modal-open .unlocked-deals-floating-bar {
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
-  border: 1.5px solid var(--brand-primary);
+  border: none;
   display: block;
+  transform: scale(1.2);
+  transform-origin: center center;
 }
 
 .user-avatar-letter {
@@ -7708,7 +7733,7 @@ body.order-modal-open .unlocked-deals-floating-bar {
 
 .auth-modal-letter {
   font-size: 1.85rem;
-  box-shadow: 0 6px 20px rgba(255, 90, 38, 0.45);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
 }
 
 /* User Name Track: Fixed window for the name to float inside smoothly */
@@ -8090,6 +8115,8 @@ body.gender-prompt-open {
   height: 100%;
   object-fit: cover;
   display: block;
+  transform: scale(1.22);
+  transform-origin: center center;
 }
 
 .avatar-option-name {
@@ -8177,7 +8204,7 @@ body.gender-prompt-open {
   color: #1F2937;
 }
 
-/* Cute Camera Edit Badge on Hero Avatar */
+/* Hero Avatar Wrap & Clean Preferences Preview */
 .profile-hero-avatar-wrap,
 .profile-guest-avatar-wrap {
   position: relative;
@@ -8185,41 +8212,32 @@ body.gender-prompt-open {
 }
 
 .profile-avatar-edit-badge {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--brand-primary, #FF5A26);
-  color: #FFFFFF;
-  font-size: 0.65rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid #FFFFFF;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-  transition: transform 0.2s var(--ease-spring);
-}
-
-.profile-hero-avatar-wrap:hover .profile-avatar-edit-badge,
-.profile-guest-avatar-wrap:hover .profile-avatar-edit-badge {
-  transform: scale(1.18);
+  display: none !important;
 }
 
 .profile-avatar-pill-preview {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   margin-right: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #FFFFFF;
+  border: 1.5px solid #E5E7EB;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .profile-avatar-pill-img {
-  width: 28px;
-  height: 28px;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   object-fit: cover;
-  border: 1.5px solid var(--brand-primary, #FF5A26);
-  box-shadow: 0 2px 6px rgba(255, 90, 38, 0.2);
+  border: none !important;
+  box-shadow: none !important;
+  transform: scale(1.22);
+  transform-origin: center center;
 }
 
 /* ==========================================================================
@@ -8358,7 +8376,8 @@ body.gender-prompt-open {
   width: 96px;
   height: 96px;
   border-radius: 50%;
-  padding: 4px;
+  padding: 0;
+  overflow: hidden;
   background: #FFFFFF;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
   display: flex;
@@ -8386,6 +8405,8 @@ body.gender-prompt-open {
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+  transform: scale(1.2);
+  transform-origin: center center;
 }
 
 .gender-choice-badge {
@@ -8545,21 +8566,47 @@ body.gender-prompt-open {
 }
 
 .profile-hero-avatar-wrap {
-  width: 64px;
-  height: 64px;
+  width: 68px;
+  height: 68px;
   border-radius: 50%;
   flex-shrink: 0;
   position: relative;
-  box-shadow: 0 4px 14px rgba(255, 90, 38, 0.25);
+  background: #FFFFFF;
+  border: 3px solid #FFFFFF;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-spring), box-shadow 0.2s ease;
 }
 
-.profile-hero-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
-  border: 2.5px solid #FF5A26;
-  display: block;
+.profile-hero-avatar-wrap:hover {
+  transform: scale(1.04);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+}
+
+.profile-hero-avatar-wrap:active {
+  transform: scale(0.97);
+}
+
+.profile-hero-avatar-img,
+.profile-hero-avatar-wrap .auth-modal-avatar,
+.profile-hero-avatar-wrap .profile-hero-avatar-img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 50% !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  display: block !important;
+  transform: scale(1.22);
+  transform-origin: center center;
 }
 
 .profile-hero-avatar-letter {
@@ -8567,13 +8614,13 @@ body.gender-prompt-open {
   height: 100%;
   font-size: 1.65rem;
   border-radius: 50%;
-  background: linear-gradient(135deg, #FF5A26 0%, #EA580C 100%);
+  background: linear-gradient(135deg, #FF6B35 0%, #FA4D1A 100%);
   color: #FFFFFF;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 850;
-  border: 2px solid #FFFFFF;
+  border: none;
   box-sizing: border-box;
 }
 
@@ -9195,13 +9242,13 @@ body.gender-prompt-open {
 }
 
 .auth-modal-avatar {
-  width: 76px;
-  height: 76px;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   object-fit: cover;
-  border: 3.5px solid var(--brand-primary);
-  margin-bottom: 14px;
-  box-shadow: 0 6px 20px rgba(255, 90, 38, 0.3);
+  border: none;
+  margin: 0;
+  box-shadow: none;
 }
 
 .user-greeting-wrap,
