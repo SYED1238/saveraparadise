@@ -2814,7 +2814,9 @@ function initStorefrontApp() {
     if (didChangeCards && typeof filterDishes === 'function') {
       const searchVal = (typeof recipeSearchInput !== 'undefined' && recipeSearchInput) ? recipeSearchInput.value.trim() : '';
       if (!searchVal) {
-        filterDishes(activeFilter || 'all');
+        const activePill = (typeof pillsWrap !== 'undefined' && pillsWrap) ? pillsWrap.querySelector('.category-pill.active') : null;
+        const activeCat = activePill ? (activePill.getAttribute('data-filter') || 'all') : 'all';
+        filterDishes(activeCat);
       }
     }
   }
@@ -5441,13 +5443,17 @@ function initStorefrontApp() {
             if (foundInCart) {
               foundInCart.price = cleanPrice;
               foundInCart.quantity = Math.min(50, foundInCart.quantity + addQty);
+              if (item.spice) foundInCart.spice = item.spice;
+              if (item.sauce) foundInCart.sauce = item.sauce;
             } else {
               cart.push({
                 id: matchedCatalog.id,
                 name: matchedCatalog.name,
                 price: cleanPrice,
                 image: matchedCatalog.image || item.image || '/images/crispy-chicken.jpg',
-                quantity: addQty
+                quantity: addQty,
+                ...(item.spice ? { spice: item.spice } : {}),
+                ...(item.sauce ? { sauce: item.sauce } : {})
               });
             }
             addedCount += addQty;
@@ -11147,11 +11153,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     });
   }
 
-  // Live re-render cards when settings change (e.g. deals toggled in admin)
-  dataService.subscribeToChanges('settings', () => {
-    syncStorefrontCardsWithDataService();
-    renderCart();
-  });
+
 
   // Handle Cashfree full-page redirect return (?payment_return=1&cf_order_id=...)
   try {

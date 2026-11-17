@@ -138,4 +138,22 @@ test('CUSTOMER PORTAL 11 BUG FIXES REGRESSION SUITE', async (t) => {
     assert.doesNotMatch(mainJs, /dataService\.on\('change:addresses'/, 'main.js must not register redundant change:addresses');
     assert.match(dataServiceJs, /const baseType = String\(eventName \|\| ''\)\.replace\(\/\^change:\/, ''\);/, 'dataService.on must deduplicate base event types');
   });
+
+  await t.test('Follow-up Fix 1: syncStorefrontCardsWithDataService resolves activeCat from pillsWrap and avoids undeclared activeFilter', () => {
+    assert.doesNotMatch(mainJs, /filterDishes\(activeFilter/, 'main.js must not reference undeclared activeFilter');
+    assert.match(mainJs, /const activePill = \(typeof pillsWrap !== 'undefined' && pillsWrap\) \? pillsWrap\.querySelector\('\.category-pill\.active'\) : null;/, 'syncStorefrontCardsWithDataService must resolve activePill from pillsWrap');
+    assert.match(mainJs, /filterDishes\(activeCat\);/, 'syncStorefrontCardsWithDataService must filter by activeCat');
+  });
+
+  await t.test('Follow-up Fix 2: dataService.addOrder and Reorder flow preserve spice and sauce', () => {
+    assert.match(dataServiceJs, /safeSpice \? \{ spice: safeSpice \} : \{\}/, 'dataService.addOrder must preserve safeSpice on sanitizedItems');
+    assert.match(dataServiceJs, /safeSauce \? \{ sauce: safeSauce \} : \{\}/, 'dataService.addOrder must preserve safeSauce on sanitizedItems');
+    assert.match(mainJs, /if \(item\.spice\) foundInCart\.spice = item\.spice;[\s\S]*?if \(item\.sauce\) foundInCart\.sauce = item\.sauce;/, 'Reorder handler must preserve spice and sauce on foundInCart');
+    assert.match(mainJs, /\.\.\.\(item\.spice \? \{ spice: item\.spice \} : \{\}\)[\s\S]*?\.\.\.\(item\.sauce \? \{ sauce: item\.sauce \} : \{\}\)/, 'Reorder handler must push spice and sauce to cart items');
+  });
+
+  await t.test('Follow-up Fix 3: dataService.on cleans up regTypes on unsubscribe and duplicate settings listener is removed', () => {
+    assert.match(dataServiceJs, /regTypes\.delete\(baseType\);[\s\S]*?unsub\(\);/, 'dataService.on unsubscribe must delete baseType from regTypes');
+    assert.doesNotMatch(mainJs, /dataService\.subscribeToChanges\('settings',\s*\(\)\s*=>\s*\{[\s\S]*?syncStorefrontCardsWithDataService\(\);[\s\S]*?renderCart\(\);[\s\S]*?\}\);/, 'main.js must not have duplicate inline subscribeToChanges(settings)');
+  });
 });

@@ -5185,7 +5185,7 @@ class QuickBiteDataService {
       return () => {};
     }
     regTypes.add(baseType);
-    return this.subscribeToChanges((type, detail) => {
+    const unsub = this.subscribeToChanges((type, detail) => {
       if (!eventName || eventName === '*' || eventName === type || eventName === `change:${type}`) {
         try {
           callback(detail);
@@ -5194,6 +5194,10 @@ class QuickBiteDataService {
         }
       }
     });
+    return () => {
+      regTypes.delete(baseType);
+      unsub();
+    };
   }
 
   // --- CATEGORIES & CATEGORY IMAGES STORE ---
@@ -6194,11 +6198,15 @@ class QuickBiteDataService {
       const cleanPrice = dish ? Math.max(1, Number(dish.price) || 0) : Math.max(1, Number(item.price) || 0);
       const cleanQty = Math.max(1, Math.min(50, Math.floor(Number(item.quantity) || 1)));
       computedSubtotal += cleanPrice * cleanQty;
+      const safeSpice = (typeof item.spice === 'string' && item.spice.trim()) ? item.spice.trim().slice(0, 40) : undefined;
+      const safeSauce = (typeof item.sauce === 'string' && item.sauce.trim()) ? item.sauce.trim().slice(0, 40) : undefined;
       return {
         id: item.id || dish?.id,
         name: String(item.name || dish?.name || 'Special Dish').slice(0, 100),
         quantity: cleanQty,
-        price: cleanPrice
+        price: cleanPrice,
+        ...(safeSpice ? { spice: safeSpice } : {}),
+        ...(safeSauce ? { sauce: safeSauce } : {})
       };
     });
 
