@@ -582,10 +582,73 @@ function initStorefrontApp() {
   }
 
   const FAVORITE_DISHES_KEY = 'quickbite_favorite_dishes';
+
+  class FavoriteDishesSet extends Set {
+    constructor(entries, nameToIdMap, idToNameMap) {
+      super(entries);
+      this._nameToIdMap = nameToIdMap || new Map();
+      this._idToNameMap = idToNameMap || new Map();
+    }
+    has(key) {
+      if (super.has(key)) return true;
+      const normalized = String(key || '').trim().toLowerCase();
+      if (!normalized) return false;
+      if (super.has(normalized)) return true;
+      const mappedId = this._nameToIdMap.get(normalized);
+      if (mappedId && super.has(mappedId)) return true;
+      const mappedName = this._idToNameMap.get(normalized);
+      if (mappedName && super.has(mappedName)) return true;
+      return false;
+    }
+  }
+
   function getFavoriteDishIds() {
     try {
       const parsed = JSON.parse(localStorage.getItem(FAVORITE_DISHES_KEY) || '[]');
-      return new Set(Array.isArray(parsed) ? parsed.map(s => String(s).trim().toLowerCase()) : []);
+      const rawList = Array.isArray(parsed) ? parsed.map(s => String(s).trim().toLowerCase()).filter(Boolean) : [];
+
+      const allDishes = (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function')
+        ? dataService.getDishes()
+        : [];
+
+      const nameToIdMap = new Map();
+      const idToNameMap = new Map();
+      allDishes.forEach(d => {
+        const dId = String(d.id || '').trim().toLowerCase();
+        const dName = String(d.name || '').trim().toLowerCase();
+        if (dId && dName) {
+          nameToIdMap.set(dName, dId);
+          idToNameMap.set(dId, dName);
+        }
+      });
+
+      if (typeof document !== 'undefined') {
+        document.querySelectorAll('.recipe-card').forEach(card => {
+          const cId = String(card.getAttribute('data-id') || card.id?.replace(/^card-/, '') || '').trim().toLowerCase();
+          const cName = String(card.querySelector('.recipe-title')?.textContent || '').trim().toLowerCase();
+          if (cId && cName) {
+            nameToIdMap.set(cName, cId);
+            if (!idToNameMap.has(cId)) {
+              idToNameMap.set(cId, cName);
+            }
+          }
+        });
+      }
+
+      const cleanEntries = new Set();
+      rawList.forEach(entry => {
+        const canonical = nameToIdMap.get(entry) || entry;
+        cleanEntries.add(canonical);
+      });
+
+      // Auto-migrate legacy pairs in localStorage if duplicates were pruned
+      if (cleanEntries.size < rawList.length) {
+        try {
+          localStorage.setItem(FAVORITE_DISHES_KEY, JSON.stringify(Array.from(cleanEntries)));
+        } catch (e) {}
+      }
+
+      return new FavoriteDishesSet(cleanEntries, nameToIdMap, idToNameMap);
     } catch (e) {
       return new Set();
     }
@@ -595,17 +658,20 @@ function initStorefrontApp() {
     const favs = getFavoriteDishIds();
     const idKey = String(dishId || '').trim().toLowerCase();
     const nameKey = String(dishName || '').trim().toLowerCase();
-    const key = idKey || nameKey;
-    if (!key) return false;
+    const primaryKey = idKey || nameKey;
+    if (!primaryKey) return false;
 
     const isFav = (idKey && favs.has(idKey)) || (nameKey && favs.has(nameKey));
     const isNowFav = !isFav;
     if (isNowFav) {
-      if (idKey) favs.add(idKey);
-      if (nameKey) favs.add(nameKey);
+      favs.add(primaryKey);
+      if (idKey && nameKey && nameKey !== idKey) {
+        favs.delete(nameKey);
+      }
     } else {
       if (idKey) favs.delete(idKey);
       if (nameKey) favs.delete(nameKey);
+      if (primaryKey) favs.delete(primaryKey);
     }
     try {
       localStorage.setItem(FAVORITE_DISHES_KEY, JSON.stringify(Array.from(favs)));
@@ -621,6 +687,10 @@ function initStorefrontApp() {
 
     if (foodModalFavBtn) {
       foodModalFavBtn.classList.toggle('active', isNowFav);
+    }
+
+    if (typeof updateProfileStats === 'function') {
+      try { updateProfileStats(); } catch (e) {}
     }
 
     return isNowFav;

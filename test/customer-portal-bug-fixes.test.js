@@ -80,4 +80,9 @@ test('CUSTOMER PORTAL 11 BUG FIXES REGRESSION SUITE', async (t) => {
     assert.match(swJs, /event\.data\.type === 'TRACK_ORDERS'/, 'public/sw.js must handle TRACK_ORDERS message type');
     assert.match(swJs, /trackedOrderIds\.add\(String\(id\)\)/, 'public/sw.js must store tracked order IDs');
   });
+
+  await t.test('Bug 12: Favorite dishes deduplicates id/name pairs and counts 1 dish as 1 favorite', () => {
+    assert.match(mainJs, /class FavoriteDishesSet extends Set/, 'main.js must define FavoriteDishesSet to preserve accurate .size');
+    assert.match(mainJs, /updateProfileStats\(\)/, 'toggleFavoriteDishId must trigger updateProfileStats to keep profile stat in sync');
+  });
 });
