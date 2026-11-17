@@ -36,7 +36,7 @@ export async function onRequest(context) {
 
   const cleanKey = key.replace(/^\/+/, '');
   if (
-    (!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/')) ||
+    (!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/') && !cleanKey.startsWith('profile/')) ||
     cleanKey.includes('..') ||
     !/^[a-zA-Z0-9_\-./() %]+$/.test(cleanKey)
   ) {

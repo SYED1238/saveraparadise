@@ -1227,10 +1227,21 @@ function initStorefrontApp() {
 
   if (btnCircleFilter) {
     btnCircleFilter.addEventListener('click', () => {
-      const favPill = document.querySelector('.category-pill[data-filter="favorites"]');
-      if (favPill) {
-        favPill.click();
-        showToast('Showing favorite dishes! ❤️', 'info');
+      const favCount = typeof getFavoriteDishIds === 'function' ? getFavoriteDishIds().size : 0;
+      if (favCount === 0) {
+        filterDishes('all');
+        if (pillsWrap) {
+          pillsWrap.querySelectorAll('.category-pill').forEach(p => {
+            p.classList.toggle('active', p.getAttribute('data-filter') === 'all');
+          });
+        }
+        showToast('No saved favorites yet! Tap ❤️ on any dish to save it.', 'info');
+      } else {
+        filterDishes('favorites');
+        if (pillsWrap) {
+          pillsWrap.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
+        }
+        showToast(`Showing ${favCount} favorite meal${favCount > 1 ? 's' : ''}! ❤️`, 'info');
       }
     });
   }
@@ -1239,12 +1250,13 @@ function initStorefrontApp() {
   // BALLISTIC FLY-TO-CART ANIMATION ENGINE
   // ==========================================
   function animateFlyToCart(startElement, imageUrl) {
+    const navBtnCart = document.getElementById('nav-btn-cart');
     const navCircleAction = document.getElementById('nav-circle-action');
     const floatingBar = document.getElementById('unlocked-deals-floating-bar');
     const viewCartBtn = document.getElementById('unlocked-bar-view-btn');
     const targetElement = (floatingBar && floatingBar.classList.contains('is-visible') && viewCartBtn)
       ? viewCartBtn
-      : (navCircleAction || cartTriggerBtn);
+      : (navBtnCart || navCircleAction || cartTriggerBtn);
     if (!startElement || !targetElement) return;
 
     // Lite Mode: Skip heavy DOM node creation & layout reflow for instant touch response
@@ -1252,6 +1264,11 @@ function initStorefrontApp() {
       if (cartBadge) {
         cartBadge.classList.add('bump');
         setTimeout(() => cartBadge.classList.remove('bump'), 200);
+      }
+      const capsuleCartBadge = document.getElementById('capsule-cart-badge');
+      if (capsuleCartBadge) {
+        capsuleCartBadge.classList.add('bump');
+        setTimeout(() => capsuleCartBadge.classList.remove('bump'), 200);
       }
       if (floatingBar && floatingBar.classList.contains('is-visible')) {
         floatingBar.classList.add('bar-bump');
@@ -1290,7 +1307,10 @@ function initStorefrontApp() {
       flyer.remove();
       // Cart bounce animation
       if (cartBadge) cartBadge.classList.add('bump');
+      const capsuleCartBadge = document.getElementById('capsule-cart-badge');
+      if (capsuleCartBadge) capsuleCartBadge.classList.add('bump');
       if (cartTriggerBtn) cartTriggerBtn.style.transform = 'scale(1.25)';
+      if (navBtnCart) navBtnCart.style.transform = 'scale(1.25)';
       if (navCircleAction) navCircleAction.style.transform = 'scale(1.25)';
       if (floatingBar && floatingBar.classList.contains('is-visible')) {
         floatingBar.classList.add('bar-bump');
@@ -1301,7 +1321,9 @@ function initStorefrontApp() {
       }
       setTimeout(() => {
         if (cartBadge) cartBadge.classList.remove('bump');
+        if (capsuleCartBadge) capsuleCartBadge.classList.remove('bump');
         if (cartTriggerBtn) cartTriggerBtn.style.transform = '';
+        if (navBtnCart) navBtnCart.style.transform = '';
         if (navCircleAction) navCircleAction.style.transform = '';
       }, 300);
     }, 750);
@@ -1644,6 +1666,16 @@ function initStorefrontApp() {
 
     const floatBagBadge = document.getElementById('float-bag-badge');
     if (floatBagBadge) floatBagBadge.textContent = totalCount;
+
+    const capsuleCartBadge = document.getElementById('capsule-cart-badge');
+    if (capsuleCartBadge) {
+      if (totalCount > 0) {
+        capsuleCartBadge.textContent = totalCount;
+        capsuleCartBadge.style.display = 'inline-flex';
+      } else {
+        capsuleCartBadge.style.display = 'none';
+      }
+    }
 
     const circleActionBadge = document.getElementById('circle-action-badge');
     if (circleActionBadge) {
@@ -2817,7 +2849,9 @@ function initStorefrontApp() {
     if (cartDrawer) cartDrawer.classList.add('open');
     if (cartDrawerBackdrop) cartDrawerBackdrop.classList.add('open');
     document.body.classList.add('cart-drawer-open');
+    document.documentElement.classList.add('cart-drawer-open');
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
     if (typeof prewarmTurnstile === 'function') prewarmTurnstile();
 
     // Auto-prefill active offer code so customer only needs to press Apply
@@ -2842,7 +2876,9 @@ function initStorefrontApp() {
     if (cartDrawer) cartDrawer.classList.remove('open');
     if (cartDrawerBackdrop) cartDrawerBackdrop.classList.remove('open');
     document.body.classList.remove('cart-drawer-open');
+    document.documentElement.classList.remove('cart-drawer-open');
     document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
   }
 
   function closeCartDrawer() {
@@ -2863,8 +2899,10 @@ function initStorefrontApp() {
   const navBtnMenu = document.getElementById('nav-btn-menu');
   const navBtnOffers = document.getElementById('nav-btn-offers');
   const navBtnTrack = document.getElementById('nav-btn-track');
+  const navBtnCart = document.getElementById('nav-btn-cart');
   const navBtnProfile = document.getElementById('nav-btn-profile');
   const capsuleProfileLabel = document.getElementById('capsule-profile-label');
+  const navCircleProfile = document.getElementById('nav-circle-profile') || document.getElementById('nav-circle-action');
   const navCircleAction = document.getElementById('nav-circle-action');
   const capsuleBtns = document.querySelectorAll('.capsule-nav-btn');
 
@@ -2877,7 +2915,11 @@ function initStorefrontApp() {
   window.addEventListener('resize', () => { cachedMenuSectionOffset = null; }, { passive: true });
 
   function syncCapsuleNavWithScroll() {
-    // If a modal is open, keep its button active
+    // If a modal or drawer is open, keep its button active
+    if (cartDrawer && cartDrawer.classList.contains('open')) {
+      if (navBtnCart) setActiveCapsuleBtn(navBtnCart);
+      return;
+    }
     if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) {
       setActiveCapsuleBtn(navBtnOffers);
       return;
@@ -2909,12 +2951,20 @@ function initStorefrontApp() {
   // ==========================================
   // SPECIAL OFFERS POPUP MODAL
   // ==========================================
-  function openOffersModal() {
+  function openOffersModal(skipPushStep = false) {
+    if (authModalBackdrop && authModalBackdrop.classList.contains('open')) {
+      closeAuthModalInternal();
+      if (backNav && typeof backNav.removeStepDirect === 'function') {
+        backNav.removeStepDirect('auth-modal');
+      }
+    }
     if (offersModalBackdrop) {
       offersModalBackdrop.classList.add('open');
       document.body.style.overflow = 'hidden';
       setActiveCapsuleBtn(navBtnOffers);
-      backNav.pushStep('offers-modal', () => closeOffersModalInternal());
+      if (!skipPushStep) {
+        backNav.pushStep('offers-modal', () => closeOffersModalInternal());
+      }
     }
   }
 
@@ -3088,7 +3138,26 @@ function initStorefrontApp() {
     });
   }
 
-  if (navCircleAction) {
+  if (navBtnCart) {
+    navBtnCart.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) closeOffersModal();
+      if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) closeOrderModal();
+      setActiveCapsuleBtn(navBtnCart);
+      openCartDrawer();
+    });
+  }
+
+  if (navCircleProfile) {
+    navCircleProfile.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) closeOffersModal();
+      if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) closeOrderModal();
+      openAuthModal();
+    });
+  }
+
+  if (navCircleAction && navCircleAction !== navCircleProfile) {
     navCircleAction.addEventListener('click', () => {
       openCartDrawer();
     });
@@ -4932,7 +5001,11 @@ function initStorefrontApp() {
     const myOrdersEl = document.getElementById('modal-my-orders-backdrop');
     if (myOrdersEl && myOrdersEl.classList.contains('open')) {
       closeMyOrdersModalInternal();
-      backNav.removeStepDirect('my-orders-modal');
+      // Keep my-orders-modal in stack so back returns to order history
+    }
+    if (authModalBackdrop && authModalBackdrop.classList.contains('open')) {
+      closeAuthModalInternal();
+      // Keep auth-modal in stack so back returns to profile
     }
     orders = dataService.getOrders();
     const userPhone = getCurrentUserPhone();
@@ -4951,8 +5024,11 @@ function initStorefrontApp() {
       syncTrackerVideoBackground(null);
       orderModalBackdrop.classList.add('open');
       document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
       setActiveCapsuleBtn(navBtnTrack);
-      backNav.pushStep('order-modal', () => closeOrderModalInternal(), () => openOrderModal(orderIdToOpen, false));
+      if (!skipPushStep) {
+        backNav.pushStep('order-modal', () => closeOrderModalInternal(), () => openOrderModal(orderIdToOpen, false));
+      }
       return;
     }
 
@@ -4984,6 +5060,7 @@ function initStorefrontApp() {
 
     orderModalBackdrop.classList.add('open');
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
     setActiveCapsuleBtn(navBtnTrack);
     if (!skipPushStep) {
       backNav.pushStep('order-modal', () => closeOrderModalInternal());
@@ -5006,8 +5083,13 @@ function initStorefrontApp() {
     const modalCard = document.querySelector('.order-modal-card');
     if (modalCard) modalCard.classList.remove('is-dispatched');
     orderModalBackdrop.classList.remove('open');
-    document.body.style.overflow = '';
-    syncCapsuleNavWithScroll();
+    const isParentModalInStack = backNav && typeof backNav.hasStep === 'function' &&
+      (backNav.hasStep('auth-modal') || backNav.hasStep('my-orders-modal'));
+    if (!isParentModalInStack) {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      syncCapsuleNavWithScroll();
+    }
     updateLiveOrderTrackPulse();
   }
 
@@ -5211,7 +5293,6 @@ function initStorefrontApp() {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-track-id');
         closeMyOrdersModalInternal();
-        backNav.removeStepDirect('my-orders-modal');
         openOrderModal(id, false);
       });
     });
@@ -5296,6 +5377,11 @@ function initStorefrontApp() {
       closeOrderModalInternal();
       backNav.removeStepDirect('order-modal');
     }
+    // Visually hide auth modal if open, but preserve 'auth-modal' in backNav stack
+    // so pressing back returns directly to Profile!
+    if (authModalBackdrop && authModalBackdrop.classList.contains('open')) {
+      closeAuthModalInternal();
+    }
     if (mobileNavDrawer && mobileNavDrawer.classList.contains('open')) {
       closeMobileMenuInternal();
       backNav.removeStepDirect('mobile-nav');
@@ -5315,12 +5401,25 @@ function initStorefrontApp() {
 
     renderMyOrdersList();
 
+    const isFromProfile = backNav && typeof backNav.hasStep === 'function' && backNav.hasStep('auth-modal');
+    const btnOrdersBackProfile = document.getElementById('btn-orders-back-profile');
+    if (btnOrdersBackProfile) {
+      btnOrdersBackProfile.style.display = isFromProfile ? 'inline-flex' : 'none';
+    }
+
     if (modalMyOrdersBackdrop) {
       modalMyOrdersBackdrop.classList.add('open');
+      document.body.classList.add('my-orders-modal-open');
+      document.documentElement.classList.add('my-orders-modal-open');
       document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
       setActiveCapsuleBtn(navBtnTrack);
       if (!skipPushStep) {
-        backNav.pushStep('my-orders-modal', () => closeMyOrdersModalInternal());
+        backNav.pushStep(
+          'my-orders-modal',
+          () => closeMyOrdersModalInternal(),
+          () => openMyOrdersModal('all', true)
+        );
       }
     }
   }
@@ -5328,8 +5427,15 @@ function initStorefrontApp() {
   function closeMyOrdersModalInternal() {
     if (modalMyOrdersBackdrop) {
       modalMyOrdersBackdrop.classList.remove('open');
-      document.body.style.overflow = '';
-      syncCapsuleNavWithScroll();
+      document.body.classList.remove('my-orders-modal-open');
+      document.documentElement.classList.remove('my-orders-modal-open');
+      const isAuthStillOpen = (authModalBackdrop && authModalBackdrop.classList.contains('open')) ||
+                              (backNav && typeof backNav.hasStep === 'function' && backNav.hasStep('auth-modal'));
+      if (!isAuthStillOpen) {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+        syncCapsuleNavWithScroll();
+      }
     }
   }
 
@@ -5340,6 +5446,14 @@ function initStorefrontApp() {
       closeMyOrdersModalInternal();
       backNav.removeStepDirect('my-orders-modal');
     }
+  }
+
+  const btnOrdersBackProfile = document.getElementById('btn-orders-back-profile');
+  if (btnOrdersBackProfile) {
+    btnOrdersBackProfile.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeMyOrdersModal();
+    });
   }
 
   if (modalMyOrdersClose) modalMyOrdersClose.addEventListener('click', closeMyOrdersModal);
@@ -7046,6 +7160,8 @@ function initStorefrontApp() {
   const userAvatarLetter = document.getElementById('user-avatar-letter');
   const userDropAvatarImg = document.getElementById('user-drop-avatar-img');
   const userDropAvatarLetter = document.getElementById('user-drop-avatar-letter');
+  const circleAvatarImg = document.getElementById('circle-avatar-img');
+  const circleAvatarLetter = document.getElementById('circle-avatar-letter');
   const authModalLetter = document.getElementById('auth-modal-letter');
   const userNameText = document.getElementById('user-name-text');
   const userDropName = document.getElementById('user-drop-name');
@@ -8975,14 +9091,92 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     });
   }
 
+  function updateProfileStats() {
+    const userPhone = getCurrentUserPhone();
+    const userEmail = currentUser?.email || '';
+    const userOrders = (typeof dataService.getCustomerOrders === 'function')
+      ? dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone)
+      : [];
+    const favCount = typeof getFavoriteDishIds === 'function' ? getFavoriteDishIds().size : 0;
+    const addrs = typeof getCurrentAddresses === 'function' ? getCurrentAddresses() : [];
+
+    const statOrdersCount = document.getElementById('profile-stat-orders-count');
+    if (statOrdersCount) statOrdersCount.textContent = Array.isArray(userOrders) ? userOrders.length : 0;
+
+    const statFavsCount = document.getElementById('profile-stat-favs-count');
+    if (statFavsCount) statFavsCount.textContent = favCount;
+
+    const addrSubText = document.getElementById('profile-addr-sub-text');
+    if (addrSubText) {
+      addrSubText.textContent = addrs.length > 0 
+        ? `${addrs.length} saved address${addrs.length === 1 ? '' : 'es'}`
+        : 'Manage your saved addresses';
+    }
+
+    const notifsSubText = document.getElementById('profile-notifs-sub-text');
+    if (notifsSubText && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        notifsSubText.textContent = 'Active (Live alerts enabled)';
+      } else if (Notification.permission === 'denied') {
+        notifsSubText.textContent = 'Blocked in browser settings';
+      } else {
+        notifsSubText.textContent = 'Tap to enable live order alerts';
+      }
+    }
+
+    const activeOrders = (typeof dataService.getCustomerActiveOrders === 'function')
+      ? dataService.getCustomerActiveOrders(currentUser?.id, userEmail, userPhone)
+      : [];
+    const profileTrackSubText = document.getElementById('profile-track-sub-text');
+    if (profileTrackSubText) {
+      if (activeOrders.length > 0) {
+        profileTrackSubText.textContent = `${activeOrders.length} active delivery`;
+      } else {
+        profileTrackSubText.textContent = 'Live delivery status';
+      }
+    }
+
+    if (typeof applyCustomAvatarToUI === 'function') {
+      applyCustomAvatarToUI();
+    }
+  }
+
   function openAuthModalInternal() {
     if (authModalBackdrop) {
       authModalBackdrop.classList.add('open');
+      document.body.classList.add('auth-modal-open');
+      document.documentElement.classList.add('auth-modal-open');
       document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+      updateProfileStats();
     }
   }
 
   function openAuthModal() {
+    if (modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open')) {
+      closeMyOrdersModalInternal();
+      if (backNav && typeof backNav.removeStepDirect === 'function') {
+        backNav.removeStepDirect('my-orders-modal');
+      }
+    }
+    if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) {
+      closeOrderModalInternal();
+      if (backNav && typeof backNav.removeStepDirect === 'function') {
+        backNav.removeStepDirect('order-modal');
+      }
+    }
+    if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) {
+      closeOffersModalInternal();
+      if (backNav && typeof backNav.removeStepDirect === 'function') {
+        backNav.removeStepDirect('offers-modal');
+      }
+    }
+    if (mobileNavDrawer && mobileNavDrawer.classList.contains('open')) {
+      closeMobileMenuInternal();
+      if (backNav && typeof backNav.removeStepDirect === 'function') {
+        backNav.removeStepDirect('mobile-nav');
+      }
+    }
     openAuthModalInternal();
     backNav.pushStep('auth-modal', () => closeAuthModalInternal(), () => openAuthModalInternal());
   }
@@ -8990,7 +9184,18 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   function closeAuthModalInternal() {
     if (authModalBackdrop) {
       authModalBackdrop.classList.remove('open');
-      document.body.style.overflow = '';
+      document.body.classList.remove('auth-modal-open');
+      document.documentElement.classList.remove('auth-modal-open');
+      const anyOtherModalOpen = (modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open')) ||
+                                (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) ||
+                                (modalAddressBackdrop && modalAddressBackdrop.classList.contains('open')) ||
+                                (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) ||
+                                (modalCheckoutBackdrop && modalCheckoutBackdrop.classList.contains('open')) ||
+                                (cartDrawer && cartDrawer.classList.contains('open'));
+      if (!anyOtherModalOpen) {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+      }
     }
   }
 
@@ -9010,6 +9215,671 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       if (e.target === authModalBackdrop) closeAuthModal();
     });
   }
+
+  // Boundary scroll containment helper to prevent background scroll chaining on modals
+  function attachModalScrollBoundaryGuard(backdropEl, cardEl) {
+    if (!backdropEl || !cardEl) return;
+
+    // Prevent background scrolling when dragging outside the modal card
+    backdropEl.addEventListener('touchmove', (e) => {
+      if (e.target === backdropEl) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // Prevent wheel overscroll chaining to window/body when hitting top or bottom boundary
+    cardEl.addEventListener('wheel', (e) => {
+      const scrollTarget = e.target.closest('.profile-addresses-list') || cardEl;
+      const atTop = scrollTarget.scrollTop <= 0;
+      const atBottom = Math.ceil(scrollTarget.scrollTop + scrollTarget.clientHeight) >= scrollTarget.scrollHeight - 1;
+      if ((atTop && e.deltaY < 0) || (atBottom && e.deltaY > 0)) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // Prevent touch drag overscroll chaining to window/body when hitting boundaries
+    let lastTouchY = 0;
+    cardEl.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches.length > 0) {
+        lastTouchY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    cardEl.addEventListener('touchmove', (e) => {
+      if (!e.touches || e.touches.length === 0) return;
+      const currentY = e.touches[0].clientY;
+      const deltaY = currentY - lastTouchY;
+      lastTouchY = currentY;
+
+      const scrollTarget = e.target.closest('.profile-addresses-list') || cardEl;
+      const atTop = scrollTarget.scrollTop <= 0;
+      const atBottom = Math.ceil(scrollTarget.scrollTop + scrollTarget.clientHeight) >= scrollTarget.scrollHeight - 1;
+
+      if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+  }
+
+  attachModalScrollBoundaryGuard(authModalBackdrop, document.getElementById('auth-modal-card'));
+  attachModalScrollBoundaryGuard(modalMyOrdersBackdrop, document.getElementById('my-orders-modal-card') || document.querySelector('.my-orders-modal-card'));
+  attachModalScrollBoundaryGuard(cartDrawerBackdrop, cartDrawer);
+
+  // Profile Screen Action Listeners (Matching Reference Hub)
+  const handleOpenMyOrdersFromProfile = (e) => {
+    if (e) e.preventDefault();
+    closeAuthModalInternal();
+    openMyOrdersModal('all');
+  };
+  const profileStatOrdersBtn = document.getElementById('profile-stat-orders-btn');
+  const profileQuickOrdersBtn = document.getElementById('profile-quick-orders-btn');
+  if (profileStatOrdersBtn) profileStatOrdersBtn.addEventListener('click', handleOpenMyOrdersFromProfile);
+  if (profileQuickOrdersBtn) profileQuickOrdersBtn.addEventListener('click', handleOpenMyOrdersFromProfile);
+
+  const handleOpenFavoritesFromProfile = (e) => {
+    if (e) e.preventDefault();
+    closeAuthModal();
+    const favCount = typeof getFavoriteDishIds === 'function' ? getFavoriteDishIds().size : 0;
+    if (favCount === 0) {
+      filterDishes('all');
+      if (pillsWrap) {
+        pillsWrap.querySelectorAll('.category-pill').forEach(p => {
+          p.classList.toggle('active', p.getAttribute('data-filter') === 'all');
+        });
+      }
+      showToast('No saved favorites yet! Tap ❤️ on any dish to save it.', 'info');
+    } else {
+      filterDishes('favorites');
+      if (pillsWrap) {
+        pillsWrap.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
+      }
+      showToast(`Showing ${favCount} favorite meal${favCount > 1 ? 's' : ''}! ❤️`, 'info');
+    }
+    const menuSec = document.getElementById('menu-section');
+    if (menuSec) {
+      setTimeout(() => {
+        menuSec.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+    setActiveCapsuleBtn(navBtnMenu);
+  };
+  const profileStatFavsBtn = document.getElementById('profile-stat-favs-btn');
+  if (profileStatFavsBtn) profileStatFavsBtn.addEventListener('click', handleOpenFavoritesFromProfile);
+
+  const handleOpenLiveTrackFromProfile = (e) => {
+    if (e) e.preventDefault();
+    closeAuthModalInternal();
+    openOrderModal(null, false);
+  };
+  const profileQuickTrackBtn = document.getElementById('profile-quick-track-btn');
+  if (profileQuickTrackBtn) profileQuickTrackBtn.addEventListener('click', handleOpenLiveTrackFromProfile);
+
+  const profileItemAddressBtn = document.getElementById('profile-item-address-btn');
+  const profileAddressesCard = document.getElementById('profile-addresses-card');
+  const profileAddrChevron = document.getElementById('profile-addr-chevron');
+  if (profileItemAddressBtn && profileAddressesCard) {
+    profileItemAddressBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isHidden = profileAddressesCard.style.display === 'none' || getComputedStyle(profileAddressesCard).display === 'none';
+      profileAddressesCard.style.display = isHidden ? 'block' : 'none';
+      if (profileAddrChevron) {
+        profileAddrChevron.style.transform = isHidden ? 'rotate(90deg)' : '';
+        profileAddrChevron.style.color = isHidden ? '#FF5A26' : '';
+      }
+      if (isHidden) {
+        renderProfileAddresses();
+        profileAddressesCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  }
+
+  const profileItemNotifsBtn = document.getElementById('profile-item-notifs-btn');
+  if (profileItemNotifsBtn) {
+    profileItemNotifsBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!('Notification' in window)) {
+        showToast('Push notifications are not supported on this browser.', 'info');
+        return;
+      }
+      if (Notification.permission === 'granted') {
+        showToast('🔔 Live order & delivery alerts are active!', 'success');
+        updateProfileStats();
+      } else if (Notification.permission === 'denied') {
+        showToast('⚠️ Notifications are blocked in browser settings. Please allow notifications in site settings.', 'warning');
+      } else {
+        try {
+          const perm = await Notification.requestPermission();
+          if (perm === 'granted') {
+            showToast('🔔 Notifications enabled! You will receive live order alerts.', 'success');
+          } else {
+            showToast('Notifications not enabled.', 'info');
+          }
+          updateProfileStats();
+        } catch {
+          showToast('Could not request notification permissions.', 'info');
+        }
+      }
+    });
+  }
+
+  const handleOpenSupport = (e) => {
+    if (e) e.preventDefault();
+    const url = 'https://chat.whatsapp.com/CiASaHQH0A9D0s2m2jedzb';
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      window.location.href = url;
+    }
+  };
+  const profileItemSupportBtn = document.getElementById('profile-item-support-btn');
+  if (profileItemSupportBtn) profileItemSupportBtn.addEventListener('click', handleOpenSupport);
+
+  const handleOpenAboutUs = (e) => {
+    if (e) e.preventDefault();
+    closeAuthModal();
+    const aboutSec = document.getElementById('about-us');
+    if (aboutSec) {
+      setTimeout(() => {
+        aboutSec.scrollIntoView({ behavior: 'smooth' });
+      }, 150);
+    }
+  };
+  const profileItemAboutBtn = document.getElementById('profile-item-about-btn');
+  if (profileItemAboutBtn) profileItemAboutBtn.addEventListener('click', handleOpenAboutUs);
+
+  const guestQuickTrackBtn = document.getElementById('guest-quick-track-btn');
+  if (guestQuickTrackBtn) {
+    guestQuickTrackBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeAuthModalInternal();
+      if (backNav && typeof backNav.isTopStep === 'function' && backNav.isTopStep('auth-modal')) {
+        backNav.replaceTopStep('order-modal', () => closeOrderModalInternal());
+        openOrderModal(null, false, true);
+      } else {
+        if (backNav && typeof backNav.removeStepDirect === 'function') {
+          backNav.removeStepDirect('auth-modal');
+        }
+        openOrderModal(null, false);
+      }
+    });
+  }
+
+  const guestQuickOffersBtn = document.getElementById('guest-quick-offers-btn');
+  if (guestQuickOffersBtn) {
+    guestQuickOffersBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeAuthModalInternal();
+      if (backNav && typeof backNav.isTopStep === 'function' && backNav.isTopStep('auth-modal')) {
+        backNav.replaceTopStep('offers-modal', () => closeOffersModalInternal());
+        openOffersModal(true);
+      } else {
+        if (backNav && typeof backNav.removeStepDirect === 'function') {
+          backNav.removeStepDirect('auth-modal');
+        }
+        openOffersModal();
+      }
+    });
+  }
+
+  const guestItemSupportBtn = document.getElementById('guest-item-support-btn');
+  if (guestItemSupportBtn) guestItemSupportBtn.addEventListener('click', handleOpenSupport);
+
+  const guestItemAboutBtn = document.getElementById('guest-item-about-btn');
+  if (guestItemAboutBtn) guestItemAboutBtn.addEventListener('click', handleOpenAboutUs);
+
+  // ==========================================================================
+  // 3D Profile Avatar & Gender Selector System (Cloudflare R2 smmtaj/profile)
+  // ==========================================================================
+  const R2_PROFILE_AVATARS = {
+    female: [
+      {
+        id: 'female_headphones',
+        name: 'Music Lover',
+        key: 'profile/female/3D_Female_Avatar_Icon_with_Headphones___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'female_blonde',
+        name: 'Blonde Style',
+        key: 'profile/female/3D_Female_Avatar_Icon_with_Blonde_Hair___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'female_hat',
+        name: 'Summer Hat',
+        key: 'profile/female/3D_Female_Avatar_Icon_with_Hat___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'female_curly',
+        name: 'Curly & Glasses',
+        key: 'profile/female/3D_Female_Avatar_Icon_with_Curly_Puff_Hair_and_Glasses___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      }
+    ],
+    male: [
+      {
+        id: 'male_headphones',
+        name: 'Audio Chill',
+        key: 'profile/male/3D_Male_Avatar_Icon_with_Headphones___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'male_cap',
+        name: 'Urban Cap',
+        key: 'profile/male/3D_Male_Avatar_Icon_with_Black_Cap___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'male_cowboy',
+        name: 'Cowboy Hat',
+        key: 'profile/male/3D_Cowboy_Male_Avatar_Icon___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'male_orange',
+        name: 'Orange Vibe',
+        key: 'profile/male/3D_Male_Avatar_Icon_with_Orange_Hair___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      }
+    ]
+  };
+
+  function getR2AvatarUrl(key) {
+    if (!key) return '';
+    return `/api/r2-image?key=${encodeURIComponent(key)}`;
+  }
+
+  const avatarModalBackdrop = document.getElementById('avatar-modal-backdrop');
+  const avatarModalCard = document.getElementById('avatar-modal-card');
+  const avatarModalClose = document.getElementById('avatar-modal-close');
+  const avatarTabFemale = document.getElementById('avatar-tab-female');
+  const avatarTabMale = document.getElementById('avatar-tab-male');
+  const avatarGridFemale = document.getElementById('avatar-grid-female');
+  const avatarGridMale = document.getElementById('avatar-grid-male');
+  const btnSaveAvatar = document.getElementById('btn-save-avatar');
+  const btnResetAvatar = document.getElementById('btn-reset-avatar');
+  const profileItemAvatarBtn = document.getElementById('profile-item-avatar-btn');
+  const profileHeroAvatarBtn = document.getElementById('profile-hero-avatar-btn');
+  const guestItemAvatarBtn = document.getElementById('guest-item-avatar-btn');
+  const profileGuestAvatarBtn = document.getElementById('profile-guest-avatar-btn');
+  const profileAvatarSubText = document.getElementById('profile-avatar-sub-text');
+  const guestAvatarSubText = document.getElementById('guest-avatar-sub-text');
+  const profileAvatarPillPreview = document.getElementById('profile-avatar-pill-preview');
+  const profileAvatarPillImg = document.getElementById('profile-avatar-pill-img');
+  const authGuestAvatarImg = document.getElementById('auth-guest-avatar-img');
+
+  let selectedGender = localStorage.getItem('savera_custom_gender') || 'female';
+  let selectedAvatarKey = localStorage.getItem('savera_custom_avatar_key') || '';
+  let selectedAvatarName = localStorage.getItem('savera_custom_avatar_name') || '';
+
+  function renderAvatarGrids() {
+    if (!avatarGridFemale || !avatarGridMale) return;
+
+    function buildGridHTML(list, gender) {
+      return list.map(item => {
+        const isSelected = selectedAvatarKey === item.key;
+        const imgUrl = getR2AvatarUrl(item.key);
+        return `
+          <div class="avatar-option-card ${isSelected ? 'selected' : ''}" data-key="${escapeHtml(item.key)}" data-gender="${gender}" data-name="${escapeHtml(item.name)}" role="button" tabindex="0">
+            <div class="avatar-thumb-wrap">
+              <img src="${imgUrl}" alt="${escapeHtml(item.name)}" class="avatar-thumb-img" loading="eager" decoding="async" onerror="this.onerror=null; this.src='/savera-logo.png';"/>
+            </div>
+            <span class="avatar-option-name">${escapeHtml(item.name)}</span>
+            <div class="avatar-check-badge"><i class="fa-solid fa-check"></i></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    avatarGridFemale.innerHTML = buildGridHTML(R2_PROFILE_AVATARS.female, 'female');
+    avatarGridMale.innerHTML = buildGridHTML(R2_PROFILE_AVATARS.male, 'male');
+
+    const allCards = [
+      ...avatarGridFemale.querySelectorAll('.avatar-option-card'),
+      ...avatarGridMale.querySelectorAll('.avatar-option-card')
+    ];
+    allCards.forEach(card => {
+      const handleSelect = () => {
+        allCards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedAvatarKey = card.getAttribute('data-key');
+        selectedGender = card.getAttribute('data-gender');
+        selectedAvatarName = card.getAttribute('data-name');
+      };
+      card.addEventListener('click', handleSelect);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleSelect();
+        }
+      });
+    });
+  }
+
+  function switchAvatarGenderTab(gender) {
+    selectedGender = gender;
+    if (avatarTabFemale) {
+      avatarTabFemale.classList.toggle('active', gender === 'female');
+      avatarTabFemale.setAttribute('aria-selected', gender === 'female' ? 'true' : 'false');
+    }
+    if (avatarTabMale) {
+      avatarTabMale.classList.toggle('active', gender === 'male');
+      avatarTabMale.setAttribute('aria-selected', gender === 'male' ? 'true' : 'false');
+    }
+    if (avatarGridFemale) avatarGridFemale.style.display = gender === 'female' ? 'grid' : 'none';
+    if (avatarGridMale) avatarGridMale.style.display = gender === 'male' ? 'grid' : 'none';
+
+    // When switching gender tab, if the current avatar is not in this tab, select default for this gender
+    const currentList = R2_PROFILE_AVATARS[gender] || [];
+    const belongsToTab = currentList.some(item => item.key === selectedAvatarKey);
+    if (!belongsToTab && currentList.length > 0) {
+      selectedAvatarKey = currentList[0].key;
+      selectedAvatarName = currentList[0].name;
+    }
+
+    const allCards = [
+      ...(avatarGridFemale ? avatarGridFemale.querySelectorAll('.avatar-option-card') : []),
+      ...(avatarGridMale ? avatarGridMale.querySelectorAll('.avatar-option-card') : [])
+    ];
+    allCards.forEach(c => {
+      c.classList.toggle('selected', c.getAttribute('data-key') === selectedAvatarKey);
+    });
+  }
+
+  function applyCustomAvatarToUI() {
+    const savedKey = localStorage.getItem('savera_custom_avatar_key');
+    const savedGender = localStorage.getItem('savera_custom_gender');
+    const savedName = localStorage.getItem('savera_custom_avatar_name');
+
+    if (savedKey) {
+      const avatarUrl = getR2AvatarUrl(savedKey);
+
+      // 1. Profile modal hero avatar
+      if (authModalAvatar) {
+        authModalAvatar.src = avatarUrl;
+        authModalAvatar.style.display = 'block';
+        if (authModalLetter) authModalLetter.style.display = 'none';
+      }
+
+      // 2. Navigation bar header avatars
+      if (userAvatarImg) {
+        userAvatarImg.src = avatarUrl;
+        userAvatarImg.style.display = 'block';
+        if (userAvatarLetter) userAvatarLetter.style.display = 'none';
+      }
+      if (userDropAvatarImg) {
+        userDropAvatarImg.src = avatarUrl;
+        userDropAvatarImg.style.display = 'block';
+        if (userDropAvatarLetter) userDropAvatarLetter.style.display = 'none';
+      }
+
+      // 3. Floating bottom capsule circle avatar
+      if (circleAvatarImg) {
+        circleAvatarImg.src = avatarUrl;
+        circleAvatarImg.style.display = 'block';
+        if (circleAvatarLetter) circleAvatarLetter.style.display = 'none';
+      }
+
+      // 3b. Header Greeting Avatar
+      if (userGreetingAvatarImg) {
+        userGreetingAvatarImg.src = avatarUrl;
+        userGreetingAvatarImg.style.display = 'block';
+        if (userGreetingAvatarFallback) userGreetingAvatarFallback.style.display = 'none';
+      }
+
+      // 4. Guest hero avatar
+      if (authGuestAvatarImg) {
+        authGuestAvatarImg.src = avatarUrl;
+        authGuestAvatarImg.style.borderRadius = '50%';
+        authGuestAvatarImg.style.objectFit = 'cover';
+      }
+
+      // 5. Preferences row
+      if (profileAvatarSubText) {
+        const genderLabel = (savedGender || '').charAt(0).toUpperCase() + (savedGender || '').slice(1);
+        profileAvatarSubText.textContent = `${genderLabel} • ${savedName || '3D Avatar'}`;
+      }
+      if (guestAvatarSubText) {
+        const genderLabel = (savedGender || '').charAt(0).toUpperCase() + (savedGender || '').slice(1);
+        guestAvatarSubText.textContent = `${genderLabel} • ${savedName || '3D Avatar'}`;
+      }
+      if (profileAvatarPillPreview && profileAvatarPillImg) {
+        profileAvatarPillImg.src = avatarUrl;
+        profileAvatarPillPreview.style.display = 'inline-flex';
+      }
+    } else {
+      if (profileAvatarSubText) profileAvatarSubText.textContent = 'Choose your 3D character';
+      if (guestAvatarSubText) guestAvatarSubText.textContent = 'Choose your 3D character';
+      if (profileAvatarPillPreview) profileAvatarPillPreview.style.display = 'none';
+      if (authGuestAvatarImg) {
+        authGuestAvatarImg.src = '/savera-logo.png';
+        authGuestAvatarImg.style.borderRadius = '';
+      }
+    }
+  }
+
+  function openAvatarModalInternal() {
+    if (avatarModalBackdrop) {
+      selectedAvatarKey = localStorage.getItem('savera_custom_avatar_key') || '';
+      selectedGender = localStorage.getItem('savera_custom_gender') || 'female';
+      selectedAvatarName = localStorage.getItem('savera_custom_avatar_name') || '';
+
+      renderAvatarGrids();
+      switchAvatarGenderTab(selectedGender);
+
+      if (btnResetAvatar) {
+        const hasGooglePhoto = Boolean(currentUser && (
+          currentUser.user_metadata?.avatar_url ||
+          currentUser.user_metadata?.picture ||
+          currentUser.avatar_url
+        ));
+        btnResetAvatar.style.display = (hasGooglePhoto && selectedAvatarKey) ? 'block' : 'none';
+      }
+
+      avatarModalBackdrop.classList.add('open');
+      document.body.classList.add('avatar-modal-open');
+      document.documentElement.classList.add('avatar-modal-open');
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    }
+  }
+
+  function openAvatarModal() {
+    openAvatarModalInternal();
+    backNav.pushStep('avatar-modal', () => closeAvatarModalInternal(), () => openAvatarModalInternal());
+  }
+
+  function closeAvatarModalInternal() {
+    if (avatarModalBackdrop) {
+      avatarModalBackdrop.classList.remove('open');
+      document.body.classList.remove('avatar-modal-open');
+      document.documentElement.classList.remove('avatar-modal-open');
+      const isAuthStillOpen = (authModalBackdrop && authModalBackdrop.classList.contains('open')) ||
+                              (backNav && typeof backNav.hasStep === 'function' && backNav.hasStep('auth-modal'));
+      if (!isAuthStillOpen) {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+      }
+    }
+  }
+
+  function closeAvatarModal() {
+    if (backNav && typeof backNav.isTopStep === 'function' && backNav.isTopStep('avatar-modal')) {
+      backNav.stepBack();
+    } else {
+      closeAvatarModalInternal();
+      if (backNav && typeof backNav.removeStepDirect === 'function') {
+        backNav.removeStepDirect('avatar-modal');
+      }
+    }
+  }
+
+  if (avatarModalClose) avatarModalClose.addEventListener('click', closeAvatarModal);
+  if (avatarModalBackdrop) {
+    avatarModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === avatarModalBackdrop) closeAvatarModal();
+    });
+  }
+
+  if (avatarTabFemale) {
+    avatarTabFemale.addEventListener('click', () => switchAvatarGenderTab('female'));
+  }
+  if (avatarTabMale) {
+    avatarTabMale.addEventListener('click', () => switchAvatarGenderTab('male'));
+  }
+
+  if (btnSaveAvatar) {
+    btnSaveAvatar.addEventListener('click', () => {
+      if (!selectedAvatarKey) {
+        const list = R2_PROFILE_AVATARS[selectedGender] || R2_PROFILE_AVATARS.female;
+        const first = list[0];
+        selectedAvatarKey = first.key;
+        selectedAvatarName = first.name;
+      }
+      localStorage.setItem('savera_custom_avatar_key', selectedAvatarKey);
+      localStorage.setItem('savera_custom_gender', selectedGender);
+      localStorage.setItem('savera_custom_avatar_name', selectedAvatarName);
+      applyCustomAvatarToUI();
+      closeAvatarModal();
+      showToast(`✨ Profile avatar updated: ${selectedAvatarName}!`, 'success');
+    });
+  }
+
+  if (btnResetAvatar) {
+    btnResetAvatar.addEventListener('click', () => {
+      localStorage.removeItem('savera_custom_avatar_key');
+      localStorage.removeItem('savera_custom_gender');
+      localStorage.removeItem('savera_custom_avatar_name');
+      selectedAvatarKey = '';
+      applyCustomAvatarToUI();
+      if (currentUser && typeof updateUserStateUI === 'function') {
+        updateUserStateUI(currentUser);
+      }
+      if (currentUser && typeof updateProfileStats === 'function') {
+        updateProfileStats();
+      }
+      closeAvatarModal();
+      showToast('Reverted to your Google profile photo.', 'info');
+    });
+  }
+
+  if (profileItemAvatarBtn) profileItemAvatarBtn.addEventListener('click', openAvatarModal);
+  if (profileHeroAvatarBtn) profileHeroAvatarBtn.addEventListener('click', openAvatarModal);
+  if (guestItemAvatarBtn) guestItemAvatarBtn.addEventListener('click', openAvatarModal);
+  if (profileGuestAvatarBtn) profileGuestAvatarBtn.addEventListener('click', openAvatarModal);
+
+  attachModalScrollBoundaryGuard(avatarModalBackdrop, avatarModalCard);
+
+  // ==========================================================================
+  // Post-Login Gender & 3D Avatar Onboarding Prompt Modal
+  // ==========================================================================
+  const genderPromptBackdrop = document.getElementById('gender-prompt-backdrop');
+  const genderPromptCard = document.getElementById('gender-prompt-card');
+  const genderPromptClose = document.getElementById('gender-prompt-close');
+  const btnChooseFemale = document.getElementById('btn-choose-female');
+  const btnChooseMale = document.getElementById('btn-choose-male');
+  const btnSkipGender = document.getElementById('btn-skip-gender');
+
+  function openGenderPromptModalInternal() {
+    if (genderPromptBackdrop) {
+      genderPromptBackdrop.classList.add('open');
+      document.body.classList.add('gender-prompt-open');
+      document.documentElement.classList.add('gender-prompt-open');
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    }
+  }
+
+  function openGenderPromptModal() {
+    openGenderPromptModalInternal();
+    if (backNav && typeof backNav.pushStep === 'function') {
+      backNav.pushStep('gender-prompt', () => closeGenderPromptModalInternal(), () => openGenderPromptModalInternal());
+    }
+  }
+
+  function closeGenderPromptModalInternal() {
+    if (genderPromptBackdrop) {
+      genderPromptBackdrop.classList.remove('open');
+      document.body.classList.remove('gender-prompt-open');
+      document.documentElement.classList.remove('gender-prompt-open');
+      const isOtherModalOpen = (avatarModalBackdrop && avatarModalBackdrop.classList.contains('open')) ||
+                               (authModalBackdrop && authModalBackdrop.classList.contains('open'));
+      if (!isOtherModalOpen) {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+      }
+    }
+  }
+
+  function closeGenderPromptModal() {
+    if (backNav && typeof backNav.isTopStep === 'function' && backNav.isTopStep('gender-prompt')) {
+      backNav.stepBack();
+    } else {
+      closeGenderPromptModalInternal();
+      if (backNav && typeof backNav.removeStepDirect === 'function') {
+        backNav.removeStepDirect('gender-prompt');
+      }
+    }
+  }
+
+  function applyDefaultGenderAndAvatar(gender) {
+    const isFemale = gender === 'female';
+    const targetItem = isFemale ? R2_PROFILE_AVATARS.female[0] : R2_PROFILE_AVATARS.male[0];
+    const targetGender = isFemale ? 'female' : 'male';
+
+    localStorage.setItem('savera_custom_gender', targetGender);
+    localStorage.setItem('savera_custom_avatar_key', targetItem.key);
+    localStorage.setItem('savera_custom_avatar_name', targetItem.name);
+
+    selectedGender = targetGender;
+    selectedAvatarKey = targetItem.key;
+    selectedAvatarName = targetItem.name;
+
+    applyCustomAvatarToUI();
+    if (currentUser && typeof updateUserStateUI === 'function') {
+      updateUserStateUI(currentUser);
+    }
+    closeGenderPromptModal();
+
+    const title = isFemale ? 'Female (Music Lover 🎧)' : 'Male (Audio Chill 🎧)';
+    showToast(`✨ Profile avatar set to ${title}! You can change your avatar or gender preference anytime in Profile.`, 'success');
+  }
+
+  function checkAndShowGenderPrompt() {
+    // If user already has chosen a gender, do not prompt
+    if (localStorage.getItem('savera_custom_gender')) return;
+    // If dismissed in this session, do not prompt again in same session
+    if (sessionStorage.getItem('savera_gender_prompt_dismissed') === 'true') return;
+    // Do not interrupt pending checkout
+    if (pendingCheckoutAfterAuth || sessionStorage.getItem('quickbite_pending_checkout') === 'true') return;
+    // If modal already open, skip
+    if (genderPromptBackdrop && genderPromptBackdrop.classList.contains('open')) return;
+
+    openGenderPromptModal();
+  }
+
+  if (btnChooseFemale) {
+    btnChooseFemale.addEventListener('click', () => applyDefaultGenderAndAvatar('female'));
+  }
+  if (btnChooseMale) {
+    btnChooseMale.addEventListener('click', () => applyDefaultGenderAndAvatar('male'));
+  }
+  if (btnSkipGender) {
+    btnSkipGender.addEventListener('click', () => {
+      sessionStorage.setItem('savera_gender_prompt_dismissed', 'true');
+      closeGenderPromptModal();
+      showToast('You can choose your 3D avatar anytime from Profile!', 'info');
+    });
+  }
+  if (genderPromptClose) {
+    genderPromptClose.addEventListener('click', () => {
+      sessionStorage.setItem('savera_gender_prompt_dismissed', 'true');
+      closeGenderPromptModal();
+    });
+  }
+  if (genderPromptBackdrop) {
+    genderPromptBackdrop.addEventListener('click', (e) => {
+      if (e.target === genderPromptBackdrop) {
+        sessionStorage.setItem('savera_gender_prompt_dismissed', 'true');
+        closeGenderPromptModal();
+      }
+    });
+  }
+
+  attachModalScrollBoundaryGuard(genderPromptBackdrop, genderPromptCard);
+  applyCustomAvatarToUI();
 
   // Open modal on Log In or Greeting / Avatar stack click
   if (btnLogin) btnLogin.addEventListener('click', openAuthModal);
@@ -9108,7 +9978,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       const phone = (meta.phone || user.phone || identityData.phone || '').trim();
 
       // Retrieve Google avatar URL from all possible Supabase / Google OAuth fields
-      const avatarUrl = (
+      const googleAvatarUrl = (
         meta.avatar_url ||
         meta.picture ||
         identityData.avatar_url ||
@@ -9116,6 +9986,9 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         user.avatar_url ||
         ''
       ).trim();
+
+      const customAvatarKey = localStorage.getItem('savera_custom_avatar_key');
+      const avatarUrl = customAvatarKey ? getR2AvatarUrl(customAvatarKey) : googleAvatarUrl;
 
       function updateAvatar(imgEl, letterEl, src, initial) {
         if (letterEl) {
@@ -9170,6 +10043,12 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         }
       }
 
+      // 5. Standalone Floating Profile Action Button avatar (bottom bar)
+      if (circleAvatarImg && circleAvatarLetter) {
+        updateAvatar(circleAvatarImg, circleAvatarLetter, avatarUrl, userInitial);
+        circleAvatarLetter.classList.add('has-name');
+      }
+
       // Update Auth Modal View for Logged-In User
       if (authGuestView) authGuestView.style.display = 'none';
       if (authLoggedInView) authLoggedInView.style.display = 'block';
@@ -9200,7 +10079,8 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       renderProfileAddresses();
       renderCheckoutAddresses();
       renderCartOrderLimitUI();
-    updateLiveOrderTrackPulse();
+      updateLiveOrderTrackPulse();
+      updateProfileStats();
 
       // Trigger cloud sync if Supabase is connected
       dataService.syncUserAddressesFromSupabase(user.id, user.email).then(() => {
@@ -9208,19 +10088,23 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         renderCartAddresses();
         renderProfileAddresses();
         renderCheckoutAddresses();
+        updateProfileStats();
         dataService.syncCustomerOrdersFromSupabase(user.id, user.email, getCurrentUserPhone()).then(() => {
           renderCartOrderLimitUI();
-    updateLiveOrderTrackPulse();
+          updateLiveOrderTrackPulse();
           renderMyOrdersList();
+          updateProfileStats();
         });
       });
       dataService.syncCustomerOrdersFromSupabase(user.id, user.email, getCurrentUserPhone()).then(() => {
         renderCartOrderLimitUI();
-    updateLiveOrderTrackPulse();
+        updateLiveOrderTrackPulse();
         renderMyOrdersList();
+        updateProfileStats();
       });
     } else {
       syncActiveUserContextToStorage();
+      updateProfileStats();
       if (btnLogin) btnLogin.style.display = 'inline-flex';
       if (userProfileMenu) userProfileMenu.style.display = 'none';
       if (userDropdownCard) userDropdownCard.classList.remove('show');
@@ -9243,6 +10127,14 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       if (authModalLetter) {
         authModalLetter.style.display = 'inline-flex';
         authModalLetter.textContent = 'G';
+      }
+      if (circleAvatarImg) circleAvatarImg.style.display = 'none';
+      if (circleAvatarLetter) {
+        circleAvatarLetter.style.display = 'inline-flex';
+        circleAvatarLetter.classList.remove('has-name');
+        circleAvatarLetter.innerHTML = `<svg class="circle-user-svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+          <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+        </svg>`;
       }
 
       // Revert to Guest
@@ -9343,6 +10235,10 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
             openCheckoutModal();
             showToast('✅ Signed in on Localhost! Please confirm your address & payment method to checkout.', 'success');
           }
+        } else {
+          setTimeout(() => {
+            checkAndShowGenderPrompt();
+          }, 500);
         }
         return;
       }
@@ -9423,6 +10319,11 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     }
     localStorage.removeItem('quickbite_custom_user');
     localStorage.removeItem('quickbite_active_user_context');
+    localStorage.removeItem('savera_custom_gender');
+    localStorage.removeItem('savera_custom_avatar_key');
+    localStorage.removeItem('savera_custom_avatar_name');
+    sessionStorage.removeItem('savera_gender_prompt_dismissed');
+    applyCustomAvatarToUI();
     // Preserve quickbite_my_order_ids and quickbite_tracking_tokens for ongoing order tracking on device
     updateUserStateUI(null);
     showToast('Signed out successfully. Browsing as Guest.', 'info');
@@ -9450,6 +10351,10 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
           } else {
             openCartDrawer();
           }
+        } else {
+          setTimeout(() => {
+            checkAndShowGenderPrompt();
+          }, 1200);
         }
       } else {
         const storedCustom = localStorage.getItem('quickbite_custom_user');
@@ -9492,6 +10397,10 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
               openCheckoutModal();
               showToast('✅ Signed in with Google! Please confirm your address & payment method to checkout.', 'success');
             }
+          } else {
+            setTimeout(() => {
+              checkAndShowGenderPrompt();
+            }, 600);
           }
         } else if (event === 'SIGNED_OUT') {
           localStorage.removeItem('quickbite_custom_user');
@@ -10043,6 +10952,14 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   backNav.registerFallbackChecker({
     isOpen: () => authModalBackdrop && authModalBackdrop.classList.contains('open'),
     close: () => closeAuthModal()
+  });
+  backNav.registerFallbackChecker({
+    isOpen: () => avatarModalBackdrop && avatarModalBackdrop.classList.contains('open'),
+    close: () => closeAvatarModal()
+  });
+  backNav.registerFallbackChecker({
+    isOpen: () => genderPromptBackdrop && genderPromptBackdrop.classList.contains('open'),
+    close: () => closeGenderPromptModal()
   });
   backNav.registerFallbackChecker({
     isOpen: () => modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open'),

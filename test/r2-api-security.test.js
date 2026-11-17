@@ -245,6 +245,14 @@ test('STAGE 1: Public Image Delivery & Path Traversal Guards (r2-image.js)', asy
     const { req: req3, res: res3 } = createMockReqRes({ method: 'GET', query: { key: 'dishes/crispy_chicken_(1).jpg' } });
     await r2ImageHandler(req3, res3);
     assert.notStrictEqual(res3.statusCode, 400);
+
+    const { req: req4, res: res4 } = createMockReqRes({ method: 'GET', query: { key: 'profile/female/3D_Female_Avatar.png' } });
+    await r2ImageHandler(req4, res4);
+    assert.notStrictEqual(res4.statusCode, 400);
+
+    const { req: req5, res: res5 } = createMockReqRes({ method: 'GET', query: { key: 'profile/male/3D_Male_Avatar.png' } });
+    await r2ImageHandler(req5, res5);
+    assert.notStrictEqual(res5.statusCode, 400);
   });
 });
 

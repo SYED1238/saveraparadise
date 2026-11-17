@@ -52,9 +52,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing image key parameter' });
   }
 
-  // Security: Prevent directory traversal or URI manipulation - only serve public dish & category images
+  // Security: Prevent directory traversal or URI manipulation - only serve public dish, category & profile avatar images
   const cleanKey = key.replace(/^\/+/, '');
-  if ((!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/')) || cleanKey.includes('..') || !/^[a-zA-Z0-9_\-./() %]+$/.test(cleanKey)) {
+  if ((!cleanKey.startsWith('dishes/') && !cleanKey.startsWith('categories/') && !cleanKey.startsWith('profile/')) || cleanKey.includes('..') || !/^[a-zA-Z0-9_\-./() %]+$/.test(cleanKey)) {
     return res.status(400).json({ error: 'Invalid image key' });
   }
 
