@@ -13703,21 +13703,9 @@ body.gender-prompt-open {
   text-transform: uppercase;
 }
 
-.unified-cart-dot {
-  color: rgba(255, 255, 255, 0.4);
-  font-weight: 700;
-  font-size: 0.82rem;
-}
-
+.unified-cart-dot,
 .unified-cart-subtotal {
-  font-size: 0.94rem;
-  font-weight: 900;
-  color: #10B981;
-  letter-spacing: -0.2px;
-}
-
-.unlocked-deals-floating-bar.is-unlocked .unified-cart-subtotal {
-  color: #34D399;
+  display: none !important;
 }
 
 .unified-cart-btn-icon {
