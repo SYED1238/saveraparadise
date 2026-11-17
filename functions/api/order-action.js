@@ -410,7 +410,12 @@ export async function onRequest(context) {
         ? decoded.items
         : (orderData.items || []);
       const itemsSummary = (Array.isArray(enforcedItems) && enforcedItems.length > 0)
-        ? enforcedItems.map(i => `${i.quantity || 1}x ${i.name}`).join(', ')
+        ? enforcedItems.map(i => {
+            const custom = [];
+            if (i.spice && i.spice !== 'Medium') custom.push(i.spice);
+            if (i.sauce && i.sauce !== 'Mint Chutney') custom.push(i.sauce);
+            return `${i.quantity || 1}x ${i.name}${custom.length ? ` (${custom.join(', ')})` : ''}`;
+          }).join(', ')
         : (orderData.items_summary || orderData.itemsSummary || '');
       return jsonResponse({
         success: true,
@@ -477,6 +482,17 @@ export async function onRequest(context) {
       const isOwner = auth?.authenticated && auth?.payload?.role === 'owner';
       if (!isOwner && !['pending', 'accepted'].includes(existing.status)) {
         return jsonResponse({ error: `Cannot cancel order once kitchen preparation has begun (${existing.status})` }, 400, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      // Enforce 2-minute customer cancellation window when not staff (with 15s network grace buffer = 135000ms)
+      if (!isStaff) {
+        const createdMs = parseOrderCreatedAtMs(existing.created_at ?? existing.createdAt);
+        if (createdMs > 0 && (Date.now() - createdMs) > 135000) {
+          return jsonResponse({
+            error: 'The 2-minute cancellation window has expired. Please call the kitchen for assistance.',
+            code: 'cancellation_window_expired'
+          }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
       }
 
       const isPaidOnlineOrder = Boolean(
@@ -1857,6 +1873,17 @@ export async function onRequest(context) {
           return jsonResponse({ error: `Cannot cancel order once kitchen preparation has begun (${order.status})` }, 400, Object.fromEntries(corsHeaders.entries()));
         }
 
+        // Enforce 2-minute customer cancellation window when not staff (with 15s network grace buffer = 135000ms)
+        if (!isStaff) {
+          const createdMs = parseOrderCreatedAtMs(order.created_at ?? order.createdAt);
+          if (createdMs > 0 && (Date.now() - createdMs) > 135000) {
+            return jsonResponse({
+              error: 'The 2-minute cancellation window has expired. Please call the kitchen for assistance.',
+              code: 'cancellation_window_expired'
+            }, 400, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
+
         const cancellationReason = reason || (isStaff ? 'Cancelled by restaurant management' : 'Cancelled by customer');
 
         // Automated Cashfree PG Refund for Online-Paid Orders
@@ -2070,7 +2097,12 @@ export async function onRequest(context) {
 
         // Authoritative items summary computed from verified items
         const itemsSummary = (Array.isArray(enforcedItems) && enforcedItems.length > 0)
-          ? enforcedItems.map(i => `${i.quantity || 1}x ${i.name}`).join(', ')
+          ? enforcedItems.map(i => {
+              const custom = [];
+              if (i.spice && i.spice !== 'Medium') custom.push(i.spice);
+              if (i.sauce && i.sauce !== 'Mint Chutney') custom.push(i.sauce);
+              return `${i.quantity || 1}x ${i.name}${custom.length ? ` (${custom.join(', ')})` : ''}`;
+            }).join(', ')
           : (orderData.items_summary || orderData.itemsSummary || '');
 
         const addressDetails = (orderData.address_details || orderData.addressDetails) ? { ...(orderData.address_details || orderData.addressDetails) } : {};

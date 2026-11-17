@@ -85,4 +85,57 @@ test('CUSTOMER PORTAL 11 BUG FIXES REGRESSION SUITE', async (t) => {
     assert.match(mainJs, /class FavoriteDishesSet extends Set/, 'main.js must define FavoriteDishesSet to preserve accurate .size');
     assert.match(mainJs, /updateProfileStats\(\)/, 'toggleFavoriteDishId must trigger updateProfileStats to keep profile stat in sync');
   });
+
+  const orderActionJs = fs.readFileSync('api/order-action.js', 'utf8');
+  const funcOrderActionJs = fs.readFileSync('functions/api/order-action.js', 'utf8');
+
+  await t.test('Argon Bug 1: startDishScheduleTicker uses raw new Date() and openFoodDetail uses getNowInIST for todayCode', () => {
+    assert.match(mainJs, /function startDishScheduleTicker\(\)\s*\{[\s\S]*?const now = new Date\(\);/, 'startDishScheduleTicker must use raw new Date() to avoid double IST shift');
+    assert.match(mainJs, /const istToday = \(typeof getNowInIST === 'function'\) \? getNowInIST\(new Date\(\)\) : new Date\(\);[\s\S]*?istToday\.getDay\(\)/, 'openFoodDetail must use getNowInIST().getDay() for 7-day strip');
+  });
+
+  await t.test('Argon Bug 2: spice and sauce preserved in cart, rendered in UI, passed in checkout & order-action', () => {
+    assert.match(mainJs, /if \(item\.spice\) existing\.spice = item\.spice;[\s\S]*?if \(item\.sauce\) existing\.sauce = item\.sauce;/, 'addToCart must preserve spice and sauce on existing item');
+    assert.match(mainJs, /cart-item-custom/, 'renderCart must render cart-item-custom class for spice/sauce');
+    assert.match(apiCheckoutJs, /safeSpice\s*\?\s*\{\s*spice:\s*safeSpice\s*\}/, 'api/checkout.js must preserve spice in verifiedItems');
+    assert.match(funcCheckoutJs, /safeSpice\s*\?\s*\{\s*spice:\s*safeSpice\s*\}/, 'functions/api/checkout.js must preserve spice in verifiedItems');
+    assert.match(orderActionJs, /if \(i\.spice && i\.spice !== 'Medium'\) custom\.push\(i\.spice\);/, 'api/order-action.js must include spice in itemsSummary');
+    assert.match(funcOrderActionJs, /if \(i\.spice && i\.spice !== 'Medium'\) custom\.push\(i\.spice\);/, 'functions/api/order-action.js must include spice in itemsSummary');
+  });
+
+  await t.test('Argon Bug 3: cancelCustomerOrder rollback on rejection, refund metadata sync, self-cancel alarm & server 2-min window', () => {
+    assert.match(dataServiceJs, /targetOrder\.status = prevStatus;[\s\S]*?targetOrder\.statusLabel = prevStatusLabel;[\s\S]*?targetOrder\.stepIndex = prevStepIndex;/, 'cancelCustomerOrder must restore state on non-cooking server rejection');
+    assert.match(dataServiceJs, /targetOrder\.cfPaymentStatus = res\.order\.cf_payment_status;/, 'cancelCustomerOrder must copy cfPaymentStatus from server response');
+    assert.match(mainJs, /const isFailed = refundStatus === 'FAILED';[\s\S]*?const isInitiated = isOnline && !isRefunded && !isFailed && \(/, 'getOrderRefundState must not have trailing || isOnline tautology');
+    assert.match(mainJs, /const isCustomerCancelled = order\.cancelledBy === 'customer' \|\| order\.cancellationReason === 'Cancelled by customer';[\s\S]*?if \(isCustomerCancelled\)\s*\{\s*return;\s*\}/, 'handleStorefrontOrderStatusSync must not trigger alarm when cancelled by customer');
+    assert.match(orderActionJs, /\(Date\.now\(\) - createdMs\) > 135000/, 'api/order-action.js must enforce 2-minute cancellation window with grace buffer');
+    assert.match(funcOrderActionJs, /\(Date\.now\(\) - createdMs\) > 135000/, 'functions/api/order-action.js must enforce 2-minute cancellation window with grace buffer');
+  });
+
+  await t.test('Argon Bug 4: Free delivery and discount clamping parity across api/checkout.js and functions/api/checkout.js', () => {
+    assert.doesNotMatch(apiCheckoutJs, /hasCustomSettings && cleanCode === configCode/, 'api/checkout.js must not gate configCode check behind hasCustomSettings');
+    assert.match(apiCheckoutJs, /Math\.min\(50,\s*Math\.max\(1,\s*rawPct\)\)/, 'api/checkout.js must clamp discount percentage to 50%');
+    assert.match(funcCheckoutJs, /Math\.min\(50,\s*Math\.max\(1,\s*rawPct\)\)/, 'functions/api/checkout.js must clamp discount percentage to 50%');
+    assert.match(dataServiceJs, /Math\.min\(50,\s*Math\.max\(1, Number\(settings\.offerDiscountPercent/, 'dataService.js must clamp discount to 50%');
+  });
+
+  await t.test('Argon Bug 5: Address edit flatNo/street deduplication and reverse-geocoding race condition', () => {
+    assert.match(mainJs, /detectedAddressDetails = \{\s*flatNo:\s*'Pinned Doorstep'[\s\S]*?fullText:\s*`Pinned Doorstep \(\$\{lat\.toFixed\(5\)\}, \$\{lng\.toFixed\(5\)\}\)`/, 'updateMapLocation must reset detectedAddressDetails before reverse geocoding');
+    assert.match(mainJs, /fullText:\s*\[existing\.area,\s*existing\.city,\s*existing\.pincode\]\.filter\(Boolean\)\.join\(', '\)/, 'openAddressModal must exclude flatNo from fullText when editing');
+    assert.match(mainJs, /const startsWithStreet = localityText\.toLowerCase\(\)\.startsWith\(streetVal\.toLowerCase\(\)\);/, 'formDeliveryAddress must deduplicate streetVal if localityText starts with it');
+  });
+
+  await t.test('Argon Bug 6: Stepper cleanup on scheduled cards, image escaping, and live dish sync renderCart', () => {
+    assert.match(mainJs, /card\.classList\.contains\('is-scheduled-countdown'\) \|\|\s*card\.classList\.contains\('is-scheduled-inactive'\)/, 'updateMenuCardSteppers must check scheduled-countdown and scheduled-inactive');
+    assert.match(mainJs, /const safeCardImg = escapeHtml\(rawCardImg\);[\s\S]*?data-image="\$\{safeCardImg\}"/, 'syncStorefrontCardsWithDataService must sanitize and escape dish image');
+    assert.match(mainJs, /if \(e\.key === 'quickbite_dishes'\)\s*\{\s*syncStorefrontCardsWithDataService\(\);\s*renderCart\(\);/, 'quickbite_dishes storage handler must call renderCart()');
+    assert.match(mainJs, /if \(e\.detail\?\.type === 'dishes'\)\s*\{\s*syncStorefrontCardsWithDataService\(\);\s*renderCart\(\);/, 'quickbite_data_changed dishes handler must call renderCart()');
+  });
+
+  await t.test('Argon Bug 7: Redundant change: event subscriptions removed from main.js and dataService.on deduplicates base events', () => {
+    assert.doesNotMatch(mainJs, /dataService\.on\('change:categories'/, 'main.js must not register redundant change:categories');
+    assert.doesNotMatch(mainJs, /dataService\.on\('change:dishes'/, 'main.js must not register redundant change:dishes');
+    assert.doesNotMatch(mainJs, /dataService\.on\('change:addresses'/, 'main.js must not register redundant change:addresses');
+    assert.match(dataServiceJs, /const baseType = String\(eventName \|\| ''\)\.replace\(\/\^change:\/, ''\);/, 'dataService.on must deduplicate base event types');
+  });
 });

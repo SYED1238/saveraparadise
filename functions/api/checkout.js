@@ -331,12 +331,16 @@ export async function onRequest(context) {
       const itemTotal = authoritativePrice * quantity;
       subtotal += itemTotal;
 
+      const safeSpice = (typeof item.spice === 'string' && item.spice.trim()) ? item.spice.trim().slice(0, 40) : undefined;
+      const safeSauce = (typeof item.sauce === 'string' && item.sauce.trim()) ? item.sauce.trim().slice(0, 40) : undefined;
       verifiedItems.push({
         id: matchedDish?.id || item.id || null,
         name: String(matchedDish?.name || item.name || 'Dish').slice(0, 100),
         price: authoritativePrice,
         quantity,
-        total: itemTotal
+        total: itemTotal,
+        ...(safeSpice ? { spice: safeSpice } : {}),
+        ...(safeSauce ? { sauce: safeSauce } : {})
       });
     }
 

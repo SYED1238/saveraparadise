@@ -189,7 +189,12 @@ export async function onRequest(context) {
           ? decodedPayload.items
           : (Array.isArray(orderDraft.items) ? orderDraft.items : []);
         const itemsSummary = enforcedItems.length > 0
-          ? enforcedItems.map(i => `${i.quantity || 1}x ${i.name}`).join(', ')
+          ? enforcedItems.map(i => {
+              const custom = [];
+              if (i.spice && i.spice !== 'Medium') custom.push(i.spice);
+              if (i.sauce && i.sauce !== 'Mint Chutney') custom.push(i.sauce);
+              return `${i.quantity || 1}x ${i.name}${custom.length ? ` (${custom.join(', ')})` : ''}`;
+            }).join(', ')
           : (orderDraft.itemsSummary || orderDraft.items_summary || '');
         const addressDetails = (orderDraft.addressDetails || orderDraft.address_details)
           ? { ...(orderDraft.addressDetails || orderDraft.address_details) }

@@ -960,7 +960,6 @@ function initStorefrontApp() {
   filterDishes('all');
   syncStorefrontCategories();
   if (typeof dataService.on === 'function') {
-    dataService.on('change:categories', syncStorefrontCategories);
     dataService.on('categories', syncStorefrontCategories);
   }
   document.addEventListener('DOMContentLoaded', () => {
@@ -1437,6 +1436,8 @@ function initStorefrontApp() {
         return;
       }
       existing.quantity = Math.min(50, existing.quantity + qty);
+      if (item.spice) existing.spice = item.spice;
+      if (item.sauce) existing.sauce = item.sauce;
     } else {
       cart.push({ ...item, quantity: Math.min(50, qty) });
     }
@@ -1518,8 +1519,12 @@ function initStorefrontApp() {
       const dishId = card.getAttribute('data-id') || addBtn?.getAttribute('data-id');
       if (!dishId) continue;
 
-      const isOutOfStock = card.classList.contains('is-out-of-stock') || addBtn?.hasAttribute('disabled');
-      const qty = isOutOfStock ? 0 : (cartQtyMap.get(dishId) || 0);
+      const isUnavailableCard =
+        card.classList.contains('is-out-of-stock') ||
+        card.classList.contains('is-scheduled-countdown') ||
+        card.classList.contains('is-scheduled-inactive') ||
+        addBtn?.hasAttribute('disabled');
+      const qty = isUnavailableCard ? 0 : (cartQtyMap.get(dishId) || 0);
       let stepper = card.querySelector('.dish-card-stepper');
 
       if (qty > 0) {
@@ -1566,7 +1571,7 @@ function initStorefrontApp() {
         if (stepper) {
           stepper.remove();
         }
-        if (addBtn && !isOutOfStock && addBtn.style.display === 'none') {
+        if (addBtn && !isUnavailableCard && addBtn.style.display === 'none') {
           addBtn.style.display = '';
         }
         if (card.classList.contains('in-cart')) card.classList.remove('in-cart');
@@ -1595,7 +1600,7 @@ function initStorefrontApp() {
     if (settings.offerActive !== false && cleanCode === settingsCode) {
       const minOrder = (settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
       const discountType = settings.offerDiscountType || 'percent';
-      const discountPct = Number(settings.offerDiscountPercent || 20);
+      const discountPct = Math.min(50, Math.max(1, Number(settings.offerDiscountPercent || 20)));
       const discountAmt = Number(settings.offerDiscountAmount || 50);
       const freeDeliv = settings.offerFreeDelivery !== false;
       const meetsMinOrder = subtotal >= minOrder;
@@ -1672,7 +1677,7 @@ function initStorefrontApp() {
   function startDishScheduleTicker() {
     if (dishScheduleTicker) return; // Prevent duplicate tickers
     dishScheduleTicker = setInterval(() => {
-      const now = (typeof getNowInIST === 'function') ? getNowInIST(new Date()) : new Date();
+      const now = new Date();
       const dishes = (typeof dataService !== 'undefined' && dataService.getDishes) ? dataService.getDishes() : [];
       const dishesMap = new Map(dishes.map(d => [d.id, d]));
       let needsReEvaluation = false;
@@ -1864,12 +1869,20 @@ function initStorefrontApp() {
         }
       }
 
+      const customParts = [];
+      if (item.spice && item.spice !== 'Medium') customParts.push(escapeHtml(item.spice));
+      if (item.sauce && item.sauce !== 'Mint Chutney') customParts.push(escapeHtml(item.sauce));
+      const customHtml = customParts.length > 0
+        ? `<div class="cart-item-custom" style="font-size: 0.74rem; color: #64748B; margin-top: 2px;">${customParts.join(' • ')}</div>`
+        : '';
+
       el.innerHTML = `
         <div class="cart-item-img-wrap is-img-loading">
           <img src="${safeImage}" alt="${safeName}" class="cart-item-img" loading="eager" decoding="async"/>
         </div>
         <div class="cart-item-info">
           <div class="cart-item-title">${safeName}${statusBadge}</div>
+          ${customHtml}
           <div class="cart-item-price">${priceHTML}</div>
         </div>
         <div class="cart-qty-ctrl">
@@ -2370,7 +2383,8 @@ function initStorefrontApp() {
         if (daysStrip) {
           const dayNames = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
           const dayLabels = { mon: 'M', tue: 'T', wed: 'W', thu: 'T', fri: 'F', sat: 'S', sun: 'S' };
-          const todayCode = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date().getDay()];
+          const istToday = (typeof getNowInIST === 'function') ? getNowInIST(new Date()) : new Date();
+          const todayCode = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][istToday.getDay()];
           daysStrip.innerHTML = dayNames.map(d => {
             const isActive = days.includes(d);
             const isToday = d === todayCode;
@@ -2599,12 +2613,19 @@ function initStorefrontApp() {
     const settings = dataService.getSettings();
     const recipeGrid = document.getElementById('recipe-grid');
     const favDishIds = getFavoriteDishIds();
+    let didChangeCards = false;
 
     dishes.forEach(dish => {
       let card = document.getElementById(`card-${dish.id}`) || document.querySelector(`.recipe-card[data-id="${dish.id}"]`);
 
       // If card doesn't exist in DOM (new dish added from Admin), dynamically append it
       if (!card && recipeGrid) {
+        didChangeCards = true;
+        const rawCardImg = (typeof sanitizeDishImageUrl === 'function')
+          ? sanitizeDishImageUrl(dish.image || '/api/r2-image?key=dishes/crispy-chicken.jpg')
+          : (dish.image || '/api/r2-image?key=dishes/crispy-chicken.jpg');
+        const safeCardImg = escapeHtml(rawCardImg);
+
         card = document.createElement('article');
         card.className = 'recipe-card food-card';
         card.setAttribute('data-category', dish.category || 'chicken');
@@ -2613,14 +2634,14 @@ function initStorefrontApp() {
         card.innerHTML = `
           <div class="recipe-card-inner is-img-loading">
             ${(dish.badge && dish.badge.trim()) ? `<span class="recipe-card-badge-pill">${escapeHtml(dish.badge.trim())}</span>` : ''}
-            <img src="${dish.image || '/api/r2-image?key=dishes/crispy-chicken.jpg'}" alt="${escapeHtml(dish.name)}" class="recipe-img food-card-img" loading="lazy" decoding="async"/>
+            <img src="${safeCardImg}" alt="${escapeHtml(dish.name)}" class="recipe-img food-card-img" loading="lazy" decoding="async"/>
             <div class="recipe-overlay"></div>
             <button 
               class="btn-glass-add btn-add-cart" 
               data-id="${dish.id}"
               data-name="${escapeHtml(dish.name)}" 
               data-price="${dish.price}"
-              data-image="${dish.image || '/api/r2-image?key=dishes/crispy-chicken.jpg'}"
+              data-image="${safeCardImg}"
               title="Add to basket"
               aria-label="Add ${escapeHtml(dish.name)} to cart"
             >
@@ -2781,19 +2802,25 @@ function initStorefrontApp() {
     });
 
     // Remove any card whose dish was deleted in admin
-    // Remove any card whose dish was deleted in admin
     const currentDishIds = new Set(dishes.map(d => `card-${d.id}`));
     document.querySelectorAll('.recipe-card').forEach(card => {
       if (card.id && card.id.startsWith('card-') && !currentDishIds.has(card.id)) {
         card.remove();
+        didChangeCards = true;
       }
     });
 
+    updateMenuCardSteppers();
+    if (didChangeCards && typeof filterDishes === 'function') {
+      const searchVal = (typeof recipeSearchInput !== 'undefined' && recipeSearchInput) ? recipeSearchInput.value.trim() : '';
+      if (!searchVal) {
+        filterDishes(activeFilter || 'all');
+      }
+    }
   }
   try {
     syncStorefrontCardsWithDataService();
     if (typeof dataService.on === 'function') {
-      dataService.on('change:dishes', syncStorefrontCardsWithDataService);
       dataService.on('dishes', syncStorefrontCardsWithDataService);
     }
     updateMenuCardSteppers();
@@ -4376,13 +4403,14 @@ function initStorefrontApp() {
       (order.status === 'cancelled' && refundStatus === 'SUCCESS' && (Boolean(addr.refund_arn) || Boolean(addr.refund_completed_at)))
     );
 
-    const isInitiated = isOnline && !isRefunded && (
+    const isFailed = refundStatus === 'FAILED';
+    const isInitiated = isOnline && !isRefunded && !isFailed && (
       cfStatus === 'REFUND_INITIATED' ||
       refundStatus === 'INITIATED' ||
       refundStatus === 'PENDING' ||
       refundStatus === 'SUCCESS' ||
       Boolean(addr.refund_initiated_at) ||
-      isOnline
+      order.status === 'cancelled'
     );
 
     return {
@@ -5040,6 +5068,7 @@ function initStorefrontApp() {
     try {
       const res = await dataService.cancelCustomerOrder(order.id, 'Cancelled by customer');
       if (res && res.success) {
+        markCustomerAlerted(order.id, 'cancelled');
         if (res.confirmed) {
           showToast(`❌ Order ${order.id} has been cancelled.`, 'info');
         } else if (res.pendingOffline) {
@@ -6542,7 +6571,14 @@ function initStorefrontApp() {
           statusLabel: 'Accepted',
           eta: '25 - 35 Minutes',
           itemsSummary: itemsSummary,
-          items: cart.map(i => ({ name: i.name, quantity: i.quantity, price: i.price })),
+          items: cart.map(i => ({
+            id: i.id,
+            name: i.name,
+            quantity: i.quantity,
+            price: i.price,
+            ...(i.spice ? { spice: i.spice } : {}),
+            ...(i.sauce ? { sauce: i.sauce } : {})
+          })),
           total: totalAmount
         };
 
@@ -6578,7 +6614,14 @@ function initStorefrontApp() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              items: cart.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price })),
+              items: cart.map(i => ({
+                id: i.id,
+                name: i.name,
+                quantity: i.quantity,
+                price: i.price,
+                ...(i.spice ? { spice: i.spice } : {}),
+                ...(i.sauce ? { sauce: i.sauce } : {})
+              })),
               catalogDishes: (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function') ? dataService.getDishes().map(d => ({ id: d.id, name: d.name, price: d.price })) : [],
               promoCode: appliedPromo || null,
               appliedPromo: appliedPromo || null,
@@ -7000,6 +7043,10 @@ function initStorefrontApp() {
       flashTabTitle(`🎉 DELIVERED: ${order.id}`);
     } else if (order.status === 'cancelled') {
       updateAppBadge(0);
+      const isCustomerCancelled = order.cancelledBy === 'customer' || order.cancellationReason === 'Cancelled by customer';
+      if (isCustomerCancelled) {
+        return;
+      }
       playNotificationSound('cancelled');
       const isOnline = isOrderPaidOnline(order);
       const reasonSuffix = order.cancellationReason ? `: ${order.cancellationReason}` : '';
@@ -7101,6 +7148,7 @@ function initStorefrontApp() {
     }
     if (e.key === 'quickbite_dishes') {
       syncStorefrontCardsWithDataService();
+      renderCart();
     }
     if (e.key === 'quickbite_categories' || e.key === 'quickbite_category_images' || e.key === 'quickbite_categories_sync') {
       syncStorefrontCategories();
@@ -7173,6 +7221,7 @@ function initStorefrontApp() {
     }
     if (e.detail?.type === 'dishes') {
       syncStorefrontCardsWithDataService();
+      renderCart();
     }
     if (e.detail?.type === 'categories') {
       syncStorefrontCategories();
@@ -7690,6 +7739,13 @@ function initStorefrontApp() {
     }
 
     if (doReverseGeocode && hasPinnedLocation) {
+      detectedAddressDetails = {
+        flatNo: 'Pinned Doorstep',
+        area: 'Ramanagara',
+        city: 'Ramanagara',
+        pincode: '',
+        fullText: `Pinned Doorstep (${lat.toFixed(5)}, ${lng.toFixed(5)})`
+      };
       reverseGeocode(lat, lng);
     }
   }
@@ -8084,7 +8140,7 @@ function initStorefrontApp() {
         area: existing.area || 'Ramanagara',
         city: existing.city || 'Ramanagara',
         pincode: existing.pincode || '',
-        fullText: [existing.flatNo, existing.area, existing.city, existing.pincode].filter(Boolean).join(', ')
+        fullText: [existing.area, existing.city, existing.pincode].filter(Boolean).join(', ')
       };
       if (swiggyInputStreet) swiggyInputStreet.value = existing.street || existing.flatNo || '';
       if (swiggySaveAsInput) swiggySaveAsInput.value = existing.tag || 'Home';
@@ -8653,11 +8709,11 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       }
 
       // Construct formatted multi-part delivery address
-      const fullAddressParts = [
-        streetVal,
-        detectedAddressDetails.fullText || 'Ramanagara'
-      ].filter(Boolean);
-
+      const localityText = (detectedAddressDetails.fullText || 'Ramanagara').trim();
+      const startsWithStreet = localityText.toLowerCase().startsWith(streetVal.toLowerCase());
+      const fullAddressParts = startsWithStreet
+        ? [localityText]
+        : [streetVal, localityText].filter(Boolean);
       const finalAddressText = fullAddressParts.join(', ');
       const area = detectedAddressDetails.area || 'Ramanagara';
       const city = detectedAddressDetails.city || 'Ramanagara';
@@ -9154,7 +9210,6 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   }
 
   if (typeof dataService.on === 'function') {
-    dataService.on('change:addresses', updateHeroDeliveryDistanceBadge);
     dataService.on('addresses', updateHeroDeliveryDistanceBadge);
   }
 
@@ -10846,13 +10901,6 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     }
   });
 
-  // Re-check status when settings change
-  window.addEventListener('quickbite_data_changed', (e) => {
-    if (e.detail?.type === 'settings' || !e.detail?.type) {
-      updateStoreStatusUI();
-      updateStoreOfferUI();
-    }
-  });
 
   // ==========================================
   // DYNAMIC PROMOTIONAL OFFER & BANNER SYNC

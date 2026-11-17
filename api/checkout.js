@@ -300,11 +300,15 @@ export default async function handler(req, res) {
     dishQtyMap.set(aggregateKey, curQty);
 
     computedSubtotal += unitPrice * rawQty;
+    const safeSpice = (typeof item.spice === 'string' && item.spice.trim()) ? item.spice.trim().slice(0, 40) : undefined;
+    const safeSauce = (typeof item.sauce === 'string' && item.sauce.trim()) ? item.sauce.trim().slice(0, 40) : undefined;
     verifiedItems.push({
       id: dish?.id || item.id,
       name: String(dish?.name || item.name || 'Special Dish').slice(0, 100),
       quantity: rawQty,
-      price: unitPrice
+      price: unitPrice,
+      ...(safeSpice ? { spice: safeSpice } : {}),
+      ...(safeSauce ? { sauce: safeSauce } : {})
     });
   }
 
@@ -492,20 +496,19 @@ export default async function handler(req, res) {
   let activeAppliedPromo = null;
   if (activePromo && settings.offerActive !== false) {
     const cleanCode = String(activePromo).trim().toUpperCase();
-    const hasCustomSettings = Boolean(
-      (storeSettings && typeof storeSettings === 'object' && (storeSettings.offerPromoCode || storeSettings.offerCode || storeSettings.offerMinOrder !== undefined || storeSettings.offerDiscountPercent !== undefined)) ||
-      (serverSettings && typeof serverSettings === 'object' && (serverSettings.offerPromoCode || serverSettings.offerCode || serverSettings.offerMinOrder !== undefined || serverSettings.offerDiscountPercent !== undefined))
-    );
-    const configCode = String(settings.offerPromoCode || settings.offerCode || 'SAVERA20').trim().toUpperCase();
+    const configCode = String(settings.offerCode || settings.offerPromoCode || 'SAVERA20').trim().toUpperCase();
 
-    if (hasCustomSettings && cleanCode === configCode) {
-      const minOrder = (settings.offerMinOrder !== undefined) ? Number(settings.offerMinOrder) : 199;
+    if (cleanCode === configCode) {
+      const minOrder = (settings.offerMinOrder !== undefined && settings.offerMinOrder !== null)
+        ? Number(settings.offerMinOrder)
+        : 199;
       if (computedSubtotal >= minOrder) {
-        const discType = String(settings.offerDiscountType || 'percentage').toLowerCase();
+        const discType = String(settings.offerDiscountType || 'percent').toLowerCase();
         if (discType === 'fixed' || discType === 'amount' || discType === 'flat') {
-          discount = Math.min(computedSubtotal, Number(settings.offerDiscountAmount) || 50);
+          discount = Math.min(computedSubtotal, Math.max(0, Number(settings.offerDiscountAmount) || 50));
         } else {
-          const pct = Math.min(100, Math.max(1, Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20));
+          const rawPct = Number(settings.offerDiscountPercent || settings.offerDiscountAmount);
+          const pct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 20;
           discount = Math.round((computedSubtotal * pct) / 100);
         }
         activeAppliedPromo = cleanCode;

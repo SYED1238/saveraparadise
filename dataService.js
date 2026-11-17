@@ -214,7 +214,7 @@ export const DEFAULT_SETTINGS = {
   offerDiscountType: 'percent', // 'percent' | 'flat'
   offerDiscountPercent: 20,
   offerDiscountAmount: 50, // e.g. 50 off
-  offerMinOrder: 250, // valid above orders 250
+  offerMinOrder: 199, // valid above orders 199
   offerTitle: 'Craving Savera? Get 20% OFF Today!',
   offerSubtext: 'Use coupon code at checkout for 20% off plus 100% Free Shipping.',
   offerFreeDelivery: true,
@@ -5174,6 +5174,17 @@ class QuickBiteDataService {
 
   on(eventName, callback) {
     if (typeof callback !== 'function') return () => {};
+    if (!this._onListeners) this._onListeners = new WeakMap();
+    let regTypes = this._onListeners.get(callback);
+    if (!regTypes) {
+      regTypes = new Set();
+      this._onListeners.set(callback, regTypes);
+    }
+    const baseType = String(eventName || '').replace(/^change:/, '');
+    if (regTypes.has(baseType)) {
+      return () => {};
+    }
+    regTypes.add(baseType);
     return this.subscribeToChanges((type, detail) => {
       if (!eventName || eventName === '*' || eventName === type || eventName === `change:${type}`) {
         try {
@@ -6212,14 +6223,14 @@ class QuickBiteDataService {
     const appliedCode = String(orderData.appliedPromo || orderData.promoCode || '').trim().toUpperCase();
     if (appliedCode && settings.offerActive !== false) {
       const settingsCode = String(settings.offerCode || 'SAVERA20').trim().toUpperCase();
-      const minOrder = Number(settings.offerMinOrder) || 0;
+      const minOrder = (settings.offerMinOrder !== undefined && settings.offerMinOrder !== null) ? Number(settings.offerMinOrder) : 199;
       if (appliedCode === settingsCode) {
         if (computedSubtotal >= minOrder) {
           const discType = String(settings.offerDiscountType || 'percentage').toLowerCase();
           if (discType === 'fixed' || discType === 'amount' || discType === 'flat') {
             discount = Math.min(computedSubtotal, Number(settings.offerDiscountAmount) || 50);
           } else {
-            const pct = Math.min(100, Math.max(1, Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20));
+            const pct = Math.min(50, Math.max(1, Number(settings.offerDiscountPercent || settings.offerDiscountAmount) || 20));
             discount = Math.round((computedSubtotal * pct) / 100);
           }
           if (settings.offerFreeDelivery !== false) {
@@ -6489,20 +6500,26 @@ class QuickBiteDataService {
       } catch {}
     }
 
-    // Apply local state with pendingStatusSync = true
+    // Save previous state before optimistic update so non-network server rejections roll back cleanly
     const list = this.getOrders();
     const idx = list.findIndex(o => String(o.id).replace(/^#/, '') === cleanId);
     const targetOrder = idx !== -1 ? list[idx] : order;
+
+    const prevStatus = targetOrder.status;
+    const prevStatusLabel = targetOrder.statusLabel;
+    const prevStepIndex = targetOrder.stepIndex;
+    const prevCancellationReason = targetOrder.cancellationReason;
+    const prevCancelledBy = targetOrder.cancelledBy;
 
     targetOrder.status = 'cancelled';
     targetOrder.statusLabel = 'Order Cancelled';
     targetOrder.stepIndex = -1;
     targetOrder.cancellationReason = reason;
+    targetOrder.cancelledBy = 'customer';
     targetOrder.pendingStatusSync = true;
     targetOrder._optimisticTimestamp = Date.now();
     targetOrder.trackingToken = trackingToken;
     this.saveOrders(list, { action: 'order_status_updated', orderId: targetOrder.id, status: 'cancelled' });
-    this.notifyChange('orders', { action: 'order_status_updated', orderId: targetOrder.id, status: 'cancelled' });
 
     try {
       const res = await this._orderAction('cancel_order', {
@@ -6513,9 +6530,22 @@ class QuickBiteDataService {
 
       if (res && (res.success || res.order || res.idempotent)) {
         delete targetOrder.pendingStatusSync;
-        if (res.order?.status) targetOrder.status = res.order.status;
+        if (res.order) {
+          if (res.order.status) targetOrder.status = res.order.status;
+          if (res.order.status_label) targetOrder.statusLabel = res.order.status_label;
+          if (res.order.cf_payment_status) {
+            targetOrder.cfPaymentStatus = res.order.cf_payment_status;
+            targetOrder.cf_payment_status = res.order.cf_payment_status;
+          }
+          if (res.order.address_details && typeof res.order.address_details === 'object') {
+            targetOrder.addressDetails = { ...(targetOrder.addressDetails || {}), ...res.order.address_details };
+            targetOrder.address_details = targetOrder.addressDetails;
+            if (res.order.address_details.refund_status) {
+              targetOrder.refundStatus = res.order.address_details.refund_status;
+            }
+          }
+        }
         this.saveOrders(list, { action: 'order_cancelled_confirmed', orderId: targetOrder.id });
-        this.notifyChange('orders', { action: 'order_cancelled_confirmed', orderId: targetOrder.id });
         return { success: true, confirmed: true, order: targetOrder, idempotent: Boolean(res.idempotent) };
       }
       throw new Error(res?.error || 'Server rejected cancellation');
@@ -6523,27 +6553,37 @@ class QuickBiteDataService {
       const errMsg = String(err?.message || '').toLowerCase();
       const isNetwork = errMsg.includes('fetch') || errMsg.includes('network') || (typeof navigator !== 'undefined' && !navigator.onLine);
       if (isNetwork) {
-        // Network unavailable: retain pendingStatusSync = true for offline retry on reconnect
         targetOrder.pendingStatusSync = true;
         this.saveOrders(list);
         return { success: true, confirmed: false, pendingOffline: true, order: targetOrder };
       }
 
-      // Authoritative server rejection: clear pendingStatusSync so background retry does not loop
       delete targetOrder.pendingStatusSync;
+      delete targetOrder._optimisticTimestamp;
       if (errMsg.includes('cooking') || errMsg.includes('preparation') || errMsg.includes('cannot cancel')) {
         targetOrder.status = 'cooking';
         targetOrder.statusLabel = 'Cooking in Kitchen';
         targetOrder.stepIndex = 1;
-        this.saveOrders(list);
-        this.notifyChange('orders', { action: 'order_status_updated', orderId: targetOrder.id, status: 'cooking' });
+        targetOrder.cancellationReason = prevCancellationReason;
+        targetOrder.cancelledBy = prevCancelledBy;
+        this.saveOrders(list, { action: 'order_status_updated', orderId: targetOrder.id, status: 'cooking' });
         return { success: false, error: 'cooking_started', message: err.message };
       }
+
+      // Restore previous order state on any other authoritative rejection (e.g., invalid_token, window expired)
+      targetOrder.status = prevStatus;
+      targetOrder.statusLabel = prevStatusLabel;
+      targetOrder.stepIndex = prevStepIndex;
+      targetOrder.cancellationReason = prevCancellationReason;
+      targetOrder.cancelledBy = prevCancelledBy;
+      this.saveOrders(list);
+
+      if (errMsg.includes('window') || errMsg.includes('expired')) {
+        return { success: false, error: 'cancellation_window_expired', message: err.message };
+      }
       if (errMsg.includes('forbidden') || errMsg.includes('token')) {
-        this.saveOrders(list);
         return { success: false, error: 'invalid_token', message: err.message };
       }
-      this.saveOrders(list);
       return { success: false, error: err.message || 'cancellation_failed', message: err.message };
     }
   }
