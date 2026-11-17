@@ -88,11 +88,154 @@ public class OrderMonitorService extends Service {
 
     private static final Set<String> knownOrderIds = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final Set<String> notifiedReadyIds = Collections.synchronizedSet(new LinkedHashSet<>());
+    private static final Set<String> acknowledgedAlarmIds = Collections.synchronizedSet(new LinkedHashSet<>());
+    private static final Set<String> activeRingingOrderIds = Collections.synchronizedSet(new LinkedHashSet<>());
+    private static final Set<Integer> activeAlertNotifIds = Collections.synchronizedSet(new LinkedHashSet<>());
+    private static volatile String lastAlertOrderId = "";
+    private static volatile boolean pendingWebAlarmStopSync = false;
     private static volatile OrderMonitorService activeInstance = null;
     private static volatile boolean isAppInForeground = false;
 
     public static void setLastAlertNotifId(int notifId) {
         lastAlertNotifId = notifId;
+        if (notifId != -1) {
+            activeAlertNotifIds.add(notifId);
+        }
+    }
+
+    private static String stripNotificationPrefix(String rawTag) {
+        if (rawTag == null) return "";
+        String normalized = rawTag.trim();
+        String[] prefixes = new String[] {
+            "admin-order-", "admin-dispatched-", "admin-delivered-", "admin-undelivered-", "admin-overdue-",
+            "rider-ready-", "rider-task-", "rider-", "customer-accepted-", "customer-cooking-", "customer-dispatched-",
+            "customer-delivered-", "customer-cancelled-", "customer-undelivered-", "order-"
+        };
+        for (String p : prefixes) {
+            if (normalized.startsWith(p)) {
+                normalized = normalized.substring(p.length());
+                break;
+            }
+        }
+        return normalized.trim();
+    }
+
+    private static void addNormalizedOrderIdVariants(Set<String> targetSet, String rawOrderId) {
+        if (targetSet == null || rawOrderId == null) return;
+        String rawTag = rawOrderId.trim();
+        if (rawTag.isEmpty()) return;
+        targetSet.add(rawTag);
+        String normalized = stripNotificationPrefix(rawTag);
+        if (!normalized.isEmpty()) {
+            String bareId = normalized.startsWith("#") ? normalized.substring(1).trim() : normalized;
+            if (!bareId.isEmpty()) {
+                String hashId = "#" + bareId;
+                targetSet.add(normalized);
+                targetSet.add(bareId);
+                targetSet.add(hashId);
+            }
+        }
+    }
+
+    public static void registerActiveAlertOrder(String orderId) {
+        if (orderId == null || orderId.trim().isEmpty()) return;
+        lastAlertOrderId = orderId.trim();
+        addNormalizedOrderIdVariants(activeRingingOrderIds, orderId);
+    }
+
+    public static void markOrderAlarmAcknowledged(String orderId) {
+        if (orderId == null || orderId.trim().isEmpty()) return;
+        addNormalizedOrderIdVariants(acknowledgedAlarmIds, orderId);
+        String normalized = stripNotificationPrefix(orderId);
+        String bareId = normalized.startsWith("#") ? normalized.substring(1).trim() : normalized;
+        synchronized (activeRingingOrderIds) {
+            activeRingingOrderIds.remove(orderId.trim());
+            if (!bareId.isEmpty()) {
+                activeRingingOrderIds.remove(bareId);
+                activeRingingOrderIds.remove("#" + bareId);
+            }
+        }
+        if (activeInstance != null) {
+            activeInstance.saveKnownOrdersToStorage();
+        }
+    }
+
+    public static void acknowledgeAllActiveAlarms() {
+        if (lastAlertOrderId != null && !lastAlertOrderId.isEmpty()) {
+            addNormalizedOrderIdVariants(acknowledgedAlarmIds, lastAlertOrderId);
+            lastAlertOrderId = "";
+        }
+        synchronized (activeRingingOrderIds) {
+            for (String id : activeRingingOrderIds) {
+                addNormalizedOrderIdVariants(acknowledgedAlarmIds, id);
+            }
+            activeRingingOrderIds.clear();
+        }
+        OrderMonitorService instance = activeInstance;
+        if (instance != null && instance.isRiderApp) {
+            synchronized (notifiedReadyIds) {
+                for (String id : notifiedReadyIds) {
+                    addNormalizedOrderIdVariants(acknowledgedAlarmIds, id);
+                }
+            }
+        } else {
+            synchronized (knownOrderIds) {
+                for (String id : knownOrderIds) {
+                    addNormalizedOrderIdVariants(acknowledgedAlarmIds, id);
+                }
+            }
+        }
+        pendingWebAlarmStopSync = true;
+        if (instance != null) {
+            instance.saveKnownOrdersToStorage();
+        }
+    }
+
+    public static boolean isOrderAlarmAcknowledged(String orderId) {
+        if (orderId == null || orderId.trim().isEmpty()) return false;
+        String rawTag = orderId.trim();
+        if (acknowledgedAlarmIds.contains(rawTag)) return true;
+        String normalized = stripNotificationPrefix(rawTag);
+        if (normalized.isEmpty()) return false;
+        String bareId = normalized.startsWith("#") ? normalized.substring(1).trim() : normalized;
+        String hashId = "#" + bareId;
+        return acknowledgedAlarmIds.contains(normalized) ||
+               acknowledgedAlarmIds.contains(bareId) ||
+               acknowledgedAlarmIds.contains(hashId);
+    }
+
+    public static String getAcknowledgedAlarmIdsJson() {
+        try {
+            JSONArray arr = new JSONArray();
+            synchronized (acknowledgedAlarmIds) {
+                for (String id : acknowledgedAlarmIds) {
+                    if (id != null && !id.isEmpty()) {
+                        arr.put(id);
+                    }
+                }
+            }
+            return arr.toString();
+        } catch (Exception ignored) {
+            return "[]";
+        }
+    }
+
+    public static void clearAcknowledgedAlarms() {
+        acknowledgedAlarmIds.clear();
+        activeRingingOrderIds.clear();
+        knownOrderIds.clear();
+        notifiedReadyIds.clear();
+        lastAlertOrderId = "";
+        pendingWebAlarmStopSync = false;
+        if (activeInstance != null) {
+            activeInstance.saveKnownOrdersToStorage();
+        }
+    }
+
+    public static boolean consumePendingWebAlarmStopSync() {
+        boolean pending = pendingWebAlarmStopSync;
+        pendingWebAlarmStopSync = false;
+        return pending;
     }
 
     public static void setRiderDutyStatus(Context ctx, boolean onDuty) {
@@ -352,6 +495,10 @@ public class OrderMonitorService extends Service {
             if (savedReady != null && !savedReady.isEmpty()) {
                 notifiedReadyIds.addAll(savedReady);
             }
+            Set<String> savedAck = prefs.getStringSet("acknowledged_alarm_ids", null);
+            if (savedAck != null && !savedAck.isEmpty()) {
+                acknowledgedAlarmIds.addAll(savedAck);
+            }
         } catch (Exception e) {
             Log.w(TAG, "Error loading known orders: " + e.getMessage());
         }
@@ -377,9 +524,18 @@ public class OrderMonitorService extends Service {
                 }
                 boundedReady.addAll(notifiedReadyIds);
             }
+            Set<String> boundedAck = new LinkedHashSet<>();
+            synchronized (acknowledgedAlarmIds) {
+                while (acknowledgedAlarmIds.size() > 200) {
+                    String first = acknowledgedAlarmIds.iterator().next();
+                    acknowledgedAlarmIds.remove(first);
+                }
+                boundedAck.addAll(acknowledgedAlarmIds);
+            }
             prefs.edit()
                 .putStringSet("known_ids", boundedKnown)
                 .putStringSet("ready_ids", boundedReady)
+                .putStringSet("acknowledged_alarm_ids", boundedAck)
                 .apply();
         } catch (Exception e) {
             Log.w(TAG, "Error saving known orders: " + e.getMessage());
@@ -519,8 +675,8 @@ public class OrderMonitorService extends Service {
                     boolean isActiveReadyOrder = (createdAt > 0 && (now - createdAt <= 2 * 60 * 60 * 1000L))
                         && "ready_for_pickup".equalsIgnoreCase(status) && !isClaimed;
 
-                    if (!isRiderApp && isFreshKitchenOrder && !knownOrderIds.contains(id)) {
-                        knownOrderIds.add(id);
+                    if (!isRiderApp && isFreshKitchenOrder && !knownOrderIds.contains(id) && !isOrderAlarmAcknowledged(id)) {
+                        addNormalizedOrderIdVariants(knownOrderIds, id);
                         if ("pending".equalsIgnoreCase(status) || "accepted".equalsIgnoreCase(status)) {
                             String custName = order.optString("customer_name", "Customer");
                             String total = order.optString("total", "");
@@ -531,9 +687,9 @@ public class OrderMonitorService extends Service {
                                 id
                             );
                         }
-                    } else if (isRiderApp && isActiveReadyOrder && !notifiedReadyIds.contains(id)) {
-                        knownOrderIds.add(id);
-                        notifiedReadyIds.add(id);
+                    } else if (isRiderApp && isActiveReadyOrder && !notifiedReadyIds.contains(id) && !isOrderAlarmAcknowledged(id)) {
+                        addNormalizedOrderIdVariants(knownOrderIds, id);
+                        addNormalizedOrderIdVariants(notifiedReadyIds, id);
                         boolean onDuty = isRiderOnDuty(getApplicationContext());
                         if (onDuty) {
                             fireHeadsUpNotification(
@@ -543,9 +699,9 @@ public class OrderMonitorService extends Service {
                             );
                         }
                     } else {
-                        knownOrderIds.add(id);
+                        addNormalizedOrderIdVariants(knownOrderIds, id);
                         if ("ready_for_pickup".equalsIgnoreCase(status)) {
-                            notifiedReadyIds.add(id);
+                            addNormalizedOrderIdVariants(notifiedReadyIds, id);
                         }
                     }
                 }
@@ -573,8 +729,8 @@ public class OrderMonitorService extends Service {
                 if (!isRiderApp) {
                     // Kitchen Admin App: Alert for newly created orders
                     if (!knownOrderIds.contains(id)) {
-                        knownOrderIds.add(id);
-                        if ("pending".equalsIgnoreCase(status) || "accepted".equalsIgnoreCase(status)) {
+                        addNormalizedOrderIdVariants(knownOrderIds, id);
+                        if (("pending".equalsIgnoreCase(status) || "accepted".equalsIgnoreCase(status)) && !isOrderAlarmAcknowledged(id)) {
                             fireHeadsUpNotification(
                                 "🍗 NEW ORDER " + id + "!",
                                 custName + " • " + total + (pickupCode.isEmpty() ? "" : " • Code: " + pickupCode),
@@ -589,9 +745,9 @@ public class OrderMonitorService extends Service {
                     boolean isClaimed = !order.optString("assigned_rider_pin", "").trim().isEmpty();
                     boolean isReady = "ready_for_pickup".equalsIgnoreCase(status) && !isClaimed;
                     if (isReady && !notifiedReadyIds.contains(id)) {
-                        notifiedReadyIds.add(id);
-                        knownOrderIds.add(id);
-                        if (onDuty) {
+                        addNormalizedOrderIdVariants(notifiedReadyIds, id);
+                        addNormalizedOrderIdVariants(knownOrderIds, id);
+                        if (onDuty && !isOrderAlarmAcknowledged(id)) {
                             fireHeadsUpNotification(
                                 "🛵 NEW PARCEL READY FOR PICKUP",
                                 "A food parcel is packed on the kitchen counter. Collect the bag to check the 4-digit code written inside.",
@@ -600,7 +756,7 @@ public class OrderMonitorService extends Service {
                         }
                         saveKnownOrdersToStorage();
                     } else if (!knownOrderIds.contains(id)) {
-                        knownOrderIds.add(id);
+                        addNormalizedOrderIdVariants(knownOrderIds, id);
                         saveKnownOrdersToStorage();
                     }
                 }
@@ -883,6 +1039,10 @@ public class OrderMonitorService extends Service {
             releaseAudioFocus();
         }
 
+        if (!activeRingingOrderIds.isEmpty() || (lastAlertOrderId != null && !lastAlertOrderId.isEmpty())) {
+            acknowledgeAllActiveAlarms();
+        }
+
         OrderMonitorService instance = activeInstance;
         if (instance != null) {
             try {
@@ -892,16 +1052,24 @@ public class OrderMonitorService extends Service {
                 }
             } catch (Exception ignored) {}
 
-            int notifToCancel = lastAlertNotifId;
-            if (notifToCancel != -1) {
-                lastAlertNotifId = -1;
-                try {
-                    NotificationManager manager = (NotificationManager) instance.getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (manager != null) {
+            try {
+                NotificationManager manager = (NotificationManager) instance.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (manager != null) {
+                    int notifToCancel = lastAlertNotifId;
+                    if (notifToCancel != -1) {
+                        lastAlertNotifId = -1;
                         manager.cancel(notifToCancel);
                     }
-                } catch (Exception ignored) {}
-            }
+                    synchronized (activeAlertNotifIds) {
+                        for (Integer id : activeAlertNotifIds) {
+                            if (id != null && id != -1 && id != SERVICE_NOTIFICATION_ID) {
+                                manager.cancel(id);
+                            }
+                        }
+                        activeAlertNotifIds.clear();
+                    }
+                }
+            } catch (Exception ignored) {}
         }
     }
 
@@ -1111,11 +1279,13 @@ public class OrderMonitorService extends Service {
             PendingIntent pendingIntent = PendingIntent.getActivity(this, (int) System.currentTimeMillis(), intent, pendingFlags);
 
             int notifId = orderId != null ? Math.abs(orderId.hashCode()) : (int) System.currentTimeMillis();
-            lastAlertNotifId = notifId;
+            setLastAlertNotifId(notifId);
+            registerActiveAlertOrder(orderId);
 
             Intent stopIntent = new Intent(this, OrderMonitorService.class);
             stopIntent.setAction(ACTION_STOP_ALARM);
             stopIntent.putExtra("notif_id", notifId);
+            stopIntent.putExtra("order_id", orderId != null ? orderId : "");
             PendingIntent stopPendingIntent = PendingIntent.getService(this, notifId + 1, stopIntent, pendingFlags);
 
             Uri soundUri = null;
@@ -1168,6 +1338,11 @@ public class OrderMonitorService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP_ALARM.equals(intent.getAction())) {
             int notifId = intent.getIntExtra("notif_id", -1);
+            String stoppedOrderId = intent.getStringExtra("order_id");
+            if (stoppedOrderId != null && !stoppedOrderId.isEmpty()) {
+                markOrderAlarmAcknowledged(stoppedOrderId);
+            }
+            acknowledgeAllActiveAlarms();
             stopNativeAlarm();
             if (notifId != -1) {
                 try {

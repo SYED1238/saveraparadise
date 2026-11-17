@@ -82,18 +82,6 @@ public class WebAppInterface {
             NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager == null) return;
 
-            // Intent to bring MainActivity to the front on tap
-            Intent intent = new Intent(context, MainActivity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            
-            int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
-            }
-            PendingIntent pendingIntent = PendingIntent.getActivity(context, (int) System.currentTimeMillis(), intent, pendingFlags);
-
-            int notifId = tag != null ? Math.abs(tag.hashCode()) : (int) System.currentTimeMillis();
-
             // Urgent alarm alerts for Kitchen (new order) and Rider (parcel ready on counter)
             boolean isCustomAudio = "custom_r2".equals(soundType) || "silent_alarm".equals(soundType);
             boolean isKitchenAlert = "kitchen_alarm".equals(soundType) ||
@@ -106,6 +94,27 @@ public class WebAppInterface {
                                    (tag != null && (tag.startsWith("rider-ready-") || 
                                                     tag.startsWith("rider-task-") ||
                                                     tag.startsWith("rider-")));
+
+            // Guard against re-firing native alarm notification if order alarm was already silenced while minimized
+            if (isAlarmAlert && OrderMonitorService.isOrderAlarmAcknowledged(tag)) {
+                return;
+            }
+
+            // Intent to bring MainActivity to the front on tap (and silence active alarm)
+            Intent intent = new Intent(context, MainActivity.class);
+            if (isAlarmAlert) {
+                intent.setAction(OrderMonitorService.ACTION_STOP_ALARM);
+                intent.putExtra("order_id", tag != null ? tag : "");
+            }
+            intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            
+            int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent pendingIntent = PendingIntent.getActivity(context, (int) System.currentTimeMillis(), intent, pendingFlags);
+
+            int notifId = tag != null ? Math.abs(tag.hashCode()) : (int) System.currentTimeMillis();
 
             int priority;
             String category;
@@ -155,6 +164,7 @@ public class WebAppInterface {
                 Intent stopIntent = new Intent(context, OrderMonitorService.class);
                 stopIntent.setAction(OrderMonitorService.ACTION_STOP_ALARM);
                 stopIntent.putExtra("notif_id", notifId);
+                stopIntent.putExtra("order_id", tag != null ? tag : "");
                 PendingIntent stopPendingIntent = PendingIntent.getService(context, notifId + 1, stopIntent, pendingFlags);
                 builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "🛑 Stop Alarm", stopPendingIntent);
                 builder.setDeleteIntent(stopPendingIntent);
@@ -173,6 +183,7 @@ public class WebAppInterface {
 
             if (isAlarmAlert) {
                 OrderMonitorService.setLastAlertNotifId(notifId);
+                OrderMonitorService.registerActiveAlertOrder(tag);
                 // Start continuous looping MediaPlayer + repeating Vibrator waveform & acquire audio focus
                 if (!OrderMonitorService.isAlarmRinging()) {
                     OrderMonitorService.startNativeAlarm();
@@ -223,6 +234,47 @@ public class WebAppInterface {
     public void stopAlarm() {
         try {
             OrderMonitorService.stopNativeAlarm();
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
+    public boolean isAlarmRinging() {
+        try {
+            return OrderMonitorService.isAlarmRinging();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    @JavascriptInterface
+    public boolean isOrderAlarmAcknowledged(String orderId) {
+        try {
+            return OrderMonitorService.isOrderAlarmAcknowledged(orderId);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    @JavascriptInterface
+    public String getAcknowledgedAlarmIds() {
+        try {
+            return OrderMonitorService.getAcknowledgedAlarmIdsJson();
+        } catch (Exception ignored) {
+            return "[]";
+        }
+    }
+
+    @JavascriptInterface
+    public void acknowledgeOrderAlarm(String orderId) {
+        try {
+            OrderMonitorService.markOrderAlarmAcknowledged(orderId);
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
+    public void clearAcknowledgedAlarms() {
+        try {
+            OrderMonitorService.clearAcknowledgedAlarms();
         } catch (Exception ignored) {}
     }
 

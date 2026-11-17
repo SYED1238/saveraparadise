@@ -53,8 +53,27 @@ public class MainActivity extends AppCompatActivity {
     public static void triggerWebAlarmStop() {
         MainActivity act = activeActivityRef != null ? activeActivityRef.get() : null;
         if (act != null && act.webView != null) {
+            final String ackJson = OrderMonitorService.getAcknowledgedAlarmIdsJson();
             act.runOnUiThread(() -> {
-                act.webView.evaluateJavascript("if (typeof window.__stopRiderAlarmFromNative === 'function') window.__stopRiderAlarmFromNative(); if (typeof window.__stopKitchenAlarmFromNative === 'function') window.__stopKitchenAlarmFromNative();", null);
+                act.webView.evaluateJavascript(
+                    "if (typeof window.__syncNativeAcknowledgedAlarms === 'function') window.__syncNativeAcknowledgedAlarms(" + ackJson + "); " +
+                    "if (typeof window.__stopRiderAlarmFromNative === 'function') window.__stopRiderAlarmFromNative(" + ackJson + "); " +
+                    "if (typeof window.__stopKitchenAlarmFromNative === 'function') window.__stopKitchenAlarmFromNative(" + ackJson + ");",
+                    null
+                );
+            });
+        }
+    }
+
+    public static void syncNativeAcknowledgedAlarmsToWebView() {
+        MainActivity act = activeActivityRef != null ? activeActivityRef.get() : null;
+        if (act != null && act.webView != null) {
+            final String ackJson = OrderMonitorService.getAcknowledgedAlarmIdsJson();
+            act.runOnUiThread(() -> {
+                act.webView.evaluateJavascript(
+                    "if (typeof window.__syncNativeAcknowledgedAlarms === 'function') window.__syncNativeAcknowledgedAlarms(" + ackJson + ");",
+                    null
+                );
             });
         }
     }
@@ -160,6 +179,10 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 progressBar.setVisibility(View.GONE);
                 swipeRefresh.setRefreshing(false);
+                syncNativeAcknowledgedAlarmsToWebView();
+                if (OrderMonitorService.consumePendingWebAlarmStopSync()) {
+                    triggerWebAlarmStop();
+                }
             }
         });
 
@@ -367,6 +390,11 @@ public class MainActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         if (intent != null && OrderMonitorService.ACTION_STOP_ALARM.equals(intent.getAction())) {
+            String orderId = intent.getStringExtra("order_id");
+            if (orderId != null && !orderId.isEmpty()) {
+                OrderMonitorService.markOrderAlarmAcknowledged(orderId);
+            }
+            OrderMonitorService.acknowledgeAllActiveAlarms();
             OrderMonitorService.stopNativeAlarm();
             triggerWebAlarmStop();
             intent.setAction(null);
@@ -379,9 +407,19 @@ public class MainActivity extends AppCompatActivity {
         activeActivityRef = new java.lang.ref.WeakReference<>(this);
         OrderMonitorService.setAppInForeground(true);
         if (getIntent() != null && OrderMonitorService.ACTION_STOP_ALARM.equals(getIntent().getAction())) {
+            String orderId = getIntent().getStringExtra("order_id");
+            if (orderId != null && !orderId.isEmpty()) {
+                OrderMonitorService.markOrderAlarmAcknowledged(orderId);
+            }
+            OrderMonitorService.acknowledgeAllActiveAlarms();
             OrderMonitorService.stopNativeAlarm();
             triggerWebAlarmStop();
             getIntent().setAction(null);
+        } else {
+            syncNativeAcknowledgedAlarmsToWebView();
+            if (OrderMonitorService.consumePendingWebAlarmStopSync()) {
+                triggerWebAlarmStop();
+            }
         }
         if (getPackageName().toLowerCase().contains("rider") && isDeviceLocationEnabled()) {
             notifyWebViewGpsEnabled();

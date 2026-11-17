@@ -3614,15 +3614,59 @@ const initAdminApp = () => {
     }
   }
 
-  function markAlarmAcknowledged(orderIds) {
+  function parseNativeAcknowledgedIds(rawInput) {
+    const collected = [];
+    const appendInput = (val) => {
+      if (!val) return;
+      if (Array.isArray(val)) {
+        val.forEach(item => {
+          if (item) collected.push(String(item).trim());
+        });
+      } else if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (!trimmed) return;
+        if (trimmed.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) {
+              parsed.forEach(item => {
+                if (item) collected.push(String(item).trim());
+              });
+            }
+          } catch {}
+        } else {
+          collected.push(trimmed);
+        }
+      }
+    };
+    appendInput(rawInput);
+    try {
+      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.getAcknowledgedAlarmIds === 'function') {
+        appendInput(window.AndroidNative.getAcknowledgedAlarmIds());
+      }
+    } catch {}
+    return collected.filter(Boolean);
+  }
+
+  function markAlarmAcknowledged(orderIds, syncToNative = true) {
     if (!orderIds) return;
     const ids = Array.isArray(orderIds) ? orderIds : [orderIds];
     const map = getAcknowledgedAlarms();
     const now = Date.now();
     ids.filter(Boolean).forEach(id => {
       const clean = String(id).trim();
+      const bare = clean.replace(/^#/, '');
+      if (!bare) return;
       map.set(clean, now);
-      map.set(clean.replace(/^#/, ''), now);
+      map.set(bare, now);
+      map.set(`#${bare}`, now);
+      if (syncToNative) {
+        try {
+          if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.acknowledgeOrderAlarm === 'function') {
+            window.AndroidNative.acknowledgeOrderAlarm(clean);
+          }
+        } catch {}
+      }
     });
     try {
       const list = Array.from(map.entries()).map(([id, timestamp]) => ({ id, timestamp }));
@@ -3630,12 +3674,47 @@ const initAdminApp = () => {
     } catch {}
   }
 
+  function syncNativeAcknowledgedKitchenAlarms(extraIds = null) {
+    const nativeIds = parseNativeAcknowledgedIds(extraIds);
+    if (nativeIds.length > 0) {
+      markAlarmAcknowledged(nativeIds, false);
+      const normSet = new Set(nativeIds.map(id => String(id).trim().replace(/^#/, '')));
+      ringingOrdersQueue = ringingOrdersQueue.filter(o => o && !normSet.has(String(o.id || '').trim().replace(/^#/, '')));
+    }
+    if (isKitchenAlarmRinging) {
+      let nativeStopped = false;
+      try {
+        if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.isAlarmRinging === 'function') {
+          nativeStopped = !window.AndroidNative.isAlarmRinging();
+        }
+      } catch {}
+      if (ringingOrdersQueue.length === 0 || nativeStopped) {
+        stopKitchenAlarm(false);
+      }
+    }
+    return nativeIds;
+  }
+
   function isAlarmAcknowledged(orderId) {
     if (!orderId) return false;
     const clean = String(orderId).trim();
+    const bare = clean.replace(/^#/, '');
     const map = getAcknowledgedAlarms();
-    return map.has(clean) || map.has(clean.replace(/^#/, ''));
+    if (map.has(clean) || map.has(bare) || map.has(`#${bare}`)) {
+      return true;
+    }
+    try {
+      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.isOrderAlarmAcknowledged === 'function') {
+        if (window.AndroidNative.isOrderAlarmAcknowledged(clean)) {
+          markAlarmAcknowledged([clean], false);
+          return true;
+        }
+      }
+    } catch {}
+    return false;
   }
+
+  syncNativeAcknowledgedKitchenAlarms();
 
   function startKitchenAlarm(order) {
     if (!order || !order.id) return;
@@ -3811,6 +3890,10 @@ const initAdminApp = () => {
         if (id && !orderIds.includes(id)) orderIds.push(id);
       });
     }
+    const nativeAckIds = parseNativeAcknowledgedIds(extra?.nativeOrderIds);
+    nativeAckIds.forEach(id => {
+      if (id && !orderIds.includes(id)) orderIds.push(id);
+    });
     if (orderIds.length === 0) {
       const allOrders = dataService.getOrders();
       allOrders.filter(o => ((o.status || 'accepted') === 'accepted' || o.status === 'pending')).forEach(o => {
@@ -3875,10 +3958,12 @@ const initAdminApp = () => {
   }
 
   if (typeof window !== 'undefined') {
+    window.__syncNativeAcknowledgedAlarms = function (nativeIds) {
+      syncNativeAcknowledgedKitchenAlarms(nativeIds);
+    };
     window.__stopKitchenAlarmFromNative = function () {
-      if (isKitchenAlarmRinging) {
-        stopKitchenAlarm(true);
-      }
+      syncNativeAcknowledgedKitchenAlarms(arguments[0]);
+      stopKitchenAlarm(true);
     };
   }
 
@@ -6415,9 +6500,13 @@ const initAdminApp = () => {
     if (document.hidden) {
       stopOverdueChecker();
     } else {
+      syncNativeAcknowledgedKitchenAlarms();
       checkOverduePendingOrders();
       startOverdueChecker();
     }
+  });
+  window.addEventListener('focus', () => {
+    syncNativeAcknowledgedKitchenAlarms();
   });
   checkOverduePendingOrders();
   startOverdueChecker();

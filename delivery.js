@@ -993,12 +993,14 @@ const initDeliveryApp = () => {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && isStaffSessionActive('rider')) {
       initRiderLiveGeolocation(true);
+      syncNativeAcknowledgedRiderAlarms();
       try { dataService.syncOrdersFromSupabase(false); } catch {}
     }
   });
   window.addEventListener('focus', () => {
     if (isStaffSessionActive('rider')) {
       initRiderLiveGeolocation(true);
+      syncNativeAcknowledgedRiderAlarms();
       try { dataService.syncOrdersFromSupabase(false); } catch {}
     }
   });
@@ -3655,35 +3657,123 @@ const initDeliveryApp = () => {
   // ========================================================
   // REAL-TIME SYNC & NOTIFICATION LISTENERS
   // ========================================================
+  function parseNativeRiderAcknowledgedIds(rawInput) {
+    const collected = [];
+    const appendInput = (val) => {
+      if (!val) return;
+      if (Array.isArray(val)) {
+        val.forEach(item => {
+          if (item) collected.push(String(item).trim());
+        });
+      } else if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (!trimmed) return;
+        if (trimmed.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) {
+              parsed.forEach(item => {
+                if (item) collected.push(String(item).trim());
+              });
+            }
+          } catch {}
+        } else {
+          collected.push(trimmed);
+        }
+      }
+    };
+    appendInput(rawInput);
+    try {
+      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.getAcknowledgedAlarmIds === 'function') {
+        appendInput(window.AndroidNative.getAcknowledgedAlarmIds());
+      }
+    } catch {}
+    return collected.filter(Boolean);
+  }
+
   function isRiderStatusAlerted(orderId, status) {
     try {
       const cleanId = String(orderId || '').trim().replace(/^#/, '');
+      if (!cleanId) return false;
       const stored = JSON.parse(localStorage.getItem('quickbite_rider_alerted_statuses') || '{}');
-      return Boolean(stored[`${cleanId}:${status}`] || stored[`#${cleanId}:${status}`]);
+      if (Boolean(stored[`${cleanId}:${status}`] || stored[`#${cleanId}:${status}`])) {
+        return true;
+      }
+      if (status === 'ready_for_pickup' && typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.isOrderAlarmAcknowledged === 'function') {
+        if (window.AndroidNative.isOrderAlarmAcknowledged(cleanId)) {
+          markRiderStatusAlerted(cleanId, 'ready_for_pickup', false);
+          return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }
   }
 
-  function markRiderStatusAlerted(orderId, status) {
+  function markRiderStatusAlerted(orderId, status, syncToNative = true) {
     try {
       const cleanId = String(orderId || '').trim().replace(/^#/, '');
+      if (!cleanId) return;
       const stored = JSON.parse(localStorage.getItem('quickbite_rider_alerted_statuses') || '{}');
       const now = Date.now();
       stored[`${cleanId}:${status}`] = now;
       stored[`#${cleanId}:${status}`] = now;
+      // Prune entries older than 12 hours
       const pruned = {};
-      Object.keys(stored).forEach(k => {
-        if (now - stored[k] < 7 * 24 * 60 * 60 * 1000) {
-          pruned[k] = stored[k];
+      Object.entries(stored).forEach(([k, ts]) => {
+        if (now - Number(ts) < 12 * 60 * 60 * 1000) {
+          pruned[k] = ts;
         }
       });
       localStorage.setItem('quickbite_rider_alerted_statuses', JSON.stringify(pruned));
+      if (syncToNative && status === 'ready_for_pickup') {
+        try {
+          if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.acknowledgeOrderAlarm === 'function') {
+            window.AndroidNative.acknowledgeOrderAlarm(`#${cleanId}`);
+          }
+        } catch {}
+      }
     } catch {}
   }
+
   let isRiderAlarmRinging = false;
   let riderAlarmInterval = null;
   const ringingParcelsQueue = [];
+
+  function syncNativeAcknowledgedRiderAlarms(extraIds = null) {
+    const nativeIds = parseNativeRiderAcknowledgedIds(extraIds);
+    if (nativeIds.length > 0) {
+      const normSet = new Set();
+      nativeIds.forEach(id => {
+        const clean = String(id || '').trim().replace(/^(rider-ready-|rider-task-|rider-|admin-order-|order-)/, '').replace(/^#/, '');
+        if (clean) {
+          normSet.add(clean);
+          markRiderStatusAlerted(clean, 'ready_for_pickup', false);
+        }
+      });
+      for (let i = ringingParcelsQueue.length - 1; i >= 0; i--) {
+        const qId = String(ringingParcelsQueue[i]?.id || '').trim().replace(/^#/, '');
+        if (normSet.has(qId)) {
+          ringingParcelsQueue.splice(i, 1);
+        }
+      }
+    }
+    if (isRiderAlarmRinging) {
+      let nativeStopped = false;
+      try {
+        if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.isAlarmRinging === 'function') {
+          nativeStopped = !window.AndroidNative.isAlarmRinging();
+        }
+      } catch {}
+      if (ringingParcelsQueue.length === 0 || nativeStopped) {
+        stopRiderAlarm();
+      }
+    }
+    return nativeIds;
+  }
+
+  syncNativeAcknowledgedRiderAlarms();
 
   function startRiderAlarm(order) {
     if (!order || !order.id) return;
@@ -3692,6 +3782,9 @@ const initDeliveryApp = () => {
     // Suppress audio alerts for stale/historical orders (>30 mins old)
     const orderAge = order.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
     if (orderAge > 30 * 60 * 1000) return;
+
+    // Never re-ring if parcel alarm was already acknowledged natively or in localStorage
+    if (isRiderStatusAlerted(order.id, 'ready_for_pickup')) return;
 
     const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
     const cleanId = normalizeId(order.id);
@@ -3708,8 +3801,15 @@ const initDeliveryApp = () => {
       const titleEl = document.getElementById('rider-alarm-title');
       const subEl = document.getElementById('rider-alarm-sub');
       const bagCode = order.pickupCode || (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '0000');
-      if (titleEl) titleEl.textContent = `Parcel #${bagCode} Ready (#${cleanId})`;
-      if (subEl) subEl.textContent = `Food is packed on Savera Paradise kitchen counter • Tap Pick Up to start delivery`;
+      const count = ringingParcelsQueue.length;
+      if (titleEl) {
+        titleEl.textContent = count > 1
+          ? `🚨 ${count} PARCELS READY FOR PICKUP!`
+          : `Parcel #${bagCode} Ready (#${cleanId})`;
+      }
+      if (subEl) {
+        subEl.textContent = `Food is packed on Savera Paradise kitchen counter • Tap Pick Up to start delivery`;
+      }
       banner.style.display = 'block';
     }
 
@@ -3717,30 +3817,47 @@ const initDeliveryApp = () => {
     flashTabTitle(`🚨 PARCEL READY ON COUNTER!`);
 
     // Trigger native Android background alarm loop if running inside Android APK
-    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
+    const hasAndroidNative = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+    if (hasAndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
       try {
         window.AndroidNative.startAlarm();
       } catch (e) {
-        console.warn('[Rider] Native startAlarm failed:', e);
+        console.warn('[RiderAlarm] Native startAlarm bridge error:', e);
+        playNotificationSound('rider_new_task');
       }
+    } else {
+      playNotificationSound('rider_new_task');
     }
-
-    // Play first chime immediately
-    playNotificationSound('rider_new_task');
 
     // Loop chime repeatedly every 2.0s UNTIL rider clicks STOP button or accepts order
     if (riderAlarmInterval) clearInterval(riderAlarmInterval);
-    riderAlarmInterval = setInterval(() => {
-      if (isRiderAlarmRinging) {
-        playNotificationSound('rider_new_task');
-      } else {
-        clearInterval(riderAlarmInterval);
-        riderAlarmInterval = null;
-      }
-    }, 2000);
+    if (!hasAndroidNative) {
+      riderAlarmInterval = setInterval(() => {
+        if (isRiderAlarmRinging) {
+          playNotificationSound('rider_new_task');
+        } else {
+          clearInterval(riderAlarmInterval);
+          riderAlarmInterval = null;
+        }
+      }, 2000);
+    }
   }
 
   function stopRiderAlarm() {
+    try {
+      ringingParcelsQueue.forEach(o => {
+        if (o && o.id) markRiderStatusAlerted(o.id, 'ready_for_pickup');
+      });
+      const allOrders = dataService.getOrders();
+      if (Array.isArray(allOrders)) {
+        allOrders.forEach(o => {
+          if (o && o.id && o.status === 'ready_for_pickup') {
+            markRiderStatusAlerted(o.id, 'ready_for_pickup');
+          }
+        });
+      }
+    } catch {}
+
     isRiderAlarmRinging = false;
     ringingParcelsQueue.length = 0;
     if (riderAlarmInterval) {
@@ -3757,14 +3874,18 @@ const initDeliveryApp = () => {
       try {
         window.AndroidNative.stopAlarm();
       } catch (e) {
-        console.warn('[Rider] Native stopAlarm failed:', e);
+        console.warn('[RiderAlarm] Native stopAlarm bridge error:', e);
       }
     }
   }
 
   // Expose to window for Android WebView bridge and native background calls
   if (typeof window !== 'undefined') {
+    window.__syncNativeAcknowledgedAlarms = function (nativeIds) {
+      syncNativeAcknowledgedRiderAlarms(nativeIds);
+    };
     window.__stopRiderAlarmFromNative = function () {
+      syncNativeAcknowledgedRiderAlarms(arguments[0]);
       stopRiderAlarm();
     };
   }

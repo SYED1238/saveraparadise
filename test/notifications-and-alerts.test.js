@@ -1313,4 +1313,46 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
       'DEFAULT_SETTINGS must define kitchenAlarmMode'
     );
   });
+
+  await t.test('29. Minimized APK pop-up alarm stop persists acknowledged order IDs and prevents re-ringing on APK reopen', () => {
+    const omsSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/OrderMonitorService.java', import.meta.url),
+      'utf8'
+    );
+    const webAppSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/WebAppInterface.java', import.meta.url),
+      'utf8'
+    );
+    const mainActivitySrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/MainActivity.java', import.meta.url),
+      'utf8'
+    );
+    const adminSrc = fs.readFileSync(
+      new URL('../admin.js', import.meta.url),
+      'utf8'
+    );
+    const deliverySrc = fs.readFileSync(
+      new URL('../delivery.js', import.meta.url),
+      'utf8'
+    );
+
+    assert.match(omsSrc, /putStringSet\("acknowledged_alarm_ids",\s*boundedAck\)/,
+      'OrderMonitorService must persist acknowledged alarm order IDs in SharedPreferences');
+    assert.match(omsSrc, /public\s+static\s+void\s+acknowledgeAllActiveAlarms\(\)/,
+      'OrderMonitorService must acknowledge active ringing alarm order IDs when stopped from pop-up');
+    assert.match(omsSrc, /stopIntent\.putExtra\("order_id",\s*orderId\s*!=\s*null\s*\?\s*orderId\s*:\s*""\)/,
+      'OrderMonitorService stopIntent must pass order_id extra so pop-up dismissal records the exact order');
+    assert.match(webAppSrc, /public\s+String\s+getAcknowledgedAlarmIds\(\)/,
+      'WebAppInterface must expose getAcknowledgedAlarmIds() to the WebView');
+    assert.match(webAppSrc, /isAlarmAlert\s*&&\s*OrderMonitorService\.isOrderAlarmAcknowledged\(tag\)/,
+      'WebAppInterface.showNotification must not restart native alarm for an already-acknowledged order');
+    assert.match(mainActivitySrc, /onResume\([\s\S]*?consumePendingWebAlarmStopSync\(\)/,
+      'MainActivity.onResume must sync stopped/acknowledged native alarms to WebView on APK reopen');
+    assert.match(adminSrc, /function\s+syncNativeAcknowledgedKitchenAlarms\(/,
+      'admin.js must sync native acknowledged alarm order IDs into quickbite_acknowledged_alarms');
+    assert.match(deliverySrc, /function\s+syncNativeAcknowledgedRiderAlarms\(/,
+      'delivery.js must sync native acknowledged alarm order IDs into quickbite_rider_alerted_statuses');
+    assert.match(deliverySrc, /function\s+stopRiderAlarm\([\s\S]*?markRiderStatusAlerted\(o\.id,\s*'ready_for_pickup'\)/,
+      'stopRiderAlarm must mark ringing ready_for_pickup orders as alerted so foreground sync does not re-trigger the alarm');
+  });
 });
