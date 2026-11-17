@@ -43,6 +43,102 @@ const initAdminApp = () => {
   // Navigation Back Stack Controller (Single-step back navigation)
   const backNav = createBackNavigationManager('admin');
 
+  // ==============================================================
+  // KITCHEN ADMIN HEADER DROPDOWN MENU (3-LINES OVERFLOW MENU)
+  // ==============================================================
+  const btnAdminMenuToggle = document.getElementById('btn-admin-menu-toggle');
+  const adminMenuDropdown = document.getElementById('admin-menu-dropdown');
+  const adminMenuBackdrop = document.getElementById('admin-menu-backdrop');
+  const adminMenuIcon = document.getElementById('admin-menu-icon');
+
+  function openAdminMenuDropdown() {
+    if (!adminMenuDropdown || !btnAdminMenuToggle) return;
+    adminMenuDropdown.style.display = 'block';
+    if (adminMenuBackdrop) adminMenuBackdrop.style.display = 'block';
+    btnAdminMenuToggle.classList.add('active');
+    btnAdminMenuToggle.setAttribute('aria-expanded', 'true');
+    if (adminMenuIcon) {
+      adminMenuIcon.classList.remove('fa-bars');
+      adminMenuIcon.classList.add('fa-xmark');
+    }
+    backNav.pushStep('admin-dropdown-menu', () => closeAdminMenuDropdown());
+  }
+
+  function closeAdminMenuDropdown() {
+    if (!adminMenuDropdown || !btnAdminMenuToggle) return;
+    adminMenuDropdown.style.display = 'none';
+    if (adminMenuBackdrop) adminMenuBackdrop.style.display = 'none';
+    btnAdminMenuToggle.classList.remove('active');
+    btnAdminMenuToggle.setAttribute('aria-expanded', 'false');
+    if (adminMenuIcon) {
+      adminMenuIcon.classList.remove('fa-xmark');
+      adminMenuIcon.classList.add('fa-bars');
+    }
+    backNav.removeStep('admin-dropdown-menu');
+  }
+
+  function toggleAdminMenuDropdown(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const isOpen = adminMenuDropdown && adminMenuDropdown.style.display !== 'none';
+    if (isOpen) closeAdminMenuDropdown();
+    else openAdminMenuDropdown();
+  }
+
+  if (btnAdminMenuToggle && adminMenuDropdown) {
+    btnAdminMenuToggle.addEventListener('click', toggleAdminMenuDropdown);
+
+    if (adminMenuBackdrop) {
+      adminMenuBackdrop.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeAdminMenuDropdown();
+      });
+      adminMenuBackdrop.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        closeAdminMenuDropdown();
+      }, { passive: true });
+    }
+
+    adminMenuDropdown.querySelectorAll('.admin-dropdown-item').forEach(item => {
+      item.addEventListener('click', () => {
+        closeAdminMenuDropdown();
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (adminMenuDropdown.style.display === 'none') return;
+      if (btnAdminMenuToggle.contains(e.target) || e.target.closest('#btn-admin-menu-toggle')) return;
+      if (adminMenuDropdown.contains(e.target) || e.target.closest('#admin-menu-dropdown')) return;
+      closeAdminMenuDropdown();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && adminMenuDropdown.style.display !== 'none') {
+        closeAdminMenuDropdown();
+      }
+    });
+  }
+
+  // Dropdown Menu: Live Orders Refresh Button
+  const btnAdminMenuRefresh = document.getElementById('btn-admin-menu-refresh');
+  if (btnAdminMenuRefresh) {
+    btnAdminMenuRefresh.addEventListener('click', async () => {
+      const refreshIcon = document.getElementById('admin-menu-refresh-icon');
+      if (refreshIcon) refreshIcon.classList.add('fa-spin');
+      try {
+        await dataService.syncOrdersFromSupabase(true).catch(() => {});
+        await dataService.syncRidersFromSupabase().catch(() => {});
+        renderOrders();
+        updateOrderBadges();
+        showToast('🟢 Orders & connection synchronized', 'success');
+      } finally {
+        if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+      }
+    });
+  }
+
   // Screen WakeLock Controller (Keeps kitchen tablet display awake)
   const btnAdminWakeLock = document.getElementById('btn-admin-wakelock');
   const wakeLockStatusText = document.getElementById('wakelock-status-text');
@@ -52,12 +148,12 @@ const initAdminApp = () => {
       if (isActive) {
         btnAdminWakeLock.classList.add('active');
         btnAdminWakeLock.classList.remove('disabled');
-        if (wakeLockStatusText) wakeLockStatusText.textContent = 'Screen Awake';
+        if (wakeLockStatusText) wakeLockStatusText.textContent = 'Screen Awake (Always on)';
         btnAdminWakeLock.title = 'Screen kept awake for kitchen tablet (Click to disable)';
       } else {
         btnAdminWakeLock.classList.remove('active');
         btnAdminWakeLock.classList.add('disabled');
-        if (wakeLockStatusText) wakeLockStatusText.textContent = 'Screen Normal';
+        if (wakeLockStatusText) wakeLockStatusText.textContent = 'Screen Normal (Tap to keep awake)';
         btnAdminWakeLock.title = 'Screen lock disabled (Click to keep screen awake)';
       }
     });
@@ -3561,6 +3657,8 @@ const initAdminApp = () => {
 
   function updateAlarmToggleUI() {
     const mode = getKitchenAlarmSoundMode();
+    const alarmToggleDesc = document.getElementById('alarm-toggle-desc');
+    const alarmToggleIconWrap = document.getElementById('alarm-toggle-icon-wrap');
     if (alarmToggleIcon) {
       if (mode === KITCHEN_ALARM_MODES.R2_CUSTOM) {
         alarmToggleIcon.className = 'fa-solid fa-music';
@@ -3568,12 +3666,20 @@ const initAdminApp = () => {
           btnAdminAlarmToggle.title = 'Current Kitchen Alarm: Funk Criminal (Custom R2 Track) - Click to revert to Classic Chime';
         }
         if (alarmToggleLabel) alarmToggleLabel.textContent = 'Alarm: Funk Criminal';
+        if (alarmToggleDesc) alarmToggleDesc.textContent = 'Custom R2 audio (Click for Classic)';
+        if (alarmToggleIconWrap) {
+          alarmToggleIconWrap.className = 'adi-icon adi-purple';
+        }
       } else {
         alarmToggleIcon.className = 'fa-solid fa-bell';
         if (btnAdminAlarmToggle) {
           btnAdminAlarmToggle.title = 'Current Kitchen Alarm: Classic Chime - Click to switch to Funk Criminal (R2)';
         }
         if (alarmToggleLabel) alarmToggleLabel.textContent = 'Alarm: Classic Chime';
+        if (alarmToggleDesc) alarmToggleDesc.textContent = 'Classic chime (Click for Funk Criminal)';
+        if (alarmToggleIconWrap) {
+          alarmToggleIconWrap.className = 'adi-icon adi-amber';
+        }
       }
     }
   }
@@ -3930,10 +4036,10 @@ const initAdminApp = () => {
       btnAdminSoundTest.classList.remove('sounding');
     }
     if (soundPillText) {
-      soundPillText.textContent = 'Alarm: Active';
+      soundPillText.textContent = 'Test Kitchen Alarm';
     }
     if (soundPillIcon) {
-      soundPillIcon.className = 'fa-solid fa-bell';
+      soundPillIcon.className = 'fa-solid fa-volume-high';
     }
 
     if (shouldBroadcast) {
@@ -6545,6 +6651,10 @@ const initAdminApp = () => {
   });
 
   // Register DOM fallback checkers for bulletproof single-step back navigation
+  backNav.registerFallbackChecker({
+    isOpen: () => adminMenuDropdown && adminMenuDropdown.style.display !== 'none',
+    close: () => closeAdminMenuDropdown()
+  });
   backNav.registerFallbackChecker({
     isOpen: () => modalDishBackdrop && modalDishBackdrop.classList.contains('open'),
     close: () => closeDishModal()

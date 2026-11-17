@@ -110,4 +110,25 @@ test('FEATURE #12: LIVE ORDER TRACKING, 5-STEP STEPPER, SLIDE-TO-CANCEL & KITCHE
   await t.test('11. delivery.js filters out noisy GPS positions with accuracy > 150m', () => {
     assert.match(deliveryJs, /if\s*\(pos\.coords\s*&&\s*pos\.coords\.accuracy\s*&&\s*pos\.coords\.accuracy\s*>\s*150\)\s*\{\s*\/\/[^\n]*\s*return;\s*\}/s, 'handleGpsPosition must reject low accuracy GPS fixes (>150m)');
   });
+
+  // =========================================================================
+  // 5. Bottom Navigation Bar Live Order Beacon & Pulse Indicator
+  // =========================================================================
+  await t.test('12. index.html includes nav-track-pulse-dot inside nav-btn-track', () => {
+    assert.match(indexHtml, /id="nav-btn-track"[\s\S]*?id="nav-track-pulse-dot"/, 'nav-btn-track must contain nav-track-pulse-dot element');
+  });
+
+  await t.test('13. style.css defines beacon pulse animation and breathing icon for active orders', () => {
+    assert.match(styleCss, /\.nav-track-pulse-dot/, 'style.css must define .nav-track-pulse-dot');
+    assert.match(styleCss, /\.capsule-nav-btn\.has-live-order/, 'style.css must style .capsule-nav-btn.has-live-order');
+    assert.match(styleCss, /@keyframes trackBeaconPulse/, 'style.css must define trackBeaconPulse keyframes');
+    assert.match(styleCss, /@keyframes trackIconBreathing/, 'style.css must define trackIconBreathing keyframes');
+  });
+
+  await t.test('14. main.js defines updateLiveOrderTrackPulse and subscribes to order event updates', () => {
+    assert.match(mainJs, /function updateLiveOrderTrackPulse\(\)/, 'main.js must define updateLiveOrderTrackPulse');
+    assert.match(mainJs, /dataService\.getCustomerActiveOrders/, 'updateLiveOrderTrackPulse must query dataService.getCustomerActiveOrders');
+    assert.match(mainJs, /dataService\.on\('change:orders',\s*updateLiveOrderTrackPulse\)/, 'main.js must listen for change:orders');
+    assert.match(mainJs, /dataService\.on\('orders',\s*updateLiveOrderTrackPulse\)/, 'main.js must listen for orders');
+  });
 });

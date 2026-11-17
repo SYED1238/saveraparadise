@@ -203,28 +203,106 @@
           <span id="header-status-text">Live Kitchen Online</span>
         </div>
 
-        <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-wakelock" title="Keep Kitchen Screen Awake" aria-label="Toggle Screen WakeLock">
-          <i class="fa-solid fa-sun"></i>
-          <span id="wakelock-status-text" class="sr-only" style="display: none;">Screen Normal</span>
-        </button>
+        <!-- 3-Lines Menu Toggle (Pinned to Top Right on ALL Devices, Owner Portal Style) -->
+        <div class="admin-menu-dropdown-wrap" id="admin-menu-dropdown-wrap">
+          <button type="button" class="btn-admin-menu-toggle" id="btn-admin-menu-toggle" aria-expanded="false" aria-haspopup="true" aria-label="Open Kitchen Actions & Settings Menu" title="Kitchen Actions & Settings">
+            <i class="fa-solid fa-bars" id="admin-menu-icon"></i>
+          </button>
 
-        <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-alarm-toggle" title="Switch Kitchen Alarm Sound (Funk Criminal / Classic Chime)" aria-label="Switch Alarm Sound">
-          <i class="fa-solid fa-music" id="alarm-toggle-icon"></i>
-          <span id="alarm-toggle-label" class="sr-only" style="display: none;">Sound: Funk Criminal</span>
-        </button>
+          <div class="admin-menu-dropdown" id="admin-menu-dropdown" style="display: none;" role="menu" aria-label="Kitchen Quick Actions & Settings">
+            <div class="admin-menu-dropdown-header">
+              <span class="amd-title">Kitchen Actions</span>
+              <span class="amd-badge"><i class="fa-solid fa-utensils"></i> Kitchen</span>
+            </div>
 
-        <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-sound-test" title="Test Kitchen Alarm Sound" aria-label="Test Kitchen Alarm Sound">
-          <i class="fa-solid fa-bell" id="sound-pill-icon"></i>
-          <span id="sound-pill-text" class="sr-only" style="display: none;">Alarm: Active</span>
-        </button>
+            <div class="admin-menu-dropdown-list">
+              <!-- 1. Ringtone Sound Mode Toggle -->
+              <button type="button" class="admin-dropdown-item" id="btn-admin-alarm-toggle" role="menuitem" title="Switch Kitchen Alarm Sound">
+                <div class="adi-icon adi-purple" id="alarm-toggle-icon-wrap">
+                  <i class="fa-solid fa-music" id="alarm-toggle-icon"></i>
+                </div>
+                <div class="adi-text">
+                  <span class="adi-title" id="alarm-toggle-label">Alarm: Funk Criminal</span>
+                  <span class="adi-desc" id="alarm-toggle-desc">Switch sound: Funk Criminal / Classic</span>
+                </div>
+              </button>
 
-        <button type="button" class="btn-admin-lock compact-lock-btn" id="btn-admin-logout" title="Lock Restaurant Portal" aria-label="Lock Admin Portal">
-          <i class="fa-solid fa-lock"></i>
-          <span class="hide-mobile" style="display: none;">Lock</span>
-        </button>
+              <!-- 2. Test Alarm Sound -->
+              <button type="button" class="admin-dropdown-item" id="btn-admin-sound-test" role="menuitem" title="Test Kitchen Alarm Sound">
+                <div class="adi-icon adi-indigo">
+                  <i class="fa-solid fa-volume-high" id="sound-pill-icon"></i>
+                </div>
+                <div class="adi-text">
+                  <span class="adi-title" id="sound-pill-text">Test Kitchen Alarm</span>
+                  <span class="adi-desc">Play chime & test speaker volume</span>
+                </div>
+              </button>
+
+              <!-- 3. Screen WakeLock -->
+              <button type="button" class="admin-dropdown-item" id="btn-admin-wakelock" role="menuitem" title="Keep Kitchen Screen Awake">
+                <div class="adi-icon adi-amber" id="wakelock-icon-wrap">
+                  <i class="fa-solid fa-sun" id="admin-wakelock-icon"></i>
+                </div>
+                <div class="adi-text">
+                  <span class="adi-title" id="wakelock-status-title">Keep Screen Awake</span>
+                  <span class="adi-desc" id="wakelock-status-text">Screen Normal (Tap to keep awake)</span>
+                </div>
+              </button>
+
+              <!-- 4. Refresh Live Orders -->
+              <button type="button" class="admin-dropdown-item" id="btn-admin-menu-refresh" role="menuitem" title="Refresh Live Orders">
+                <div class="adi-icon adi-blue">
+                  <i class="fa-solid fa-rotate" id="admin-menu-refresh-icon"></i>
+                </div>
+                <div class="adi-text">
+                  <span class="adi-title">Refresh Live Orders</span>
+                  <span class="adi-desc">Sync orders & connection state</span>
+                </div>
+              </button>
+
+              <!-- 5. Download Kitchen APK -->
+              <a href="/apk/Savera-Kitchen-Admin.apk" download="Savera-Kitchen-Admin.apk" class="admin-dropdown-item" id="btn-admin-download-kitchen-apk" role="menuitem" title="Download latest Kitchen Admin Android APK" style="text-decoration:none; color:inherit;">
+                <div class="adi-icon adi-orange">
+                  <i class="fa-solid fa-download"></i>
+                </div>
+                <div class="adi-text">
+                  <span class="adi-title">Download Kitchen APK</span>
+                  <span class="adi-desc">Get latest Kitchen Admin app</span>
+                </div>
+              </a>
+
+              <!-- 6. Download Rider APK -->
+              <a href="/apk/Savera-Paradise-Rider.apk" download="Savera-Paradise-Rider.apk" class="admin-dropdown-item" id="btn-admin-download-rider-apk" role="menuitem" title="Download latest Rider Delivery Android APK" style="text-decoration:none; color:inherit;">
+                <div class="adi-icon adi-cyan">
+                  <i class="fa-solid fa-motorcycle"></i>
+                </div>
+                <div class="adi-text">
+                  <span class="adi-title">Download Rider APK</span>
+                  <span class="adi-desc">Get latest Rider delivery app</span>
+                </div>
+              </a>
+
+              <div class="admin-dropdown-divider"></div>
+
+              <!-- 7. Lock Kitchen Dashboard -->
+              <button type="button" class="admin-dropdown-item adi-danger" id="btn-admin-logout" role="menuitem" title="Lock Kitchen Dashboard">
+                <div class="adi-icon adi-rose">
+                  <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </div>
+                <div class="adi-text">
+                  <span class="adi-title">Lock Dashboard</span>
+                  <span class="adi-desc">Secure session with PIN</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </header>
+
+  <!-- Backdrop overlay to dismiss dropdown on tap outside -->
+  <div class="admin-menu-backdrop" id="admin-menu-backdrop" style="display: none;"></div>
 
   <!-- KITCHEN LIVE CONNECTIVITY BANNER -->
   <div id="admin-connection-banner" class="admin-connection-banner" style="display: none;" role="alert">

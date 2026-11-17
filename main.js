@@ -284,6 +284,7 @@ function initStorefrontApp() {
       }
     } catch (_) {}
   }
+  let lastAutoPrefilledPromoCode = null;
   const FREE_SHIPPING_THRESHOLD = 25.00;
   let currentUser = null;
 
@@ -1981,6 +1982,7 @@ function initStorefrontApp() {
 
     renderCartAddresses();
     renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
     updateFloatingUnlockedDealsBar(subtotal, settings);
     updateStoreStatusUI();
   }
@@ -2700,10 +2702,13 @@ function initStorefrontApp() {
     const totalItems = cart.reduce((acc, i) => acc + i.quantity, 0);
     const mobileFloatingBar = document.getElementById('mobile-floating-bar');
 
+    const savedBadge = document.getElementById('unified-cart-saved-badge');
+
     if (totalItems === 0 || subtotal <= 0) {
       floatingBar.classList.remove('is-visible', 'bar-bump');
       floatingBar.style.display = 'none';
       if (mobileFloatingBar) mobileFloatingBar.classList.remove('cart-active');
+      if (savedBadge) savedBadge.style.display = 'none';
       return;
     }
 
@@ -2744,17 +2749,30 @@ function initStorefrontApp() {
     if (isEnabled) {
       if (trackEl) trackEl.style.display = '';
       if (isUnlocked) {
+        const wasUnlocked = floatingBar.classList.contains('is-unlocked');
+        if (!wasUnlocked) {
+          floatingBar.classList.add('bar-bump');
+          setTimeout(() => floatingBar.classList.remove('bar-bump'), 320);
+          if ('vibrate' in navigator) {
+            try { navigator.vibrate([12, 35, 18]); } catch {}
+          }
+        }
         floatingBar.classList.add('is-unlocked');
         if (barIcon) barIcon.textContent = '🎉';
         const savings = Math.round((subtotal * discountPct) / 100);
+        if (savedBadge) {
+          savedBadge.textContent = `Saved ₹${savings}`;
+          savedBadge.style.display = 'inline-flex';
+        }
         if (barText) {
-          barText.innerHTML = `<strong>Deals Unlocked!</strong> You save <span class="unlocked-bar-highlight">₹${savings} (${discountPct}% OFF)</span>!`;
+          barText.innerHTML = `🎉 <strong>Deals Unlocked!</strong> You save <span class="unlocked-bar-highlight">₹${savings}</span>`;
         }
         if (barFill) {
           barFill.style.width = '100%';
           barFill.classList.add('is-full');
         }
       } else {
+        if (savedBadge) savedBadge.style.display = 'none';
         floatingBar.classList.remove('is-unlocked');
         if (barIcon) barIcon.textContent = '🔒';
         const needed = Math.round(minOrder - subtotal);
@@ -2774,6 +2792,7 @@ function initStorefrontApp() {
       }
     } else {
       // Unlocked deals disabled in settings: Show Free Delivery progress or quality subtext
+      if (savedBadge) savedBadge.style.display = 'none';
       if (trackEl) trackEl.style.display = 'none';
       floatingBar.classList.remove('is-unlocked');
       if (barIcon) barIcon.textContent = '🛒';
@@ -3000,6 +3019,48 @@ function initStorefrontApp() {
       openOrderModal(null, false);
     });
   }
+
+  // ==========================================
+  // LIVE ACTIVE ORDER TRACKING BEACON / PULSE
+  // ==========================================
+  function updateLiveOrderTrackPulse() {
+    const navBtnTrack = document.getElementById('nav-btn-track');
+    const pulseDot = document.getElementById('nav-track-pulse-dot');
+    if (!navBtnTrack) return;
+
+    if (typeof dataService === 'undefined' || typeof dataService.getCustomerActiveOrders !== 'function') {
+      navBtnTrack.classList.remove('has-live-order');
+      if (pulseDot) pulseDot.style.display = 'none';
+      return;
+    }
+
+    try {
+      const userPhone = typeof getCurrentUserPhone === 'function' ? getCurrentUserPhone() : '';
+      const userEmail = (typeof currentUser !== 'undefined' && currentUser?.email) || '';
+      const userId = (typeof currentUser !== 'undefined' && currentUser?.id) || null;
+      const activeOrders = dataService.getCustomerActiveOrders(userId, userEmail, userPhone);
+      const hasLiveOrder = Boolean(activeOrders && activeOrders.length > 0);
+
+      if (hasLiveOrder) {
+        navBtnTrack.classList.add('has-live-order');
+        navBtnTrack.setAttribute('aria-label', `Live Order in progress (${activeOrders.length}) - Tap to track`);
+        if (pulseDot) pulseDot.style.display = 'block';
+      } else {
+        navBtnTrack.classList.remove('has-live-order');
+        navBtnTrack.setAttribute('aria-label', 'Live Order Tracking');
+        if (pulseDot) pulseDot.style.display = 'none';
+      }
+    } catch (err) {
+      console.warn('[TrackPulse] update error:', err);
+    }
+  }
+  window.updateLiveOrderTrackPulse = updateLiveOrderTrackPulse;
+
+  if (typeof dataService.on === 'function') {
+    dataService.on('change:orders', updateLiveOrderTrackPulse);
+    dataService.on('orders', updateLiveOrderTrackPulse);
+  }
+  updateLiveOrderTrackPulse();
 
   if (navBtnProfile) {
     navBtnProfile.addEventListener('click', () => {
@@ -4192,6 +4253,7 @@ function initStorefrontApp() {
     const userPhone = getCurrentUserPhone();
     const userEmail = currentUser?.email || '';
     const activeOrders = dataService.getCustomerActiveOrders(currentUser?.id, userEmail, userPhone);
+    updateLiveOrderTrackPulse();
     const allUserOrders = dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone);
 
     // Look for target order in customer's own orders (or explicit orderId)
@@ -4840,6 +4902,7 @@ function initStorefrontApp() {
         renderOrderTracker(order.id);
         renderMyOrdersList();
         renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
       } else {
         if (res?.error === 'cooking_started' || (res?.message && res.message.toLowerCase().includes('cooking'))) {
           showToast('🍳 Food Preparation Alert: Chefs have already started cooking your order fresh! Orders in preparation cannot be cancelled online.', 'warning');
@@ -4875,6 +4938,7 @@ function initStorefrontApp() {
     const userPhone = getCurrentUserPhone();
     const userEmail = currentUser?.email || '';
     const activeOrders = dataService.getCustomerActiveOrders(currentUser?.id, userEmail, userPhone);
+    updateLiveOrderTrackPulse();
 
     const trackerEmptyState = document.getElementById('tracker-empty-state');
     const trackerActiveContent = document.getElementById('tracker-active-content');
@@ -4944,6 +5008,7 @@ function initStorefrontApp() {
     orderModalBackdrop.classList.remove('open');
     document.body.style.overflow = '';
     syncCapsuleNavWithScroll();
+    updateLiveOrderTrackPulse();
   }
 
   function closeOrderModal() {
@@ -6638,6 +6703,7 @@ function initStorefrontApp() {
     }
 
     renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
 
     // 1. Account Ownership Guard: Only alert if order belongs to THIS customer!
     if (!order || !isOrderBelongingToCurrentCustomer(order)) {
@@ -6801,12 +6867,26 @@ function initStorefrontApp() {
       if (modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open')) {
         renderMyOrdersList();
       }
+      if (foodDetailBackdrop && foodDetailBackdrop.classList.contains('open') && activeDetailItem) {
+        if (foodDetailPrice) {
+          const liveSettings = dataService.getSettings();
+          if (liveSettings.unlockedDealsEnabled) {
+            const discountPct = Number(liveSettings.unlockedDealsDiscountPct || 15);
+            const dealPrice = Math.max(1, Math.round(activeDetailItem.price * (1 - discountPct / 100)));
+            foodDetailPrice.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${liveSettings.unlockedDealsMinOrder || 299}+"><i class="fa-solid fa-lock" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span> <span class="meta-strike-price" style="text-decoration: line-through; opacity: 0.6; font-size: 0.85em; margin-left: 6px;">₹${Math.round(activeDetailItem.price)}</span>`;
+          } else {
+            foodDetailPrice.textContent = `₹${Math.round(activeDetailItem.price)}`;
+          }
+        }
+      }
       renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
     }
     if (e.key === 'quickbite_settings' || e.key === 'quickbite_settings_sync') {
       updateStoreStatusUI();
       updateStoreOfferUI();
       renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
       syncStorefrontCardsWithDataService();
       renderCart();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open') && activeOrderId) {
@@ -6814,6 +6894,18 @@ function initStorefrontApp() {
       }
       if (modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open')) {
         renderMyOrdersList();
+      }
+      if (foodDetailBackdrop && foodDetailBackdrop.classList.contains('open') && activeDetailItem) {
+        if (foodDetailPrice) {
+          const liveSettings = dataService.getSettings();
+          if (liveSettings.unlockedDealsEnabled) {
+            const discountPct = Number(liveSettings.unlockedDealsDiscountPct || 15);
+            const dealPrice = Math.max(1, Math.round(activeDetailItem.price * (1 - discountPct / 100)));
+            foodDetailPrice.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${liveSettings.unlockedDealsMinOrder || 299}+"><i class="fa-solid fa-lock" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span> <span class="meta-strike-price" style="text-decoration: line-through; opacity: 0.6; font-size: 0.85em; margin-left: 6px;">₹${Math.round(activeDetailItem.price)}</span>`;
+          } else {
+            foodDetailPrice.textContent = `₹${Math.round(activeDetailItem.price)}`;
+          }
+        }
       }
     }
     if (e.key === 'quickbite_dishes') {
@@ -6860,11 +6952,13 @@ function initStorefrontApp() {
         }
       }
       renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
     }
     if (e.detail?.type === 'settings') {
       updateStoreStatusUI();
       updateStoreOfferUI();
       renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
       syncStorefrontCardsWithDataService();
       renderCart();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open') && activeOrderId) {
@@ -6872,6 +6966,18 @@ function initStorefrontApp() {
       }
       if (modalMyOrdersBackdrop && modalMyOrdersBackdrop.classList.contains('open')) {
         renderMyOrdersList();
+      }
+      if (foodDetailBackdrop && foodDetailBackdrop.classList.contains('open') && activeDetailItem) {
+        if (foodDetailPrice) {
+          const liveSettings = dataService.getSettings();
+          if (liveSettings.unlockedDealsEnabled) {
+            const discountPct = Number(liveSettings.unlockedDealsDiscountPct || 15);
+            const dealPrice = Math.max(1, Math.round(activeDetailItem.price * (1 - discountPct / 100)));
+            foodDetailPrice.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${liveSettings.unlockedDealsMinOrder || 299}+"><i class="fa-solid fa-lock" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span> <span class="meta-strike-price" style="text-decoration: line-through; opacity: 0.6; font-size: 0.85em; margin-left: 6px;">₹${Math.round(activeDetailItem.price)}</span>`;
+          } else {
+            foodDetailPrice.textContent = `₹${Math.round(activeDetailItem.price)}`;
+          }
+        }
       }
     }
     if (e.detail?.type === 'dishes') {
@@ -8551,6 +8657,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   const checkoutArrowIcon = document.getElementById('checkout-arrow-icon');
 
   function renderCartOrderLimitUI(activeOrders = null, maxAllowed = null) {
+    updateLiveOrderTrackPulse();
     const hasOtherBlock = Boolean(
       btnCheckout && (
         btnCheckout.classList.contains('disabled-sold-out') ||
@@ -9093,6 +9200,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       renderProfileAddresses();
       renderCheckoutAddresses();
       renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
 
       // Trigger cloud sync if Supabase is connected
       dataService.syncUserAddressesFromSupabase(user.id, user.email).then(() => {
@@ -9102,11 +9210,13 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         renderCheckoutAddresses();
         dataService.syncCustomerOrdersFromSupabase(user.id, user.email, getCurrentUserPhone()).then(() => {
           renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
           renderMyOrdersList();
         });
       });
       dataService.syncCustomerOrdersFromSupabase(user.id, user.email, getCurrentUserPhone()).then(() => {
         renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
         renderMyOrdersList();
       });
     } else {
@@ -9164,6 +9274,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       renderProfileAddresses();
       renderCheckoutAddresses();
       renderCartOrderLimitUI();
+    updateLiveOrderTrackPulse();
     }
   }
 
@@ -9795,13 +9906,27 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     }
 
     // 2. Menu Promo Banner
+    const specialOffersSection = document.getElementById('special-offers');
+    const mobileNavOffers = document.getElementById('mobile-nav-offers');
+    const navBtnOffers = document.getElementById('nav-btn-offers');
     const promoBannerCard = document.getElementById('promo-banner-card');
     const promoBannerHeadline = document.getElementById('promo-banner-headline');
     const promoBannerText = document.getElementById('promo-banner-text');
     const btnClaimOffer = document.getElementById('btn-claim-offer');
+
+    if (specialOffersSection) {
+      specialOffersSection.style.display = isActive ? '' : 'none';
+    }
+    if (mobileNavOffers) {
+      mobileNavOffers.style.display = isActive ? '' : 'none';
+    }
+    if (navBtnOffers) {
+      navBtnOffers.style.display = (isActive || Boolean(settings.unlockedDealsEnabled)) ? '' : 'none';
+    }
+
     if (promoBannerCard) {
       if (isActive) {
-        promoBannerCard.style.display = 'flex';
+        promoBannerCard.style.display = '';
         if (promoBannerHeadline) promoBannerHeadline.textContent = title;
         if (promoBannerText) {
           const promoDesc = `Use coupon code <strong class="copyable-code" id="promo-code-btn" title="Click to copy">${safeCode}</strong> at checkout for ${discountTag}${minOrderStr}${freeDelivStr}.`;
@@ -9853,14 +9978,34 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     // 4. Cart promo input placeholder & automatic prefill
     if (cartPromoInput) {
       cartPromoInput.placeholder = isActive ? `Promo code (${code})` : 'Promo code';
-      if (isActive && code && !appliedPromo && (!cartPromoInput.value.trim() || cartPromoInput.value.trim().toUpperCase() === code)) {
-        cartPromoInput.value = code;
+      const curInputVal = cartPromoInput.value.trim().toUpperCase();
+      if (isActive && code) {
+        if (!appliedPromo && (!curInputVal || curInputVal === (lastAutoPrefilledPromoCode || code))) {
+          cartPromoInput.value = code;
+          lastAutoPrefilledPromoCode = code;
+        }
+      } else if (!isActive) {
+        if (curInputVal === (lastAutoPrefilledPromoCode || code)) {
+          cartPromoInput.value = '';
+          lastAutoPrefilledPromoCode = null;
+        }
       }
     }
 
-    // If active featured promo was disabled, clear it if it was the one applied
-    if (appliedPromo && appliedPromo === code && !isActive) {
-      setAppliedPromo(null);
+    // If active featured promo was disabled or changed, clean up appliedPromo if no longer valid
+    if (appliedPromo) {
+      const subtotal = (typeof calculateCartSubtotal === 'function') ? calculateCartSubtotal() : (cart || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const evalRes = evaluatePromoCode(appliedPromo, subtotal, settings);
+      if (!evalRes || !evalRes.valid) {
+        setAppliedPromo(null);
+        if (btnApplyPromo) {
+          btnApplyPromo.textContent = 'Apply';
+          btnApplyPromo.classList.remove('applied');
+        }
+        if (promoStatusMsg) {
+          promoStatusMsg.textContent = '';
+        }
+      }
     }
     renderCart();
   }

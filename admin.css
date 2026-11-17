@@ -36,12 +36,13 @@
 .admin-header {
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 1000;
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--admin-border);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  overflow: visible !important;
 }
 
 .admin-header-container {
@@ -52,6 +53,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
+  overflow: visible !important;
 }
 
 .admin-brand-group {
@@ -5230,6 +5232,234 @@ body.kitchen-alarm-ringing::before {
   display: flex;
   align-items: center;
   gap: 10px;
+  overflow: visible !important;
+}
+
+/* ============================================================== */
+/* KITCHEN ADMIN HEADER DROPDOWN MENU (3-BARS OVERFLOW MENU)      */
+/* ============================================================== */
+
+.admin-menu-dropdown-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  overflow: visible !important;
+}
+
+.btn-admin-menu-toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  border: 1.5px solid #CBD5E1;
+  color: #1E293B;
+  font-size: 1.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  z-index: 100001;
+}
+
+.btn-admin-menu-toggle i,
+.btn-admin-menu-toggle svg {
+  pointer-events: none;
+}
+
+.btn-admin-menu-toggle:hover {
+  background: #F8FAFC;
+  border-color: #94A3B8;
+  color: #0F172A;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+}
+
+.btn-admin-menu-toggle.active {
+  background: #FEF3C7;
+  border-color: #F59E0B;
+  color: #B45309;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+
+.admin-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 99999;
+  animation: adminFadeIn 0.15s ease-out;
+}
+
+@keyframes adminFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.admin-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 290px;
+  max-width: calc(100vw - 24px);
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
+  z-index: 100000;
+  overflow: hidden;
+  animation: adminDropdownFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes adminDropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.admin-menu-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #F8FAFC;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.amd-title {
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748B;
+}
+
+.amd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #FFF7ED;
+  color: #EA580C;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid #FFEDD5;
+}
+
+.admin-menu-dropdown-list {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  color: inherit;
+}
+
+.admin-dropdown-item:hover {
+  background: #F8FAFC;
+  transform: translateX(2px);
+}
+
+.admin-dropdown-item:active {
+  transform: scale(0.98);
+}
+
+.adi-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.adi-blue { background: #EFF6FF; color: #2563EB; }
+.adi-amber { background: #FEF3C7; color: #D97706; }
+.adi-purple { background: #F3E8FF; color: #7C3AED; }
+.adi-emerald { background: #ECFDF5; color: #059669; }
+.adi-indigo { background: #EEF2FF; color: #4F46E5; }
+.adi-orange { background: #FFF7ED; color: #EA580C; }
+.adi-rose { background: #FFE4E6; color: #E11D48; }
+.adi-cyan { background: #E0F2FE; color: #0284C7; }
+
+.adi-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.adi-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #1E293B;
+  line-height: 1.25;
+}
+
+.adi-desc {
+  font-size: 0.72rem;
+  color: #64748B;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-dropdown-divider {
+  height: 1px;
+  background: #E2E8F0;
+  margin: 4px 6px;
+}
+
+.admin-dropdown-item.adi-danger:hover {
+  background: #FFF1F2;
+}
+
+.admin-dropdown-item.adi-danger .adi-title {
+  color: #BE123C;
+}
+
+@media (max-width: 768px) {
+  .admin-menu-dropdown {
+    position: fixed !important;
+    top: 60px !important;
+    right: 12px !important;
+    left: auto !important;
+    width: 285px !important;
+    max-width: calc(100vw - 24px) !important;
+    z-index: 100000 !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  }
 }
 
 .admin-sound-pill {
@@ -6541,7 +6771,7 @@ html, body, .admin-body {
 }
 
 .admin-header-container {
-  overflow-x: hidden;
+  overflow: visible !important;
   max-width: 100vw;
   box-sizing: border-box;
 }

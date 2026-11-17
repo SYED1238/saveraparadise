@@ -8,7 +8,10 @@ import { verifyAdminToken, verifyAdminPin, createAdminToken, getPinRole, signDat
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
-const env = loadEnv(process.env.NODE_ENV || 'development', process.cwd(), '');
+const env = {
+  ...loadEnv(process.env.NODE_ENV || 'development', process.cwd(), ''),
+  ...loadEnv(process.env.NODE_ENV || 'development', __dirname, '')
+};
 Object.assign(process.env, env);
 
 const R2_CONFIG = {

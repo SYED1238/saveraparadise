@@ -2580,6 +2580,7 @@ class QuickBiteDataService {
     this._lastDishesSyncTime = 0;
     this._isSyncingSettings = null;
     this._lastSettingsSyncTime = 0;
+    this._pendingSettingsResync = false;
     this._isSyncingOrders = null;
     this._lastOrdersSyncTime = 0;
     this._pendingOrdersResync = false;
@@ -3483,6 +3484,10 @@ class QuickBiteDataService {
           this.syncSettingsFromSupabase(true).catch(err => {
             console.warn('[DataService] Error syncing authoritative settings after broadcast:', err);
           });
+          // Resilient follow-up pass (600ms) to ensure DB replication / edge visibility lag is cleanly caught
+          setTimeout(() => {
+            this.syncSettingsFromSupabase(true).catch(() => {});
+          }, 600);
         })
         .on('broadcast', { event: 'order_status_updated' }, (event) => {
           const payload = event?.payload || {};
@@ -4259,7 +4264,7 @@ class QuickBiteDataService {
         }
         const now = Date.now();
         if (now - (this._lastSettingsSyncTime || 0) > 15000) {
-          this.syncSettingsFromSupabase();
+          this.syncSettingsFromSupabase(true);
         }
         if (now - (this._lastDishesSyncTime || 0) > 20000) {
           this.syncDishesFromSupabase();
@@ -5066,7 +5071,12 @@ class QuickBiteDataService {
     if (!force && Date.now() - this._lastSettingsSyncTime < 120000) {
       return this.getSettings();
     }
-    if (this._isSyncingSettings) return this._isSyncingSettings;
+    if (this._isSyncingSettings) {
+      if (force) {
+        this._pendingSettingsResync = true;
+      }
+      return this._isSyncingSettings;
+    }
 
     this._isSyncingSettings = (async () => {
       try {
@@ -5113,6 +5123,10 @@ class QuickBiteDataService {
       return null;
     })().finally(() => {
       this._isSyncingSettings = null;
+      if (this._pendingSettingsResync) {
+        this._pendingSettingsResync = false;
+        this.syncSettingsFromSupabase(true).catch(() => {});
+      }
     });
 
     return this._isSyncingSettings;
@@ -5130,9 +5144,13 @@ class QuickBiteDataService {
 
       // Always execute authoritative cloud sync via _adminStoreAction (which automatically checks & ensures owner/admin tokens)
       const res = await this._adminStoreAction('save_settings', { settings: payloadSettings });
+      // Authoritative cloud sync succeeded; broadcast to other devices now that DB row is committed
+      this.broadcastSettings(payloadSettings);
       return { ...payloadSettings, _syncedToCloud: true, _localOnly: false };
     } catch (err) {
       console.warn('[DataService] syncSettingsToSupabase error:', err?.message || err);
+      // Fallback broadcast in case offline/local update
+      this.broadcastSettings(settings);
       return { ...settings, _syncedToCloud: false, _localOnly: true };
     }
   }
@@ -7148,7 +7166,6 @@ class QuickBiteDataService {
     };
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(toSave));
     this.notifyChange('settings', { settings: toSave });
-    this.broadcastSettings(toSave);
     return this.syncSettingsToSupabase(toSave);
   }
 
