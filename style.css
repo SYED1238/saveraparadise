@@ -318,7 +318,7 @@ img.img-has-error {
    ========================================================================== */
 .navbar {
   position: relative;
-  z-index: 30;
+  z-index: 100;
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -6731,13 +6731,48 @@ body.order-modal-open .unlocked-deals-floating-bar {
     flex-shrink: 0;
   }
 
-  /* Dock download button cleanly below user profile so other buttons NEVER get disturbed */
+  /* Clean inline mobile download app icon button in nav-actions - perfectly aligned, never hidden */
   .header-pwa-dock {
-    position: absolute !important;
-    top: calc(100% + 8px) !important;
-    right: 0 !important;
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
     min-width: unset !important;
-    z-index: 95 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    order: -1;
+    z-index: 10 !important;
+  }
+
+  .header-pwa-dock .btn-app-download-compact {
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 50% !important;
+    overflow: hidden !important;
+  }
+
+  .header-pwa-dock .btn-app-download-compact .pwa-icon-glow {
+    width: 28px !important;
+    height: 28px !important;
+  }
+
+  .header-pwa-dock .btn-app-download-compact .pwa-animated-label,
+  .header-pwa-dock .btn-app-download-compact:hover .pwa-animated-label,
+  .header-pwa-dock .btn-app-download-compact:focus-visible .pwa-animated-label,
+  .header-pwa-dock .btn-app-download-compact:active .pwa-animated-label {
+    display: none !important;
+    max-width: 0 !important;
+    opacity: 0 !important;
+    margin-left: 0 !important;
+    padding-right: 0 !important;
+    animation: none !important;
   }
 
   .btn-login {
@@ -12052,7 +12087,7 @@ body.order-modal-open .unlocked-deals-floating-bar {
   left: 50%;
   transform: translateX(-50%) translateY(140%);
   width: min(92vw, 440px);
-  z-index: 998;
+  z-index: 1550;
   opacity: 0;
   pointer-events: none;
   cursor: pointer;
@@ -12176,18 +12211,19 @@ body.order-modal-open .unlocked-deals-floating-bar {
 .unlocked-bar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   background: #10B981;
   color: #FFFFFF;
   border: none;
   border-radius: 12px;
-  padding: 6px 11px;
-  font-size: 0.74rem;
-  font-weight: 800;
+  padding: 8px 13px;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.3px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: transform 0.15s ease, background 0.15s ease;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 3px 12px rgba(16, 185, 129, 0.45);
 }
 
 .unlocked-bar-btn:active {
@@ -12197,7 +12233,75 @@ body.order-modal-open .unlocked-deals-floating-bar {
 .unlocked-deals-floating-bar.is-unlocked .unlocked-bar-btn {
   background: #FFFFFF;
   color: #065F46;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Unified Cart Bar Elements */
+.unified-cart-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.1;
+  margin-bottom: 2px;
+}
+
+.unified-cart-count {
+  font-size: 0.80rem;
+  font-weight: 850;
+  letter-spacing: 0.4px;
+  color: #FFFFFF;
+  text-transform: uppercase;
+}
+
+.unified-cart-dot {
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.unified-cart-subtotal {
+  font-size: 0.94rem;
+  font-weight: 900;
+  color: #10B981;
+  letter-spacing: -0.2px;
+}
+
+.unlocked-deals-floating-bar.is-unlocked .unified-cart-subtotal {
+  color: #FFFFFF;
+}
+
+.unified-cart-btn-icon {
+  font-size: 0.74rem;
+  transition: transform 0.2s ease;
+}
+
+.unlocked-deals-floating-bar:hover .unified-cart-btn-icon {
+  transform: translateX(3px);
+}
+
+@keyframes bar-bump-anim {
+  0% { transform: translateX(-50%) translateY(0) scale(1); }
+  35% { transform: translateX(-50%) translateY(-6px) scale(1.03); }
+  70% { transform: translateX(-50%) translateY(-2px) scale(0.99); }
+  100% { transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+.unlocked-deals-floating-bar.bar-bump {
+  animation: bar-bump-anim 0.32s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Seamlessly tuck the standalone round cart action button when Unified Cart Bar is active */
+.mobile-floating-bar.cart-active .floating-circle-action {
+  transform: scale(0) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Dish Card Wholesale Deal Pricing - High Contrast & Visibility */

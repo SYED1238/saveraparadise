@@ -4210,24 +4210,29 @@
     </button>
   </nav>
 
-  <!-- DYNAMIC UNLOCKED DEALS FLOATING PROGRESS BAR (Blinkit / Zepto Style) -->
-  <div class="unlocked-deals-floating-bar" id="unlocked-deals-floating-bar" style="display: none;">
-    <div class="unlocked-bar-inner">
-      <div class="unlocked-bar-content">
-        <div class="unlocked-bar-icon-wrap" id="unlocked-bar-icon-wrap">
-          <span class="unlocked-bar-icon" id="unlocked-bar-icon">🏷️</span>
+  <!-- UNIFIED MOBILE FLOATING CART BAR (Swiggy / Zomato / Blinkit Style) -->
+  <div class="unlocked-deals-floating-bar unified-cart-bar" id="unlocked-deals-floating-bar" style="display: none;" role="button" aria-label="View Shopping Basket" tabindex="0">
+    <div class="unlocked-bar-inner unified-cart-inner">
+      <div class="unlocked-bar-content unified-cart-content">
+        <div class="unlocked-bar-icon-wrap unified-cart-icon-wrap" id="unlocked-bar-icon-wrap">
+          <span class="unlocked-bar-icon" id="unlocked-bar-icon">🛒</span>
         </div>
-        <div class="unlocked-bar-info">
+        <div class="unlocked-bar-info unified-cart-info">
+          <div class="unified-cart-title-row">
+            <span class="unified-cart-count" id="unified-cart-count">1 ITEM</span>
+            <span class="unified-cart-dot">•</span>
+            <span class="unified-cart-subtotal" id="unified-cart-subtotal">₹0</span>
+          </div>
           <div class="unlocked-bar-text" id="unlocked-bar-text">
             Add <strong>₹129</strong> more to unlock <span class="unlocked-bar-highlight">15% OFF</span> special prices!
           </div>
-          <div class="unlocked-progress-track">
+          <div class="unlocked-progress-track" id="unlocked-progress-track">
             <div class="unlocked-progress-fill" id="unlocked-progress-fill" style="width: 0%;"></div>
           </div>
         </div>
-        <button type="button" class="unlocked-bar-btn" id="unlocked-bar-view-btn" aria-label="View unlocked cart deals">
-          <span>View</span>
-          <i class="fa-solid fa-chevron-right"></i>
+        <button type="button" class="unlocked-bar-btn unified-cart-btn" id="unlocked-bar-view-btn" aria-label="View cart and proceed to checkout">
+          <span class="unified-cart-btn-text" id="unified-cart-btn-text">VIEW CART</span>
+          <i class="fa-solid fa-arrow-right unified-cart-btn-icon"></i>
         </button>
       </div>
     </div>

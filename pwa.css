@@ -199,20 +199,49 @@
   pointer-events: auto;
 }
 
-/* On mobile (<= 768px): Docked right below the user profile / login pill */
+/* On mobile (<= 768px): Clean inline circular icon button beside login/profile */
 @media (max-width: 768px) {
-  .nav-container {
-    position: relative !important;
-  }
-  .nav-actions {
-    position: relative !important;
-  }
   .header-pwa-dock {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    min-width: unset;
-    z-index: 100;
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    min-width: unset !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    order: -1;
+    z-index: 10 !important;
+  }
+
+  .header-pwa-dock .btn-app-download-compact {
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 50% !important;
+    overflow: hidden !important;
+  }
+
+  .header-pwa-dock .btn-app-download-compact .pwa-icon-glow {
+    width: 28px !important;
+    height: 28px !important;
+  }
+
+  .header-pwa-dock .btn-app-download-compact .pwa-animated-label,
+  .header-pwa-dock .btn-app-download-compact:hover .pwa-animated-label,
+  .header-pwa-dock .btn-app-download-compact:focus-visible .pwa-animated-label,
+  .header-pwa-dock .btn-app-download-compact:active .pwa-animated-label {
+    display: none !important;
+    max-width: 0 !important;
+    opacity: 0 !important;
+    margin-left: 0 !important;
+    padding-right: 0 !important;
+    animation: none !important;
   }
 }
 

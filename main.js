@@ -1239,7 +1239,11 @@ function initStorefrontApp() {
   // ==========================================
   function animateFlyToCart(startElement, imageUrl) {
     const navCircleAction = document.getElementById('nav-circle-action');
-    const targetElement = navCircleAction || cartTriggerBtn;
+    const floatingBar = document.getElementById('unlocked-deals-floating-bar');
+    const viewCartBtn = document.getElementById('unlocked-bar-view-btn');
+    const targetElement = (floatingBar && floatingBar.classList.contains('is-visible') && viewCartBtn)
+      ? viewCartBtn
+      : (navCircleAction || cartTriggerBtn);
     if (!startElement || !targetElement) return;
 
     // Lite Mode: Skip heavy DOM node creation & layout reflow for instant touch response
@@ -1247,6 +1251,10 @@ function initStorefrontApp() {
       if (cartBadge) {
         cartBadge.classList.add('bump');
         setTimeout(() => cartBadge.classList.remove('bump'), 200);
+      }
+      if (floatingBar && floatingBar.classList.contains('is-visible')) {
+        floatingBar.classList.add('bar-bump');
+        setTimeout(() => floatingBar.classList.remove('bar-bump'), 200);
       }
       return;
     }
@@ -1283,6 +1291,13 @@ function initStorefrontApp() {
       if (cartBadge) cartBadge.classList.add('bump');
       if (cartTriggerBtn) cartTriggerBtn.style.transform = 'scale(1.25)';
       if (navCircleAction) navCircleAction.style.transform = 'scale(1.25)';
+      if (floatingBar && floatingBar.classList.contains('is-visible')) {
+        floatingBar.classList.add('bar-bump');
+        setTimeout(() => floatingBar.classList.remove('bar-bump'), 320);
+      }
+      if ('vibrate' in navigator) {
+        try { navigator.vibrate(12); } catch {}
+      }
       setTimeout(() => {
         if (cartBadge) cartBadge.classList.remove('bump');
         if (cartTriggerBtn) cartTriggerBtn.style.transform = '';
@@ -2676,30 +2691,42 @@ function initStorefrontApp() {
   }
 
 
-  // Update Floating Unlocking Deals Progress Bar (Blinkit / Zepto Style)
+  // Update Floating Unlocking Deals & Sticky Cart Bar (Swiggy / Zomato / Zepto Style)
   function updateFloatingUnlockedDealsBar(subtotal, settings = dataService.getSettings()) {
     const floatingBar = document.getElementById('unlocked-deals-floating-bar');
     if (!floatingBar) return;
 
     const isEnabled = Boolean(settings.unlockedDealsEnabled);
     const totalItems = cart.reduce((acc, i) => acc + i.quantity, 0);
+    const mobileFloatingBar = document.getElementById('mobile-floating-bar');
 
-    if (!isEnabled || totalItems === 0 || subtotal <= 0) {
-      floatingBar.classList.remove('is-visible');
+    if (totalItems === 0 || subtotal <= 0) {
+      floatingBar.classList.remove('is-visible', 'bar-bump');
       floatingBar.style.display = 'none';
+      if (mobileFloatingBar) mobileFloatingBar.classList.remove('cart-active');
       return;
     }
 
     floatingBar.style.display = 'block';
     floatingBar.classList.add('is-visible');
+    if (mobileFloatingBar) mobileFloatingBar.classList.add('cart-active');
+
+    // Update live cart summary line (count and subtotal)
+    const cartCountEl = document.getElementById('unified-cart-count');
+    if (cartCountEl) cartCountEl.textContent = `${totalItems} ITEM${totalItems === 1 ? '' : 'S'}`;
+    const cartSubtotalEl = document.getElementById('unified-cart-subtotal');
+    if (cartSubtotalEl) cartSubtotalEl.textContent = `₹${Math.round(subtotal)}`;
+    const cartBtnText = document.getElementById('unified-cart-btn-text');
+    if (cartBtnText) cartBtnText.textContent = 'VIEW CART';
 
     const minOrder = Number(settings.unlockedDealsMinOrder || 299);
     const discountPct = Number(settings.unlockedDealsDiscountPct || 15);
     const barText = document.getElementById('unlocked-bar-text');
     const barFill = document.getElementById('unlocked-progress-fill');
     const barIcon = document.getElementById('unlocked-bar-icon');
+    const trackEl = document.getElementById('unlocked-progress-track');
 
-    const isUnlocked = subtotal >= minOrder;
+    const isUnlocked = isEnabled && subtotal >= minOrder;
 
     // Dynamically toggle lock icons on all storefront cards & modals
     document.querySelectorAll('.meta-deal-price i').forEach(icon => {
@@ -2714,33 +2741,54 @@ function initStorefrontApp() {
       }
     });
 
-    if (isUnlocked) {
-      floatingBar.classList.add('is-unlocked');
-      if (barIcon) barIcon.textContent = '🎉';
-      const savings = Math.round((subtotal * discountPct) / 100);
-      if (barText) {
-        barText.innerHTML = `<strong>Deals Unlocked!</strong> You save <span class="unlocked-bar-highlight">₹${savings} (${discountPct}% OFF)</span>!`;
-      }
-      if (barFill) {
-        barFill.style.width = '100%';
-        barFill.classList.add('is-full');
-      }
-    } else {
-      floatingBar.classList.remove('is-unlocked');
-      if (barIcon) barIcon.textContent = '🔒';
-      const needed = Math.round(minOrder - subtotal);
-      const pct = Math.min(100, Math.max(8, Math.round((subtotal / minOrder) * 100)));
-      const customSubtext = (settings.unlockedDealsSubtext || '').trim();
-      if (barText) {
-        if (customSubtext && !/^Shop for ₹\d+ to unlock special menu prices!$/i.test(customSubtext)) {
-          barText.innerHTML = `${escapeHtml(customSubtext)} (Add <strong>₹${needed}</strong> more for <span class="unlocked-bar-highlight">${discountPct}% OFF</span>!)`;
-        } else {
-          barText.innerHTML = `Add <strong>₹${needed}</strong> more to unlock <span class="unlocked-bar-highlight">${discountPct}% OFF</span> special prices!`;
+    if (isEnabled) {
+      if (trackEl) trackEl.style.display = '';
+      if (isUnlocked) {
+        floatingBar.classList.add('is-unlocked');
+        if (barIcon) barIcon.textContent = '🎉';
+        const savings = Math.round((subtotal * discountPct) / 100);
+        if (barText) {
+          barText.innerHTML = `<strong>Deals Unlocked!</strong> You save <span class="unlocked-bar-highlight">₹${savings} (${discountPct}% OFF)</span>!`;
+        }
+        if (barFill) {
+          barFill.style.width = '100%';
+          barFill.classList.add('is-full');
+        }
+      } else {
+        floatingBar.classList.remove('is-unlocked');
+        if (barIcon) barIcon.textContent = '🔒';
+        const needed = Math.round(minOrder - subtotal);
+        const pct = Math.min(100, Math.max(8, Math.round((subtotal / minOrder) * 100)));
+        const customSubtext = (settings.unlockedDealsSubtext || '').trim();
+        if (barText) {
+          if (customSubtext && !/^Shop for ₹\d+ to unlock special menu prices!$/i.test(customSubtext)) {
+            barText.innerHTML = `${escapeHtml(customSubtext)} (Add <strong>₹${needed}</strong> more for <span class="unlocked-bar-highlight">${discountPct}% OFF</span>!)`;
+          } else {
+            barText.innerHTML = `Add <strong>₹${needed}</strong> more to unlock <span class="unlocked-bar-highlight">${discountPct}% OFF</span> special prices!`;
+          }
+        }
+        if (barFill) {
+          barFill.style.width = `${pct}%`;
+          barFill.classList.remove('is-full');
         }
       }
-      if (barFill) {
-        barFill.style.width = `${pct}%`;
-        barFill.classList.remove('is-full');
+    } else {
+      // Unlocked deals disabled in settings: Show Free Delivery progress or quality subtext
+      if (trackEl) trackEl.style.display = 'none';
+      floatingBar.classList.remove('is-unlocked');
+      if (barIcon) barIcon.textContent = '🛒';
+
+      const isFreeDeliveryEnabled = settings.freeDeliveryEnabled !== false;
+      const freeDeliveryThreshold = Number(settings.freeDeliveryThreshold !== undefined ? settings.freeDeliveryThreshold : 250);
+      if (barText) {
+        if (isFreeDeliveryEnabled && freeDeliveryThreshold > 0 && subtotal < freeDeliveryThreshold) {
+          const neededForFree = Math.round(freeDeliveryThreshold - subtotal);
+          barText.innerHTML = `Add <strong>₹${neededForFree}</strong> more for <span class="unlocked-bar-highlight">FREE Delivery</span>!`;
+        } else if (isFreeDeliveryEnabled && (freeDeliveryThreshold === 0 || subtotal >= freeDeliveryThreshold)) {
+          barText.innerHTML = `🎉 <span class="unlocked-bar-highlight">FREE Delivery Unlocked!</span>`;
+        } else {
+          barText.innerHTML = `Fresh & hot • Handcrafted with care`;
+        }
       }
     }
   }
@@ -9891,12 +9939,24 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
   renderCart();
   updateHeroDeliveryDistanceBadge();
 
-  // Floating Unlocked Deals Bar Click Listener (Full Touch Target with Back Navigation)
+  // Floating Unlocked Deals & Sticky Cart Bar Click & Keydown Listeners
   const floatingDealsBar = document.getElementById('unlocked-deals-floating-bar');
   if (floatingDealsBar) {
     floatingDealsBar.addEventListener('click', (e) => {
       e.preventDefault();
+      if ('vibrate' in navigator) {
+        try { navigator.vibrate(10); } catch {}
+      }
       openCartDrawer();
+    });
+    floatingDealsBar.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if ('vibrate' in navigator) {
+          try { navigator.vibrate(10); } catch {}
+        }
+        openCartDrawer();
+      }
     });
   }
 
