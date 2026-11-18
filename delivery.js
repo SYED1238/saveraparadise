@@ -3815,9 +3815,13 @@ const initDeliveryApp = () => {
     if (!order || !order.id) return;
     if (!isDutyOn) return;
 
-    // Suppress audio alerts for stale/historical orders (>30 mins old)
-    const orderAge = order.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
-    if (orderAge > 30 * 60 * 1000) return;
+    // Do not ring alarm if rider has already reached their active order concurrency limit
+    if (getRiderCurrentActiveOrder(order.id)) return;
+
+    // Suppress audio alerts for stale/historical orders (>2 hours old from ready/update or creation)
+    const refTimestamp = Number(order.updatedAt || order.createdAt || 0);
+    const orderAge = refTimestamp > 0 ? (Date.now() - refTimestamp) : 0;
+    if (orderAge > 2 * 60 * 60 * 1000) return;
 
     // Never re-ring if parcel alarm was already acknowledged natively or in localStorage
     if (isRiderStatusAlerted(order.id, 'ready_for_pickup')) return;
@@ -3977,15 +3981,16 @@ const initDeliveryApp = () => {
       return;
     }
 
-    // Suppress audio alerts for stale/historical orders (>30 mins old)
-    const orderAge = order.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
-    if (orderAge > 30 * 60 * 1000) {
+    // Suppress audio alerts for stale/historical orders (>2 hours old)
+    const refTimestamp = Number(order.updatedAt || order.createdAt || 0);
+    const orderAge = refTimestamp > 0 ? (Date.now() - refTimestamp) : 0;
+    if (orderAge > 2 * 60 * 60 * 1000) {
       renderPortal();
       return;
     }
 
-    // Suppress notification sounds and alerts when rider is offline or on break
-    if (!isDutyOn) {
+    // Suppress notification sounds and alerts when rider is offline, on break, or at active order limit
+    if (!isDutyOn || getRiderCurrentActiveOrder(order.id)) {
       renderPortal();
       return;
     }
@@ -4034,11 +4039,6 @@ const initDeliveryApp = () => {
     const status = payload.status || payload.order?.status;
     if (!orderId || !status) return;
 
-    const syncKey = `${orderId}:${status}`;
-    const now = Date.now();
-    if (now - (recentRiderStatusSyncs.get(syncKey) || 0) < 3000) return;
-    recentRiderStatusSyncs.set(syncKey, now);
-
     const allOrders = dataService.getOrders();
     const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
     const cleanId = normalizeId(orderId);
@@ -4047,6 +4047,12 @@ const initDeliveryApp = () => {
     const currentRider = dataService.getActiveRider();
     const myPin = String(currentRider?.pin || '').trim();
     const assignedPin = String(order?.assignedRiderPin || order?.assigned_rider_pin || payload.assignedRiderPin || '').trim();
+    const pickupStage = String(order?.riderPickupStage || order?.addressDetails?.riderPickupStage || payload.riderPickupStage || '').trim();
+
+    const syncKey = `${cleanId}:${status}:${assignedPin}:${pickupStage}`;
+    const now = Date.now();
+    if (now - (recentRiderStatusSyncs.get(syncKey) || 0) < 3000) return;
+    recentRiderStatusSyncs.set(syncKey, now);
 
     // If order leaves ready_for_pickup or is claimed by another rider, remove from ringingParcelsQueue
     if (status !== 'ready_for_pickup' || (assignedPin && myPin && assignedPin !== myPin)) {
@@ -4057,19 +4063,27 @@ const initDeliveryApp = () => {
           stopRiderAlarm();
         }
       }
+      if (pendingClaimOrder && normalizeId(pendingClaimOrder.id) === cleanId && assignedPin && myPin && assignedPin !== myPin) {
+        closeBagPreviewModal();
+        showToast(`⚠️ Order ${order?.id || orderId} was just accepted by ${order?.assignedRiderName || 'another rider'}.`, 'warning');
+      }
     }
 
     // If order has already been accepted/claimed (assignedRiderPin/on_the_way) or delivered, NEVER re-alert as ready!
     const currentOrder = allOrders.find(o => normalizeId(o.id) === cleanId);
-    const currAssignedPin = String(currentOrder?.assignedRiderPin || currentOrder?.assigned_rider_pin || '').trim();
-    if (currentOrder && (currentOrder.status === 'on_the_way' || currentOrder.status === 'delivered' || (currAssignedPin && myPin && currAssignedPin !== myPin))) {
+    const currAssignedPin = String(currentOrder?.assignedRiderPin || currentOrder?.assigned_rider_pin || assignedPin || '').trim();
+    if (
+      (currentOrder && (currentOrder.status === 'on_the_way' || currentOrder.status === 'delivered')) ||
+      (currAssignedPin && myPin && currAssignedPin !== myPin) ||
+      (currAssignedPin && (!myPin || currAssignedPin === myPin) && dataService.isOrderGoingToRestaurant(currentOrder || order))
+    ) {
       renderPortal();
       return;
     }
 
     // Delivery partner only gets notified when order is READY FOR DISPATCH ('ready_for_pickup')!
     if (status === 'ready_for_pickup') {
-      if (!isDutyOn) {
+      if (!isDutyOn || getRiderCurrentActiveOrder(orderId)) {
         renderPortal();
         return;
       }
@@ -4108,6 +4122,33 @@ const initDeliveryApp = () => {
   function scanRiderNewOrders() {
     const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
     const latestList = dataService.getOrders();
+    const currentRider = dataService.getActiveRider();
+    const myPin = String(currentRider?.pin || '').trim();
+
+    // Prune any ringing parcels that were claimed by another rider, left ready_for_pickup, or were pruned from latestList
+    if (ringingParcelsQueue.length > 0) {
+      for (let i = ringingParcelsQueue.length - 1; i >= 0; i--) {
+        const rId = normalizeId(ringingParcelsQueue[i]?.id);
+        const liveOrd = latestList.find(o => o && normalizeId(o.id) === rId);
+        const livePin = String(liveOrd?.assignedRiderPin || liveOrd?.assigned_rider_pin || '').trim();
+        if (!liveOrd || liveOrd.status !== 'ready_for_pickup' || (livePin && (!myPin || livePin !== myPin))) {
+          ringingParcelsQueue.splice(i, 1);
+        }
+      }
+      if (ringingParcelsQueue.length === 0 && isRiderAlarmRinging) {
+        stopRiderAlarm();
+      }
+    }
+
+    if (pendingClaimOrder) {
+      const pendingClean = normalizeId(pendingClaimOrder.id);
+      const livePending = latestList.find(o => o && normalizeId(o.id) === pendingClean);
+      const livePendingPin = String(livePending?.assignedRiderPin || livePending?.assigned_rider_pin || '').trim();
+      if (!livePending || (livePendingPin && myPin && livePendingPin !== myPin)) {
+        closeBagPreviewModal();
+      }
+    }
+
     const newArrivals = latestList.filter(o => o && o.id && !knownDeliveryIds.has(o.id) && !knownDeliveryIds.has(normalizeId(o.id)));
     if (newArrivals.length > 0) {
       newArrivals.forEach(o => {
@@ -4115,7 +4156,11 @@ const initDeliveryApp = () => {
         knownDeliveryIds.add(normalizeId(o.id));
       });
       const nowScan = Date.now();
-      const readyArrivals = newArrivals.filter(o => o.status === 'ready_for_pickup' && (!o.createdAt || (nowScan - Number(o.createdAt)) < 30 * 60 * 1000));
+      const readyArrivals = newArrivals.filter(o => {
+        const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+        const refTs = Number(o.updatedAt || o.createdAt || 0);
+        return o.status === 'ready_for_pickup' && !oPin && (!refTs || (nowScan - refTs) < 2 * 60 * 60 * 1000);
+      });
       if (readyArrivals.length > 0) {
         handleRiderIncomingOrder(readyArrivals[0]);
       } else {
@@ -4123,7 +4168,15 @@ const initDeliveryApp = () => {
       }
     } else {
       const nowScan = Date.now();
-      const unalertedReady = latestList.find(o => o && o.status === 'ready_for_pickup' && !isRiderStatusAlerted(o.id, 'ready_for_pickup') && !ringingParcelsQueue.some(p => normalizeId(p.id) === normalizeId(o.id)) && (!o.createdAt || (nowScan - Number(o.createdAt)) < 30 * 60 * 1000));
+      const unalertedReady = latestList.find(o => {
+        if (!o || o.status !== 'ready_for_pickup') return false;
+        const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+        if (oPin) return false;
+        const refTs = Number(o.updatedAt || o.createdAt || 0);
+        return !isRiderStatusAlerted(o.id, 'ready_for_pickup') &&
+          !ringingParcelsQueue.some(p => normalizeId(p.id) === normalizeId(o.id)) &&
+          (!refTs || (nowScan - refTs) < 2 * 60 * 60 * 1000);
+      });
       if (unalertedReady) {
         handleRiderIncomingOrder(unalertedReady);
       }
@@ -4226,8 +4279,8 @@ const initDeliveryApp = () => {
         ]);
       } catch {}
 
-      // 2. Check if order exists in local orders
-      let order = existingOrderWithCode || dataService.findOrderByBagCode(code);
+      // 2. Check if order exists in freshly synchronized local orders first
+      let order = dataService.findOrderByBagCode(code) || existingOrderWithCode;
 
       // Resilient check directly from localStorage in case of cross-tab sync latency
       if (!order) {
@@ -4299,8 +4352,9 @@ const initDeliveryApp = () => {
         return;
       }
       const checkedOrderRiderPin = String(order.assignedRiderPin || order.assigned_rider_pin || '').trim();
-      if (order.status === 'on_the_way' && checkedOrderRiderPin && checkedOrderRiderPin !== myRiderPin) {
-        showToast(`⚠️ Order ${order.id} is already claimed by ${order.assignedRiderName || 'another rider'}.`, 'warning');
+      if (checkedOrderRiderPin && checkedOrderRiderPin !== myRiderPin) {
+        showToast(`⚠️ Order ${order.id} is already accepted by ${order.assignedRiderName || 'another rider'}.`, 'warning');
+        renderPortal();
         return;
       }
       if (order.status === 'delivered' || order.status === 'cancelled' || order.status === 'undelivered') {
@@ -4471,7 +4525,7 @@ const initDeliveryApp = () => {
         return;
       }
       const code = pendingClaimCode;
-      const order = pendingClaimOrder;
+      const order = dataService.getOrderById(pendingClaimOrder.id) || pendingClaimOrder;
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
 
       // Re-verify Per-Rider Active Order Limit and Live GPS Sync before accepting (Stage 1)
@@ -4554,7 +4608,9 @@ const initDeliveryApp = () => {
           });
         } catch {}
       } else {
-        showToast(`❌ ${finalResult?.message || 'Cannot accept order ' + order.id}`, 'error');
+        if (!finalResult?.status) {
+          showToast(`❌ ${finalResult?.message || 'Cannot accept order ' + order.id}`, 'error');
+        }
         renderPortal();
       }
     });

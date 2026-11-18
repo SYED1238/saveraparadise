@@ -716,6 +716,8 @@ public class OrderMonitorService extends Service {
                 return;
             }
 
+            Set<String> currentUnclaimedReadyIds = new HashSet<>();
+
             for (int i = 0; i < orders.length(); i++) {
                 JSONObject order = orders.getJSONObject(i);
                 String id = order.optString("id");
@@ -750,6 +752,9 @@ public class OrderMonitorService extends Service {
                     boolean onDuty = isRiderOnDuty(getApplicationContext());
                     boolean isClaimed = !order.optString("assigned_rider_pin", "").trim().isEmpty();
                     boolean isReady = "ready_for_pickup".equalsIgnoreCase(status) && !isClaimed;
+                    if (isReady) {
+                        addNormalizedOrderIdVariants(currentUnclaimedReadyIds, id);
+                    }
                     if (isReady && !notifiedReadyIds.contains(id)) {
                         addNormalizedOrderIdVariants(notifiedReadyIds, id);
                         addNormalizedOrderIdVariants(knownOrderIds, id);
@@ -765,6 +770,18 @@ public class OrderMonitorService extends Service {
                         addNormalizedOrderIdVariants(knownOrderIds, id);
                         saveKnownOrdersToStorage();
                     }
+                }
+            }
+
+            // Auto-silence Rider background alarm if all ringing orders were claimed by another rider or left ready_for_pickup
+            if (isRiderApp && isAlarmRinging() && !activeRingingOrderIds.isEmpty()) {
+                synchronized (activeRingingOrderIds) {
+                    activeRingingOrderIds.retainAll(currentUnclaimedReadyIds);
+                }
+                if (activeRingingOrderIds.isEmpty()) {
+                    Log.i(TAG, "All ringing ready parcels were claimed or dispatched; auto-stopping Rider native alarm.");
+                    stopNativeAlarm();
+                    MainActivity.triggerWebAlarmStop();
                 }
             }
         } catch (Exception e) {

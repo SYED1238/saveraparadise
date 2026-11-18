@@ -1127,10 +1127,11 @@ export async function onRequest(context) {
         }
         const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
         const clientVersion = String(body.sinceVersion || '').trim();
+        const forceRefresh = Boolean(body.forceRefresh);
         const now = Date.now();
 
         let sourceOrders = null;
-        if (syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
+        if (!forceRefresh && syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
           if (clientVersion && clientVersion === String(syncOrdersVersion)) {
             return jsonResponse({ success: true, unchanged: true, version: syncOrdersVersion }, 200, Object.fromEntries(corsHeaders.entries()));
           }
@@ -1523,10 +1524,11 @@ export async function onRequest(context) {
                       riderLat: Number(body.riderLat),
                       riderLng: Number(body.riderLng)
                     };
-                    sb.from('orders')
-                      .update({ address_details: rpcRes.order.address_details })
-                      .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
-                      .catch(() => {});
+                    try {
+                      await sb.from('orders')
+                        .update({ address_details: rpcRes.order.address_details })
+                        .or(`id.eq.${cleanId},id.eq.#${cleanId}`);
+                    } catch {}
                   }
                   return jsonResponse({ success: true, order: rpcRes.order }, 200, Object.fromEntries(corsHeaders.entries()));
                 }
@@ -1765,10 +1767,11 @@ export async function onRequest(context) {
                       riderLat: Number(body.riderLat),
                       riderLng: Number(body.riderLng)
                     };
-                    sb.from('orders')
-                      .update({ address_details: rpcRes.order.address_details })
-                      .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
-                      .catch(() => {});
+                    try {
+                      await sb.from('orders')
+                        .update({ address_details: rpcRes.order.address_details })
+                        .or(`id.eq.${cleanId},id.eq.#${cleanId}`);
+                    } catch {}
                   }
                   return jsonResponse({ success: true, order: rpcRes.order }, 200, Object.fromEntries(corsHeaders.entries()));
                 }

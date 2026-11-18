@@ -3041,9 +3041,10 @@ class QuickBiteDataService {
           const reqLimit = this.portalType === 'owner' ? 500 : 100;
           const actionRes = await this._orderAction('sync_orders', {
             limit: reqLimit,
-            sinceVersion: this._lastOrdersSyncVersion || 0
+            sinceVersion: force ? 0 : (this._lastOrdersSyncVersion || 0),
+            forceRefresh: Boolean(force)
           });
-          if (actionRes && actionRes.unchanged && this.getOrders().length > 0) {
+          if (!force && actionRes && actionRes.unchanged && this.getOrders().length > 0) {
             this._lastOrdersSyncTime = Date.now();
             return this.getOrders();
           }
@@ -3246,7 +3247,13 @@ class QuickBiteDataService {
               if (orderAge < 30 * 24 * 60 * 60 * 1000) return true;
             }
             // Safely preserve any active in-flight orders (< 24 hours)
+            // Exception: In Delivery portal, filterOrdersForRider() on the server intentionally omits orders
+            // assigned to other riders. If an authoritative sync omits a non-optimistic order, prune it immediately.
             if (!['delivered', 'cancelled', 'undelivered'].includes(o.status)) {
+              if (this.portalType === 'delivery' && fromAuthoritativeApi && !o.pendingRemoteSync && !o.pendingStatusSync) {
+                const isOptimisticRecent = Boolean(o._optimisticTimestamp && (Date.now() - o._optimisticTimestamp < 15000));
+                if (!isOptimisticRecent) return false;
+              }
               const activeAge = Date.now() - (Number(o.createdAt) || 0);
               if (activeAge < 24 * 60 * 60 * 1000) return true;
             }
@@ -8577,6 +8584,10 @@ class QuickBiteDataService {
       } catch {}
       return { success: true, order: serverRes?.order || order };
     }).catch(async (actionErr) => {
+      const claimedBy = actionErr?.data?.claimedBy ? String(actionErr.data.claimedBy).trim() : '';
+      const errMsg = claimedBy
+        ? `Order ${order.id} was just accepted by ${claimedBy}.`
+        : (actionErr?.message || 'Accept rejected by server');
       try {
         const list = this.getOrders();
         const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
@@ -8590,11 +8601,12 @@ class QuickBiteDataService {
           await this.syncOrdersFromSupabase(true);
         }
       } catch {}
-      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr?.message || 'Accept rejected by server' });
+      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, claimedBy: claimedBy || null, message: errMsg });
       return {
         success: false,
         status: Number(actionErr?.status) || 0,
-        message: actionErr?.message || 'Failed to accept order with server'
+        claimedBy: claimedBy || null,
+        message: errMsg
       };
     });
 
@@ -8755,6 +8767,10 @@ class QuickBiteDataService {
       } catch {}
       return { success: true, order: serverRes?.order || order };
     }).catch(async (actionErr) => {
+      const claimedBy = actionErr?.data?.claimedBy ? String(actionErr.data.claimedBy).trim() : '';
+      const errMsg = claimedBy
+        ? `Order ${order.id} was already claimed by ${claimedBy}.`
+        : (actionErr?.message || 'Pickup rejected by server');
       try {
         const list = this.getOrders();
         const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
@@ -8768,11 +8784,12 @@ class QuickBiteDataService {
           await this.syncOrdersFromSupabase(true);
         }
       } catch {}
-      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr?.message || 'Pickup rejected by server' });
+      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, claimedBy: claimedBy || null, message: errMsg });
       return {
         success: false,
         status: Number(actionErr?.status) || 0,
-        message: actionErr?.message || 'Failed to confirm pickup with server'
+        claimedBy: claimedBy || null,
+        message: errMsg
       };
     });
 
@@ -8868,6 +8885,16 @@ class QuickBiteDataService {
 
     if (!rider) {
       return { success: false, reason: 'no_rider', message: 'No active delivery rider session found. Please log in with your Rider PIN.' };
+    }
+
+    const existingReadyPin = String(order.assignedRiderPin || order.assigned_rider_pin || '').trim();
+    if (existingReadyPin && existingReadyPin !== String(rider.pin || '').trim()) {
+      const riderName = order.assignedRiderName ? `by ${order.assignedRiderName}` : 'by another rider';
+      return {
+        success: false,
+        reason: 'already_claimed',
+        message: `Order ${order.id} is already accepted ${riderName}.`
+      };
     }
 
     // Active Order Limit Guard: Respect owner-configured maxActiveOrders (default 1)
@@ -8975,6 +9002,10 @@ class QuickBiteDataService {
     } catch {}
 
     const rollbackClaim = async (actionErr, shouldSync) => {
+      const claimedBy = actionErr?.data?.claimedBy ? String(actionErr.data.claimedBy).trim() : '';
+      const errMsg = claimedBy
+        ? `Order ${order.id} was already claimed by ${claimedBy}.`
+        : (actionErr?.message || 'Claim rejected by server');
       try {
         const list = this.getOrders();
         const rIdx = list.findIndex(o => o && normalizeId(o.id) === cleanOrderNorm);
@@ -8988,11 +9019,12 @@ class QuickBiteDataService {
           await this.syncOrdersFromSupabase(true);
         }
       } catch {}
-      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, message: actionErr?.message || 'Claim rejected by server' });
+      this.notifyChange('orders', { action: 'claim_rejected', orderId: order.id, claimedBy: claimedBy || null, message: errMsg });
       return {
         success: false,
         status: Number(actionErr?.status) || 0,
-        message: actionErr?.message || 'Failed to claim order with server'
+        claimedBy: claimedBy || null,
+        message: errMsg
       };
     };
 
