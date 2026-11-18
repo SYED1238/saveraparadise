@@ -27,7 +27,8 @@ export function isOriginAllowed(origin) {
       host.endsWith('.foodbliz.in') ||
       host === 'saveraparadise.vercel.app' ||
       (host.startsWith('saveraparadise-') && host.endsWith('.vercel.app')) ||
-      host.endsWith('.pages.dev') ||
+      host === 'saveraparadise.pages.dev' ||
+      host.endsWith('.saveraparadise.pages.dev') ||
       host === 'localhost' ||
       host === '127.0.0.1'
     ) {

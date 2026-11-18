@@ -287,9 +287,21 @@ export default async function handler(req, res) {
     }
   }
 
-  // 3. Order Creation Pre-check: Reject unverified order creation lacking checkout token or staff session
-  if (action === 'create_order') {
+  // 2b. Kitchen Poll Gate: Require staff session or dedicated key when KITCHEN_POLL_SECRET is configured
+  if (action === 'kitchen_poll') {
+    const kitchenSecret = process.env?.KITCHEN_POLL_SECRET;
+    const providedKey = req.headers['x-kitchen-poll-key'] || req.query?.key;
     const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+    const isStaff = auth && auth.valid;
+    const isKeyValid = Boolean(kitchenSecret && providedKey && String(providedKey).trim() === String(kitchenSecret).trim());
+    if (kitchenSecret && !isStaff && !isKeyValid && !isTestEnv) {
+      return res.status(401).json({ error: 'Unauthorized: Staff session or valid kitchen poll key required' });
+    }
+  }
+
+  // 3. Order Creation Pre-check: Reject unverified order creation lacking checkout token or staff session (admin/owner only)
+  if (action === 'create_order') {
+    const auth = verifyAdminToken(req, ['admin', 'owner']);
     const isStaff = auth && auth.valid;
     const checkoutToken = body?.checkoutToken || body?.checkoutSignature;
     if (!isStaff && !checkoutToken) {
@@ -354,7 +366,7 @@ export default async function handler(req, res) {
           resolvedCollision: true
         });
       }
-      const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+      const auth = verifyAdminToken(req, ['admin', 'owner']);
       const isStaff = auth && auth.valid;
 
       // Authoritative payment security: Public customer checkout is strictly Cash on Delivery.
@@ -642,11 +654,16 @@ export default async function handler(req, res) {
         let enforcedCash = 0;
         let enforcedPaymentStatus = existing.payment_status || 'Pending';
         let enforcedIsPaidOnline = existing.is_paid_online;
-        let enforcedDoorstepUpi = inputDoorstepUpi !== undefined ? inputDoorstepUpi : existing.doorstep_upi;
+        let enforcedDoorstepUpi = existing.doorstep_upi;
         let enforcedPaymentMethod = existing.payment_method;
 
+        if (status !== 'delivered' && auth.payload?.role === 'owner') {
+          if (typeof inputDoorstepUpi === 'boolean') enforcedDoorstepUpi = inputDoorstepUpi;
+          if (typeof body.isPaidOnline === 'boolean') enforcedIsPaidOnline = body.isPaidOnline;
+        }
+
         if (status === 'delivered') {
-          const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
+          const isPrepaid = Boolean(existing.is_paid_online === true && existing.payment_status === 'Paid');
           const isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
           const hasDoorstepCfId = String(existing.cf_order_id || '').startsWith('doorstep_') || String(existing.cf_order_id || '').includes('_doorstep_');
           const wasPrepaidStorefront = Boolean(
@@ -660,7 +677,7 @@ export default async function handler(req, res) {
           const effectiveDoorstep = !wasPrepaidStorefront && inputDoorstepUpi !== false && (hasDoorstepCfId || existing.doorstep_upi || inputDoorstepUpi === true ? isDoorstep : (auth.payload?.role === 'owner' && isDoorstep));
           enforcedDoorstepUpi = effectiveDoorstep;
 
-          if (wasPrepaidStorefront || isPrepaid || effectiveDoorstep) {
+          if (wasPrepaidStorefront || effectiveDoorstep) {
             enforcedPaymentStatus = 'Paid';
             enforcedCash = 0;
             enforcedIsPaidOnline = true;
@@ -1029,10 +1046,17 @@ export default async function handler(req, res) {
           }
         }
 
+        const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+        const isStaff = auth && auth.valid;
+        const kitchenSecret = process.env?.KITCHEN_POLL_SECRET;
+        const providedKey = req.headers['x-kitchen-poll-key'] || req.query?.key;
+        const isKeyValid = Boolean(kitchenSecret && providedKey && String(providedKey).trim() === String(kitchenSecret).trim());
+        const hasAuth = isStaff || isKeyValid || isTestEnv;
+
         kitchenPollCache = combined.map(row => ({
           id: row.id,
           status: row.status,
-          customer_name: row.customer_name,
+          customer_name: hasAuth ? row.customer_name : 'Customer',
           total: row.total,
           created_at: row.created_at,
           assigned_rider_pin: row.assigned_rider_pin ? 'ASSIGNED' : ''
@@ -1040,7 +1064,7 @@ export default async function handler(req, res) {
         kitchenPollCachedAt = now;
         updateActiveOrderTracker(kitchenPollCache, now);
 
-        res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
+        res.setHeader('Cache-Control', hasAuth && !isTestEnv ? 'private, no-store' : KITCHEN_POLL_CACHE_HEADER);
         return res.status(200).json(kitchenPollCache);
       }
 
@@ -1249,8 +1273,8 @@ export default async function handler(req, res) {
 
         if (deliveredAt || status === 'delivered') updatePayload.delivered_at = Number(deliveredAt) || Date.now();
         if (hasCancellationReason || status === 'undelivered') updatePayload.cancellation_reason = hasCancellationReason ? cancellationReason : (status === 'undelivered' ? 'Marked undelivered by rider' : existing.cancellation_reason);
-        if (status !== 'delivered' && typeof doorstepUpi === 'boolean') updatePayload.doorstep_upi = doorstepUpi;
-        if (typeof isPaidOnline === 'boolean') updatePayload.is_paid_online = isPaidOnline;
+        if (status !== 'delivered' && typeof doorstepUpi === 'boolean' && auth.payload?.role === 'owner') updatePayload.doorstep_upi = doorstepUpi;
+        if (typeof isPaidOnline === 'boolean' && auth.payload?.role === 'owner') updatePayload.is_paid_online = isPaidOnline;
 
         const waitingStartedAt = typeof body.waitingStartedAt === 'number' ? body.waitingStartedAt : undefined;
         if (waitingStartedAt || (hasCancellationReason && cancellationReason && String(cancellationReason).includes('[DOORSTEP_WAIT]'))) {
@@ -1284,7 +1308,7 @@ export default async function handler(req, res) {
 
         // Payment status & Cash collection handling
         if (status === 'delivered') {
-          const isPrepaid = Boolean(existing.is_paid_online || existing.payment_status === 'Paid');
+          const isPrepaid = Boolean(existing.is_paid_online === true && existing.payment_status === 'Paid');
           let isCfSuccess = String(existing.cf_payment_status || '').toUpperCase() === 'SUCCESS';
           const hasDoorstepCfId = String(existing.cf_order_id || '').startsWith('doorstep_') || String(existing.cf_order_id || '').includes('_doorstep_');
           const wasPrepaidStorefront = Boolean(
@@ -1294,7 +1318,8 @@ export default async function handler(req, res) {
             String(existing.payment_method || '').toLowerCase() !== 'doorstep_upi'
           );
 
-          if (auth.payload?.role === 'rider' && doorstepUpi === true && !isCfSuccess && !existing.doorstep_upi && !isTestEnv) {
+          const wantsDoorstepUpi = Boolean(doorstepUpi === true || existing.doorstep_upi === true);
+          if (auth.payload?.role === 'rider' && wantsDoorstepUpi && !wasPrepaidStorefront && !isCfSuccess && !isTestEnv) {
             if (existing.cf_order_id) {
               try {
                 const verification = await verifyPgOrderPayment({ cfOrderId: existing.cf_order_id });
@@ -1313,7 +1338,7 @@ export default async function handler(req, res) {
           const effectiveDoorstep = !wasPrepaidStorefront && doorstepUpi !== false && (hasDoorstepCfId || existing.doorstep_upi || doorstepUpi === true ? isDoorstep : (auth.payload?.role === 'owner' && isDoorstep));
           updatePayload.doorstep_upi = effectiveDoorstep;
 
-          if (wasPrepaidStorefront || isPrepaid || effectiveDoorstep) {
+          if (wasPrepaidStorefront || effectiveDoorstep) {
             updatePayload.payment_status = 'Paid';
             updatePayload.cash_collected = 0;
             updatePayload.is_paid_online = true;
@@ -1802,7 +1827,7 @@ export default async function handler(req, res) {
         }
 
         // Authorization check: either verified staff session OR verified tracking token
-        const auth = verifyAdminToken(req, ['admin', 'owner']);
+        const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
         const isStaff = auth && auth.valid;
         const isCustomerWithToken = Boolean(trackingToken && order.tracking_token && trackingToken === order.tracking_token);
 
@@ -1837,7 +1862,47 @@ export default async function handler(req, res) {
 
         const cancellationReason = reason || (isStaff ? 'Cancelled by restaurant management' : 'Cancelled by customer');
 
-        // Automated Cashfree PG Refund for Online-Paid Orders
+        // Atomically claim the cancellation in Supabase FIRST using a conditional update
+        const atomicCancelPayload = {
+          status: 'cancelled',
+          status_label: 'Order Cancelled',
+          cancellation_reason: cancellationReason
+        };
+
+        const { data: updatedRows, error: atomicCancelErr } = await sb
+          .from('orders')
+          .update(atomicCancelPayload)
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+          .neq('status', 'cancelled')
+          .neq('status', 'delivered')
+          .neq('status', 'undelivered')
+          .select();
+
+        if (atomicCancelErr) throw atomicCancelErr;
+
+        if (!updatedRows || updatedRows.length === 0) {
+          const { data: latestOrder } = await sb
+            .from('orders')
+            .select('id, status, status_label, cancellation_reason, address_details')
+            .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+            .maybeSingle();
+
+          if (latestOrder && latestOrder.status === 'cancelled') {
+            return res.status(200).json({
+              success: true,
+              order: latestOrder,
+              idempotent: true,
+              message: 'Order is already cancelled'
+            });
+          }
+          return res.status(400).json({
+            error: `Order cannot be cancelled: Current status is "${latestOrder?.status || order.status}"`
+          });
+        }
+
+        const claimedOrder = updatedRows[0];
+
+        // Automated Cashfree PG Refund for Online-Paid Orders (now safe from race conditions)
         const isPaidOnlineOrder = Boolean(
           order.is_paid_online ||
           String(order.payment_status || '').toLowerCase() === 'paid' ||
@@ -1889,31 +1954,22 @@ export default async function handler(req, res) {
           try { currentAddr = JSON.parse(order.address_details); } catch {}
         }
 
-        const updatePayload = {
-          status: 'cancelled',
-          status_label: 'Order Cancelled',
-          cancellation_reason: cancellationReason
-        };
         if (refundInfo) {
-          updatePayload.address_details = {
+          const finalAddr = {
             ...currentAddr,
             ...refundInfo
           };
+          const refundUpdate = { address_details: finalAddr };
           if (refundInfo.refund_status === 'SUCCESS' || refundInfo.refund_status === 'PENDING' || refundInfo.refund_status === 'INITIATED') {
-            updatePayload.cf_payment_status = 'REFUND_INITIATED';
+            refundUpdate.cf_payment_status = 'REFUND_INITIATED';
           }
+          await sb.from('orders').update(refundUpdate).or(`id.eq.${cleanId},id.eq.#${cleanId}`);
+          claimedOrder.address_details = finalAddr;
+          if (refundUpdate.cf_payment_status) claimedOrder.cf_payment_status = refundUpdate.cf_payment_status;
         }
 
-        const { data: updated, error: updateErr } = await sb
-          .from('orders')
-          .update(updatePayload)
-          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
-          .select()
-          .maybeSingle();
-
-        if (updateErr) throw updateErr;
         invalidateKitchenPollCache();
-        return res.status(200).json({ success: true, order: updated });
+        return res.status(200).json({ success: true, order: claimedOrder });
       }
 
       // 5b. Rider Cash Handover Request
@@ -1959,7 +2015,7 @@ export default async function handler(req, res) {
         const orderData = body.order || {};
         const checkoutToken = body.checkoutToken || body.checkoutSignature || '';
 
-        const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+        const auth = verifyAdminToken(req, ['admin', 'owner']);
         const isStaff = auth && auth.valid;
 
         let enforcedTotal = orderData.total;

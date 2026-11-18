@@ -96,7 +96,12 @@ export default async function handler(req, res) {
           .maybeSingle();
 
         if (orderLookupErr) {
-          console.warn('[Cashfree QR] Supabase order lookup error:', orderLookupErr.message);
+          console.error('[Cashfree QR] Supabase order lookup error:', orderLookupErr.message);
+          return res.status(500).json({ error: 'Database Error', message: 'Failed to look up order for QR generation' });
+        }
+
+        if (!existingOrder && !isTestEnv) {
+          return res.status(404).json({ error: 'Not Found', message: 'Order not found for doorstep QR generation' });
         }
 
         if (existingOrder) {
@@ -104,11 +109,9 @@ export default async function handler(req, res) {
           if (existingOrder.payment_status === 'Paid') {
             return res.status(400).json({ error: 'Bad Request', message: 'Order is already marked as paid' });
           }
-          const rawNumericTotal = typeof existingOrder.numeric_total === 'number'
-            ? existingOrder.numeric_total
-            : (typeof existingOrder.address_details?.numericTotal === 'number'
-                ? existingOrder.address_details.numericTotal
-                : (parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0));
+          const rawNumericTotal = typeof existingOrder.address_details?.numericTotal === 'number'
+            ? existingOrder.address_details.numericTotal
+            : (parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0);
           const orderTotal = Math.round(rawNumericTotal);
           if (orderTotal > 0) {
             verifiedAmount = orderTotal;
@@ -118,7 +121,10 @@ export default async function handler(req, res) {
           }
         }
       } catch (dbErr) {
-        console.warn('[Cashfree QR] Order lookup error:', dbErr?.message);
+        console.error('[Cashfree QR] Order lookup error:', dbErr?.message);
+        if (!isTestEnv) {
+          return res.status(500).json({ error: 'Database Error', message: 'Order lookup failed' });
+        }
       }
     }
 

@@ -59,7 +59,13 @@ export async function onRequest(context) {
           env
         });
       } catch (payoutErr) {
-        console.warn('[Cashfree Webhook] Payout update error:', payoutErr?.message);
+        console.error('[Cashfree Webhook] Payout update failure:', payoutErr?.message);
+        return jsonResponse({
+          success: false,
+          retryable: true,
+          error: 'Payout sync failed',
+          message: payoutErr?.message
+        }, 500);
       }
 
       return jsonResponse({
@@ -127,7 +133,13 @@ export async function onRequest(context) {
           await purgeKitchenPollEdgeCache(request, context);
         } catch {}
       } catch (err) {
-        console.warn('[Cashfree Webhook] Supabase sync fallback:', err.message);
+        console.error('[Cashfree Webhook] Supabase sync failure:', err.message);
+        return jsonResponse({
+          success: false,
+          retryable: true,
+          error: 'Supabase sync failed',
+          message: err.message
+        }, 500);
       }
 
       return jsonResponse({
@@ -169,7 +181,13 @@ export async function onRequest(context) {
           await purgeKitchenPollEdgeCache(request, context);
         } catch {}
       } catch (err) {
-        console.warn('[Cashfree Webhook] Refund sync error:', err.message);
+        console.error('[Cashfree Webhook] Refund sync failure:', err.message);
+        return jsonResponse({
+          success: false,
+          retryable: true,
+          error: 'Refund sync failed',
+          message: err.message
+        }, 500);
       }
 
       return jsonResponse({

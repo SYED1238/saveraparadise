@@ -5016,16 +5016,21 @@ function printCalendarReport() {
   let deliveredCount = 0;
   let totalKms = 0;
   const deliveredOrders = [];
+  const payoutOrders = [];
 
   orders.forEach(o => {
-    if (String(o.status || '').toLowerCase() === 'delivered') {
+    const st = String(o.status || '').toLowerCase();
+    if (st === 'delivered') {
       deliveredCount++;
       deliveredOrders.push(o);
+      payoutOrders.push(o);
       const amt = Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0;
       totalRev += amt;
       if (isOnlineOrderPayment(o)) onlineRev += amt;
       else codRev += amt;
       totalKms += Number(o.addressDetails?.distanceKm || o.distance_km || o.distanceKm || 0);
+    } else if (st === 'undelivered') {
+      payoutOrders.push(o);
     }
   });
 
@@ -5034,7 +5039,7 @@ function printCalendarReport() {
   const registeredRiders = (typeof dataService !== 'undefined' && dataService.getRiders) ? (dataService.getRiders() || []) : [];
   const ordersByRider = new Map();
 
-  deliveredOrders.forEach(o => {
+  payoutOrders.forEach(o => {
     let rPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
     const rName = String(o.assignedRiderName || o.assigned_rider_name || '').trim().toLowerCase();
     if (!rPin && rName) {

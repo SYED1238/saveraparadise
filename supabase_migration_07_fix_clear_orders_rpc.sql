@@ -8,6 +8,7 @@ CREATE OR REPLACE FUNCTION public.clear_all_orders()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   deleted_count integer;

@@ -41,7 +41,8 @@ export function sanitizeCashfreeReturnUrl(rawUrl, cleanOrderId, isProd = false) 
       host.endsWith('.foodbliz.in') ||
       host === 'saveraparadise.com' ||
       host.endsWith('.saveraparadise.com') ||
-      host.endsWith('.pages.dev') ||
+      host === 'saveraparadise.pages.dev' ||
+      host.endsWith('.saveraparadise.pages.dev') ||
       host === 'localhost' ||
       host === '127.0.0.1'
     );
@@ -732,7 +733,7 @@ export async function initiatePgOrderRefund({
   const cfg = getCashfreeConfig(env);
   const cleanCfOrderId = String(cfOrderId || '').trim();
   const cleanRefundAmount = Math.max(1, Math.round(Number(refundAmount) * 100) / 100);
-  const cleanRefundId = `rf_${cleanCfOrderId.replace(/[^a-zA-Z0-9_-]/g, '').slice(-16)}_${Date.now().toString().slice(-6)}`;
+  const cleanRefundId = `rf_${cleanCfOrderId.replace(/[^a-zA-Z0-9_-]/g, '').slice(-24)}`;
 
   if (!cleanCfOrderId) {
     return { success: false, error: 'cfOrderId is required for Cashfree refund' };

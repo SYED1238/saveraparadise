@@ -5,6 +5,25 @@
  */
 import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment, recordVerifiedCashfreeRefund, recordVerifiedCashfreePayoutWebhook } from './_cashfree.js';
 
+export const config = {
+  api: {
+    bodyParser: false
+  }
+};
+
+async function readRawBody(req) {
+  if (typeof req.rawBody === 'string') return req.rawBody;
+  if (typeof req.body === 'string') return req.body;
+  if (Buffer.isBuffer(req.body)) return req.body.toString('utf8');
+  if (req.body && typeof req.body === 'object') return JSON.stringify(req.body);
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
@@ -16,14 +35,7 @@ export default async function handler(req, res) {
     const signature = req.headers['x-webhook-signature'] || '';
     const timestamp = req.headers['x-webhook-timestamp'] || '';
     
-    let rawBody = '';
-    if (typeof req.rawBody === 'string') {
-      rawBody = req.rawBody;
-    } else if (typeof req.body === 'string') {
-      rawBody = req.body;
-    } else {
-      rawBody = JSON.stringify(req.body || {});
-    }
+    const rawBody = await readRawBody(req);
 
     const isValid = verifyCashfreeWebhookSignature(signature, rawBody, timestamp);
     if (!isValid) {
@@ -31,7 +43,14 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Unauthorized', message: 'Invalid webhook signature' });
     }
 
-    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    let payload = {};
+    try {
+      payload = typeof req.body === 'object' && !Buffer.isBuffer(req.body) && req.body !== null
+        ? req.body
+        : JSON.parse(rawBody || '{}');
+    } catch {
+      payload = {};
+    }
     const eventType = payload.type || '';
     const eventData = payload.data || {};
 
@@ -49,7 +68,13 @@ export default async function handler(req, res) {
           amount
         });
       } catch (payoutErr) {
-        console.warn('[Cashfree Webhook] Payout update error:', payoutErr?.message);
+        console.error('[Cashfree Webhook] Payout update error:', payoutErr?.message);
+        return res.status(500).json({
+          success: false,
+          retryable: true,
+          error: 'Payout sync failed',
+          message: payoutErr?.message
+        });
       }
 
       return res.status(200).json({
@@ -113,7 +138,13 @@ export default async function handler(req, res) {
           });
         }
       } catch (err) {
-        console.warn('[Cashfree Webhook] Supabase sync fallback:', err.message);
+        console.error('[Cashfree Webhook] Supabase sync failure:', err.message);
+        return res.status(500).json({
+          success: false,
+          retryable: true,
+          error: 'Supabase sync failed',
+          message: err.message
+        });
       }
 
       return res.status(200).json({
@@ -151,7 +182,13 @@ export default async function handler(req, res) {
           cleanOrderId
         });
       } catch (err) {
-        console.warn('[Cashfree Webhook] Refund sync error:', err.message);
+        console.error('[Cashfree Webhook] Refund sync failure:', err.message);
+        return res.status(500).json({
+          success: false,
+          retryable: true,
+          error: 'Refund sync failed',
+          message: err.message
+        });
       }
 
       return res.status(200).json({

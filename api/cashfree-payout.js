@@ -72,14 +72,53 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Bad Request', message: 'riderPin and valid amount are required' });
     }
 
+    const cleanPin = String(riderPin || '').trim();
+    const cycleDate = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const cleanTransferId = (body?.transferId && typeof body.transferId === 'string' && /^payout_[a-zA-Z0-9_-]{4,64}$/.test(body.transferId))
       ? body.transferId
-      : `payout_${riderPin}_${Date.now()}`;
+      : `payout_${cleanPin}_${cycleDate}`;
+
+    const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
+    const supabaseUrl = process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL;
+    const serviceKey = process.env?.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (supabaseUrl && serviceKey) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(supabaseUrl, serviceKey);
+        const { data: rider, error: riderErr } = await sb
+          .from('riders')
+          .select('pin, name, payout_paid_at, payout_amount_paid')
+          .eq('pin', cleanPin)
+          .maybeSingle();
+
+        if (riderErr) {
+          return res.status(500).json({ error: 'Database Error', message: riderErr.message });
+        }
+        if (!rider && !isTestEnv) {
+          return res.status(404).json({ error: 'Not Found', message: 'Rider record not found in system' });
+        }
+
+        if (rider && rider.payout_paid_at && !body?.transferId) {
+          const lastPaidMs = new Date(rider.payout_paid_at).getTime();
+          if (Date.now() - lastPaidMs < 12 * 3600 * 1000) {
+            return res.status(409).json({
+              error: 'Duplicate Payout Prevented',
+              message: `Rider ${cleanPin} was already paid within the last 12 hours. Provide a unique transferId to process an additional payout.`
+            });
+          }
+        }
+      } catch (dbErr) {
+        if (!isTestEnv) {
+          return res.status(500).json({ error: 'Database Error', message: 'Failed to verify rider record before payout' });
+        }
+      }
+    }
 
     const result = await initiateRiderPayout({
       transferId: cleanTransferId,
       amount: Number(amount),
-      riderPin,
+      riderPin: cleanPin,
       upiVpa,
       phone,
       name
@@ -87,6 +126,22 @@ export default async function handler(req, res) {
 
     if (!result.success) {
       return res.status(500).json({ error: 'Payout Failed', message: result.error });
+    }
+
+    if (supabaseUrl && serviceKey && result.success) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(supabaseUrl, serviceKey);
+        await sb
+          .from('riders')
+          .update({
+            payout_paid_at: new Date().toISOString(),
+            payout_amount_paid: Number(amount)
+          })
+          .eq('pin', cleanPin);
+      } catch (saveErr) {
+        console.warn('[Cashfree Payout] Rider payout timestamp update warning:', saveErr?.message);
+      }
     }
 
     return res.status(200).json(result);

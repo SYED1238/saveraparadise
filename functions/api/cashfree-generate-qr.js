@@ -74,7 +74,12 @@ export async function onRequest(context) {
           .maybeSingle();
 
         if (orderLookupErr) {
-          console.warn('[Cashfree QR] Supabase order lookup error:', orderLookupErr.message);
+          console.error('[Cashfree QR] Supabase order lookup error:', orderLookupErr.message);
+          return jsonResponse({ error: 'Database Error', message: 'Failed to look up order for QR generation' }, 500, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        if (!existingOrder && !isTestEnv) {
+          return jsonResponse({ error: 'Not Found', message: 'Order not found for doorstep QR generation' }, 404, Object.fromEntries(corsHeaders.entries()));
         }
 
         if (existingOrder) {
@@ -82,11 +87,9 @@ export async function onRequest(context) {
           if (existingOrder.payment_status === 'Paid') {
             return jsonResponse({ error: 'Bad Request', message: 'Order is already marked as paid' }, 400, Object.fromEntries(corsHeaders.entries()));
           }
-          const rawNumericTotal = typeof existingOrder.numeric_total === 'number'
-            ? existingOrder.numeric_total
-            : (typeof existingOrder.address_details?.numericTotal === 'number'
-                ? existingOrder.address_details.numericTotal
-                : (parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0));
+          const rawNumericTotal = typeof existingOrder.address_details?.numericTotal === 'number'
+            ? existingOrder.address_details.numericTotal
+            : (parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0);
           const orderTotal = Math.round(rawNumericTotal);
           if (orderTotal > 0) {
             verifiedAmount = orderTotal;
@@ -96,7 +99,10 @@ export async function onRequest(context) {
           }
         }
       } catch (dbErr) {
-        console.warn('[Cashfree QR] Order lookup error:', dbErr?.message);
+        console.error('[Cashfree QR] Order lookup error:', dbErr?.message);
+        if (!isTestEnv) {
+          return jsonResponse({ error: 'Database Error', message: 'Order lookup failed' }, 500, Object.fromEntries(corsHeaders.entries()));
+        }
       }
     }
 

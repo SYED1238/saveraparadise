@@ -2550,7 +2550,7 @@ const initDeliveryApp = () => {
     }
 
     try {
-      if (!currentDoorstepCashfreeSession || currentDoorstepCashfreeSession.orderId !== order.id) {
+      if (!currentDoorstepCashfreeSession || String(currentDoorstepCashfreeSession.orderId || '').replace(/^#/, '') !== String(order.id || '').replace(/^#/, '')) {
         let riderToken = (typeof ensureAdminToken === 'function')
           ? await ensureAdminToken('rider').catch(() => null)
           : null;
@@ -2936,12 +2936,18 @@ const initDeliveryApp = () => {
   // ========================================================
   let activeCnrOrder = null;
   let cnrTimerInterval = null;
+  let isSubmittingCnr = false;
 
   function openUnreachableModal(orderId) {
     const list = dataService.getOrders();
     const cleanId = String(orderId || '').trim().replace(/^#/, '');
     const order = list.find(o => o && String(o.id || '').trim().replace(/^#/, '') === cleanId);
     if (!order) return;
+
+    isSubmittingCnr = false;
+    if (btnCnrSafedrop) btnCnrSafedrop.disabled = false;
+    if (btnCnrReturnCod) btnCnrReturnCod.disabled = true;
+    if (btnCnrReturnPrepaid) btnCnrReturnPrepaid.disabled = true;
 
     // 500-Meter Doorstep Geofence Check before starting Doorstep Unreachable protocol
     const dropCoords = getOrderDropCoordinates(order);
@@ -3112,13 +3118,15 @@ const initDeliveryApp = () => {
     const isWaitComplete = remainingSeconds <= 0;
     if (btnCnrReturnCod) {
       btnCnrReturnCod.disabled = !isWaitComplete;
-      btnCnrReturnCod.style.opacity = isWaitComplete ? '1' : '0.5';
-      btnCnrReturnCod.style.cursor = isWaitComplete ? 'pointer' : 'not-allowed';
+      btnCnrReturnCod.disabled = isSubmittingCnr || !isWaitComplete;
+      btnCnrReturnCod.style.opacity = (isWaitComplete && !isSubmittingCnr) ? '1' : '0.5';
+      btnCnrReturnCod.style.cursor = (isWaitComplete && !isSubmittingCnr) ? 'pointer' : 'not-allowed';
     }
     if (btnCnrReturnPrepaid) {
       btnCnrReturnPrepaid.disabled = !isWaitComplete;
-      btnCnrReturnPrepaid.style.opacity = isWaitComplete ? '1' : '0.5';
-      btnCnrReturnPrepaid.style.cursor = isWaitComplete ? 'pointer' : 'not-allowed';
+      btnCnrReturnPrepaid.disabled = isSubmittingCnr || !isWaitComplete;
+      btnCnrReturnPrepaid.style.opacity = (isWaitComplete && !isSubmittingCnr) ? '1' : '0.5';
+      btnCnrReturnPrepaid.style.cursor = (isWaitComplete && !isSubmittingCnr) ? 'pointer' : 'not-allowed';
     }
   }
 
@@ -3132,6 +3140,8 @@ const initDeliveryApp = () => {
     }
     backNav.removeStep('modal-unreachable');
     activeCnrOrder = null;
+    isSubmittingCnr = false;
+    if (btnCnrSafedrop) btnCnrSafedrop.disabled = false;
     renderPortal();
   }
 
@@ -3146,7 +3156,7 @@ const initDeliveryApp = () => {
   // COD Return to Kitchen
   if (btnCnrReturnCod) {
     btnCnrReturnCod.addEventListener('click', async () => {
-      if (!activeCnrOrder) return;
+      if (!activeCnrOrder || isSubmittingCnr) return;
       const orderId = activeCnrOrder.id;
       const cleanId = String(orderId).replace(/^#/, '');
       const timerStorageKey = `quickbite_cnr_start_${cleanId}`;
@@ -3165,6 +3175,7 @@ const initDeliveryApp = () => {
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 
       btnCnrReturnCod.disabled = true;
+      isSubmittingCnr = true;
       try {
         const updateResult = dataService.riderUndeliveredOrder(orderId, {
           reason,
@@ -3185,9 +3196,11 @@ const initDeliveryApp = () => {
         updateActiveTabUI();
         renderPortal();
       } catch (err) {
-        btnCnrReturnCod.disabled = false;
         showToast(`❌ Could not mark returned: ${err?.message || 'Server error'}`, 'error');
         renderPortal();
+      } finally {
+        isSubmittingCnr = false;
+        if (btnCnrReturnCod) btnCnrReturnCod.disabled = false;
       }
     });
   }
@@ -3264,9 +3277,10 @@ const initDeliveryApp = () => {
         updateActiveTabUI();
         renderPortal();
       } catch (err) {
-        btnCnrSafedrop.disabled = false;
         showToast(`❌ Could not complete Safe Drop: ${err?.message || 'Server error'}`, 'error');
         renderPortal();
+      } finally {
+        if (btnCnrSafedrop) btnCnrSafedrop.disabled = false;
       }
     });
   }
@@ -3274,7 +3288,7 @@ const initDeliveryApp = () => {
   // Prepaid Return to Kitchen
   if (btnCnrReturnPrepaid) {
     btnCnrReturnPrepaid.addEventListener('click', async () => {
-      if (!activeCnrOrder) return;
+      if (!activeCnrOrder || isSubmittingCnr) return;
       const orderId = activeCnrOrder.id;
       const cleanId = String(orderId).replace(/^#/, '');
 
@@ -3297,6 +3311,7 @@ const initDeliveryApp = () => {
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 
       btnCnrReturnPrepaid.disabled = true;
+      isSubmittingCnr = true;
       try {
         const updateResult = dataService.riderUndeliveredOrder(orderId, {
           reason,
@@ -3317,9 +3332,11 @@ const initDeliveryApp = () => {
         updateActiveTabUI();
         renderPortal();
       } catch (err) {
-        btnCnrReturnPrepaid.disabled = false;
         showToast(`❌ Could not mark returned: ${err?.message || 'Server error'}`, 'error');
         renderPortal();
+      } finally {
+        isSubmittingCnr = false;
+        if (btnCnrReturnPrepaid) btnCnrReturnPrepaid.disabled = false;
       }
     });
   }
@@ -3977,7 +3994,11 @@ const initDeliveryApp = () => {
       renderPortal();
       return;
     }
-    markRiderStatusAlerted(order.id, order.status);
+    const isAlreadyRinging = ringingParcelsQueue.some(o => normalizeId(o.id) === cleanId);
+    if (isAlreadyRinging) {
+      renderPortal();
+      return;
+    }
 
     startRiderAlarm(order);
     showToast(`📦 New parcel packed & ready on restaurant kitchen counter!`, 'success');
@@ -4056,7 +4077,12 @@ const initDeliveryApp = () => {
         renderPortal();
         return;
       }
-      markRiderStatusAlerted(orderId, status);
+      const isAlreadyRinging = ringingParcelsQueue.some(o => normalizeId(o.id) === cleanId);
+      if (isAlreadyRinging) {
+        renderPortal();
+        return;
+      }
+
       startRiderAlarm(order || { id: orderId, status });
       showToast(`📦 New parcel packed & ready on kitchen counter!`, 'success');
       sendSystemNotification({
@@ -4097,7 +4123,7 @@ const initDeliveryApp = () => {
       }
     } else {
       const nowScan = Date.now();
-      const unalertedReady = latestList.find(o => o && o.status === 'ready_for_pickup' && !isRiderStatusAlerted(o.id, 'ready_for_pickup') && (!o.createdAt || (nowScan - Number(o.createdAt)) < 30 * 60 * 1000));
+      const unalertedReady = latestList.find(o => o && o.status === 'ready_for_pickup' && !isRiderStatusAlerted(o.id, 'ready_for_pickup') && !ringingParcelsQueue.some(p => normalizeId(p.id) === normalizeId(o.id)) && (!o.createdAt || (nowScan - Number(o.createdAt)) < 30 * 60 * 1000));
       if (unalertedReady) {
         handleRiderIncomingOrder(unalertedReady);
       }

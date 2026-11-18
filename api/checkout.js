@@ -466,7 +466,7 @@ export default async function handler(req, res) {
   let unlockedDealDiscount = 0;
   let appliedDeal = null;
   const serverDealsEnabled = settings.unlockedDealsEnabled ?? false;
-  if (serverDealsEnabled || clientOrderThresholdDeal) {
+  if (serverDealsEnabled) {
     const rawMin = Number(settings.unlockedDealsMinOrder);
     const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
     const rawPct = Number(settings.unlockedDealsDiscountPct);

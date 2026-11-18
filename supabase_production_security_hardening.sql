@@ -28,16 +28,31 @@ SET lock_timeout = '5s';
 -- 1. LOCK DOWN DANGEROUS DATABASE FUNCTIONS (RPCs)
 -- ------------------------------------------------------------------------------
 
--- 1.1 Revoke public/anon access to clear_all_orders()
-DO $$
+-- 1.1 Revoke public/anon access to clear_all_orders() and enforce search_path
+CREATE OR REPLACE FUNCTION public.clear_all_orders()
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  deleted_count integer;
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = 'public' AND p.proname = 'clear_all_orders') THEN
-    REVOKE ALL ON FUNCTION public.clear_all_orders() FROM PUBLIC;
-    REVOKE EXECUTE ON FUNCTION public.clear_all_orders() FROM anon;
-    REVOKE EXECUTE ON FUNCTION public.clear_all_orders() FROM authenticated;
-    GRANT EXECUTE ON FUNCTION public.clear_all_orders() TO service_role;
-  END IF;
-END $$;
+  -- Temporarily allow deletion for this function transaction
+  PERFORM set_config('app.allow_order_deletion', 'on', true);
+  
+  -- Must include a WHERE clause to satisfy Postgres safeupdate requirement
+  DELETE FROM public.orders WHERE id IS NOT NULL;
+  
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.clear_all_orders() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.clear_all_orders() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.clear_all_orders() FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_all_orders() TO service_role;
 
 -- 1.2 Deprecate & Drop verify_rider_pin() RPC
 DO $$
@@ -94,9 +109,19 @@ BEGIN
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'orders') THEN
     ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 
+    -- Ensure all Cashfree payment and Doorstep UPI columns exist
+    ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS is_paid_online BOOLEAN DEFAULT false;
+    ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_gateway TEXT DEFAULT 'cashfree';
+    ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_order_id TEXT;
+    ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_payment_id TEXT;
+    ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_payment_status TEXT;
+    ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS doorstep_upi BOOLEAN DEFAULT false;
+    ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS doorstep_upi_vpa TEXT;
+
     -- Drop all legacy and open policies
     DROP POLICY IF EXISTS "orders_public_insert" ON public.orders;
     DROP POLICY IF EXISTS "orders_anon_insert" ON public.orders;
+    DROP POLICY IF EXISTS "public_create_orders" ON public.orders;
     DROP POLICY IF EXISTS "orders_public_select" ON public.orders;
     DROP POLICY IF EXISTS "orders_anon_select" ON public.orders;
     DROP POLICY IF EXISTS "orders_read_policy" ON public.orders;
@@ -121,6 +146,8 @@ BEGIN
     -- Revoke direct mutations and reads from anon and public
     REVOKE ALL ON TABLE public.orders FROM anon;
     REVOKE ALL ON TABLE public.orders FROM public;
+    REVOKE INSERT, UPDATE, DELETE ON TABLE public.orders FROM authenticated;
+    GRANT SELECT ON TABLE public.orders TO authenticated;
 
     -- Grant full management privileges to service_role
     GRANT ALL ON TABLE public.orders TO service_role;
@@ -136,17 +163,6 @@ BEGIN
       USING (
         (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
         OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id)
-      );
-
-    -- Direct SQL updates strictly restricted to authorized staff/rider/owner roles
-    -- Customer self-updates (auth.uid() = user_id) are strictly removed.
-    CREATE POLICY "authenticated_update_orders" ON public.orders
-      FOR UPDATE TO authenticated
-      USING (
-        (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
-      )
-      WITH CHECK (
-        (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
       );
   END IF;
 END $$;
@@ -253,6 +269,10 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF current_setting('app.allow_order_deletion', true) = 'on' THEN
+    RETURN NEW;
+  END IF;
+
   IF OLD.status = 'delivered' AND NEW.status != 'delivered' THEN
     RAISE EXCEPTION 'Cannot modify an already delivered order';
   END IF;
@@ -283,8 +303,15 @@ ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS time_restricted BOOLEAN DEFAU
 ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS available_from TEXT DEFAULT '';
 ALTER TABLE public.dishes ADD COLUMN IF NOT EXISTS available_to TEXT DEFAULT '';
 
--- 7.2 Orders Tip Amount Column
+-- 7.2 Orders Tip Amount & Cashfree Integration Columns
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tip_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS is_paid_online BOOLEAN DEFAULT false;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_gateway TEXT DEFAULT 'cashfree';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_order_id TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_payment_id TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_payment_status TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS doorstep_upi BOOLEAN DEFAULT false;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS doorstep_upi_vpa TEXT;
 
 -- 7.3 Fleet Riders Payout & Settlement Columns
 ALTER TABLE public.riders ADD COLUMN IF NOT EXISTS upi_vpa VARCHAR(64) DEFAULT NULL;

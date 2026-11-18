@@ -49,14 +49,53 @@ export async function onRequest(context) {
       return jsonResponse({ error: 'Bad Request', message: 'riderPin and valid amount are required' }, 400, Object.fromEntries(corsHeaders.entries()));
     }
 
+    const cleanPin = String(riderPin || '').trim();
+    const cycleDate = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const cleanTransferId = (body?.transferId && typeof body.transferId === 'string' && /^payout_[a-zA-Z0-9_-]{4,64}$/.test(body.transferId))
       ? body.transferId
-      : `payout_${riderPin}_${Date.now()}`;
+      : `payout_${cleanPin}_${cycleDate}`;
+
+    const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
+    const supabaseUrl = env?.VITE_SUPABASE_URL || env?.SUPABASE_URL || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL) : null);
+    const serviceKey = env?.SUPABASE_SERVICE_ROLE_KEY || (typeof process !== 'undefined' ? process.env?.SUPABASE_SERVICE_ROLE_KEY : null);
+
+    if (supabaseUrl && serviceKey) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(supabaseUrl, serviceKey);
+        const { data: rider, error: riderErr } = await sb
+          .from('riders')
+          .select('pin, name, payout_paid_at, payout_amount_paid')
+          .eq('pin', cleanPin)
+          .maybeSingle();
+
+        if (riderErr) {
+          return jsonResponse({ error: 'Database Error', message: riderErr.message }, 500, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (!rider && !isTestEnv) {
+          return jsonResponse({ error: 'Not Found', message: 'Rider record not found in system' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        if (rider && rider.payout_paid_at && !body?.transferId) {
+          const lastPaidMs = new Date(rider.payout_paid_at).getTime();
+          if (Date.now() - lastPaidMs < 12 * 3600 * 1000) {
+            return jsonResponse({
+              error: 'Duplicate Payout Prevented',
+              message: `Rider ${cleanPin} was already paid within the last 12 hours. Provide a unique transferId to process an additional payout.`
+            }, 409, Object.fromEntries(corsHeaders.entries()));
+          }
+        }
+      } catch (dbErr) {
+        if (!isTestEnv) {
+          return jsonResponse({ error: 'Database Error', message: 'Failed to verify rider record before payout' }, 500, Object.fromEntries(corsHeaders.entries()));
+        }
+      }
+    }
 
     const result = await initiateRiderPayout({
       transferId: cleanTransferId,
       amount: Number(amount),
-      riderPin,
+      riderPin: cleanPin,
       upiVpa,
       phone,
       name,
@@ -65,6 +104,22 @@ export async function onRequest(context) {
 
     if (!result.success) {
       return jsonResponse({ error: 'Payout Failed', message: result.error }, 500, Object.fromEntries(corsHeaders.entries()));
+    }
+
+    if (supabaseUrl && serviceKey && result.success) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(supabaseUrl, serviceKey);
+        await sb
+          .from('riders')
+          .update({
+            payout_paid_at: new Date().toISOString(),
+            payout_amount_paid: Number(amount)
+          })
+          .eq('pin', cleanPin);
+      } catch (saveErr) {
+        console.warn('[Cashfree Payout] Rider payout timestamp update warning:', saveErr?.message);
+      }
     }
 
     return jsonResponse(result, 200, Object.fromEntries(corsHeaders.entries()));

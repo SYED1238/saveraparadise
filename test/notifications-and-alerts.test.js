@@ -1354,6 +1354,16 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
       'delivery.js must sync native acknowledged alarm order IDs into quickbite_rider_alerted_statuses');
     assert.match(deliverySrc, /function\s+stopRiderAlarm\([\s\S]*?markRiderStatusAlerted\(o\.id,\s*'ready_for_pickup'\)/,
       'stopRiderAlarm must mark ringing ready_for_pickup orders as alerted so foreground sync does not re-trigger the alarm');
+    assert.doesNotMatch(
+      deliverySrc,
+      /function\s+handleRiderIncomingOrder[\s\S]*?markRiderStatusAlerted\([\s\S]*?startRiderAlarm\(/,
+      'handleRiderIncomingOrder must not prematurely call markRiderStatusAlerted before startRiderAlarm'
+    );
+    assert.doesNotMatch(
+      deliverySrc,
+      /function\s+handleRiderOrderStatusSync[\s\S]*?markRiderStatusAlerted\([\s\S]*?startRiderAlarm\(/,
+      'handleRiderOrderStatusSync must not prematurely call markRiderStatusAlerted before startRiderAlarm'
+    );
   });
 
   await t.test('30. Customer welcome toast cooldown (48h), 24h notification expiration, single active toast cap, and startup pre-seeding', () => {

@@ -65,6 +65,36 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public String getCurrentUrl() {
+        if (webView != null) {
+            return webView.getUrl();
+        }
+        return null;
+    }
+
+    public static boolean isTrustedPortalHost(String host) {
+        if (host == null) return false;
+        String h = host.toLowerCase().trim();
+        return h.equals("saveraparadise.foodbliz.in") ||
+               h.endsWith(".saveraparadise.foodbliz.in") ||
+               h.equals("saveraparadise.pages.dev") ||
+               h.endsWith(".saveraparadise.pages.dev") ||
+               h.equals("foodbliz.in") ||
+               h.endsWith(".foodbliz.in") ||
+               h.equals("localhost") ||
+               h.equals("127.0.0.1") ||
+               h.equals("10.0.2.2");
+    }
+
+    public static boolean isTrustedHost(String host) {
+        if (host == null) return false;
+        String h = host.toLowerCase().trim();
+        if (isTrustedPortalHost(h)) return true;
+        // Trusted payment gateway hosts for customer checkout redirects
+        return h.equals("cashfree.com") ||
+               h.endsWith(".cashfree.com");
+    }
+
     public static void syncNativeAcknowledgedAlarmsToWebView() {
         MainActivity act = activeActivityRef != null ? activeActivityRef.get() : null;
         if (act != null && act.webView != null) {
@@ -155,7 +185,9 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
+                if (uri == null) return false;
                 String urlStr = uri.toString();
+                String host = uri.getHost();
 
                 // Open external links (Google Maps, WhatsApp, Phone calls, APK downloads) in native apps / browser
                 String lowerPath = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
@@ -171,7 +203,20 @@ public class MainActivity extends AppCompatActivity {
                         return false;
                     }
                 }
-                return false;
+
+                // Allow in-WebView navigation only for trusted restaurant portals and verified payment gateways
+                if (host != null && isTrustedHost(host)) {
+                    return false;
+                }
+
+                // Disallow arbitrary third-party web navigation inside WebView — open in external browser
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+                    startActivity(intent);
+                    return true;
+                } catch (Exception e) {
+                    return false;
+                }
             }
 
             @Override
@@ -211,13 +256,29 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
-                // Auto-grant geolocation permissions to our verified restaurant portal
-                callback.invoke(origin, true, false);
+                // Auto-grant geolocation permissions ONLY to our verified restaurant portal
+                try {
+                    Uri uri = Uri.parse(origin);
+                    String host = uri.getHost();
+                    if (host != null && isTrustedPortalHost(host)) {
+                        callback.invoke(origin, true, false);
+                        return;
+                    }
+                } catch (Exception ignored) {}
+                callback.invoke(origin, false, false);
             }
 
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
-                runOnUiThread(() -> request.grant(request.getResources()));
+                try {
+                    Uri origin = request.getOrigin();
+                    String host = origin != null ? origin.getHost() : null;
+                    if (host != null && isTrustedPortalHost(host)) {
+                        runOnUiThread(() -> request.grant(request.getResources()));
+                        return;
+                    }
+                } catch (Exception ignored) {}
+                runOnUiThread(() -> request.deny());
             }
         });
     }

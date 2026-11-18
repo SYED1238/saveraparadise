@@ -63,15 +63,15 @@ export function sanitizePhone(phone) {
 // ========================================================
 // Note: Admin authentication is verified strictly server-side via /api/admin-auth.
 export const DEFAULT_RIDER_PIN_HASHES = [
-  'eee788b8ab81ff42dc330a2c98a6d3cf85c057bf04ede2b3a16338b2d89682d8', // 2233
-  '012a6ee17e053a20580661118dc93699ac64b6cb392a7292c80fda18e355490d', // 4422
-  '558d11bd0a2a64471d5705c01e28094283aeb0b4fcb5f36c1dbbc14aeb267fa6', // 4455
-  '6110c9bd14ac3f6b91b8c4d77bfe65a3fb62105cf5664cb4cb2f2d03f43a41f1'  // 8811
+  'eee788b8ab81ff42dc330a2c98a6d3cf85c057bf04ede2b3a16338b2d89682d8',
+  '012a6ee17e053a20580661118dc93699ac64b6cb392a7292c80fda18e355490d',
+  '558d11bd0a2a64471d5705c01e28094283aeb0b4fcb5f36c1dbbc14aeb267fa6',
+  '6110c9bd14ac3f6b91b8c4d77bfe65a3fb62105cf5664cb4cb2f2d03f43a41f1'
 ];
 export const DEFAULT_RIDER_PIN_HASH = DEFAULT_RIDER_PIN_HASHES[0];
 
-export const DEFAULT_OWNER_PIN_HASH = 'abcb00b12750a6e83eef857f2b2f5809864ced8e2b81cbfe784cba2a36e197e8'; // SHA-256('quickbite_salt_9900')
-export const DEFAULT_ADMIN_PIN_HASH = 'b513ba98b2877394828a995d6d969b6a0d525243714ddb1b78d6f1d2f1c2398e'; // SHA-256('quickbite_salt_8899')
+export const DEFAULT_OWNER_PIN_HASH = 'abcb00b12750a6e83eef857f2b2f5809864ced8e2b81cbfe784cba2a36e197e8';
+export const DEFAULT_ADMIN_PIN_HASH = 'b513ba98b2877394828a995d6d969b6a0d525243714ddb1b78d6f1d2f1c2398e';
 
 const STORAGE_KEYS = {
   ADMIN_AUTH: 'quickbite_admin_session_auth',
@@ -419,37 +419,23 @@ export async function verifyStaffPin(role, inputPin) {
           return false;
         }
       } catch (e) {
-        if (typeof localStorage === 'undefined') {
-          return false;
+        // Fall back to local admin-registered rider roster only when network is completely unreachable
+        // (e.g. offline PWA or unit test mock environment). DEFAULT_RIDER_PIN_HASHES is strictly revoked.
+        if (typeof localStorage !== 'undefined') {
+          try {
+            const rawRiders = localStorage.getItem('quickbite_riders');
+            if (rawRiders) {
+              const riders = JSON.parse(rawRiders);
+              if (Array.isArray(riders) && riders.some(r => r && String(r.pin).trim() === cleanPin)) {
+                setStaffSessionActive('rider');
+                return true;
+              }
+            }
+          } catch {}
         }
-        console.warn('[Security] Rider server auth request failed, attempting local fallback:', e?.message || e);
+        console.warn('[Security] Rider server auth request failed:', e?.message || e);
+        return false;
       }
-    }
-
-    if (typeof localStorage === 'undefined') {
-      return false; // Safely fail in non-browser Node.js environments
-    }
-
-    let isMatch = false;
-    // Check if cleanPin matches any default fleet rider PIN hashes
-    if (DEFAULT_RIDER_PIN_HASHES.includes(inputHash)) {
-      isMatch = true;
-    } else {
-      // Check Admin-registered rider fleet in localStorage
-      try {
-        const rawRiders = localStorage.getItem('quickbite_riders');
-        if (rawRiders) {
-          const riders = JSON.parse(rawRiders);
-          if (Array.isArray(riders) && riders.some(r => r && String(r.pin).trim() === cleanPin)) {
-            isMatch = true;
-          }
-        }
-      } catch {}
-    }
-
-    if (isMatch) {
-      setStaffSessionActive('rider');
-      return true;
     }
 
     return false;

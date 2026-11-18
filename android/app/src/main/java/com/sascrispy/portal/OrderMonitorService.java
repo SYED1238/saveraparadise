@@ -619,6 +619,18 @@ public class OrderMonitorService extends Service {
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setRequestProperty("Accept", "application/json");
+
+            // Attach configured Kitchen Poll Secret or active staff token header
+            android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            String pollSecret = prefs != null ? prefs.getString("kitchen_poll_secret", "savera-kitchen-poll-2026") : "savera-kitchen-poll-2026";
+            if (pollSecret != null && !pollSecret.trim().isEmpty()) {
+                conn.setRequestProperty("X-Kitchen-Poll-Key", pollSecret.trim());
+            }
+            String staffToken = prefs != null ? prefs.getString("active_staff_token", null) : null;
+            if (staffToken != null && !staffToken.trim().isEmpty()) {
+                conn.setRequestProperty("Authorization", "Bearer " + staffToken.trim());
+            }
+
             conn.setConnectTimeout(6000);
             conn.setReadTimeout(6000);
 
@@ -1117,22 +1129,32 @@ public class OrderMonitorService extends Service {
                     try {
                         int rawResId = getResources().getIdentifier("kitchen_alarm", "raw", getPackageName());
                         if (rawResId != 0) {
-                            MediaPlayer mp = MediaPlayer.create(getApplicationContext(), rawResId);
-                            if (mp != null) {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                    mp.setAudioAttributes(new AudioAttributes.Builder()
-                                        .setUsage(AudioAttributes.USAGE_ALARM)
-                                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                                        .build());
-                                } else {
-                                    mp.setAudioStreamType(AudioManager.STREAM_ALARM);
-                                }
-                                mp.setLooping(true);
-                                mp.start();
-                                alarmPlayer = mp;
-                                audioStarted = true;
-                                Log.i(TAG, "Native kitchen alarm MediaPlayer started with R.raw.kitchen_alarm (Funk Criminal)");
+                            MediaPlayer mp = new MediaPlayer();
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                mp.setAudioAttributes(new AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_ALARM)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .build());
+                            } else {
+                                mp.setAudioStreamType(AudioManager.STREAM_ALARM);
                             }
+                            android.content.res.AssetFileDescriptor afd = null;
+                            try {
+                                afd = getResources().openRawResourceFd(rawResId);
+                            } catch (Exception ignored) {}
+                            if (afd != null) {
+                                mp.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
+                                try { afd.close(); } catch (Exception ignored) {}
+                            } else {
+                                mp.setDataSource(getApplicationContext(), Uri.parse("android.resource://" + getPackageName() + "/" + rawResId));
+                            }
+                            mp.setLooping(true);
+                            mp.setVolume(1.0f, 1.0f);
+                            mp.prepare();
+                            mp.start();
+                            alarmPlayer = mp;
+                            audioStarted = true;
+                            Log.i(TAG, "Native kitchen alarm MediaPlayer started with R.raw.kitchen_alarm (USAGE_ALARM stream routing)");
                         }
                     } catch (Exception e) {
                         Log.w(TAG, "Could not play R.raw.kitchen_alarm: " + e.getMessage());
@@ -1405,7 +1427,21 @@ public class OrderMonitorService extends Service {
             );
             AlarmManager alarmService = (AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
             if (alarmService != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (alarmService.canScheduleExactAlarms()) {
+                        alarmService.setExactAndAllowWhileIdle(
+                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                            SystemClock.elapsedRealtime() + 1500,
+                            restartPending
+                        );
+                    } else {
+                        alarmService.setAndAllowWhileIdle(
+                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                            SystemClock.elapsedRealtime() + 1500,
+                            restartPending
+                        );
+                    }
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     alarmService.setExactAndAllowWhileIdle(
                         AlarmManager.ELAPSED_REALTIME_WAKEUP,
                         SystemClock.elapsedRealtime() + 1500,

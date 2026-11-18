@@ -73,8 +73,25 @@ public class WebAppInterface {
         }
     }
 
+    private boolean isCurrentOriginTrusted() {
+        if (context instanceof MainActivity) {
+            MainActivity act = (MainActivity) context;
+            String currentUrl = act.getCurrentUrl();
+            if (currentUrl != null) {
+                try {
+                    Uri uri = Uri.parse(currentUrl);
+                    String host = uri.getHost();
+                    return MainActivity.isTrustedPortalHost(host);
+                } catch (Exception ignored) {}
+            }
+            return false;
+        }
+        return true;
+    }
+
     @JavascriptInterface
     public void showNotification(String title, String message, String tag, String soundType) {
+        if (!isCurrentOriginTrusted()) return;
         try {
             // Mark order notified in background service to prevent double alerting
             OrderMonitorService.markOrderNotified(tag);
@@ -202,6 +219,7 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void startAlarm() {
+        if (!isCurrentOriginTrusted()) return;
         try {
             OrderMonitorService.startNativeAlarm();
         } catch (Exception ignored) {}
@@ -232,6 +250,7 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void stopAlarm() {
+        if (!isCurrentOriginTrusted()) return;
         try {
             OrderMonitorService.stopNativeAlarm();
         } catch (Exception ignored) {}
@@ -266,6 +285,7 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void acknowledgeOrderAlarm(String orderId) {
+        if (!isCurrentOriginTrusted()) return;
         try {
             OrderMonitorService.markOrderAlarmAcknowledged(orderId);
         } catch (Exception ignored) {}
@@ -273,6 +293,7 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void clearAcknowledgedAlarms() {
+        if (!isCurrentOriginTrusted()) return;
         try {
             OrderMonitorService.clearAcknowledgedAlarms();
         } catch (Exception ignored) {}
@@ -280,6 +301,7 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void setDutyStatus(boolean onDuty) {
+        if (!isCurrentOriginTrusted()) return;
         try {
             OrderMonitorService.setRiderDutyStatus(context, onDuty);
         } catch (Exception ignored) {}
@@ -287,6 +309,7 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void setKitchenAlarmMode(String mode) {
+        if (!isCurrentOriginTrusted()) return;
         try {
             OrderMonitorService.setKitchenAlarmSoundMode(context, mode);
         } catch (Exception ignored) {}
@@ -334,6 +357,7 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void requestEnableGps() {
+        if (!isCurrentOriginTrusted()) return;
         try {
             MainActivity.triggerNativeGpsEnablePrompt();
         } catch (Exception ignored) {}

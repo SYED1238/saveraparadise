@@ -71,6 +71,13 @@ CREATE TABLE IF NOT EXISTS public.orders (
   assigned_rider_vehicle TEXT,
   claimed_at BIGINT,
   delivered_at BIGINT,
+  is_paid_online BOOLEAN DEFAULT false,
+  payment_gateway TEXT DEFAULT 'cashfree',
+  cf_order_id TEXT,
+  cf_payment_id TEXT,
+  cf_payment_status TEXT,
+  doorstep_upi BOOLEAN DEFAULT false,
+  doorstep_upi_vpa TEXT,
   tracking_token UUID DEFAULT gen_random_uuid(),
   inserted_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -84,6 +91,13 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS lng NUMERIC;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS address_details JSONB;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'Cash on Delivery (COD)';
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'Cash on Delivery';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS is_paid_online BOOLEAN DEFAULT false;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_gateway TEXT DEFAULT 'cashfree';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_order_id TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_payment_id TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cf_payment_status TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS doorstep_upi BOOLEAN DEFAULT false;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS doorstep_upi_vpa TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS pickup_code TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS assigned_rider_pin TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS assigned_rider_name TEXT;
@@ -214,7 +228,7 @@ CREATE POLICY "admin_manage_dishes" ON public.dishes
     (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff') OR auth.role() = 'service_role'
   );
 
--- 2.3 Orders: Anyone can create an order with valid initial status; customer/staff can read; staff/rider can update
+-- 2.3 Orders: Order mutations are restricted exclusively to service_role edge endpoints.
 DROP POLICY IF EXISTS "allow_all_orders" ON public.orders;
 DROP POLICY IF EXISTS "public_create_orders" ON public.orders;
 DROP POLICY IF EXISTS "owner_read_orders" ON public.orders;
@@ -223,11 +237,12 @@ DROP POLICY IF EXISTS "app_read_orders" ON public.orders;
 DROP POLICY IF EXISTS "app_update_orders" ON public.orders;
 DROP POLICY IF EXISTS "orders_select_owner_or_staff" ON public.orders;
 DROP POLICY IF EXISTS "orders_update_staff_only" ON public.orders;
+DROP POLICY IF EXISTS "authenticated_update_orders" ON public.orders;
 
-CREATE POLICY "public_create_orders" ON public.orders
-  FOR INSERT WITH CHECK (
-    (status IS NULL OR status IN ('accepted', 'pending'))
-  );
+REVOKE ALL ON TABLE public.orders FROM anon, public;
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.orders FROM authenticated;
+GRANT SELECT ON TABLE public.orders TO authenticated;
+GRANT ALL ON TABLE public.orders TO service_role;
 
 CREATE POLICY "orders_select_owner_or_staff" ON public.orders
   FOR SELECT USING (
@@ -241,15 +256,6 @@ CREATE POLICY "service_manage_orders" ON public.orders
   FOR ALL TO service_role
   USING (true)
   WITH CHECK (true);
-
-CREATE POLICY "authenticated_update_orders" ON public.orders
-  FOR UPDATE TO authenticated
-  USING (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
-  )
-  WITH CHECK (
-    (auth.jwt() -> 'app_metadata' ->> 'role') IN ('admin', 'staff', 'rider', 'owner')
-  );
 
 -- 2.3B Riders: Restricted to service_role; anon access strictly revoked to protect PINs
 DROP POLICY IF EXISTS "allow_all_riders" ON public.riders;
@@ -385,6 +391,10 @@ DECLARE
   old_rank INT := 0;
   new_rank INT := 0;
 BEGIN
+  IF current_setting('app.allow_order_deletion', true) = 'on' THEN
+    RETURN NEW;
+  END IF;
+
   -- Explicit cancellation rule: permitted ONLY from pending or accepted before cooking starts
   IF NEW.status = 'cancelled' THEN
     IF OLD.status IN ('cooking', 'ready_for_pickup', 'on_the_way', 'delivered', 'undelivered') THEN
@@ -543,6 +553,9 @@ CREATE TRIGGER trg_prevent_order_financial_tampering
 CREATE OR REPLACE FUNCTION public.prevent_order_deletion()
 RETURNS TRIGGER AS $$
 BEGIN
+  IF current_setting('app.allow_order_deletion', true) = 'on' THEN
+    RETURN OLD;
+  END IF;
   RAISE EXCEPTION 'Orders cannot be deleted: Orders are permanent financial and audit records.';
 END;
 $$ LANGUAGE plpgsql;
@@ -552,6 +565,31 @@ CREATE TRIGGER trg_prevent_order_deletion
   BEFORE DELETE ON public.orders
   FOR EACH ROW
   EXECUTE FUNCTION public.prevent_order_deletion();
+
+CREATE OR REPLACE FUNCTION public.clear_all_orders()
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  deleted_count integer;
+BEGIN
+  -- Temporarily allow deletion for this function transaction
+  PERFORM set_config('app.allow_order_deletion', 'on', true);
+  
+  -- Must include a WHERE clause to satisfy Postgres safeupdate requirement
+  DELETE FROM public.orders WHERE id IS NOT NULL;
+  
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.clear_all_orders() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.clear_all_orders() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.clear_all_orders() FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_all_orders() TO service_role;
 
 CREATE OR REPLACE FUNCTION public.rider_assign_or_claim_order(
   p_action TEXT,
