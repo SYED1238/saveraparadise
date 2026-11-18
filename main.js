@@ -1731,6 +1731,52 @@ function initStorefrontApp() {
     }, 1000);
   }
 
+  function evaluateUnlockedDeals(subtotal, settings = dataService.getSettings()) {
+    if (!settings || !settings.unlockedDealsEnabled) {
+      return { isUnlocked: false, discountPct: 0, discount: 0, minSpend: 0, title: '' };
+    }
+    const defMin = Number(settings.unlockedDealsMinOrder || 299);
+    const defPct = Number(settings.unlockedDealsDiscountPct || 15);
+    const defTitle = settings.unlockedDealsTitle || 'Wholesale Club Deals';
+
+    if (subtotal >= defMin && defPct > 0) {
+      const safePct = Math.min(Math.max(defPct, 0), 50);
+      const discount = Math.round((subtotal * safePct) / 100);
+      return {
+        isUnlocked: true,
+        discountPct: safePct,
+        discount,
+        minSpend: defMin,
+        title: defTitle
+      };
+    }
+
+    if (Array.isArray(settings.unlockedDealsThresholds) && settings.unlockedDealsThresholds.length > 0) {
+      const sorted = [...settings.unlockedDealsThresholds].sort((a, b) => (Number(b.minSpend) || 0) - (Number(a.minSpend) || 0));
+      const matched = sorted.find(t => subtotal >= (Number(t.minSpend) || 0));
+      if (matched) {
+        const rawTiersPct = Number(matched.discountPercent) || 0;
+        const safeTiersPct = Math.min(Math.max(rawTiersPct, 0), 50);
+        const discount = Math.round((subtotal * safeTiersPct) / 100);
+        return {
+          isUnlocked: true,
+          discountPct: safeTiersPct,
+          discount,
+          minSpend: Number(matched.minSpend) || 0,
+          title: matched.label || `${safeTiersPct}% Deal`
+        };
+      }
+    }
+
+    return {
+      isUnlocked: false,
+      discountPct: defPct,
+      discount: 0,
+      minSpend: defMin,
+      title: defTitle
+    };
+  }
+
   function renderCart() {
     updateMenuCardSteppers();
     startDishScheduleTicker();
@@ -1819,10 +1865,11 @@ function initStorefrontApp() {
 
     // Calculations & Dynamic Offer Settings
     const settings = dataService.getSettings();
+    const dealsEval = evaluateUnlockedDeals(subtotal, settings);
     const isUnlockedDealsEnabled = Boolean(settings.unlockedDealsEnabled);
-    const unlockedMinOrder = Number(settings.unlockedDealsMinOrder || 299);
-    const unlockedDiscountPct = Number(settings.unlockedDealsDiscountPct || 15);
-    const isDealsUnlocked = isUnlockedDealsEnabled && subtotal >= unlockedMinOrder;
+    const unlockedMinOrder = dealsEval.minSpend;
+    const unlockedDiscountPct = dealsEval.discountPct;
+    const isDealsUnlocked = dealsEval.isUnlocked;
 
     cart.forEach(item => {
       const el = document.createElement('div');
@@ -1974,14 +2021,14 @@ function initStorefrontApp() {
     // Unlocked Deals (Threshold Pricing) Calculation
     let unlockedDealDiscount = 0;
     if (isDealsUnlocked) {
-      unlockedDealDiscount = Math.round((subtotal * unlockedDiscountPct) / 100);
+      unlockedDealDiscount = dealsEval.discount || Math.round((subtotal * unlockedDiscountPct) / 100);
     }
 
     let discount = 0;
     let discountLabels = [];
     if (unlockedDealDiscount > 0) {
       discount += unlockedDealDiscount;
-      const dealTitle = (settings.unlockedDealsTitle || 'Wholesale Deal').trim();
+      const dealTitle = (dealsEval.title || settings.unlockedDealsTitle || 'Wholesale Deal').trim();
       discountLabels.push(`${escapeHtml(dealTitle)} -${unlockedDiscountPct}%`);
     }
     if (isPromoValid && promoResult && promoResult.discount > 0) {
@@ -2054,6 +2101,9 @@ function initStorefrontApp() {
     summarySubtotal.textContent = `₹${Math.round(subtotal)}`;
     summaryDelivery.textContent = deliveryFee === 0 ? 'FREE' : `₹${Math.round(deliveryFee)}`;
     summaryTotal.textContent = `₹${Math.round(total)}`;
+    if (checkoutBillTotal && summaryTotal) {
+      checkoutBillTotal.textContent = summaryTotal.textContent || '₹0';
+    }
 
     // Check if any cart item is currently marked Sold Out or Schedule-Unavailable
     const allDishes = (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function') ? dataService.getDishes() : [];
@@ -2862,14 +2912,15 @@ function initStorefrontApp() {
     const cartBtnText = document.getElementById('unified-cart-btn-text');
     if (cartBtnText) cartBtnText.textContent = 'VIEW CART';
 
-    const minOrder = Number(settings.unlockedDealsMinOrder || 299);
-    const discountPct = Number(settings.unlockedDealsDiscountPct || 15);
+    const dealsEval = evaluateUnlockedDeals(subtotal, settings);
+    const minOrder = dealsEval.minSpend;
+    const discountPct = dealsEval.discountPct;
     const barText = document.getElementById('unlocked-bar-text');
     const barFill = document.getElementById('unlocked-progress-fill');
     const barIcon = document.getElementById('unlocked-bar-icon');
     const trackEl = document.getElementById('unlocked-progress-track');
 
-    const isUnlocked = isEnabled && subtotal >= minOrder;
+    const isUnlocked = dealsEval.isUnlocked;
 
     // Dynamically toggle lock icons on all storefront cards & modals
     document.querySelectorAll('.meta-deal-price i').forEach(icon => {
@@ -5961,6 +6012,9 @@ function initStorefrontApp() {
 
   function openCheckoutModalInternal() {
     renderCheckoutAddresses();
+    if (checkoutBillTotal && summaryTotal) {
+      checkoutBillTotal.textContent = summaryTotal.textContent || '₹0';
+    }
     if (isTurnstileChallengeRequired(getCurrentUserPhone())) {
       showTurnstileCheckoutWidget();
     } else {
@@ -6281,39 +6335,59 @@ function initStorefrontApp() {
     flashTabTitle(`🎉 ORDER CONFIRMED: ${finalOrderId}`);
   }
 
-  async function finalizeVerifiedOnlineOrder(serverOrder, fallbackDraft = null) {
+  async function finalizeVerifiedOnlineOrder(serverOrder, fallbackDraft = null, fallbackOrderId = null) {
     const draft = fallbackDraft || {};
-    const finalId = serverOrder?.id || draft.id;
+    const finalId = serverOrder?.id || draft.id || fallbackOrderId;
     if (!finalId) return;
 
-    const trackingToken = serverOrder?.tracking_token || draft.trackingToken || '';
+    let trackingToken = serverOrder?.tracking_token || draft.trackingToken || '';
+    if (!trackingToken && typeof localStorage !== 'undefined') {
+      try {
+        const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
+        trackingToken = tokens[finalId] || tokens[String(finalId).replace(/^#/, '')] || '';
+      } catch {}
+    }
+
+    let resolvedOrder = serverOrder;
+    if (!resolvedOrder && (!draft.items || draft.items.length === 0) && trackingToken) {
+      try {
+        const trackRes = await dataService._orderAction('track_orders', {
+          orderIds: [finalId],
+          trackingTokens: { [finalId]: trackingToken, [String(finalId).replace(/^#/, '')]: trackingToken }
+        });
+        if (trackRes && Array.isArray(trackRes.orders) && trackRes.orders.length > 0) {
+          resolvedOrder = trackRes.orders[0];
+        }
+      } catch {}
+    }
+
     const localOrder = {
       ...draft,
       id: finalId,
-      createdAt: Number(serverOrder?.created_at || draft.createdAt) || Date.now(),
-      customerName: serverOrder?.customer_name || draft.customerName || 'Online Guest',
-      customerPhone: serverOrder?.customer_phone || draft.customerPhone || '',
-      customerEmail: serverOrder?.customer_email || draft.customerEmail || '',
-      userId: serverOrder?.user_id || draft.userId || null,
-      deliveryAddress: serverOrder?.delivery_address || draft.deliveryAddress || '',
-      pickupCode: serverOrder?.pickup_code || draft.pickupCode || '',
-      items: Array.isArray(serverOrder?.items) && serverOrder.items.length > 0 ? serverOrder.items : (draft.items || []),
-      itemsSummary: serverOrder?.items_summary || draft.itemsSummary || '',
-      total: serverOrder?.total || draft.total || '₹0',
-      lat: serverOrder?.lat !== undefined && serverOrder?.lat !== null ? Number(serverOrder.lat) : draft.lat,
-      lng: serverOrder?.lng !== undefined && serverOrder?.lng !== null ? Number(serverOrder.lng) : draft.lng,
-      addressDetails: serverOrder?.address_details || draft.addressDetails || null,
+      createdAt: Number(resolvedOrder?.created_at || draft.createdAt) || Date.now(),
+      customerName: resolvedOrder?.customer_name || draft.customerName || 'Online Guest',
+      customerPhone: resolvedOrder?.customer_phone || draft.customerPhone || '',
+      customerEmail: resolvedOrder?.customer_email || draft.customerEmail || '',
+      userId: resolvedOrder?.user_id || draft.userId || null,
+      deliveryAddress: resolvedOrder?.delivery_address || draft.deliveryAddress || '',
+      pickupCode: resolvedOrder?.pickup_code || draft.pickupCode || '',
+      items: Array.isArray(resolvedOrder?.items) && resolvedOrder.items.length > 0 ? resolvedOrder.items : (draft.items || []),
+      itemsSummary: resolvedOrder?.items_summary || draft.itemsSummary || '',
+      total: resolvedOrder?.total || draft.total || '₹0',
+      lat: resolvedOrder?.lat !== undefined && resolvedOrder?.lat !== null ? Number(resolvedOrder.lat) : draft.lat,
+      lng: resolvedOrder?.lng !== undefined && resolvedOrder?.lng !== null ? Number(resolvedOrder.lng) : draft.lng,
+      addressDetails: resolvedOrder?.address_details || draft.addressDetails || null,
       paymentMethod: 'Online',
       paymentStatus: 'Paid',
       isPaidOnline: true,
       doorstepUpi: false,
       cashCollected: 0,
-      cfOrderId: serverOrder?.cf_order_id || draft.cfOrderId || null,
-      cfPaymentId: serverOrder?.cf_payment_id || draft.cfPaymentId || null,
-      status: (!serverOrder?.status || serverOrder.status === 'pending_payment') ? 'accepted' : serverOrder.status,
-      statusLabel: (!serverOrder?.status || serverOrder.status === 'pending_payment') ? 'Accepted' : (serverOrder.status_label || 'Accepted'),
-      stepIndex: typeof serverOrder?.step_index === 'number' ? serverOrder.step_index : 0,
-      eta: serverOrder?.eta || draft.eta || '25 - 35 Minutes',
+      cfOrderId: resolvedOrder?.cf_order_id || draft.cfOrderId || null,
+      cfPaymentId: resolvedOrder?.cf_payment_id || draft.cfPaymentId || null,
+      status: (!resolvedOrder?.status || resolvedOrder.status === 'pending_payment') ? 'accepted' : resolvedOrder.status,
+      statusLabel: (!resolvedOrder?.status || resolvedOrder.status === 'pending_payment') ? 'Accepted' : (resolvedOrder.status_label || 'Accepted'),
+      stepIndex: typeof resolvedOrder?.step_index === 'number' ? resolvedOrder.step_index : 0,
+      eta: resolvedOrder?.eta || draft.eta || '25 - 35 Minutes',
       trackingToken
     };
 
@@ -6331,6 +6405,7 @@ function initStorefrontApp() {
 
     try {
       sessionStorage.removeItem('savera_pending_online_order');
+      localStorage.removeItem('savera_pending_online_order');
     } catch {}
 
     completeOrderPlacementUI({
@@ -6516,8 +6591,8 @@ function initStorefrontApp() {
         const cartSubtotal = cart.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
         let calculatedTotal = cartSubtotal;
         let calculatedDiscount = 0;
-        const isDealsActive = settings.unlockedDealsEnabled && cartSubtotal >= (settings.unlockedDealsMinOrder || 299);
-        const dealDiscount = isDealsActive ? Math.round((cartSubtotal * (settings.unlockedDealsDiscountPct || 15)) / 100) : 0;
+        const dealsResult = evaluateUnlockedDeals(cartSubtotal, settings);
+        const dealDiscount = dealsResult.discount;
         calculatedDiscount += dealDiscount;
         const promoRes = appliedPromo ? evaluatePromoCode(appliedPromo, cartSubtotal, settings) : null;
         if (promoRes && promoRes.valid) {
@@ -6716,6 +6791,7 @@ function initStorefrontApp() {
 
           try {
             sessionStorage.setItem('savera_pending_online_order', JSON.stringify(newOrder));
+            localStorage.setItem('savera_pending_online_order', JSON.stringify(newOrder));
           } catch {}
 
           const cleanOrderNum = String(newOrder.id || newOrderId).replace(/^#+/, '');
@@ -6739,7 +6815,10 @@ function initStorefrontApp() {
 
           const pgData = await pgResp.json().catch(() => ({}));
           if (!pgResp.ok || !pgData.success || !pgData.paymentSessionId) {
-            try { sessionStorage.removeItem('savera_pending_online_order'); } catch {}
+            try {
+              sessionStorage.removeItem('savera_pending_online_order');
+              localStorage.removeItem('savera_pending_online_order');
+            } catch {}
             showToast(`❌ ${pgData.message || pgData.error || 'Could not initialize online payment. Please try again or choose COD.'}`, 'error');
             resetSubmitState();
             return;
@@ -6750,14 +6829,34 @@ function initStorefrontApp() {
           newOrder.cfOrderId = pgData.cfOrderId;
           try {
             sessionStorage.setItem('savera_pending_online_order', JSON.stringify(newOrder));
+            localStorage.setItem('savera_pending_online_order', JSON.stringify(newOrder));
           } catch {}
+
+          if (pgData.trackingToken && newOrder.id) {
+            try {
+              const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
+              tokens[newOrder.id] = pgData.trackingToken;
+              tokens[String(newOrder.id).replace(/^#/, '')] = pgData.trackingToken;
+              localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
+            } catch {}
+            try {
+              const myIds = JSON.parse(localStorage.getItem('quickbite_my_order_ids') || '[]');
+              if (!myIds.includes(newOrder.id)) {
+                myIds.push(newOrder.id);
+                localStorage.setItem('quickbite_my_order_ids', JSON.stringify(myIds));
+              }
+            } catch {}
+          }
 
           if (pgData.isMock) {
             const simulatePaid = typeof window.confirm === 'function'
               ? window.confirm(`[Local Sandbox Mode] Cashfree API keys are not set in .env.local.\n\nClick OK to simulate a successful ₹${verifiedNumericTotal} online payment for ${newOrder.id}, or Cancel to abort.`)
               : true;
             if (!simulatePaid) {
-              try { sessionStorage.removeItem('savera_pending_online_order'); } catch {}
+              try {
+                sessionStorage.removeItem('savera_pending_online_order');
+                localStorage.removeItem('savera_pending_online_order');
+              } catch {}
               showToast('⚠️ Local simulated online payment was cancelled. Your basket is still saved.', 'warning');
               resetSubmitState(true);
               return;
@@ -6772,7 +6871,10 @@ function initStorefrontApp() {
             });
 
             if (cfResult && cfResult.error) {
-              try { sessionStorage.removeItem('savera_pending_online_order'); } catch {}
+              try {
+                sessionStorage.removeItem('savera_pending_online_order');
+                localStorage.removeItem('savera_pending_online_order');
+              } catch {}
               showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed. Your basket is still saved.'}`, 'warning');
               resetSubmitState(true);
               return;
@@ -6801,12 +6903,41 @@ function initStorefrontApp() {
           const verifyData = await verifyResp.json().catch(() => ({}));
 
           if (verifyResp.ok && verifyData.success && verifyData.paid) {
-            await finalizeVerifiedOnlineOrder(verifyData.order, newOrder);
+            await finalizeVerifiedOnlineOrder(verifyData.order, newOrder, newOrder.id);
             return;
           }
 
           showToast('⏳ Payment not confirmed yet. If amount was debited, your order will auto-confirm shortly.', 'warning');
           resetSubmitState(true);
+
+          // Background recovery poller for settling payments
+          const pollStart = Date.now();
+          const recoveryOrderId = newOrder.id;
+          const recoveryCfOrderId = pgData.cfOrderId;
+          const recoveryToken = newOrder.trackingToken || '';
+          const recoveryTimer = setInterval(async () => {
+            if (Date.now() - pollStart > 90000) {
+              clearInterval(recoveryTimer);
+              return;
+            }
+            try {
+              const pResp = await fetch('/api/cashfree-create-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'verify_payment',
+                  cfOrderId: recoveryCfOrderId,
+                  orderId: recoveryOrderId,
+                  trackingToken: recoveryToken
+                })
+              });
+              const pData = await pResp.json().catch(() => ({}));
+              if (pResp.ok && pData.success && pData.paid) {
+                clearInterval(recoveryTimer);
+                await finalizeVerifiedOnlineOrder(pData.order, newOrder, recoveryOrderId);
+              }
+            } catch {}
+          }, 4000);
           return;
         }
 
@@ -8122,6 +8253,7 @@ function initStorefrontApp() {
 
     const swiggyInputStreet = document.getElementById('swiggy-input-street');
     const swiggySaveAsInput = document.getElementById('swiggy-save-as-input');
+    const swiggyInputInstructions = document.getElementById('swiggy-input-instructions');
     const swiggyAccountDetailsPreview = document.getElementById('swiggy-account-details-preview');
     const addrInputName = document.getElementById('addr-input-name');
     const addrInputPhone = document.getElementById('addr-input-phone');
@@ -8151,6 +8283,7 @@ function initStorefrontApp() {
       };
       if (swiggyInputStreet) swiggyInputStreet.value = existing.street || existing.flatNo || '';
       if (swiggySaveAsInput) swiggySaveAsInput.value = existing.tag || 'Home';
+      if (swiggyInputInstructions) swiggyInputInstructions.value = existing.instructions || '';
       if (addrInputFlat) addrInputFlat.value = detectedAddressDetails.flatNo;
       if (addrInputArea) addrInputArea.value = detectedAddressDetails.area;
       if (addrInputCity) addrInputCity.value = detectedAddressDetails.city;
@@ -8167,6 +8300,7 @@ function initStorefrontApp() {
       }
       if (swiggyInputStreet) swiggyInputStreet.value = '';
       if (swiggySaveAsInput) swiggySaveAsInput.value = 'House';
+      if (swiggyInputInstructions) swiggyInputInstructions.value = '';
       detectedAddressDetails = {
         flatNo: 'Pinned Doorstep',
         area: 'Ramanagara',
@@ -11173,9 +11307,18 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
 
       let pendingDraft = null;
       try {
-        const rawDraft = sessionStorage.getItem('savera_pending_online_order');
+        const rawDraft = sessionStorage.getItem('savera_pending_online_order') || localStorage.getItem('savera_pending_online_order');
         if (rawDraft) pendingDraft = JSON.parse(rawDraft);
       } catch {}
+
+      const cleanOrderParam = orderIdParam.replace(/^#+/, '');
+      let lookupToken = pendingDraft?.trackingToken || '';
+      if (!lookupToken && typeof localStorage !== 'undefined') {
+        try {
+          const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
+          lookupToken = tokens[`#${cleanOrderParam}`] || tokens[cleanOrderParam] || '';
+        } catch {}
+      }
 
       showToast('⏳ Verifying your Cashfree payment...', 'info');
       fetch('/api/cashfree-create-order', {
@@ -11184,14 +11327,14 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         body: JSON.stringify({
           action: 'verify_payment',
           cfOrderId: cfOrderIdParam,
-          orderId: orderIdParam ? `#${orderIdParam.replace(/^#+/, '')}` : '',
-          trackingToken: pendingDraft?.trackingToken || ''
+          orderId: orderIdParam ? `#${cleanOrderParam}` : '',
+          trackingToken: lookupToken
         })
       })
         .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
         .then(async ({ ok, data }) => {
           if (ok && data?.success && data?.paid) {
-            await finalizeVerifiedOnlineOrder(data.order, pendingDraft);
+            await finalizeVerifiedOnlineOrder(data.order, pendingDraft, data.orderId || orderIdParam);
           } else {
             showToast(`⚠️ Payment not completed (${data?.paymentStatus || 'CANCELLED'}). Your basket is still saved.`, 'warning');
           }

@@ -4371,22 +4371,51 @@ class QuickBiteDataService {
 
         let data = null;
         let error = null;
+        let trackedOrders = [];
         try {
           const tokens = (typeof localStorage !== 'undefined')
             ? JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}')
             : {};
           if (sessionIds && sessionIds.length > 0) {
             const trackRes = await this._orderAction('track_orders', { orderIds: sessionIds, trackingTokens: tokens });
-            if (trackRes && Array.isArray(trackRes.orders) && trackRes.orders.length > 0) {
-              data = trackRes.orders;
+            if (trackRes && Array.isArray(trackRes.orders)) {
+              trackedOrders = trackRes.orders;
             }
           }
         } catch {}
 
-        if (!data && supabase) {
-          const sbRes = await query.limit(30);
-          data = sbRes.data;
-          error = sbRes.error;
+        let sbOrders = [];
+        if (supabase && (safeUserId || safeEmail || safePhone)) {
+          try {
+            const sbRes = await query.limit(50);
+            if (sbRes && Array.isArray(sbRes.data)) {
+              sbOrders = sbRes.data;
+            } else if (sbRes && sbRes.error) {
+              error = sbRes.error;
+            }
+          } catch (qErr) {
+            error = qErr;
+          }
+        }
+
+        // Merge trackedOrders and authenticated sbOrders, deduplicating by normalized ID
+        const mergedMap = new Map();
+        trackedOrders.forEach(o => {
+          if (o && o.id) mergedMap.set(String(o.id).replace(/^#/, ''), o);
+        });
+        sbOrders.forEach(o => {
+          if (o && o.id) {
+            const clean = String(o.id).replace(/^#/, '');
+            if (!mergedMap.has(clean)) {
+              mergedMap.set(clean, o);
+            }
+          }
+        });
+
+        if (mergedMap.size > 0) {
+          data = Array.from(mergedMap.values());
+        } else if (!error && trackedOrders.length === 0 && sbOrders.length === 0) {
+          data = [];
         }
 
         if (!error && Array.isArray(data)) {
@@ -6223,6 +6252,14 @@ class QuickBiteDataService {
       const dealsPct = Number(settings.unlockedDealsDiscountPct) || 15;
       if (computedSubtotal >= dealsMin) {
         unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
+      } else if (Array.isArray(settings.unlockedDealsThresholds) && settings.unlockedDealsThresholds.length > 0) {
+        const sorted = [...settings.unlockedDealsThresholds].sort((a, b) => (Number(b.minSpend) || 0) - (Number(a.minSpend) || 0));
+        const matched = sorted.find(t => computedSubtotal >= (Number(t.minSpend) || 0));
+        if (matched) {
+          const rawTiersPct = Number(matched.discountPercent) || 0;
+          const safeTiersPct = Math.min(Math.max(rawTiersPct, 0), 50);
+          unlockedDealDiscount = Math.round((computedSubtotal * safeTiersPct) / 100);
+        }
       }
     }
 

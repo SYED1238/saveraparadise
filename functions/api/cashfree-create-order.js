@@ -9,6 +9,7 @@ import {
   getSupabaseServiceCreds,
   recordVerifiedCashfreePayment
 } from './_cashfree.js';
+import { purgeKitchenPollEdgeCache } from './order-action.js';
 import { verifySignedPayload, verifyAdminToken } from './_auth.js';
 import { verifyTurnstileToken, getClientIp } from './_turnstile.js';
 import { hydrateEnv, isOriginAllowed, jsonResponse } from './_adapter.js';
@@ -73,6 +74,7 @@ export async function onRequest(context) {
           cleanOrderId: String(body?.orderId || '').replace(/^#+/, ''),
           env
         });
+        await purgeKitchenPollEdgeCache(request, context);
       } catch (dbErr) {
         console.warn('[Cashfree Verify] Supabase update error:', dbErr.message);
       }
@@ -199,9 +201,14 @@ export async function onRequest(context) {
         const addressDetails = (orderDraft.addressDetails || orderDraft.address_details)
           ? { ...(orderDraft.addressDetails || orderDraft.address_details) }
           : {};
-        if (typeof decodedPayload.discount === 'number') addressDetails.discount = decodedPayload.discount;
-        if (typeof decodedPayload.deliveryFee === 'number') addressDetails.deliveryFee = decodedPayload.deliveryFee;
-        if (typeof decodedPayload.platformFee === 'number') addressDetails.platformFee = decodedPayload.platformFee;
+        if (decodedPayload.subtotal !== undefined) addressDetails.subtotal = decodedPayload.subtotal;
+        if (decodedPayload.discount !== undefined) addressDetails.discount = decodedPayload.discount;
+        if (decodedPayload.discountType) addressDetails.discountType = decodedPayload.discountType;
+        if (decodedPayload.appliedPromo) addressDetails.appliedPromo = decodedPayload.appliedPromo;
+        if (decodedPayload.appliedDeal) addressDetails.appliedDeal = decodedPayload.appliedDeal;
+        if (decodedPayload.deliveryFee !== undefined) addressDetails.deliveryFee = decodedPayload.deliveryFee;
+        if (decodedPayload.platformFee !== undefined) addressDetails.platformFee = decodedPayload.platformFee;
+        addressDetails.numericTotal = Math.round(finalAmount);
 
         const insertPayload = {
           id: cleanId,
@@ -236,9 +243,25 @@ export async function onRequest(context) {
         const { error: insertErr } = await sb.from('orders').insert([insertPayload]);
         if (insertErr) {
           console.warn('[Cashfree Create] Pending order insert error:', insertErr.message);
+          let recovered = false;
+          if (insertErr.code === '23505' || String(insertErr.message || '').includes('duplicate key')) {
+            const { error: updateErr } = await sb.from('orders').update({
+              cf_order_id: result.cfOrderId,
+              cf_payment_status: 'PENDING',
+              payment_method: 'Online',
+              payment_status: 'Pending Payment',
+              address_details: Object.keys(addressDetails).length > 0 ? addressDetails : null,
+              tracking_token: trackingToken
+            }).eq('id', cleanId);
+            if (!updateErr) recovered = true;
+          }
+          if (!recovered) {
+            return jsonResponse({ error: 'Internal Server Error', message: 'Failed to initialize order record before payment' }, 500, Object.fromEntries(corsHeaders.entries()));
+          }
         }
       } catch (persistErr) {
         console.warn('[Cashfree Create] Pending order persist error:', persistErr.message);
+        return jsonResponse({ error: 'Internal Server Error', message: 'Failed to initialize order record before payment' }, 500, Object.fromEntries(corsHeaders.entries()));
       }
     }
 

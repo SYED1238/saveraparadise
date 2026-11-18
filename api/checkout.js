@@ -160,7 +160,7 @@ export default async function handler(req, res) {
   if (origin && isOriginAllowed(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, cf-turnstile-response');
   }
 
   if (req.method === 'OPTIONS') {
@@ -286,27 +286,30 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: `Item '${item.name || 'Unknown'}' has an invalid price (must be at least ₹1)` });
     }
 
-    const rawQty = Number(item.quantity);
-    if (!Number.isInteger(rawQty) || rawQty < 1 || rawQty > 50) {
+    const rawQty = item.qty ?? item.quantity ?? 1;
+    const quantity = Number(rawQty);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 50) {
       return res.status(400).json({ error: `Invalid quantity for '${item.name || 'Item'}'. Must be an integer between 1 and 50.` });
     }
 
     // Aggregate quantity cap per dish
     const aggregateKey = itemId || String(item.name || 'dish').toLowerCase();
-    const curQty = (dishQtyMap.get(aggregateKey) || 0) + rawQty;
+    const curQty = (dishQtyMap.get(aggregateKey) || 0) + quantity;
     if (curQty > 50) {
       return res.status(400).json({ error: `Maximum quantity per item is 50 (exceeded for '${item.name || 'Item'}')` });
     }
     dishQtyMap.set(aggregateKey, curQty);
 
-    computedSubtotal += unitPrice * rawQty;
+    computedSubtotal += unitPrice * quantity;
+    const itemTotal = unitPrice * quantity;
     const safeSpice = (typeof item.spice === 'string' && item.spice.trim()) ? item.spice.trim().slice(0, 40) : undefined;
     const safeSauce = (typeof item.sauce === 'string' && item.sauce.trim()) ? item.sauce.trim().slice(0, 40) : undefined;
     verifiedItems.push({
       id: dish?.id || item.id,
       name: String(dish?.name || item.name || 'Special Dish').slice(0, 100),
-      quantity: rawQty,
+      quantity: quantity,
       price: unitPrice,
+      total: itemTotal,
       ...(safeSpice ? { spice: safeSpice } : {}),
       ...(safeSauce ? { sauce: safeSauce } : {})
     });
@@ -544,7 +547,7 @@ export default async function handler(req, res) {
   const authoritativeTotal = `₹${Math.round(calculatedTotal)}`;
 
   // Generate tamper-proof HMAC verification token
-  const checkoutToken = signPayload({
+  const checkoutPayload = {
     subtotal: computedSubtotal,
     deliveryFee,
     platformFee,
@@ -556,8 +559,11 @@ export default async function handler(req, res) {
     numericTotal: calculatedTotal,
     items: verifiedItems,
     itemCount: verifiedItems.length,
+    userPhone: phoneDigits ? String(phoneDigits).slice(-10) : null,
+    verifiedAt: Date.now(),
     timestamp: Date.now()
-  });
+  };
+  const checkoutToken = signPayload(checkoutPayload);
 
   // Record order velocity for IP and Phone (skipped for local unit test runs)
   if (!isTestLocalhost) {
@@ -566,6 +572,7 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({
+    success: true,
     verified: true,
     subtotal: computedSubtotal,
     deliveryFee,

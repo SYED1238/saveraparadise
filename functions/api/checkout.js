@@ -276,8 +276,8 @@ export async function onRequest(context) {
       }
 
       const rawQty = item.qty ?? item.quantity ?? 1;
-      const quantity = parseInt(rawQty, 10);
-      if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(Number(rawQty))) {
+      const quantity = Number(rawQty);
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 50) {
         return jsonResponse({ error: `Invalid quantity for item "${item.name || 'dish'}"` }, 400, Object.fromEntries(corsHeaders.entries()));
       }
 
@@ -555,8 +555,10 @@ export async function onRequest(context) {
       total,
       numericTotal: total,
       items: verifiedItems,
+      itemCount: verifiedItems.length,
       userPhone: userPhone ? String(userPhone).slice(-10) : null,
-      verifiedAt: Date.now()
+      verifiedAt: Date.now(),
+      timestamp: Date.now()
     };
 
     const checkoutToken = signPayload(checkoutPayload, env);

@@ -65,7 +65,7 @@ function computeOrdersVersion(orders) {
   return `${orders.length}_${(hash >>> 0).toString(16)}`;
 }
 
-export function invalidateOrderActionMemoryCache() {
+export function invalidateOrderActionMemoryCache(options = {}) {
   kitchenPollCachedAt = 0;
   kitchenPollCache = null;
   kitchenPollStoreSettingsCachedAt = 0;
@@ -74,8 +74,15 @@ export function invalidateOrderActionMemoryCache() {
   syncOrdersCache = null;
   syncOrdersCachedLimit = 0;
   syncOrdersVersion = '0';
+  if (options?.markActiveOrder !== false) {
+    lastActiveOrderSeenAt = Date.now();
+  }
 }
 export const invalidateKitchenPollCache = invalidateOrderActionMemoryCache;
+
+export async function purgeKitchenPollEdgeCache() {
+  invalidateOrderActionMemoryCache();
+}
 
 function filterOrdersForRider(orders, riderPin) {
   const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending', 'on_the_way'];

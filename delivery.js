@@ -2459,9 +2459,18 @@ const initDeliveryApp = () => {
   async function verifyDoorstepPaymentStatus(cfOrderId, orderId, announce = false) {
     if (!cfOrderId) return;
     try {
+      let riderToken = (typeof ensureAdminToken === 'function')
+        ? await ensureAdminToken('rider').catch(() => null)
+        : null;
+      if (!riderToken && typeof sessionStorage !== 'undefined') {
+        riderToken = sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || (typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_rider_token') : null);
+      }
+      const headers = { 'Content-Type': 'application/json' };
+      if (riderToken) headers['Authorization'] = `Bearer ${riderToken}`;
+
       const resp = await fetch('/api/cashfree-create-order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           action: 'verify_payment',
           cfOrderId: cfOrderId,
@@ -2473,6 +2482,16 @@ const initDeliveryApp = () => {
         stopDoorstepPaymentPolling();
         if (currentDoorstepCashfreeSession) {
           currentDoorstepCashfreeSession.isPaid = true;
+        }
+        if (activeConfirmOrder) {
+          activeConfirmOrder.paymentStatus = 'Paid';
+          activeConfirmOrder.payment_status = 'Paid';
+          activeConfirmOrder.cf_payment_status = 'SUCCESS';
+          activeConfirmOrder.doorstep_upi = true;
+          activeConfirmOrder.is_paid_online = true;
+          if (data.order) {
+            Object.assign(activeConfirmOrder, data.order);
+          }
         }
         if (checkUpiVerified) {
           checkUpiVerified.checked = true;
@@ -4726,26 +4745,37 @@ const initDeliveryApp = () => {
       const orderIdParam = returnParams.get('order_id') || '';
       window.history.replaceState({}, document.title, window.location.pathname);
       showToast('⏳ Verifying doorstep Cashfree payment...', 'info');
-      fetch('/api/cashfree-create-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'verify_payment',
-          cfOrderId: cfOrderIdParam,
-          orderId: orderIdParam ? `#${orderIdParam.replace(/^#+/, '')}` : ''
+      (async () => {
+        let riderToken = (typeof ensureAdminToken === 'function')
+          ? await ensureAdminToken('rider').catch(() => null)
+          : null;
+        if (!riderToken && typeof sessionStorage !== 'undefined') {
+          riderToken = sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || (typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_rider_token') : null);
+        }
+        const headers = { 'Content-Type': 'application/json' };
+        if (riderToken) headers['Authorization'] = `Bearer ${riderToken}`;
+
+        fetch('/api/cashfree-create-order', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            action: 'verify_payment',
+            cfOrderId: cfOrderIdParam,
+            orderId: orderIdParam ? `#${orderIdParam.replace(/^#+/, '')}` : ''
+          })
         })
-      })
-        .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
-        .then(async ({ ok, data }) => {
-          if (ok && data?.success && data?.paid) {
-            showToast('🎉 Doorstep UPI payment confirmed by Cashfree!', 'success');
-            await dataService.syncOrdersFromSupabase(true);
-            renderPortal();
-          } else {
-            showToast(`⚠️ Doorstep payment not completed (${data?.paymentStatus || 'PENDING'}).`, 'warning');
-          }
-        })
-        .catch(() => {});
+          .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+          .then(async ({ ok, data }) => {
+            if (ok && data?.success && data?.paid) {
+              showToast('🎉 Doorstep UPI payment confirmed by Cashfree!', 'success');
+              await dataService.syncOrdersFromSupabase(true);
+              renderPortal();
+            } else {
+              showToast(`⚠️ Doorstep payment not completed (${data?.paymentStatus || 'PENDING'}).`, 'warning');
+            }
+          })
+          .catch(() => {});
+      })();
     }
   } catch {}
 };

@@ -8,6 +8,7 @@
  * 4. Production protection: Strictly rejects unauthenticated or mismatched callbacks.
  */
 import { verifyCashfreeWebhookSignature, recordVerifiedCashfreePayment, recordVerifiedCashfreeRefund, recordVerifiedCashfreePayoutWebhook } from './_cashfree.js';
+import { purgeKitchenPollEdgeCache } from './order-action.js';
 import { hydrateEnv, jsonResponse } from './_adapter.js';
 
 export async function onRequest(context) {
@@ -121,6 +122,10 @@ export async function onRequest(context) {
             message: `Payment amount (${recorded.paymentAmount}) does not match order total (${recorded.orderTotal})`
           }, 400);
         }
+
+        try {
+          await purgeKitchenPollEdgeCache(request, context);
+        } catch {}
       } catch (err) {
         console.warn('[Cashfree Webhook] Supabase sync fallback:', err.message);
       }
@@ -160,6 +165,9 @@ export async function onRequest(context) {
           cleanOrderId,
           env
         });
+        try {
+          await purgeKitchenPollEdgeCache(request, context);
+        } catch {}
       } catch (err) {
         console.warn('[Cashfree Webhook] Refund sync error:', err.message);
       }

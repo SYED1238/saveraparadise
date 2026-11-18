@@ -67,22 +67,27 @@ export async function onRequest(context) {
         const { createClient } = await import('@supabase/supabase-js');
         const sb = createClient(supabaseUrl, serviceKey);
 
-        const { data: existingOrder } = await sb
+        const { data: existingOrder, error: orderLookupErr } = await sb
           .from('orders')
-          .select('id, total, numeric_total, customer_name, payment_status, cf_order_id, doorstep_upi')
+          .select('id, total, customer_name, payment_status, cf_order_id, doorstep_upi, address_details')
           .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
           .maybeSingle();
+
+        if (orderLookupErr) {
+          console.warn('[Cashfree QR] Supabase order lookup error:', orderLookupErr.message);
+        }
 
         if (existingOrder) {
           targetOrderId = existingOrder.id;
           if (existingOrder.payment_status === 'Paid') {
             return jsonResponse({ error: 'Bad Request', message: 'Order is already marked as paid' }, 400, Object.fromEntries(corsHeaders.entries()));
           }
-          const orderTotal = Math.round(
-            typeof existingOrder.numeric_total === 'number'
-              ? existingOrder.numeric_total
-              : (parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0)
-          );
+          const rawNumericTotal = typeof existingOrder.numeric_total === 'number'
+            ? existingOrder.numeric_total
+            : (typeof existingOrder.address_details?.numericTotal === 'number'
+                ? existingOrder.address_details.numericTotal
+                : (parseFloat(String(existingOrder.total || 0).replace(/[^0-9.]/g, '')) || 0));
+          const orderTotal = Math.round(rawNumericTotal);
           if (orderTotal > 0) {
             verifiedAmount = orderTotal;
           }
