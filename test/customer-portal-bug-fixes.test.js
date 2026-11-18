@@ -186,4 +186,23 @@ test('CUSTOMER PORTAL 11 BUG FIXES REGRESSION SUITE', async (t) => {
     assert.match(styleCss, /\.profile-help-action-card\.profile-help-wa:hover\s*\{[\s\S]*?border-color:\s*#22C55E;/, 'style.css must have WhatsApp hover border');
     assert.match(styleCss, /\.profile-help-action-card\.profile-help-call:hover\s*\{[\s\S]*?border-color:\s*#FF5A26;/, 'style.css must have Call hover border');
   });
+
+  await t.test('Saved Addresses UI: Card never shrinks, Edit and Delete buttons are visible, and address line is clean and short', () => {
+    const freshMainJs = fs.readFileSync('main.js', 'utf8');
+    const freshStyleCss = fs.readFileSync('style.css', 'utf8');
+
+    // CSS guarantees card never shrinks and buttons never clip
+    assert.match(freshStyleCss, /\.profile-addr-item\s*\{[\s\S]*?flex-shrink:\s*0;/, 'profile-addr-item must have flex-shrink: 0');
+    assert.match(freshStyleCss, /\.profile-addr-item\s*\{[\s\S]*?overflow:\s*visible;/, 'profile-addr-item must have overflow: visible to prevent clipping buttons');
+    assert.match(freshStyleCss, /\.profile-addr-street\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/, 'profile-addr-street must clamp to 2 lines');
+
+    // Buttons remain properly styled and wired
+    assert.match(freshStyleCss, /\.btn-profile-edit-addr\s*\{/, 'style.css must style edit button');
+    assert.match(freshStyleCss, /\.btn-profile-del-addr\s*\{/, 'style.css must style delete button');
+
+    // main.js formats displayAddress and keeps Edit & Delete buttons
+    assert.match(freshMainJs, /formatDisplayAddress/, 'renderProfileAddresses must use formatDisplayAddress');
+    assert.match(freshMainJs, /btn-profile-edit-addr/, 'renderProfileAddresses must render edit button');
+    assert.match(freshMainJs, /btn-profile-del-addr/, 'renderProfileAddresses must render delete button');
+  });
 });

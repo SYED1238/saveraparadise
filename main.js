@@ -9160,6 +9160,50 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       const safePincode = addr.pincode ? ' - ' + escapeHtml(addr.pincode) : '';
       const dist = Math.round((parseFloat(addr.distanceKm) || 0) * 10) / 10;
 
+      // Clean, concise address formatting (strips repetitive boilerplate like "Doorstep Area", "Ramanagara Taluk", pincodes, etc.)
+      const fullAddrText = String(addr.details || addr.fullText || `${addr.flatNo || addr.street || ''}, ${addr.area || ''}${safeCity}${safePincode}`).trim();
+      const formatDisplayAddress = (a, full) => {
+        const cleanFlat = (a.flatNo || a.street || '').trim();
+        const cleanArea = (a.area || '').trim();
+        const isGenericArea = !cleanArea || cleanArea.toLowerCase() === 'doorstep area';
+
+        if (cleanFlat && cleanArea && !isGenericArea) {
+          if (cleanFlat.toLowerCase().includes(cleanArea.toLowerCase())) {
+            return cleanFlat;
+          }
+          return `${cleanFlat}, ${cleanArea}`;
+        }
+        if (cleanFlat && isGenericArea) {
+          return cleanFlat;
+        }
+        if (cleanArea && !isGenericArea) {
+          return cleanArea;
+        }
+        const rawSegments = (full || '').split(',').map(s => s.trim()).filter(Boolean);
+        const seen = new Set();
+        const filtered = [];
+        for (const seg of rawSegments) {
+          const lower = seg.toLowerCase();
+          if (
+            lower === 'doorstep area' ||
+            lower === 'india' ||
+            lower === 'karnataka' ||
+            lower === 'bengaluru south' ||
+            lower === 'bangalore rural' ||
+            lower.includes('taluk') ||
+            /^\d{5,6}$/.test(seg)
+          ) {
+            continue;
+          }
+          if (!seen.has(lower)) {
+            seen.add(lower);
+            filtered.push(seg);
+          }
+        }
+        return filtered.slice(0, 2).join(', ') || full || 'Saved Address';
+      };
+      const displayAddress = formatDisplayAddress(addr, fullAddrText);
+
       return `
         <div class="profile-addr-item ${addr.isDefault ? 'is-default' : ''}" data-id="${safeId}">
           <div class="profile-addr-top">
@@ -9172,8 +9216,8 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
           <div class="profile-addr-contact">
             <strong>${safeName}</strong> • <span>${safePhone}</span>
           </div>
-          <div class="profile-addr-street">
-            ${escapeHtml(addr.details || addr.fullText || `${addr.flatNo || ''}, ${addr.area || ''}${safeCity}${safePincode}`)}
+          <div class="profile-addr-street" title="${escapeHtml(fullAddrText)}">
+            ${escapeHtml(displayAddress)}
           </div>
           <div class="profile-addr-actions">
             ${!addr.isDefault ? `<button type="button" class="btn-profile-set-default" data-id="${safeId}"><i class="fa-regular fa-star"></i> Set as Default</button>` : ''}

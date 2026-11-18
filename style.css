@@ -10508,21 +10508,24 @@ body.gender-prompt-open {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 380px;
+  max-height: 480px;
   overflow-y: auto;
   overscroll-behavior: contain;
   overscroll-behavior-y: contain;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  padding: 4px 2px 6px 2px;
+  scrollbar-width: thin;
+  padding: 4px 2px 8px 2px;
 }
 
 .profile-addresses-list::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+  display: block;
+  width: 4px;
+}
+
+.profile-addresses-list::-webkit-scrollbar-thumb {
+  background: #E5E7EB;
+  border-radius: 4px;
 }
 
 .profile-addr-item {
@@ -10534,8 +10537,11 @@ body.gender-prompt-open {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  overflow: hidden;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: -webkit-fit-content;
+  min-height: fit-content;
+  overflow: visible;
 }
 
 .profile-addr-item:hover {
@@ -10615,7 +10621,7 @@ body.gender-prompt-open {
   font-size: 0.88rem;
   color: #1E1B18;
   font-weight: 700;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .profile-addr-contact span {
@@ -10625,16 +10631,21 @@ body.gender-prompt-open {
 
 .profile-addr-street {
   font-size: 0.82rem;
-  color: #6B7280;
-  line-height: 1.45;
+  color: #4B5563;
+  line-height: 1.4;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .profile-addr-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 4px;
   padding-top: 8px;
   border-top: 1px solid #F3F4F6;
   flex-wrap: wrap;
@@ -10648,12 +10659,14 @@ body.gender-prompt-open {
   border: 1.5px solid #E5E7EB;
   color: #4B5563;
   font-family: inherit;
-  font-size: 0.74rem;
-  font-weight: 700;
+  font-size: 0.76rem;
+  font-weight: 750;
   padding: 5px 12px;
+  min-height: 32px;
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: all 0.2s ease;
+  touch-action: manipulation;
 }
 
 .btn-profile-set-default:hover {
@@ -10671,16 +10684,19 @@ body.gender-prompt-open {
   border: 1.5px solid #E5E7EB;
   color: #374151;
   font-family: inherit;
-  font-size: 0.74rem;
-  font-weight: 700;
+  font-size: 0.76rem;
+  font-weight: 750;
   padding: 5px 12px;
+  min-height: 32px;
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: all 0.2s ease;
+  touch-action: manipulation;
 }
 
 .btn-profile-edit-addr:hover {
   background: #E5E7EB;
+  border-color: #D1D5DB;
   color: #111827;
   transform: translateY(-1px);
 }
@@ -10693,12 +10709,14 @@ body.gender-prompt-open {
   border: 1.5px solid #FECACA;
   color: #DC2626;
   font-family: inherit;
-  font-size: 0.74rem;
-  font-weight: 700;
+  font-size: 0.76rem;
+  font-weight: 750;
   padding: 5px 12px;
+  min-height: 32px;
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: all 0.2s ease;
+  touch-action: manipulation;
 }
 
 .btn-profile-del-addr:hover {
@@ -10706,6 +10724,62 @@ body.gender-prompt-open {
   border-color: #F87171;
   color: #B91C1C;
   transform: translateY(-1px);
+}
+
+/* Dark theme support for profile saved addresses */
+[data-theme="dark"] .profile-addr-item {
+  background: #111827;
+  border-color: #374151;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="dark"] .profile-addr-item.is-default {
+  background: linear-gradient(180deg, #1F2937 0%, #111827 100%);
+  border-color: rgba(255, 90, 38, 0.5);
+}
+
+[data-theme="dark"] .profile-addr-contact {
+  color: #F9FAFB;
+}
+
+[data-theme="dark"] .profile-addr-contact span {
+  color: #9CA3AF;
+}
+
+[data-theme="dark"] .profile-addr-street {
+  color: #D1D5DB;
+}
+
+[data-theme="dark"] .profile-addr-actions {
+  border-top-color: #374151;
+}
+
+[data-theme="dark"] .btn-profile-edit-addr {
+  background: #1F2937;
+  border-color: #4B5563;
+  color: #E5E7EB;
+}
+
+[data-theme="dark"] .btn-profile-edit-addr:hover {
+  background: #374151;
+  color: #FFFFFF;
+}
+
+[data-theme="dark"] .btn-profile-del-addr {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #F87171;
+}
+
+[data-theme="dark"] .btn-profile-del-addr:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #EF4444;
+}
+
+[data-theme="dark"] .btn-profile-set-default {
+  background: #1F2937;
+  border-color: #4B5563;
+  color: #D1D5DB;
 }
 
 @media (max-width: 600px) {
