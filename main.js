@@ -7262,7 +7262,8 @@ function initStorefrontApp() {
       updateStoreStatusUI();
       updateStoreOfferUI();
       renderCartOrderLimitUI();
-    updateLiveOrderTrackPulse();
+      updateLiveOrderTrackPulse();
+      if (typeof updateProfileHelpSupportUI === 'function') updateProfileHelpSupportUI();
       syncStorefrontCardsWithDataService();
       renderCart();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open') && activeOrderId) {
@@ -7335,7 +7336,8 @@ function initStorefrontApp() {
       updateStoreStatusUI();
       updateStoreOfferUI();
       renderCartOrderLimitUI();
-    updateLiveOrderTrackPulse();
+      updateLiveOrderTrackPulse();
+      if (typeof updateProfileHelpSupportUI === 'function') updateProfileHelpSupportUI();
       syncStorefrontCardsWithDataService();
       renderCart();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open') && activeOrderId) {
@@ -7379,6 +7381,7 @@ function initStorefrontApp() {
     try {
       syncStorefrontCategories();
       syncStorefrontCardsWithDataService();
+      if (typeof updateProfileHelpSupportUI === 'function') updateProfileHelpSupportUI();
     } catch {}
   });
 
@@ -9466,6 +9469,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
       updateProfileStats();
+      if (typeof updateProfileHelpSupportUI === 'function') updateProfileHelpSupportUI();
     }
   }
 
@@ -9679,6 +9683,66 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     });
   }
 
+  // Dynamically sync Help & Support phone number and WhatsApp links from Admin settings
+  function updateProfileHelpSupportUI() {
+    try {
+      const settings = (typeof dataService !== 'undefined' && dataService.getSettings)
+        ? dataService.getSettings()
+        : {};
+      const rawPhone = String(settings?.restaurantPhone || settings?.helpline || '+91 90366 24237').trim();
+      const cleanDigits = rawPhone.replace(/\D/g, '');
+      const waDigits = cleanDigits.length === 10
+        ? `91${cleanDigits}`
+        : (cleanDigits.startsWith('91') && cleanDigits.length === 12 ? cleanDigits : `91${cleanDigits.slice(-10)}`);
+      const dialerPhone = cleanDigits.length === 10
+        ? `+91${cleanDigits}`
+        : (rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`);
+      const displayPhone = (cleanDigits.length === 10 && !rawPhone.includes(' '))
+        ? `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`
+        : rawPhone;
+      const waUrl = `https://wa.me/${waDigits}?text=${encodeURIComponent('Hello Savera Paradise, I need help.')}`;
+      const callUrl = `tel:${dialerPhone}`;
+
+      // Update Authenticated Profile Help & Support
+      const profileWaBtn = document.getElementById('profile-help-wa-btn');
+      const profileWaNum = document.getElementById('profile-help-wa-number');
+      const profileCallBtn = document.getElementById('profile-help-call-btn');
+      const profileCallNum = document.getElementById('profile-help-call-number');
+
+      if (profileWaBtn) {
+        profileWaBtn.href = waUrl;
+        profileWaBtn.setAttribute('aria-label', `Tap to WhatsApp ${displayPhone}`);
+      }
+      if (profileWaNum) profileWaNum.textContent = displayPhone;
+
+      if (profileCallBtn) {
+        profileCallBtn.href = callUrl;
+        profileCallBtn.setAttribute('aria-label', `Tap to Call ${displayPhone}`);
+      }
+      if (profileCallNum) profileCallNum.textContent = displayPhone;
+
+      // Update Guest Profile Help & Support
+      const guestWaBtn = document.getElementById('guest-help-wa-btn');
+      const guestWaNum = document.getElementById('guest-help-wa-number');
+      const guestCallBtn = document.getElementById('guest-help-call-btn');
+      const guestCallNum = document.getElementById('guest-help-call-number');
+
+      if (guestWaBtn) {
+        guestWaBtn.href = waUrl;
+        guestWaBtn.setAttribute('aria-label', `Tap to WhatsApp ${displayPhone}`);
+      }
+      if (guestWaNum) guestWaNum.textContent = displayPhone;
+
+      if (guestCallBtn) {
+        guestCallBtn.href = callUrl;
+        guestCallBtn.setAttribute('aria-label', `Tap to Call ${displayPhone}`);
+      }
+      if (guestCallNum) guestCallNum.textContent = displayPhone;
+    } catch (err) {
+      console.warn('[ProfileHelpSupport] Failed to sync help phone from settings:', err);
+    }
+  }
+
   // Collapsible Help & Support Dropdown (Authenticated Profile)
   const profileItemSupportBtn = document.getElementById('profile-item-support-btn');
   const profileSupportCard = document.getElementById('profile-support-card');
@@ -9687,6 +9751,9 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     profileItemSupportBtn.addEventListener('click', (e) => {
       e.preventDefault();
       const isHidden = profileSupportCard.style.display === 'none' || getComputedStyle(profileSupportCard).display === 'none';
+      if (isHidden) {
+        updateProfileHelpSupportUI();
+      }
       profileSupportCard.style.display = isHidden ? 'block' : 'none';
       profileItemSupportBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
       if (profileSupportChevron) {
@@ -9754,6 +9821,9 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     guestItemSupportBtn.addEventListener('click', (e) => {
       e.preventDefault();
       const isHidden = guestSupportCard.style.display === 'none' || getComputedStyle(guestSupportCard).display === 'none';
+      if (isHidden) {
+        updateProfileHelpSupportUI();
+      }
       guestSupportCard.style.display = isHidden ? 'block' : 'none';
       guestItemSupportBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
       if (guestSupportChevron) {
@@ -9768,6 +9838,9 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
 
   const guestItemAboutBtn = document.getElementById('guest-item-about-btn');
   if (guestItemAboutBtn) guestItemAboutBtn.addEventListener('click', handleOpenAboutUs);
+
+  // Initial sync of Help & Support action cards with restaurant helpline settings
+  updateProfileHelpSupportUI();
 
   // ==========================================================================
   // 3D Profile Avatar & Gender Selector System (Cloudflare R2 smmtaj/profile)

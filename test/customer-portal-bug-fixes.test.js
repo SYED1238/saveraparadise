@@ -205,4 +205,34 @@ test('CUSTOMER PORTAL 11 BUG FIXES REGRESSION SUITE', async (t) => {
     assert.match(freshMainJs, /btn-profile-edit-addr/, 'renderProfileAddresses must render edit button');
     assert.match(freshMainJs, /btn-profile-del-addr/, 'renderProfileAddresses must render delete button');
   });
+
+  await t.test('Dynamic Helpline Linkage: Customer Help & Support links dynamically to Admin panel restaurant helpline number', () => {
+    const freshIndexHtml = fs.readFileSync('index.html', 'utf8');
+    const freshMainJs = fs.readFileSync('main.js', 'utf8');
+    const adminJs = fs.readFileSync('admin.js', 'utf8');
+
+    // index.html target spans for dynamic phone number replacement
+    assert.match(freshIndexHtml, /id="profile-help-wa-number"/, 'index.html must have profile-help-wa-number span');
+    assert.match(freshIndexHtml, /id="profile-help-call-number"/, 'index.html must have profile-help-call-number span');
+    assert.match(freshIndexHtml, /id="guest-help-wa-number"/, 'index.html must have guest-help-wa-number span');
+    assert.match(freshIndexHtml, /id="guest-help-call-number"/, 'index.html must have guest-help-call-number span');
+
+    // main.js updateProfileHelpSupportUI function logic
+    assert.match(freshMainJs, /function updateProfileHelpSupportUI\(\)/, 'main.js must define updateProfileHelpSupportUI');
+    assert.match(freshMainJs, /settings\?\.restaurantPhone\s*\|\|\s*settings\?\.helpline/, 'updateProfileHelpSupportUI must read restaurantPhone or helpline from settings');
+    assert.match(freshMainJs, /profileWaBtn\.href\s*=\s*waUrl/, 'updateProfileHelpSupportUI must update profile WhatsApp href');
+    assert.match(freshMainJs, /profileCallBtn\.href\s*=\s*callUrl/, 'updateProfileHelpSupportUI must update profile Call href');
+    assert.match(freshMainJs, /guestWaBtn\.href\s*=\s*waUrl/, 'updateProfileHelpSupportUI must update guest WhatsApp href');
+    assert.match(freshMainJs, /guestCallBtn\.href\s*=\s*callUrl/, 'updateProfileHelpSupportUI must update guest Call href');
+
+    // Dynamic triggers in main.js
+    assert.match(freshMainJs, /window\.addEventListener\('storage'[\s\S]*?updateProfileHelpSupportUI/, 'storage event must trigger updateProfileHelpSupportUI');
+    assert.match(freshMainJs, /window\.addEventListener\('quickbite_data_changed'[\s\S]*?updateProfileHelpSupportUI/, 'quickbite_data_changed event must trigger updateProfileHelpSupportUI');
+    assert.match(freshMainJs, /window\.addEventListener\('focus'[\s\S]*?updateProfileHelpSupportUI/, 'window focus event must trigger updateProfileHelpSupportUI');
+    assert.match(freshMainJs, /openAuthModalInternal[\s\S]*?updateProfileHelpSupportUI/, 'openAuthModalInternal must trigger updateProfileHelpSupportUI');
+
+    // Admin panel saves restaurantPhone and helpline
+    assert.match(adminJs, /restaurantPhone:\s*restPhone/, 'admin.js must save restaurantPhone in settings');
+    assert.match(adminJs, /helpline:\s*restPhone/, 'admin.js must save helpline in settings');
+  });
 });
