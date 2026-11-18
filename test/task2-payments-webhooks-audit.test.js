@@ -18,6 +18,8 @@ test('TASK 2 AUDIT: Cashfree Payments, Webhooks, Payouts & CORS Hardening Suite'
     assert.match(funcQrJs, /return jsonResponse\(\{\s*error:\s*['"]Database Error['"]/);
     assert.match(apiQrJs, /return res\.status\(404\)\.json\(\{\s*error:\s*['"]Not Found['"]/);
     assert.match(funcQrJs, /return jsonResponse\(\{\s*error:\s*['"]Not Found['"]/);
+    assert.match(apiQrJs, /const isTestEnv\s*=/);
+    assert.match(funcQrJs, /const isTestEnv\s*=/);
   });
 
   await t.test('2. [HIGH] api/cashfree-webhook.js exports bodyParser: false and reads exact raw body', () => {

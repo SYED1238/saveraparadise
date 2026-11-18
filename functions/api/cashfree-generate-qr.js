@@ -61,6 +61,7 @@ export async function onRequest(context) {
     let targetCustomerName = customerName || 'Doorstep Customer';
     let targetOrderId = cleanId;
 
+    const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
     const { supabaseUrl, serviceKey } = getSupabaseServiceCreds(env);
     if (supabaseUrl && serviceKey) {
       try {

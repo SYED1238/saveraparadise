@@ -116,6 +116,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public void reloadPortalWebView() {
+        if (webView != null) {
+            webView.reload();
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -162,7 +168,12 @@ public class MainActivity extends AppCompatActivity {
             webView.restoreState(savedInstanceState);
         }
 
-        swipeRefresh.setOnRefreshListener(() -> webView.reload());
+        swipeRefresh.setOnRefreshListener(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript("try { localStorage.setItem('quickbite_pending_gps_resync', Date.now().toString()); } catch(e){}", null);
+                webView.reload();
+            }
+        });
     }
 
     @SuppressLint("SetJavaScriptEnabled")

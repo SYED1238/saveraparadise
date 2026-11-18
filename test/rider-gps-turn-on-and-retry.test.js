@@ -56,4 +56,13 @@ test('RIDER LIVE GPS TURN-ON PROMPT, ERROR CLASSIFICATION & AUTO-RETRY SUITE', a
     assert.match(webAppInterfaceJava, /public boolean isLocationEnabled\(\)/, 'WebAppInterface must expose isLocationEnabled()');
     assert.match(webAppInterfaceJava, /public boolean hasLocationPermission\(\)/, 'WebAppInterface must expose hasLocationPermission()');
   });
+
+  await t.test('6. Rider Re-Sync refreshes the APK first and then syncs with live GPS', () => {
+    assert.match(deliveryJs, /function triggerRiderApkRefreshAndGpsSync\(\)/, 'delivery.js must define triggerRiderApkRefreshAndGpsSync');
+    assert.match(deliveryJs, /function checkAndHandlePendingGpsResync\(\)/, 'delivery.js must define checkAndHandlePendingGpsResync');
+    assert.match(deliveryJs, /localStorage\.setItem\('quickbite_pending_gps_resync'/, 'Must persist pending GPS re-sync flag across APK refresh');
+    assert.match(deliveryJs, /btnSyncLiveGps\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*triggerRiderApkRefreshAndGpsSync\(\);/, 'Clicking sync button must trigger APK refresh before GPS sync');
+    assert.match(mainActivityJava, /public void reloadPortalWebView\(\)/, 'MainActivity must expose reloadPortalWebView');
+    assert.match(webAppInterfaceJava, /public void reloadApp\(\)/, 'WebAppInterface must expose reloadApp JavascriptInterface');
+  });
 });

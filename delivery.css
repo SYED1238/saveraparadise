@@ -6167,6 +6167,16 @@ input:checked + .slider:before {
   cursor: wait;
 }
 
+.btn-sync-live-gps.refreshing {
+  opacity: 0.85;
+  pointer-events: none;
+  cursor: wait;
+}
+
+.btn-sync-live-gps.refreshing i {
+  animation: fa-spin 1s infinite linear;
+}
+
 .rider-order-row.row-kitchen.is-ready-pickup {
   border-color: #86EFAC;
   border-left: 5px solid #10B981;

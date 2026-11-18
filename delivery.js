@@ -376,6 +376,7 @@ const initDeliveryApp = () => {
         requestSystemNotificationPermission().catch(() => {});
       }
       showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
+      checkAndHandlePendingGpsResync();
       Promise.allSettled([
         dataService.syncOrdersFromSupabase(true),
         dataService.syncSettingsFromSupabase(true),
@@ -437,6 +438,7 @@ const initDeliveryApp = () => {
       }
       initRiderLiveGeolocation(true);
       renderPortal();
+      checkAndHandlePendingGpsResync();
       Promise.allSettled([
         dataService.syncOrdersFromSupabase(true),
         dataService.syncSettingsFromSupabase(true),
@@ -1022,9 +1024,9 @@ const initDeliveryApp = () => {
     riderGpsPill.onclick = () => {
       if (riderLiveLocation.hasGps && isRiderGpsSyncedAndFresh()) {
         showToast(`📍 Location: ${riderLiveLocation.lat.toFixed(4)}, ${riderLiveLocation.lng.toFixed(4)} (Accuracy ±${riderLiveLocation.accuracy || 10}m)`, 'info');
-        initRiderLiveGeolocation(true);
+        triggerRiderApkRefreshAndGpsSync();
       } else {
-        requestLiveGpsSyncForPickup();
+        triggerRiderApkRefreshAndGpsSync();
       }
     };
   }
@@ -1281,6 +1283,86 @@ const initDeliveryApp = () => {
     if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
   }
 
+  // ========================================================
+  // RIDER APK RE-SYNC & LIVE GPS SYNCHRONIZATION CONTROLLER
+  // Guarantees the APK is refreshed first before syncing GPS
+  // ========================================================
+  function triggerRiderApkRefreshAndGpsSync() {
+    try {
+      const now = Date.now().toString();
+      if (typeof localStorage !== 'undefined') localStorage.setItem('quickbite_pending_gps_resync', now);
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_pending_gps_resync', now);
+    } catch {}
+
+    const btnSyncLiveGps = document.getElementById('btn-sync-live-gps');
+    if (btnSyncLiveGps) {
+      btnSyncLiveGps.classList.add('refreshing');
+      const icon = btnSyncLiveGps.querySelector('i');
+      if (icon) icon.className = 'fa-solid fa-arrows-rotate fa-spin';
+      const label = document.getElementById('btn-sync-live-gps-label');
+      if (label) label.textContent = 'Refreshing APK...';
+    }
+
+    if (riderGpsPill && gpsStatusText) {
+      riderGpsPill.className = 'gps-status-pill inactive';
+      gpsStatusText.textContent = '🔄 Refreshing APK...';
+    }
+
+    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.triggerVibration === 'function') {
+      try { window.AndroidNative.triggerVibration(); } catch {}
+    } else if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate([30, 40, 30]); } catch {}
+    }
+
+    showToast('🔄 Refreshing APK & syncing GPS...', 'info');
+
+    // Trigger full APK / WebView refresh first
+    setTimeout(() => {
+      if (isNativeAndroidBridgeAvailable() && typeof window.AndroidNative.reloadApp === 'function') {
+        try {
+          window.AndroidNative.reloadApp();
+          return;
+        } catch (e) {
+          console.warn('[Rider GPS] Native reloadApp error:', e);
+        }
+      }
+      try {
+        if (typeof window !== 'undefined' && window.location && typeof window.location.reload === 'function') {
+          window.location.reload();
+          return;
+        }
+      } catch (err) {
+        console.warn('[Rider GPS] window.location.reload fallback:', err);
+      }
+      // Non-browser fallback: directly sync GPS if reload is unavailable
+      checkAndHandlePendingGpsResync();
+    }, 200);
+  }
+
+  function checkAndHandlePendingGpsResync() {
+    let hasPending = false;
+    try {
+      const rawResync = (typeof localStorage !== 'undefined' ? localStorage.getItem('quickbite_pending_gps_resync') : null) ||
+                        (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('quickbite_pending_gps_resync') : null);
+      if (rawResync) {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('quickbite_pending_gps_resync');
+        if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('quickbite_pending_gps_resync');
+        const elapsed = Date.now() - Number(rawResync);
+        if (Number.isFinite(elapsed) && elapsed < 30000) {
+          hasPending = true;
+        }
+      }
+    } catch {}
+
+    if (hasPending) {
+      showToast('📍 APK refreshed! Acquiring live GPS...', 'info');
+      updateGpsStatusBadge('inactive', '📍 Syncing GPS...');
+      setTimeout(() => {
+        requestLiveGpsSyncForPickup();
+      }, 250);
+    }
+  }
+
   function requestLiveGpsSyncForPickup(onSynced, options = {}) {
     if (!('geolocation' in navigator)) {
       showToast('⚠️ Location Required: GPS is not supported on this device.', 'error');
@@ -1333,6 +1415,11 @@ const initDeliveryApp = () => {
         initRiderLiveGeolocation(false);
       }
       renderPortal();
+      try {
+        dataService.syncOrdersFromSupabase(true).then(() => {
+          renderPortal();
+        });
+      } catch {}
       if (typeof onSynced === 'function') {
         onSynced();
       } else {
@@ -1383,7 +1470,7 @@ const initDeliveryApp = () => {
   const btnSyncLiveGps = document.getElementById('btn-sync-live-gps');
   if (btnSyncLiveGps) {
     btnSyncLiveGps.addEventListener('click', () => {
-      requestLiveGpsSyncForPickup();
+      triggerRiderApkRefreshAndGpsSync();
     });
   }
 

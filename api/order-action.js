@@ -269,6 +269,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Action parameter is required' });
   }
 
+  const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
+
   // 1. Role Gate: Enforce authentication for staff-restricted actions
   if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
     const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
@@ -334,7 +336,6 @@ export default async function handler(req, res) {
     }
   }
 
-  const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

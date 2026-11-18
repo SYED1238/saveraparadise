@@ -405,6 +405,20 @@ public class WebAppInterface {
     }
 
     @JavascriptInterface
+    public void reloadApp() {
+        try {
+            if (!isCurrentOriginTrusted()) return;
+            if (context instanceof Activity) {
+                ((Activity) context).runOnUiThread(() -> {
+                    if (context instanceof MainActivity) {
+                        ((MainActivity) context).reloadPortalWebView();
+                    }
+                });
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
     public void openExternalUrl(String url) {
         if (url == null) return;
         String trimmed = url.trim();
