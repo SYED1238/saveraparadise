@@ -339,10 +339,13 @@ const initDeliveryApp = () => {
             localStorage.setItem('quickbite_rider_token', data.token);
           }
           window.__verifiedRiderToken = data.token;
-          if (data.rider) {
-            dataService.saveOrUpdateRider({ ...data.rider, pin: cleanPin });
+          const rider = data.rider || { pin: cleanPin, name: 'Delivery Partner', id: `rider-${cleanPin}`, vehicle: '🏍️ Bike', status: 'online' };
+          window.__lastVerifiedRider = rider;
+          setStaffSessionActive('rider');
+          dataService.setActiveRiderPin(cleanPin, rider);
+          if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setStaffAuthToken === 'function') {
+            try { window.AndroidNative.setStaffAuthToken(data.token); } catch {}
           }
-          window.__lastVerifiedRider = data.rider || { pin: cleanPin, name: 'Delivery Partner' };
           return true;
         }
         return false;
@@ -4809,11 +4812,15 @@ const initDeliveryApp = () => {
       detail?.action === 'sync_riders' ||
       detail?.action === 'delete_rider'
     ) {
-      if (entity === 'riders' || detail?.action === 'delete_rider') {
+      if (detail?.action === 'delete_rider') {
         const currentRider = dataService.getActiveRider();
-        if (!currentRider) {
+        const deletedPin = String(detail?.pin || '').trim();
+        if (currentRider && deletedPin && String(currentRider.pin).trim() === deletedPin) {
           clearStaffSession('rider');
-          if (riderLockOverlay) riderLockOverlay.classList.remove('unlocked');
+          if (riderLockOverlay) {
+            riderLockOverlay.classList.remove('unlocked');
+            riderLockOverlay.style.display = 'flex';
+          }
           if (riderPasscodeLock) riderPasscodeLock.reset();
         }
       }

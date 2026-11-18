@@ -10,6 +10,7 @@ const rootDir = path.resolve(__dirname, '..');
 
 const deliveryJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf8');
 const dataServiceJs = fs.readFileSync(path.join(rootDir, 'dataService.js'), 'utf8');
+const passcodeLockServiceJs = fs.readFileSync(path.join(rootDir, 'passcodeLockService.js'), 'utf8');
 const apiOrderActionJs = fs.readFileSync(path.join(rootDir, 'api', 'order-action.js'), 'utf8');
 const cfOrderActionJs = fs.readFileSync(path.join(rootDir, 'functions', 'api', 'order-action.js'), 'utf8');
 const orderMonitorServiceJava = fs.readFileSync(
@@ -100,6 +101,41 @@ test('RIDER ALARM & 8-RIDER CONCURRENCY REGRESSION SUITE', async (t) => {
       cfOrderActionJs,
       /\.or\(`id\.eq\.\$\{cleanId\},id\.eq\.#\$\{cleanId\}`\)\s*\.catch\(/,
       'functions/api/order-action.js must not call .catch() directly on PostgrestFilterBuilder'
+    );
+  });
+
+  await t.test('6. [BUG-08] Single-attempt Rider Passcode Unlock: onVerify sets staff session & active rider immediately, dataService stores activeId before saveOrUpdateRider, and subscriber guards against routine sync re-locks', () => {
+    // 1. delivery.js onVerify must immediately establish staff session and active rider
+    assert.match(
+      deliveryJs,
+      /onVerify:\s*async\s*\(pin\)\s*=>\s*\{[\s\S]*?setStaffSessionActive\('rider'\);[\s\S]*?dataService\.setActiveRiderPin\(cleanPin,\s*rider\);/,
+      'delivery.js onVerify must setStaffSessionActive and setActiveRiderPin upon valid token to prevent post-verify null session'
+    );
+
+    // 2. delivery.js change subscriber must NOT kick out the rider on routine entity === "riders" or sync_riders
+    assert.doesNotMatch(
+      deliveryJs,
+      /if\s*\(\s*entity\s*===\s*['"]riders['"]\s*\|\|\s*detail\?\.action\s*===\s*['"]delete_rider['"]\s*\)\s*\{\s*const\s+currentRider\s*=\s*dataService\.getActiveRider\(\);\s*if\s*\(!currentRider\)/,
+      'delivery.js change subscriber must not clear session on routine riders entity change or sync_riders'
+    );
+    assert.match(
+      deliveryJs,
+      /if\s*\(detail\?\.action\s*===\s*['"]delete_rider['"]\)\s*\{[\s\S]*?const\s+deletedPin\s*=\s*String\(detail\?\.pin[\s\S]*?if\s*\(currentRider\s*&&\s*deletedPin\s*&&\s*String\(currentRider\.pin\)\.trim\(\)\s*===\s*deletedPin\)/,
+      'delivery.js must only clear session when the active rider PIN specifically matches detail.pin in delete_rider'
+    );
+
+    // 3. dataService.js setActiveRiderPin must persist quickbite_active_rider_id before calling saveOrUpdateRider
+    assert.match(
+      dataServiceJs,
+      /localStorage\.setItem\(['"]quickbite_active_rider_id['"],\s*riderId\);[\s\S]*?this\.saveOrUpdateRider\(rider\);/,
+      'dataService.js setActiveRiderPin must persist quickbite_active_rider_id to localStorage before calling saveOrUpdateRider to prevent race conditions'
+    );
+
+    // 4. passcodeLockService.js reset() must not force overlayEl.style.display = "flex" if overlay is already unlocked
+    assert.match(
+      passcodeLockServiceJs,
+      /if\s*\(overlayEl\s*&&\s*!overlayEl\.classList\.contains\(['"]unlocked['"]\)\)\s*\{\s*overlayEl\.style\.display\s*=\s*['"]flex['"];\s*\}/,
+      'passcodeLockService.js reset() must guard against showing lock overlay if it is already in unlocked state'
     );
   });
 });

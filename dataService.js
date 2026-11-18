@@ -8312,6 +8312,9 @@ class QuickBiteDataService {
           return rider;
         }
       }
+      if (typeof window !== 'undefined' && window.__lastVerifiedRider && window.__lastVerifiedRider.status !== 'inactive') {
+        return window.__lastVerifiedRider;
+      }
       return null;
     } catch {
       return null;
@@ -8325,14 +8328,14 @@ class QuickBiteDataService {
       if (!rider) {
         rider = { pin: cleanPin, id: `rider-${cleanPin}`, name: 'Delivery Partner', vehicle: '🏍️ Bike', status: 'online' };
       }
-      this.saveOrUpdateRider(rider);
-      // Store rider ID instead of raw plaintext PIN to prevent credential theft
+      // Store rider ID before saveOrUpdateRider to prevent notifyChange('riders') race condition
       const riderId = rider.id || ('rider-' + cleanPin);
       if (!rider.id) rider.id = riderId;
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('quickbite_active_rider_id', riderId);
         localStorage.removeItem('quickbite_active_rider_pin');
       }
+      this.saveOrUpdateRider(rider);
       this.notifyChange('rider_session', { pin: cleanPin, rider, timestamp: Date.now() });
       return rider;
     } catch {

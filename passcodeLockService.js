@@ -83,7 +83,7 @@ export function initIosPasscodeLock(options) {
             if (subtitleEl) subtitleEl.textContent = defaultSubtitle;
             isVerifying = false;
           }, 350);
-        }, 220);
+        }, 120);
       } else {
         failedAttempts += 1;
         if (failedAttempts >= 5) {
@@ -208,7 +208,7 @@ export function initIosPasscodeLock(options) {
         subtitleEl.classList.remove('error');
       }
       isVerifying = false;
-      if (overlayEl) {
+      if (overlayEl && !overlayEl.classList.contains('unlocked')) {
         overlayEl.style.display = 'flex';
       }
     }
