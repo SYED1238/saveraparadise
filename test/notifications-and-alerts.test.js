@@ -1364,6 +1364,16 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
       /function\s+handleRiderOrderStatusSync[\s\S]*?markRiderStatusAlerted\([\s\S]*?startRiderAlarm\(/,
       'handleRiderOrderStatusSync must not prematurely call markRiderStatusAlerted before startRiderAlarm'
     );
+    assert.match(
+      deliverySrc,
+      /function\s+startRiderAlarm[\s\S]*?playNotificationSound\('kitchen_alarm'\)/,
+      'delivery.js must use kitchen_alarm classic chime as fixed permanent alarm for rider'
+    );
+    assert.match(
+      omsSrc,
+      /if\s*\(isRiderApp\s*&&\s*!audioStarted\)[\s\S]*?startProceduralSiren\(\)[\s\S]*?audioStarted\s*=\s*true;/,
+      'OrderMonitorService must use procedural POS classic chime AudioTrack for Rider App (zero device alarm bleed)'
+    );
   });
 
   await t.test('30. Customer welcome toast cooldown (48h), 24h notification expiration, single active toast cap, and startup pre-seeding', () => {

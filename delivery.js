@@ -3859,23 +3859,23 @@ const initDeliveryApp = () => {
         window.AndroidNative.startAlarm();
       } catch (e) {
         console.warn('[RiderAlarm] Native startAlarm bridge error:', e);
-        playNotificationSound('rider_new_task');
+        playNotificationSound('kitchen_alarm');
       }
     } else {
-      playNotificationSound('rider_new_task');
+      playNotificationSound('kitchen_alarm');
     }
 
-    // Loop chime repeatedly every 2.0s UNTIL rider clicks STOP button or accepts order
+    // Loop classic chime repeatedly every 1.8s UNTIL rider clicks STOP button or accepts order
     if (riderAlarmInterval) clearInterval(riderAlarmInterval);
     if (!hasAndroidNative) {
       riderAlarmInterval = setInterval(() => {
         if (isRiderAlarmRinging) {
-          playNotificationSound('rider_new_task');
+          playNotificationSound('kitchen_alarm');
         } else {
           clearInterval(riderAlarmInterval);
           riderAlarmInterval = null;
         }
-      }, 2000);
+      }, 1800);
     }
   }
 
@@ -4007,7 +4007,7 @@ const initDeliveryApp = () => {
       title: `📦 New Parcel Ready on Kitchen Counter!`,
       body: `Tap to view order distance & payout in your Pending queue and pick it up (within 3 km of restaurant).`,
       tag: `rider-ready-${cleanId}`,
-      soundType: 'rider_new_task',
+      soundType: 'kitchen_alarm',
       data: { orderId: order.id, url: '/delivery.html' },
       onClick: () => {
         stopRiderAlarm();
@@ -4089,7 +4089,7 @@ const initDeliveryApp = () => {
         title: `📦 New Parcel Ready on Kitchen Counter!`,
         body: `View the order distance & payout in your Pending queue and tap Pick Up Order to start delivery.`,
         tag: `rider-ready-${cleanId}`,
-        soundType: 'rider_new_task',
+        soundType: 'kitchen_alarm',
         data: { orderId, url: '/delivery.html' },
         onClick: () => {
           stopRiderAlarm();

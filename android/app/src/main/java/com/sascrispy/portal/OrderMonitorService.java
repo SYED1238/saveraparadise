@@ -60,7 +60,7 @@ public class OrderMonitorService extends Service {
 
     private static final String TAG = "OrderMonitorService";
     public static final String CHANNEL_ID_SERVICE = "sas_service_channel";
-    public static final String CHANNEL_ID_ALERTS = "sas_orders_channel_v4";
+    public static final String CHANNEL_ID_ALERTS = "sas_orders_channel_v5";
     public static final String ACTION_STOP_ALARM = "com.sascrispy.portal.ACTION_STOP_ALARM";
     private static final int SERVICE_NOTIFICATION_ID = 1001;
     private static final long ALARM_AUTO_STOP_MS = 3 * 60 * 1000L;
@@ -377,31 +377,25 @@ public class OrderMonitorService extends Service {
             alertChannel.setShowBadge(true);
             alertChannel.setBypassDnd(true);
 
-            if (!isRiderApp && !isOwnerApp) {
-                // Kitchen Admin App: silent channel sound prevents phone's native "Midnight" alarm from playing over custom music.
-                // Looping custom music (Funk Criminal) or classic chime is handled exclusively by MediaPlayer in startNativeAlarmLoop.
+            if (!isOwnerApp) {
+                // Kitchen and Rider Apps: silent channel sound prevents phone's native alarm (e.g. night-time wake-up alarm) from playing over procedural chimes.
+                // Looping audio (Funk Criminal or Classic POS Chime) is handled exclusively by startNativeAlarmLoop.
                 alertChannel.setSound(null, null);
             } else {
-                Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-                if (soundUri == null) {
-                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-                }
-                if (soundUri == null) {
-                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-                }
-
+                Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
                 AudioAttributes audioAttributes = new AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                     .build();
                 alertChannel.setSound(soundUri, audioAttributes);
             }
             manager.createNotificationChannel(alertChannel);
 
-            // Clean up legacy channels v2 and v3 so system doesn't retain old notification-level config
+            // Clean up legacy channels v2, v3, and v4 so system doesn't retain old notification-level config
             try {
                 manager.deleteNotificationChannel("sas_orders_channel_v2");
                 manager.deleteNotificationChannel("sas_orders_channel_v3");
+                manager.deleteNotificationChannel("sas_orders_channel_v4");
             } catch (Exception ignored) {}
         }
     }
@@ -1169,6 +1163,13 @@ public class OrderMonitorService extends Service {
                 }
             }
 
+            // Tier 0B: Dedicated Rider Audio: Fixed Permanent Classic Chime (Procedural POS Chime)
+            if (isRiderApp && !audioStarted) {
+                Log.i(TAG, "Starting Rider procedural POS classic chime AudioTrack (fixed permanent alarm, zero device alarm bleed)");
+                startProceduralSiren();
+                audioStarted = true;
+            }
+
             List<Uri> candidates = getAlarmCandidateUris();
 
             // Tier 1: MediaPlayer with DataSource resolution
@@ -1312,12 +1313,12 @@ public class OrderMonitorService extends Service {
 
             Uri soundUri = null;
             if (isRiderApp || isOwnerApp) {
-                soundUri = RingtoneManager.getDefaultUri(isOwnerApp ? RingtoneManager.TYPE_NOTIFICATION : RingtoneManager.TYPE_ALARM);
-                if (soundUri == null) {
-                    soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-                }
-                if (soundUri == null) {
+                if (isOwnerApp) {
                     soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                } else {
+                    // Rider fixed permanent alarm: handled exclusively by startNativeAlarmLoop (Classic POS chime)
+                    // Keep notification soundUri null to prevent phone's system alarm (night-time alarm) from firing
+                    soundUri = null;
                 }
             }
 

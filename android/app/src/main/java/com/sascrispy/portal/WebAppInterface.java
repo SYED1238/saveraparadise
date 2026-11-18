@@ -23,7 +23,7 @@ import androidx.core.content.ContextCompat;
 public class WebAppInterface {
 
     private final Context context;
-    public static final String CHANNEL_ID_ORDERS = "sas_orders_channel_v4";
+    public static final String CHANNEL_ID_ORDERS = "sas_orders_channel_v5";
     public static final String CHANNEL_NAME_ORDERS = "Savera Paradise Orders & Critical Alerts";
 
     public WebAppInterface(Context context) {
@@ -46,18 +46,16 @@ public class WebAppInterface {
             channel.setShowBadge(true);
             channel.setBypassDnd(true);
 
-            boolean isRider = context.getPackageName().toLowerCase().contains("rider");
-            if (!isRider) {
-                // Kitchen app: sound is managed by startKitchenAlarmAudio / startNativeAlarmLoop (Funk Criminal)
+            boolean isOwner = context.getPackageName().toLowerCase().contains("owner");
+            if (!isOwner) {
+                // Kitchen and Rider apps: sound is managed exclusively by startNativeAlarmLoop (Funk Criminal / Classic POS Chime)
+                // Keep channel sound null to prevent phone's system alarm (night-time alarm) from firing
                 channel.setSound(null, null);
             } else {
-                Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-                if (defaultSoundUri == null) {
-                    defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-                }
+                Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
                 AudioAttributes audioAttributes = new AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                     .build();
                 channel.setSound(defaultSoundUri, audioAttributes);
             }
@@ -68,6 +66,7 @@ public class WebAppInterface {
                 try {
                     manager.deleteNotificationChannel("sas_orders_channel_v2");
                     manager.deleteNotificationChannel("sas_orders_channel_v3");
+                    manager.deleteNotificationChannel("sas_orders_channel_v4");
                 } catch (Exception ignored) {}
             }
         }
@@ -143,6 +142,10 @@ public class WebAppInterface {
                 if (isKitchenAlert) {
                     // Kitchen alarm audio is handled exclusively by startNativeAlarm loop (Funk Criminal / POS chime)
                     // Keep notification soundUri null to prevent phone's system alarm from firing simultaneously
+                    soundUri = null;
+                } else if (context.getPackageName().toLowerCase().contains("rider")) {
+                    // Rider alarm audio is handled exclusively by startNativeAlarm loop (Procedural Classic Chime)
+                    // Keep notification soundUri null to prevent phone's system alarm (night-time alarm) from firing
                     soundUri = null;
                 } else {
                     soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
