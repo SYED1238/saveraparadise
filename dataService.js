@@ -3480,7 +3480,9 @@ class QuickBiteDataService {
             action: 'stop_alarm',
             source: 'supabase_broadcast',
             timestamp: payload.timestamp || Date.now(),
-            orderIds: payload.orderIds || []
+            orderId: payload.orderId || null,
+            orderIds: payload.orderIds || [],
+            partial: Boolean(payload.partial)
           });
         })
         .on('broadcast', { event: 'settings_updated' }, (event) => {

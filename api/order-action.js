@@ -991,10 +991,27 @@ export default async function handler(req, res) {
     switch (action) {
       // 0. Lightweight Edge-Cached Kitchen Monitor Poll (Absorbs Android APK Background Loop)
       case 'kitchen_poll': {
+        const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+        const isStaff = auth && auth.valid;
+        const kitchenSecret = process.env?.KITCHEN_POLL_SECRET;
+        const providedKey = req.headers['x-kitchen-poll-key'] || req.query?.key;
+        const isKeyValid = Boolean(kitchenSecret && providedKey && String(providedKey).trim() === String(kitchenSecret).trim());
+        const hasAuth = isStaff || isKeyValid || isTestEnv;
+
+        const projectPollRows = (rows) => (rows || []).map(row => ({
+          id: row.id,
+          status: row.status,
+          customer_name: hasAuth ? row.customer_name : 'Customer',
+          total: row.total,
+          pickup_code: hasAuth ? (row.pickup_code || '') : '',
+          created_at: row.created_at,
+          assigned_rider_pin: row.assigned_rider_pin ? 'ASSIGNED' : ''
+        }));
+
         const now = Date.now();
         if (kitchenPollCache && (now - kitchenPollCachedAt < KITCHEN_POLL_CACHE_TTL_MS)) {
-          res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
-          return res.status(200).json(kitchenPollCache);
+          res.setHeader('Cache-Control', hasAuth && !isTestEnv ? 'private, no-store' : KITCHEN_POLL_CACHE_HEADER);
+          return res.status(200).json(projectPollRows(kitchenPollCache));
         }
 
         // Fast clock check: between 1:00 AM and 9:00 AM IST (closed night quiet hours), short-circuit with 0 DB queries
@@ -1046,18 +1063,12 @@ export default async function handler(req, res) {
           }
         }
 
-        const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
-        const isStaff = auth && auth.valid;
-        const kitchenSecret = process.env?.KITCHEN_POLL_SECRET;
-        const providedKey = req.headers['x-kitchen-poll-key'] || req.query?.key;
-        const isKeyValid = Boolean(kitchenSecret && providedKey && String(providedKey).trim() === String(kitchenSecret).trim());
-        const hasAuth = isStaff || isKeyValid || isTestEnv;
-
         kitchenPollCache = combined.map(row => ({
           id: row.id,
           status: row.status,
-          customer_name: hasAuth ? row.customer_name : 'Customer',
+          customer_name: row.customer_name || 'Customer',
           total: row.total,
+          pickup_code: row.pickup_code || '',
           created_at: row.created_at,
           assigned_rider_pin: row.assigned_rider_pin ? 'ASSIGNED' : ''
         }));
@@ -1065,7 +1076,7 @@ export default async function handler(req, res) {
         updateActiveOrderTracker(kitchenPollCache, now);
 
         res.setHeader('Cache-Control', hasAuth && !isTestEnv ? 'private, no-store' : KITCHEN_POLL_CACHE_HEADER);
-        return res.status(200).json(kitchenPollCache);
+        return res.status(200).json(projectPollRows(kitchenPollCache));
       }
 
       // 1. Authenticated Staff Sync (Admin, Delivery, Owner — 30s Shared In-Memory Cache with Version Deltas)

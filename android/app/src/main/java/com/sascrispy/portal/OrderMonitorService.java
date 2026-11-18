@@ -717,6 +717,7 @@ public class OrderMonitorService extends Service {
             }
 
             Set<String> currentUnclaimedReadyIds = new HashSet<>();
+            Set<String> currentActiveKitchenAlertIds = new HashSet<>();
 
             for (int i = 0; i < orders.length(); i++) {
                 JSONObject order = orders.getJSONObject(i);
@@ -735,10 +736,14 @@ public class OrderMonitorService extends Service {
                 }
 
                 if (!isRiderApp) {
+                    boolean isKitchenAlertStatus = "pending".equalsIgnoreCase(status) || "accepted".equalsIgnoreCase(status);
+                    if (isKitchenAlertStatus) {
+                        addNormalizedOrderIdVariants(currentActiveKitchenAlertIds, id);
+                    }
                     // Kitchen Admin App: Alert for newly created orders
                     if (!knownOrderIds.contains(id)) {
                         addNormalizedOrderIdVariants(knownOrderIds, id);
-                        if (("pending".equalsIgnoreCase(status) || "accepted".equalsIgnoreCase(status)) && !isOrderAlarmAcknowledged(id)) {
+                        if (isKitchenAlertStatus && !isOrderAlarmAcknowledged(id)) {
                             fireHeadsUpNotification(
                                 "🍗 NEW ORDER " + id + "!",
                                 custName + " • " + total + (pickupCode.isEmpty() ? "" : " • Code: " + pickupCode),
@@ -770,6 +775,18 @@ public class OrderMonitorService extends Service {
                         addNormalizedOrderIdVariants(knownOrderIds, id);
                         saveKnownOrdersToStorage();
                     }
+                }
+            }
+
+            // Auto-silence Kitchen background alarm if all ringing orders moved past pending/accepted (e.g. cooking or cancelled)
+            if (!isRiderApp && !isOwnerApp && isAlarmRinging() && !activeRingingOrderIds.isEmpty()) {
+                synchronized (activeRingingOrderIds) {
+                    activeRingingOrderIds.retainAll(currentActiveKitchenAlertIds);
+                }
+                if (activeRingingOrderIds.isEmpty()) {
+                    Log.i(TAG, "All ringing kitchen orders moved to cooking or cancelled; auto-stopping Kitchen native alarm.");
+                    stopNativeAlarm();
+                    MainActivity.triggerWebAlarmStop();
                 }
             }
 

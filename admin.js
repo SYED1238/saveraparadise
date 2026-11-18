@@ -197,6 +197,7 @@ const initAdminApp = () => {
       showToast('🔓 Manager Access Granted', 'success');
       resetIdleLockTimer();
       dataService.syncOrdersFromSupabase(true).then(() => {
+        scanAndDetectNewOrders();
         renderOrders();
         updateOrderBadges();
       }).catch(() => {});
@@ -220,6 +221,7 @@ const initAdminApp = () => {
       requestWakeLock();
       resetIdleLockTimer();
       dataService.syncOrdersFromSupabase().then(() => {
+        scanAndDetectNewOrders();
         renderOrders();
         updateOrderBadges();
       }).catch(() => {});
@@ -571,6 +573,7 @@ const initAdminApp = () => {
       if (capsuleBtnOrders) capsuleBtnOrders.classList.add('active');
       renderOrders();
       dataService.syncOrdersFromSupabase().then(() => {
+        scanAndDetectNewOrders();
         renderOrders();
         updateOrderBadges();
       }).catch(() => {});
@@ -3953,13 +3956,72 @@ const initAdminApp = () => {
     }
   }
 
+  function refreshActiveKitchenAlarmAudio() {
+    if (!isKitchenAlarmRinging) return;
+    const soundMode = getKitchenAlarmSoundMode();
+    const hasAndroidNative = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+
+    if (hasAndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
+      try {
+        window.AndroidNative.startAlarm();
+      } catch (e) {
+        console.warn('[Admin] Native startAlarm refresh failed:', e);
+      }
+      return;
+    }
+
+    if (soundMode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
+      stopKitchenAlarmAudio();
+      playKitchenChime();
+      if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
+      kitchenAlarmInterval = setInterval(() => {
+        if (isKitchenAlarmRinging) {
+          playKitchenChime();
+        } else {
+          clearInterval(kitchenAlarmInterval);
+          kitchenAlarmInterval = null;
+        }
+      }, 1600);
+    } else {
+      if (kitchenAlarmInterval) {
+        clearInterval(kitchenAlarmInterval);
+        kitchenAlarmInterval = null;
+      }
+      startKitchenAlarmAudio({
+        onFallback: () => {
+          const audio = getKitchenAlarmAudio();
+          if (isKitchenAlarmRinging && (!audio || audio.paused)) {
+            playKitchenChime();
+            if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
+            kitchenAlarmInterval = setInterval(() => {
+              if (isKitchenAlarmRinging) {
+                playKitchenChime();
+              } else {
+                clearInterval(kitchenAlarmInterval);
+                kitchenAlarmInterval = null;
+              }
+            }, 1600);
+          }
+        }
+      });
+    }
+  }
+
   function stopKitchenAlarm(shouldBroadcast = true, extra = {}) {
-    // Individual order progression: Acknowledge only this order and keep ringing if others remain in queue
-    if (extra && extra.orderId && !extra.all) {
-      const targetId = extra.orderId;
-      markAlarmAcknowledged([targetId]);
+    // Individual order progression: Acknowledge only specific order(s) and keep ringing if others remain in queue
+    const partialIds = (extra && !extra.all)
+      ? (extra.orderId
+          ? [extra.orderId]
+          : (extra.partial && Array.isArray(extra.orderIds) && extra.orderIds.length > 0 ? extra.orderIds : null))
+      : null;
+
+    if (partialIds && partialIds.length > 0) {
+      const targetId = partialIds[0];
+      markAlarmAcknowledged(partialIds);
       const normTargetId = String(targetId).replace(/^#/, '');
-      ringingOrdersQueue = ringingOrdersQueue.filter(o => o && String(o.id).replace(/^#/, '') !== normTargetId);
+      const normPartialSet = new Set(partialIds.map(id => String(id || '').trim().replace(/^#/, '')).filter(Boolean));
+      normPartialSet.add(normTargetId);
+      ringingOrdersQueue = ringingOrdersQueue.filter(o => o && !normPartialSet.has(String(o.id || '').trim().replace(/^#/, '')));
 
       if (ringingOrdersQueue.length > 0) {
         const nextOrder = ringingOrdersQueue[0];
@@ -3979,7 +4041,9 @@ const initAdminApp = () => {
         if (shouldBroadcast && typeof dataService !== 'undefined' && dataService.broadcastStopAlarm) {
           try {
             dataService.broadcastStopAlarm({
-              orderIds: [targetId],
+              orderId: targetId,
+              orderIds: partialIds,
+              partial: true,
               timestamp: Date.now(),
               sourceDevice: 'admin_portal'
             });
@@ -4201,6 +4265,7 @@ const initAdminApp = () => {
       }
       const newMode = toggleKitchenAlarmSoundMode();
       updateAlarmToggleUI();
+      refreshActiveKitchenAlarmAudio();
       if (newMode === KITCHEN_ALARM_MODES.R2_CUSTOM) {
         showToast('🎵 Kitchen Alarm set to: Funk Criminal (Custom R2 Track)', 'success');
       } else {
@@ -4223,6 +4288,7 @@ const initAdminApp = () => {
         localStorage.setItem('quickbite_settings', JSON.stringify(rollbackSettings));
         setKitchenAlarmSoundMode(curSettings.kitchenAlarmMode || prevMode);
         updateAlarmToggleUI();
+        refreshActiveKitchenAlarmAudio();
         showToast(`⚠️ Could not save alarm mode to cloud: ${err?.message || 'Check connection'}`, 'error');
       }
     });
@@ -4253,12 +4319,21 @@ const initAdminApp = () => {
   window.addEventListener('touchend', unlockAudioOnGesture, { passive: true });
   window.addEventListener('click', unlockAudioOnGesture, { passive: true });
 
-  // Known order IDs set initialized at startup
+  // Known order IDs set initialized at startup (only pre-seed unacknowledged fresh orders if session is already active, or pre-seed non-ringable orders)
   const knownOrderIds = new Set();
   const existingOrders = dataService.getOrders();
   if (Array.isArray(existingOrders)) {
+    const nowInit = Date.now();
     existingOrders.forEach(o => {
-      if (o && o.id) knownOrderIds.add(o.id);
+      if (!o || !o.id) return;
+      const isFreshUnack = ((o.status || 'accepted') === 'accepted' || o.status === 'pending') &&
+        !o.alarmAcknowledged &&
+        !o.alarmStoppedAt &&
+        !isAlarmAcknowledged(o.id) &&
+        (!o.createdAt || (nowInit - parseTimestampMs(o.createdAt) < 15 * 60 * 1000));
+      if (!isFreshUnack || isStaffSessionActive('admin') || isStaffSessionActive('owner')) {
+        knownOrderIds.add(o.id);
+      }
     });
   }
 
@@ -4267,18 +4342,27 @@ const initAdminApp = () => {
   function handleIncomingOrderAlert(orderData) {
     if (!orderData || !orderData.id) return;
     const cleanId = String(orderData.id).trim();
+    const now = Date.now();
+
+    // 1. Only ring alarm and push notifications if admin or owner session is actively unlocked!
+    // Do NOT add fresh unacknowledged orders to knownOrderIds while locked so they ring upon PIN unlock.
+    if (!isStaffSessionActive('admin') && !isStaffSessionActive('owner')) {
+      renderOrders();
+      updateOrderBadges();
+      return;
+    }
+
     knownOrderIds.add(orderData.id);
     knownOrderIds.add(cleanId);
 
-    // 1. Deduplicate rapid duplicate events across storage, customEvent, and BroadcastChannel
-    const now = Date.now();
+    // 2. Deduplicate rapid duplicate events across storage, customEvent, and BroadcastChannel
     const lastAlerted = recentAlertedOrderIds.get(cleanId) || 0;
     if (now - lastAlerted < 5000) {
       return;
     }
     recentAlertedOrderIds.set(cleanId, now);
 
-    // 2. Reject stale orders (>15 mins old) from ringing kitchen siren on reconnect/refresh
+    // 3. Reject stale orders (>15 mins old) from ringing kitchen siren on reconnect/refresh
     const orderAge = orderData.createdAt ? (now - parseTimestampMs(orderData.createdAt)) : 0;
     if (orderAge > 15 * 60 * 1000) {
       renderOrders();
@@ -4286,20 +4370,13 @@ const initAdminApp = () => {
       return;
     }
 
-    // 3. CRITICAL: NEVER ring alarm or notify as a new order if it was already cooking or delivered elsewhere!
+    // 4. CRITICAL: NEVER ring alarm or notify as a new order if it was already cooking or delivered elsewhere!
     if (orderData.status && orderData.status !== 'accepted' && orderData.status !== 'pending') {
       return;
     }
 
-    // 4. CRITICAL: If alarm was already acknowledged/stopped locally or remotely, do not ring!
+    // 5. CRITICAL: If alarm was already acknowledged/stopped locally or remotely, do not ring!
     if (isAlarmAcknowledged(cleanId) || orderData.alarmAcknowledged || orderData.alarmStoppedAt) {
-      renderOrders();
-      updateOrderBadges();
-      return;
-    }
-
-    // 5. Only ring alarm and push notifications if admin or owner session is actively unlocked!
-    if (!isStaffSessionActive('admin') && !isStaffSessionActive('owner')) {
       renderOrders();
       updateOrderBadges();
       return;
@@ -4502,21 +4579,73 @@ const initAdminApp = () => {
   }
 
   function scanAndDetectNewOrders() {
+    const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
     const latestList = dataService.getOrders();
-    const newArrivals = latestList.filter(o => o && o.id && !knownOrderIds.has(o.id));
-    if (newArrivals.length > 0) {
-      newArrivals.forEach(o => knownOrderIds.add(o.id));
 
+    // 1. Prune ringingOrdersQueue if any order moved past accepted/pending, was acknowledged, or was removed
+    if (ringingOrdersQueue.length > 0) {
+      let queueChanged = false;
+      for (let i = ringingOrdersQueue.length - 1; i >= 0; i--) {
+        const queued = ringingOrdersQueue[i];
+        const qNorm = normalizeId(queued?.id);
+        const liveOrd = latestList.find(o => o && normalizeId(o.id) === qNorm);
+        const liveStatus = liveOrd?.status || 'accepted';
+        if (
+          !liveOrd ||
+          (liveStatus !== 'accepted' && liveStatus !== 'pending') ||
+          liveOrd.alarmAcknowledged ||
+          liveOrd.alarmStoppedAt ||
+          isAlarmAcknowledged(liveOrd.id)
+        ) {
+          ringingOrdersQueue.splice(i, 1);
+          queueChanged = true;
+        }
+      }
+      if (ringingOrdersQueue.length === 0 && isKitchenAlarmRinging) {
+        stopKitchenAlarm(false);
+      } else if (queueChanged && ringingOrdersQueue.length > 0 && isKitchenAlarmRinging) {
+        const nextOrder = ringingOrdersQueue[0];
+        if (alarmBannerOrderId) alarmBannerOrderId.textContent = nextOrder.id;
+        if (alarmBannerOrderId && nextOrder) alarmBannerOrderId.dataset.orderId = nextOrder.id;
+        if (alarmBannerCustomer) alarmBannerCustomer.textContent = nextOrder.customerName || 'Customer';
+        if (alarmBannerTotal) alarmBannerTotal.textContent = nextOrder.total || '₹0';
+        if (alarmBannerItems) alarmBannerItems.textContent = nextOrder.itemsSummary || 'Order Items';
+        if (alarmOrdersCountBadge) {
+          if (ringingOrdersQueue.length > 1) {
+            alarmOrdersCountBadge.style.display = 'inline-block';
+            alarmOrdersCountBadge.textContent = `${ringingOrdersQueue.length} Orders`;
+          } else {
+            alarmOrdersCountBadge.style.display = 'none';
+          }
+        }
+      }
+    }
+
+    const sessionUnlocked = isStaffSessionActive('admin') || isStaffSessionActive('owner');
+    const newArrivals = latestList.filter(o => o && o.id && !knownOrderIds.has(o.id) && !knownOrderIds.has(String(o.id).trim()));
+    if (newArrivals.length > 0) {
       const now = Date.now();
+      newArrivals.forEach(o => {
+        const isFreshActive = ((o.status || 'accepted') === 'accepted' || o.status === 'pending') &&
+          !o.alarmAcknowledged &&
+          !o.alarmStoppedAt &&
+          !isAlarmAcknowledged(o.id) &&
+          (!o.createdAt || (now - parseTimestampMs(o.createdAt) < 15 * 60 * 1000));
+        if (sessionUnlocked || !isFreshActive) {
+          knownOrderIds.add(o.id);
+          knownOrderIds.add(String(o.id).trim());
+        }
+      });
+
       // Trigger kitchen alarm for newly arrived orders that are NOT yet acknowledged and < 15 mins old
-      const freshAcceptedList = newArrivals.filter(o => 
-        ((o.status || 'accepted') === 'accepted' || o.status === 'pending') && 
-        !o.alarmAcknowledged && 
+      const freshAcceptedList = newArrivals.filter(o =>
+        ((o.status || 'accepted') === 'accepted' || o.status === 'pending') &&
+        !o.alarmAcknowledged &&
         !o.alarmStoppedAt &&
         !isAlarmAcknowledged(o.id) &&
         (!o.createdAt || (now - parseTimestampMs(o.createdAt) < 15 * 60 * 1000))
       );
-      if (freshAcceptedList.length > 0) {
+      if (freshAcceptedList.length > 0 && sessionUnlocked) {
         freshAcceptedList.forEach(freshAccepted => {
           const normId = String(freshAccepted.id).trim();
           const lastAlert = recentAlertedOrderIds.get(normId) || 0;
@@ -4627,6 +4756,7 @@ const initAdminApp = () => {
       if (st && st.kitchenAlarmMode) {
         setKitchenAlarmSoundMode(st.kitchenAlarmMode);
         updateAlarmToggleUI();
+        refreshActiveKitchenAlarmAudio();
       }
     }
   });
@@ -4638,6 +4768,7 @@ const initAdminApp = () => {
       if (st && st.kitchenAlarmMode) {
         setKitchenAlarmSoundMode(st.kitchenAlarmMode);
         updateAlarmToggleUI();
+        refreshActiveKitchenAlarmAudio();
       }
     }
     if (e.detail?.type === 'kitchen_alarm') {
