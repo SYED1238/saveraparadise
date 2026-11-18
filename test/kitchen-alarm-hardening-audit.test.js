@@ -109,7 +109,7 @@ test('KITCHEN ALARM SYSTEM BUG FIXES & HARDENING AUDIT (ALARM-01 to ALARM-06)', 
 
     // handleIncomingOrderAlert checks session guard before knownOrderIds.add
     const handleAlertStart = adminJs.indexOf('function handleIncomingOrderAlert');
-    const handleAlertBody = adminJs.slice(handleAlertStart, handleAlertStart + 600);
+    const handleAlertBody = adminJs.slice(handleAlertStart, handleAlertStart + 1500);
     const sessionGuardPos = handleAlertBody.indexOf("if (!isStaffSessionActive('admin') && !isStaffSessionActive('owner'))");
     const knownAddPos = handleAlertBody.indexOf('knownOrderIds.add(orderData.id)');
     assert.ok(sessionGuardPos !== -1, 'handleIncomingOrderAlert must contain session guard');
@@ -171,6 +171,44 @@ test('KITCHEN ALARM SYSTEM BUG FIXES & HARDENING AUDIT (ALARM-01 to ALARM-06)', 
       functionsApiOrderActionJs,
       /await\s+putKitchenPollEdgeCache\(request,\s*context,\s*combined\.map\(row\s*=>\s*\(\{[\s\S]*?customer_name:\s*'Customer',[\s\S]*?pickup_code:\s*['"]['"],/,
       'functions/api/order-action.js must only write masked Customer rows to edge cache'
+    );
+  });
+
+  // FOLLOW-UP: Idle Auto-Lock Inactivity Bypass & Native Tablet Foreground Alerting
+  await t.test('6. [FOLLOW-UP] resetIdleLockTimer reschedules during open hours and Android APK alerts even when locked', () => {
+    // 1. resetIdleLockTimer checks isStoreOpen, isKitchenAlarmRinging, isNativeApk, and hasActiveOrders
+    assert.match(
+      adminJs,
+      /resetIdleLockTimer[\s\S]*?const\s+isStoreOpen\s*=\s*typeof\s+dataService\s*!==\s*'undefined'[\s\S]*?if\s*\(isStoreOpen\s*\|\|\s*isKitchenAlarmRinging\s*\|\|\s*isNativeApk\s*\|\|\s*hasActiveOrders\)\s*\{\s*resetIdleLockTimer\(\);\s*return;\s*\}/,
+      'resetIdleLockTimer must reschedule without locking when store is open, alarm ringing, in APK, or active orders exist'
+    );
+
+    // 2. Both resetIdleLockTimer and btnAdminLogout preserve clearStaffSession
+    assert.match(
+      adminJs,
+      /clearStaffSession\('admin'\);\s*clearStaffSession\('owner'\);/,
+      'Must preserve clearStaffSession for both admin and owner'
+    );
+
+    // 3. handleIncomingOrderAlert allows native APK to alert even when screen is locked
+    assert.match(
+      adminJs,
+      /if\s*\(!isStaffSessionActive\('admin'\)\s*&&\s*!isStaffSessionActive\('owner'\)\)\s*\{[\s\S]*?const\s+isNativeApk\s*=\s*typeof\s+window\s*!==\s*'undefined'\s*&&\s*Boolean\(window\.AndroidNative\);[\s\S]*?if\s*\(!isNativeApk\)\s*\{/,
+      'handleIncomingOrderAlert must allow native APK to alert when locked'
+    );
+
+    // 4. OrderMonitorService.java runs 20s backup polling in foreground for Kitchen App
+    assert.match(
+      orderMonitorServiceJava,
+      /if\s*\(isAppInForeground\s*&&\s*isRiderApp\)\s*\{[\s\S]*?Thread\.sleep\(15000\);[\s\S]*?continue;\s*\}[\s\S]*?updateForegroundNotificationIfNeeded\(isAppInForeground\s*\?\s*"foreground"\s*:\s*"background"\);[\s\S]*?pollKitchenOrders\(\);/,
+      'OrderMonitorService must continue polling in foreground for Kitchen app'
+    );
+
+    // 5. checkAdminSession recovers session from localStorage in APK
+    assert.match(
+      adminJs,
+      /checkAdminSession[\s\S]*?const\s+isNativeApk\s*=\s*typeof\s+window\s*!==\s*'undefined'\s*&&\s*Boolean\(window\.AndroidNative\);[\s\S]*?localStorage\.getItem\('quickbite_admin_token'\)/,
+      'checkAdminSession must recover session across WebView reloads in APK'
     );
   });
 });

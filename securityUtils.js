@@ -247,6 +247,9 @@ export async function ensureAdminToken(requiredRole = 'admin', forceRefresh = fa
         const payload = JSON.parse(json);
         const hasRole = !requiredRole || requiredRole === 'admin' ? (payload.role === 'admin' || payload.role === 'owner') : payload.role === requiredRole;
         if (!forceRefresh && hasRole && payload.exp && (payload.exp - Date.now() > 60000)) {
+          if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setStaffAuthToken === 'function') {
+            try { window.AndroidNative.setStaffAuthToken(token); } catch {}
+          }
           return token;
         }
       }
@@ -284,6 +287,9 @@ export async function ensureAdminToken(requiredRole = 'admin', forceRefresh = fa
             if (typeof localStorage !== 'undefined') localStorage.setItem('quickbite_rider_token', data.token);
           } else {
             if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('quickbite_admin_token', data.token);
+          }
+          if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setStaffAuthToken === 'function') {
+            try { window.AndroidNative.setStaffAuthToken(data.token); } catch {}
           }
           return data.token;
         }
@@ -327,6 +333,9 @@ export function setStaffSessionActive(role) {
  */
 export function clearStaffSession(role) {
   try {
+    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setStaffAuthToken === 'function') {
+      try { window.AndroidNative.setStaffAuthToken(''); } catch {}
+    }
     const key = role === 'admin' ? STORAGE_KEYS.ADMIN_AUTH : (role === 'rider' ? STORAGE_KEYS.RIDER_AUTH : STORAGE_KEYS.OWNER_AUTH);
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.removeItem(key);

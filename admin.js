@@ -196,6 +196,19 @@ const initAdminApp = () => {
       requestWakeLock();
       showToast('🔓 Manager Access Granted', 'success');
       resetIdleLockTimer();
+      // In Android APK, persist token in localStorage so WebView reloads retain staff session
+      if (typeof window !== 'undefined' && Boolean(window.AndroidNative)) {
+        try {
+          const tok = sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem(STORAGE_KEYS.ADMIN_AUTH);
+          if (tok) {
+            localStorage.setItem('quickbite_admin_token', tok);
+            localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, tok);
+            if (typeof window.AndroidNative.setStaffAuthToken === 'function') {
+              window.AndroidNative.setStaffAuthToken(tok);
+            }
+          }
+        } catch {}
+      }
       dataService.syncOrdersFromSupabase(true).then(() => {
         scanAndDetectNewOrders();
         renderOrders();
@@ -206,6 +219,22 @@ const initAdminApp = () => {
   });
 
   async function checkAdminSession() {
+    // In Android APK, recover session from localStorage across WebView reloads
+    const isNativeApk = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+    if (isNativeApk) {
+      try {
+        const savedTok = localStorage.getItem('quickbite_admin_token') || localStorage.getItem(STORAGE_KEYS.ADMIN_AUTH);
+        if (savedTok && typeof sessionStorage !== 'undefined') {
+          if (!sessionStorage.getItem('quickbite_admin_token')) {
+            sessionStorage.setItem('quickbite_admin_token', savedTok);
+          }
+          if (!sessionStorage.getItem(STORAGE_KEYS.ADMIN_AUTH)) {
+            sessionStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, savedTok.startsWith('qb_sess_') ? savedTok : `qb_sess_${savedTok.slice(0, 32)}`);
+          }
+        }
+      } catch {}
+    }
+
     const hasLocalAuth = isStaffSessionActive('admin') || isStaffSessionActive('owner');
     let validToken = null;
 
@@ -214,6 +243,15 @@ const initAdminApp = () => {
     }
 
     if (hasLocalAuth && validToken) {
+      if (typeof window !== 'undefined' && Boolean(window.AndroidNative)) {
+        try {
+          localStorage.setItem('quickbite_admin_token', validToken);
+          localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, validToken);
+          if (typeof window.AndroidNative.setStaffAuthToken === 'function') {
+            window.AndroidNative.setStaffAuthToken(validToken);
+          }
+        } catch {}
+      }
       if (adminLockOverlay) {
         adminLockOverlay.classList.add('unlocked');
         adminLockOverlay.style.display = 'none';
@@ -242,6 +280,10 @@ const initAdminApp = () => {
     btnAdminLogout.addEventListener('click', () => {
       clearStaffSession('admin');
       clearStaffSession('owner');
+      try {
+        localStorage.removeItem('quickbite_admin_token');
+        localStorage.removeItem(STORAGE_KEYS.ADMIN_AUTH);
+      } catch {}
       releaseWakeLock();
       if (adminLockOverlay) {
         adminLockOverlay.classList.remove('unlocked');
@@ -259,6 +301,16 @@ const initAdminApp = () => {
     if (isStaffSessionActive('admin') || isStaffSessionActive('owner')) {
       idleLockTimer = setTimeout(() => {
         if (isStaffSessionActive('admin') || isStaffSessionActive('owner')) {
+          // Keep Kitchen session alive while store is open, active orders exist, alarm is ringing, or running in Kitchen Android APK
+          const isStoreOpen = typeof dataService !== 'undefined' && typeof dataService.isStoreOpen === 'function' && dataService.isStoreOpen();
+          const isNativeApk = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+          const hasActiveOrders = typeof dataService !== 'undefined' && typeof dataService.getOrders === 'function' &&
+            dataService.getOrders().some(o => o && ['pending', 'accepted', 'cooking'].includes(o.status));
+          if (isStoreOpen || isKitchenAlarmRinging || isNativeApk || hasActiveOrders) {
+            resetIdleLockTimer();
+            return;
+          }
+
           clearStaffSession('admin');
           clearStaffSession('owner');
           releaseWakeLock();
@@ -4346,10 +4398,15 @@ const initAdminApp = () => {
 
     // 1. Only ring alarm and push notifications if admin or owner session is actively unlocked!
     // Do NOT add fresh unacknowledged orders to knownOrderIds while locked so they ring upon PIN unlock.
+    // Native APK Exception: In the dedicated Kitchen Android APK (window.AndroidNative), allow alarm alerting
+    // even while locked so the counter tablet never sits in a foreground dead zone without alarming!
     if (!isStaffSessionActive('admin') && !isStaffSessionActive('owner')) {
-      renderOrders();
-      updateOrderBadges();
-      return;
+      const isNativeApk = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+      if (!isNativeApk) {
+        renderOrders();
+        updateOrderBadges();
+        return;
+      }
     }
 
     knownOrderIds.add(orderData.id);
@@ -4621,7 +4678,8 @@ const initAdminApp = () => {
       }
     }
 
-    const sessionUnlocked = isStaffSessionActive('admin') || isStaffSessionActive('owner');
+    const isNativeApk = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+    const sessionUnlocked = isStaffSessionActive('admin') || isStaffSessionActive('owner') || isNativeApk;
     const newArrivals = latestList.filter(o => o && o.id && !knownOrderIds.has(o.id) && !knownOrderIds.has(String(o.id).trim()));
     if (newArrivals.length > 0) {
       const now = Date.now();
@@ -4649,7 +4707,7 @@ const initAdminApp = () => {
         freshAcceptedList.forEach(freshAccepted => {
           const normId = String(freshAccepted.id).trim();
           const lastAlert = recentAlertedOrderIds.get(normId) || 0;
-          if ((isStaffSessionActive('admin') || isStaffSessionActive('owner')) && (now - lastAlert >= 5000)) {
+          if (sessionUnlocked && (now - lastAlert >= 5000)) {
             recentAlertedOrderIds.set(normId, now);
             startKitchenAlarm(freshAccepted);
 

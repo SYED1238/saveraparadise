@@ -33,6 +33,9 @@ test('Task 5: Android APK Security, Background Alarms & CI Keystore', async (t) 
     path.join(rootDir, '.github/workflows/build-apk.yml'),
     'utf8'
   );
+  const deliveryJs = fs.readFileSync(path.join(rootDir, 'delivery.js'), 'utf8');
+  const adminJs = fs.readFileSync(path.join(rootDir, 'admin.js'), 'utf8');
+  const securityUtilsJs = fs.readFileSync(path.join(rootDir, 'securityUtils.js'), 'utf8');
 
   await t.test('1. MainActivity enforces strict trusted host allowlist and navigation boundary', () => {
     assert.match(mainActivity, /isTrustedPortalHost\s*\(\s*String\s+host\s*\)/);
@@ -112,5 +115,30 @@ test('Task 5: Android APK Security, Background Alarms & CI Keystore', async (t) 
     assert.match(buildGradle, /System\.getenv\("ANDROID_KEYSTORE_PASSWORD"\)/);
     assert.match(buildGradle, /System\.getenv\("ANDROID_KEY_ALIAS"\)/);
     assert.match(buildGradle, /System\.getenv\("ANDROID_KEY_PASSWORD"\)/);
+  });
+
+  await t.test('9. MainActivity thread safety: lastKnownUrl cached on UI thread and returned by getCurrentUrl', () => {
+    assert.match(mainActivity, /private\s+volatile\s+String\s+lastKnownUrl\s*=\s*["']["'];/);
+    assert.match(mainActivity, /public\s+String\s+getCurrentUrl\(\)\s*\{[\s\S]*?return\s+lastKnownUrl;[\s\S]*?\}/);
+    assert.doesNotMatch(mainActivity, /public\s+String\s+getCurrentUrl\(\)\s*\{[\s\S]*?webView\.getUrl\(\)/);
+    assert.match(mainActivity, /onPageStarted[\s\S]*?lastKnownUrl\s*=\s*url;/);
+    assert.match(mainActivity, /onPageFinished[\s\S]*?lastKnownUrl\s*=\s*url;/);
+    assert.match(mainActivity, /doUpdateVisitedHistory[\s\S]*?lastKnownUrl\s*=\s*url;/);
+    assert.match(webAppInterface, /private\s+boolean\s+isCurrentOriginTrusted\(\)\s*\{[\s\S]*?try\s*\{[\s\S]*?catch\s*\(Throwable/);
+  });
+
+  await t.test('10. WebAppInterface exposes setStaffAuthToken and setKitchenPollSecret to sync credentials to savera_kitchen_prefs', () => {
+    assert.match(webAppInterface, /@JavascriptInterface\s+public\s+void\s+setStaffAuthToken\s*\(\s*String\s+token\s*\)/);
+    assert.match(webAppInterface, /prefs\.edit\(\)\.putString\(\s*"active_staff_token",\s*token\.trim\(\)\s*\)\.apply\(\)/);
+    assert.match(webAppInterface, /@JavascriptInterface\s+public\s+void\s+setKitchenPollSecret\s*\(\s*String\s+secret\s*\)/);
+    assert.match(webAppInterface, /prefs\.edit\(\)\.putString\(\s*"kitchen_poll_secret",\s*secret\.trim\(\)\s*\)\.apply\(\)/);
+  });
+
+  await t.test('11. Portals (delivery.js, admin.js, securityUtils.js) sync active staff token to Android native bridge', () => {
+    assert.match(securityUtilsJs, /window\.AndroidNative\.setStaffAuthToken\(data\.token\)/);
+    assert.match(securityUtilsJs, /window\.AndroidNative\.setStaffAuthToken\(['"]['"]\)/);
+    assert.match(deliveryJs, /window\.AndroidNative\.setStaffAuthToken\(token\)/);
+    assert.match(adminJs, /window\.AndroidNative\.setStaffAuthToken\(tok\)/);
+    assert.match(adminJs, /window\.AndroidNative\.setStaffAuthToken\(validToken\)/);
   });
 });

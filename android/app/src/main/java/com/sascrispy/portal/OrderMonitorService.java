@@ -576,8 +576,11 @@ public class OrderMonitorService extends Service {
                     continue;
                 }
 
-                // 2. If app is active on screen in foreground, WebView WebSocket handles orders in <200ms
-                if (isAppInForeground) {
+                // 2. If app is active on screen in foreground:
+                // For Rider App, WebView handles orders live; sleep 15s to save battery while riding
+                // For Kitchen App (!isRiderApp), run 20s backup polling even in foreground so counter tablet
+                // never sits in a foreground dead zone if WebView WebSocket disconnects or portal is locked
+                if (isAppInForeground && isRiderApp) {
                     updateForegroundNotificationIfNeeded("foreground");
                     try {
                         Thread.sleep(15000); // Sleep gently while user is active on screen
@@ -587,8 +590,8 @@ public class OrderMonitorService extends Service {
                     continue;
                 }
 
-                // 3. Otherwise (minimized/backgrounded during operating hours), poll Cloudflare
-                updateForegroundNotificationIfNeeded("background");
+                // 3. Otherwise (minimized/backgrounded or Kitchen foreground backup during operating hours), poll Cloudflare
+                updateForegroundNotificationIfNeeded(isAppInForeground ? "foreground" : "background");
                 try {
                     pollKitchenOrders();
                 } catch (Exception e) {

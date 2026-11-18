@@ -361,6 +361,9 @@ const initDeliveryApp = () => {
       const rider = window.__lastVerifiedRider || dataService.getRiderByPin(cleanPin) || { pin: cleanPin, name: 'Delivery Partner' };
 
       setStaffSessionActive('rider');
+      if (token && typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setStaffAuthToken === 'function') {
+        try { window.AndroidNative.setStaffAuthToken(token); } catch {}
+      }
       dataService.setActiveRiderPin(cleanPin, rider);
       updateRiderProfileHeader();
       requestWakeLock();
@@ -403,6 +406,10 @@ const initDeliveryApp = () => {
       try {
         validToken = await ensureAdminToken('rider');
       } catch {}
+
+      if ((validToken || token) && typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setStaffAuthToken === 'function') {
+        try { window.AndroidNative.setStaffAuthToken(validToken || token); } catch {}
+      }
 
       // If online and token could not be verified/refreshed, session has expired -> show lock screen
       if (typeof navigator !== 'undefined' && navigator.onLine && !validToken) {

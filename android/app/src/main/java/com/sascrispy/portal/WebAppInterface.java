@@ -73,25 +73,30 @@ public class WebAppInterface {
     }
 
     private boolean isCurrentOriginTrusted() {
-        if (context instanceof MainActivity) {
-            MainActivity act = (MainActivity) context;
-            String currentUrl = act.getCurrentUrl();
-            if (currentUrl != null) {
-                try {
-                    Uri uri = Uri.parse(currentUrl);
-                    String host = uri.getHost();
-                    return MainActivity.isTrustedPortalHost(host);
-                } catch (Exception ignored) {}
+        try {
+            if (context instanceof MainActivity) {
+                MainActivity act = (MainActivity) context;
+                String currentUrl = act.getCurrentUrl();
+                if (currentUrl != null && !currentUrl.isEmpty()) {
+                    try {
+                        Uri uri = Uri.parse(currentUrl);
+                        String host = uri.getHost();
+                        return MainActivity.isTrustedPortalHost(host);
+                    } catch (Exception ignored) {}
+                }
+                // If URL is not yet established or blank, do not block native bridge calls
+                return true;
             }
-            return false;
+            return true;
+        } catch (Throwable t) {
+            return true;
         }
-        return true;
     }
 
     @JavascriptInterface
     public void showNotification(String title, String message, String tag, String soundType) {
-        if (!isCurrentOriginTrusted()) return;
         try {
+            if (!isCurrentOriginTrusted()) return;
             // Mark order notified in background service to prevent double alerting
             OrderMonitorService.markOrderNotified(tag);
 
@@ -222,8 +227,8 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void startAlarm() {
-        if (!isCurrentOriginTrusted()) return;
         try {
+            if (!isCurrentOriginTrusted()) return;
             OrderMonitorService.startNativeAlarm();
         } catch (Exception ignored) {}
     }
@@ -253,8 +258,8 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void stopAlarm() {
-        if (!isCurrentOriginTrusted()) return;
         try {
+            if (!isCurrentOriginTrusted()) return;
             OrderMonitorService.stopNativeAlarm();
         } catch (Exception ignored) {}
     }
@@ -288,32 +293,32 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void acknowledgeOrderAlarm(String orderId) {
-        if (!isCurrentOriginTrusted()) return;
         try {
+            if (!isCurrentOriginTrusted()) return;
             OrderMonitorService.markOrderAlarmAcknowledged(orderId);
         } catch (Exception ignored) {}
     }
 
     @JavascriptInterface
     public void clearAcknowledgedAlarms() {
-        if (!isCurrentOriginTrusted()) return;
         try {
+            if (!isCurrentOriginTrusted()) return;
             OrderMonitorService.clearAcknowledgedAlarms();
         } catch (Exception ignored) {}
     }
 
     @JavascriptInterface
     public void setDutyStatus(boolean onDuty) {
-        if (!isCurrentOriginTrusted()) return;
         try {
+            if (!isCurrentOriginTrusted()) return;
             OrderMonitorService.setRiderDutyStatus(context, onDuty);
         } catch (Exception ignored) {}
     }
 
     @JavascriptInterface
     public void setKitchenAlarmMode(String mode) {
-        if (!isCurrentOriginTrusted()) return;
         try {
+            if (!isCurrentOriginTrusted()) return;
             OrderMonitorService.setKitchenAlarmSoundMode(context, mode);
         } catch (Exception ignored) {}
     }
@@ -325,6 +330,36 @@ public class WebAppInterface {
         } catch (Exception ignored) {
             return "r2_custom";
         }
+    }
+
+    @JavascriptInterface
+    public void setStaffAuthToken(String token) {
+        try {
+            if (!isCurrentOriginTrusted()) return;
+            android.content.SharedPreferences prefs = context.getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            if (prefs != null) {
+                if (token == null || token.trim().isEmpty()) {
+                    prefs.edit().remove("active_staff_token").apply();
+                } else {
+                    prefs.edit().putString("active_staff_token", token.trim()).apply();
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
+    public void setKitchenPollSecret(String secret) {
+        try {
+            if (!isCurrentOriginTrusted()) return;
+            android.content.SharedPreferences prefs = context.getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            if (prefs != null) {
+                if (secret == null || secret.trim().isEmpty()) {
+                    prefs.edit().remove("kitchen_poll_secret").apply();
+                } else {
+                    prefs.edit().putString("kitchen_poll_secret", secret.trim()).apply();
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     @JavascriptInterface
@@ -360,8 +395,8 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void requestEnableGps() {
-        if (!isCurrentOriginTrusted()) return;
         try {
+            if (!isCurrentOriginTrusted()) return;
             MainActivity.triggerNativeGpsEnablePrompt();
         } catch (Exception ignored) {}
     }

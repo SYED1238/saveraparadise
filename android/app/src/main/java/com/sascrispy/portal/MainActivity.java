@@ -49,6 +49,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int GPS_ENABLE_REQUEST_CODE = 1003;
     private static java.lang.ref.WeakReference<MainActivity> activeActivityRef = null;
+    private volatile String lastKnownUrl = "";
 
     public static void triggerWebAlarmStop() {
         MainActivity act = activeActivityRef != null ? activeActivityRef.get() : null;
@@ -66,8 +67,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public String getCurrentUrl() {
-        if (webView != null) {
-            return webView.getUrl();
+        if (lastKnownUrl != null && !lastKnownUrl.isEmpty()) {
+            return lastKnownUrl;
         }
         return null;
     }
@@ -150,6 +151,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String targetUrl = getString(R.string.portal_url);
+        lastKnownUrl = targetUrl;
         if (savedInstanceState == null) {
             webView.loadUrl(targetUrl);
         } else {
@@ -182,6 +184,14 @@ public class MainActivity extends AppCompatActivity {
         webView.addJavascriptInterface(new WebAppInterface(this), "AndroidNative");
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                if (url != null && !url.isEmpty()) {
+                    lastKnownUrl = url;
+                }
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
@@ -222,11 +232,22 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                if (url != null && !url.isEmpty()) {
+                    lastKnownUrl = url;
+                }
                 progressBar.setVisibility(View.GONE);
                 swipeRefresh.setRefreshing(false);
                 syncNativeAcknowledgedAlarmsToWebView();
                 if (OrderMonitorService.consumePendingWebAlarmStopSync()) {
                     triggerWebAlarmStop();
+                }
+            }
+
+            @Override
+            public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+                super.doUpdateVisitedHistory(view, url, isReload);
+                if (url != null && !url.isEmpty()) {
+                    lastKnownUrl = url;
                 }
             }
         });
