@@ -1076,11 +1076,10 @@ export default async function handler(req, res) {
         }
         const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
         const clientVersion = String(body.sinceVersion || '').trim();
-        const forceRefresh = Boolean(body.forceRefresh);
         const now = Date.now();
 
         let sourceOrders = null;
-        if (!forceRefresh && syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
+        if (syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
           if (clientVersion && clientVersion === String(syncOrdersVersion)) {
             return res.status(200).json({ success: true, unchanged: true, version: syncOrdersVersion });
           }

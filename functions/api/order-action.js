@@ -1127,11 +1127,10 @@ export async function onRequest(context) {
         }
         const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
         const clientVersion = String(body.sinceVersion || '').trim();
-        const forceRefresh = Boolean(body.forceRefresh);
         const now = Date.now();
 
         let sourceOrders = null;
-        if (!forceRefresh && syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
+        if (syncOrdersCache && (now - syncOrdersCachedAt < SYNC_ORDERS_CACHE_TTL_MS) && limit <= syncOrdersCachedLimit) {
           if (clientVersion && clientVersion === String(syncOrdersVersion)) {
             return jsonResponse({ success: true, unchanged: true, version: syncOrdersVersion }, 200, Object.fromEntries(corsHeaders.entries()));
           }

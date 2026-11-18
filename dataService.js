@@ -3041,10 +3041,9 @@ class QuickBiteDataService {
           const reqLimit = this.portalType === 'owner' ? 500 : 100;
           const actionRes = await this._orderAction('sync_orders', {
             limit: reqLimit,
-            sinceVersion: force ? 0 : (this._lastOrdersSyncVersion || 0),
-            forceRefresh: Boolean(force)
+            sinceVersion: this._lastOrdersSyncVersion || 0
           });
-          if (!force && actionRes && actionRes.unchanged && this.getOrders().length > 0) {
+          if (actionRes && actionRes.unchanged && this.getOrders().length > 0) {
             this._lastOrdersSyncTime = Date.now();
             return this.getOrders();
           }
@@ -8598,6 +8597,7 @@ class QuickBiteDataService {
           this.saveOrders(list);
         }
         if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
+          this._lastOrdersSyncVersion = 0;
           await this.syncOrdersFromSupabase(true);
         }
       } catch {}
@@ -8781,6 +8781,7 @@ class QuickBiteDataService {
           this.saveOrders(list);
         }
         if (actionErr && [400, 401, 403, 409].includes(Number(actionErr.status))) {
+          this._lastOrdersSyncVersion = 0;
           await this.syncOrdersFromSupabase(true);
         }
       } catch {}
@@ -9016,6 +9017,7 @@ class QuickBiteDataService {
           this.saveOrders(list);
         }
         if (shouldSync) {
+          this._lastOrdersSyncVersion = 0;
           await this.syncOrdersFromSupabase(true);
         }
       } catch {}

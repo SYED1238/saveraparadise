@@ -18,7 +18,7 @@ const orderMonitorServiceJava = fs.readFileSync(
 );
 
 test('RIDER ALARM & 8-RIDER CONCURRENCY REGRESSION SUITE', async (t) => {
-  await t.test('1. [BUG-01] syncOrdersFromSupabase prunes orders claimed by other riders in Delivery portal and bypasses cache on forceRefresh', () => {
+  await t.test('1. [BUG-01] syncOrdersFromSupabase prunes orders claimed by other riders in Delivery portal and resets version on 409 rollback', () => {
     assert.match(
       dataServiceJs,
       /this\.portalType\s*===\s*['"]delivery['"]\s*&&\s*fromAuthoritativeApi\s*&&\s*!o\.pendingRemoteSync\s*&&\s*!o\.pendingStatusSync/,
@@ -26,18 +26,8 @@ test('RIDER ALARM & 8-RIDER CONCURRENCY REGRESSION SUITE', async (t) => {
     );
     assert.match(
       dataServiceJs,
-      /forceRefresh:\s*Boolean\(force\)/,
-      'syncOrdersFromSupabase must pass forceRefresh: Boolean(force)'
-    );
-    assert.match(
-      apiOrderActionJs,
-      /if\s*\(!forceRefresh\s*&&\s*syncOrdersCache/,
-      'api/order-action.js must bypass syncOrdersCache when forceRefresh is true'
-    );
-    assert.match(
-      cfOrderActionJs,
-      /if\s*\(!forceRefresh\s*&&\s*syncOrdersCache/,
-      'functions/api/order-action.js must bypass syncOrdersCache when forceRefresh is true'
+      /this\._lastOrdersSyncVersion\s*=\s*0;\s*await\s+this\.syncOrdersFromSupabase\(true\);/,
+      'Rollback handler must reset _lastOrdersSyncVersion = 0 before syncing on 409 Conflict'
     );
   });
 
