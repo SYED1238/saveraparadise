@@ -9635,16 +9635,25 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     });
   }
 
-  const handleOpenSupport = (e) => {
-    if (e) e.preventDefault();
-    const url = 'https://chat.whatsapp.com/CiASaHQH0A9D0s2m2jedzb';
-    const win = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!win) {
-      window.location.href = url;
-    }
-  };
+  // Collapsible Help & Support Dropdown (Authenticated Profile)
   const profileItemSupportBtn = document.getElementById('profile-item-support-btn');
-  if (profileItemSupportBtn) profileItemSupportBtn.addEventListener('click', handleOpenSupport);
+  const profileSupportCard = document.getElementById('profile-support-card');
+  const profileSupportChevron = document.getElementById('profile-support-chevron');
+  if (profileItemSupportBtn && profileSupportCard) {
+    profileItemSupportBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isHidden = profileSupportCard.style.display === 'none' || getComputedStyle(profileSupportCard).display === 'none';
+      profileSupportCard.style.display = isHidden ? 'block' : 'none';
+      profileItemSupportBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+      if (profileSupportChevron) {
+        profileSupportChevron.style.transform = isHidden ? 'rotate(90deg)' : '';
+        profileSupportChevron.style.color = isHidden ? '#FF5A26' : '';
+      }
+      if (isHidden) {
+        profileSupportCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  }
 
   const handleOpenAboutUs = (e) => {
     if (e) e.preventDefault();
@@ -9693,8 +9702,25 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     });
   }
 
+  // Collapsible Help & Support Dropdown (Guest Profile)
   const guestItemSupportBtn = document.getElementById('guest-item-support-btn');
-  if (guestItemSupportBtn) guestItemSupportBtn.addEventListener('click', handleOpenSupport);
+  const guestSupportCard = document.getElementById('guest-support-card');
+  const guestSupportChevron = document.getElementById('guest-support-chevron');
+  if (guestItemSupportBtn && guestSupportCard) {
+    guestItemSupportBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isHidden = guestSupportCard.style.display === 'none' || getComputedStyle(guestSupportCard).display === 'none';
+      guestSupportCard.style.display = isHidden ? 'block' : 'none';
+      guestItemSupportBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+      if (guestSupportChevron) {
+        guestSupportChevron.style.transform = isHidden ? 'rotate(90deg)' : '';
+        guestSupportChevron.style.color = isHidden ? '#FF5A26' : '';
+      }
+      if (isHidden) {
+        guestSupportCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  }
 
   const guestItemAboutBtn = document.getElementById('guest-item-about-btn');
   if (guestItemAboutBtn) guestItemAboutBtn.addEventListener('click', handleOpenAboutUs);

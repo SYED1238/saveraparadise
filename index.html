@@ -4905,7 +4905,7 @@
         <div class="profile-section-group">
           <h4 class="profile-section-title">Support</h4>
           <div class="profile-list-group">
-            <button type="button" class="profile-list-item" id="profile-item-support-btn">
+            <button type="button" class="profile-list-item" id="profile-item-support-btn" aria-expanded="false" aria-controls="profile-support-card">
               <div class="profile-list-icon-wrap">
                 <i class="fa-solid fa-circle-question"></i>
               </div>
@@ -4913,8 +4913,41 @@
                 <span class="profile-list-title">Help &amp; Support</span>
                 <span class="profile-list-sub">Call or WhatsApp us directly</span>
               </div>
-              <i class="fa-solid fa-chevron-right profile-list-arrow"></i>
+              <i class="fa-solid fa-chevron-right profile-list-arrow" id="profile-support-chevron"></i>
             </button>
+
+            <!-- Collapsible Help & Support Card inside Profile -->
+            <div class="profile-help-card" id="profile-support-card" style="display: none;">
+              <div class="profile-help-actions">
+                <a href="https://wa.me/919036624237?text=Hello%20Savera%20Paradise%2C%20I%20need%20help." target="_blank" rel="noopener noreferrer" class="profile-help-action-card profile-help-wa" id="profile-help-wa-btn" aria-label="Tap to WhatsApp +91 90366 24237">
+                  <div class="profile-help-action-icon wa-icon">
+                    <i class="fa-brands fa-whatsapp"></i>
+                  </div>
+                  <div class="profile-help-action-info">
+                    <span class="profile-help-action-title">Tap to WhatsApp</span>
+                    <span class="profile-help-action-number">+91 90366 24237</span>
+                  </div>
+                  <div class="profile-help-action-pill wa-pill">
+                    <span>Chat</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                  </div>
+                </a>
+
+                <a href="tel:+919036624237" class="profile-help-action-card profile-help-call" id="profile-help-call-btn" aria-label="Tap to Call +91 90366 24237">
+                  <div class="profile-help-action-icon call-icon">
+                    <i class="fa-solid fa-phone"></i>
+                  </div>
+                  <div class="profile-help-action-info">
+                    <span class="profile-help-action-title">Tap to Call</span>
+                    <span class="profile-help-action-number">+91 90366 24237</span>
+                  </div>
+                  <div class="profile-help-action-pill call-pill">
+                    <span>Call</span>
+                    <i class="fa-solid fa-phone-flip"></i>
+                  </div>
+                </a>
+              </div>
+            </div>
 
             <a href="#about-us" class="profile-list-item" id="profile-item-about-btn">
               <div class="profile-list-icon-wrap">
@@ -5032,7 +5065,7 @@
         <div class="profile-section-group">
           <h4 class="profile-section-title">Support</h4>
           <div class="profile-list-group">
-            <button type="button" class="profile-list-item" id="guest-item-support-btn">
+            <button type="button" class="profile-list-item" id="guest-item-support-btn" aria-expanded="false" aria-controls="guest-support-card">
               <div class="profile-list-icon-wrap">
                 <i class="fa-solid fa-circle-question"></i>
               </div>
@@ -5040,8 +5073,41 @@
                 <span class="profile-list-title">Help &amp; Support</span>
                 <span class="profile-list-sub">Call or WhatsApp us directly</span>
               </div>
-              <i class="fa-solid fa-chevron-right profile-list-arrow"></i>
+              <i class="fa-solid fa-chevron-right profile-list-arrow" id="guest-support-chevron"></i>
             </button>
+
+            <!-- Collapsible Help & Support Card inside Guest Profile -->
+            <div class="profile-help-card" id="guest-support-card" style="display: none;">
+              <div class="profile-help-actions">
+                <a href="https://wa.me/919036624237?text=Hello%20Savera%20Paradise%2C%20I%20need%20help." target="_blank" rel="noopener noreferrer" class="profile-help-action-card profile-help-wa" id="guest-help-wa-btn" aria-label="Tap to WhatsApp +91 90366 24237">
+                  <div class="profile-help-action-icon wa-icon">
+                    <i class="fa-brands fa-whatsapp"></i>
+                  </div>
+                  <div class="profile-help-action-info">
+                    <span class="profile-help-action-title">Tap to WhatsApp</span>
+                    <span class="profile-help-action-number">+91 90366 24237</span>
+                  </div>
+                  <div class="profile-help-action-pill wa-pill">
+                    <span>Chat</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                  </div>
+                </a>
+
+                <a href="tel:+919036624237" class="profile-help-action-card profile-help-call" id="guest-help-call-btn" aria-label="Tap to Call +91 90366 24237">
+                  <div class="profile-help-action-icon call-icon">
+                    <i class="fa-solid fa-phone"></i>
+                  </div>
+                  <div class="profile-help-action-info">
+                    <span class="profile-help-action-title">Tap to Call</span>
+                    <span class="profile-help-action-number">+91 90366 24237</span>
+                  </div>
+                  <div class="profile-help-action-pill call-pill">
+                    <span>Call</span>
+                    <i class="fa-solid fa-phone-flip"></i>
+                  </div>
+                </a>
+              </div>
+            </div>
 
             <a href="#about-us" class="profile-list-item" id="guest-item-about-btn">
               <div class="profile-list-icon-wrap">

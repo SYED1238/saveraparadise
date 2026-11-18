@@ -156,4 +156,34 @@ test('CUSTOMER PORTAL 11 BUG FIXES REGRESSION SUITE', async (t) => {
     assert.match(dataServiceJs, /regTypes\.delete\(baseType\);[\s\S]*?unsub\(\);/, 'dataService.on unsubscribe must delete baseType from regTypes');
     assert.doesNotMatch(mainJs, /dataService\.subscribeToChanges\('settings',\s*\(\)\s*=>\s*\{[\s\S]*?syncStorefrontCardsWithDataService\(\);[\s\S]*?renderCart\(\);[\s\S]*?\}\);/, 'main.js must not have duplicate inline subscribeToChanges(settings)');
   });
+
+  await t.test('Help & Support Dropdown: +91 90366 24237 WhatsApp and Call accordion in authenticated and guest profile views', () => {
+    const indexHtml = fs.readFileSync('index.html', 'utf8');
+    const styleCss = fs.readFileSync('style.css', 'utf8');
+
+    // In authenticated profile view
+    assert.match(indexHtml, /id="profile-item-support-btn"[^>]*aria-controls="profile-support-card"/, 'profile-item-support-btn must control profile-support-card');
+    assert.match(indexHtml, /id="profile-support-chevron"/, 'profile-support-chevron must be present');
+    assert.match(indexHtml, /href="https:\/\/wa\.me\/919036624237\?text=Hello%20Savera%20Paradise%2C%20I%20need%20help\."[^>]*id="profile-help-wa-btn"/, 'profile-help-wa-btn must link to wa.me/919036624237');
+    assert.match(indexHtml, /href="tel:\+919036624237"[^>]*id="profile-help-call-btn"/, 'profile-help-call-btn must link to tel:+919036624237');
+    assert.match(indexHtml, /id="profile-support-card"[\s\S]*?Tap to WhatsApp[\s\S]*?\+91 90366 24237/, 'profile-support-card must display Tap to WhatsApp and +91 90366 24237');
+    assert.match(indexHtml, /id="profile-support-card"[\s\S]*?Tap to Call[\s\S]*?\+91 90366 24237/, 'profile-support-card must display Tap to Call and +91 90366 24237');
+
+    // In guest profile view
+    assert.match(indexHtml, /id="guest-item-support-btn"[^>]*aria-controls="guest-support-card"/, 'guest-item-support-btn must control guest-support-card');
+    assert.match(indexHtml, /id="guest-support-chevron"/, 'guest-support-chevron must be present');
+    assert.match(indexHtml, /href="https:\/\/wa\.me\/919036624237\?text=Hello%20Savera%20Paradise%2C%20I%20need%20help\."[^>]*id="guest-help-wa-btn"/, 'guest-help-wa-btn must link to wa.me/919036624237');
+    assert.match(indexHtml, /href="tel:\+919036624237"[^>]*id="guest-help-call-btn"/, 'guest-help-call-btn must link to tel:+919036624237');
+
+    // In main.js
+    assert.match(mainJs, /profileItemSupportBtn\.addEventListener\('click'[\s\S]*?profileSupportCard\.style\.display\s*=\s*isHidden\s*\?\s*'block'\s*:\s*'none'/, 'main.js must toggle profileSupportCard display');
+    assert.match(mainJs, /guestItemSupportBtn\.addEventListener\('click'[\s\S]*?guestSupportCard\.style\.display\s*=\s*isHidden\s*\?\s*'block'\s*:\s*'none'/, 'main.js must toggle guestSupportCard display');
+    assert.match(mainJs, /profileSupportChevron\.style\.transform\s*=\s*isHidden\s*\?\s*'rotate\(90deg\)'/, 'main.js must rotate profileSupportChevron on open');
+    assert.match(mainJs, /guestSupportChevron\.style\.transform\s*=\s*isHidden\s*\?\s*'rotate\(90deg\)'/, 'main.js must rotate guestSupportChevron on open');
+
+    // In style.css
+    assert.match(styleCss, /\.profile-help-card\s*\{[\s\S]*?animation:\s*slideDownFade/, 'style.css must animate profile-help-card with slideDownFade');
+    assert.match(styleCss, /\.profile-help-action-card\.profile-help-wa:hover\s*\{[\s\S]*?border-color:\s*#22C55E;/, 'style.css must have WhatsApp hover border');
+    assert.match(styleCss, /\.profile-help-action-card\.profile-help-call:hover\s*\{[\s\S]*?border-color:\s*#FF5A26;/, 'style.css must have Call hover border');
+  });
 });
