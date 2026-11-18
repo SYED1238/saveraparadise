@@ -183,8 +183,11 @@ public class WebAppInterface {
                 if (soundUri != null) {
                     builder.setSound(soundUri, AudioManager.STREAM_ALARM);
                 }
-                builder.setVibrate(new long[]{0, 500, 250, 500, 250, 700})
-                    .setFullScreenIntent(pendingIntent, true);
+                builder.setVibrate(new long[]{0, 500, 250, 500, 250, 700});
+                boolean isRider = context.getPackageName().toLowerCase().contains("rider");
+                if (!isRider) {
+                    builder.setFullScreenIntent(pendingIntent, true);
+                }
 
                 Intent stopIntent = new Intent(context, OrderMonitorService.class);
                 stopIntent.setAction(OrderMonitorService.ACTION_STOP_ALARM);

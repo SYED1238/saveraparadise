@@ -1370,9 +1370,12 @@ public class OrderMonitorService extends Service {
                 .setDefaults(NotificationCompat.DEFAULT_LIGHTS)
                 .setVibrate(new long[]{0, 500, 250, 500, 250, 700})
                 .setAutoCancel(true)
-                .setFullScreenIntent(pendingIntent, true)
                 .setDeleteIntent(stopPendingIntent)
                 .setContentIntent(pendingIntent);
+
+            if (!isRiderApp) {
+                builder.setFullScreenIntent(pendingIntent, true);
+            }
 
             if (soundUri != null) {
                 builder.setSound(soundUri, AudioManager.STREAM_ALARM);

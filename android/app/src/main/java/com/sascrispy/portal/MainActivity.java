@@ -126,15 +126,19 @@ public class MainActivity extends AppCompatActivity {
         // Keep screen on for Kitchen Admin and Rider Navigation
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        // Turn screen on and show over lock screen on new order alarm
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true);
-            setTurnScreenOn(true);
-        } else {
-            getWindow().addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            );
+        // Turn screen on and show over lock screen ONLY for dedicated Kitchen Admin tablet.
+        // For Rider smartphones, do NOT permanently show over lock screen to prevent double phone-unlock.
+        boolean isKitchenTablet = getPackageName().toLowerCase().contains("kitchen");
+        if (isKitchenTablet) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true);
+                setTurnScreenOn(true);
+            } else {
+                getWindow().addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                );
+            }
         }
 
         progressBar = findViewById(R.id.progressBar);

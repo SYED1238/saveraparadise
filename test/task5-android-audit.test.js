@@ -141,4 +141,22 @@ test('Task 5: Android APK Security, Background Alarms & CI Keystore', async (t) 
     assert.match(adminJs, /window\.AndroidNative\.setStaffAuthToken\(tok\)/);
     assert.match(adminJs, /window\.AndroidNative\.setStaffAuthToken\(validToken\)/);
   });
+
+  await t.test('12. Single-unlock protection for Rider: setShowWhenLocked and setFullScreenIntent are restricted to Kitchen tablet', () => {
+    // MainActivity gates setShowWhenLocked and FLAG_SHOW_WHEN_LOCKED with isKitchenTablet
+    assert.match(
+      mainActivity,
+      /boolean\s+isKitchenTablet\s*=\s*getPackageName\(\)\.toLowerCase\(\)\.contains\("kitchen"\);[\s\S]*?if\s*\(isKitchenTablet\)\s*\{[\s\S]*?setShowWhenLocked\(true\);/
+    );
+    // OrderMonitorService skips setFullScreenIntent for Rider app
+    assert.match(
+      orderMonitorService,
+      /if\s*\(!isRiderApp\)\s*\{[\s\S]*?builder\.setFullScreenIntent\(pendingIntent,\s*true\);[\s\S]*?\}/
+    );
+    // WebAppInterface skips setFullScreenIntent for Rider app
+    assert.match(
+      webAppInterface,
+      /boolean\s+isRider\s*=\s*context\.getPackageName\(\)\.toLowerCase\(\)\.contains\("rider"\);[\s\S]*?if\s*\(!isRider\)\s*\{[\s\S]*?builder\.setFullScreenIntent\(pendingIntent,\s*true\);[\s\S]*?\}/
+    );
+  });
 });
