@@ -10244,7 +10244,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     } else {
       syncActiveUserContextToStorage();
       updateProfileStats();
-      if (btnLogin) btnLogin.style.display = 'inline-flex';
+      if (btnLogin) btnLogin.style.display = 'none';
       if (userProfileMenu) userProfileMenu.style.display = 'none';
       if (userDropdownCard) userDropdownCard.classList.remove('show');
       if (capsuleProfileLabel) capsuleProfileLabel.textContent = 'Profile';
