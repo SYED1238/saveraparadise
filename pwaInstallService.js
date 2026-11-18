@@ -18,6 +18,7 @@
  */
 
 import {
+  showSamsungToast,
   requestSystemNotificationPermission,
   sendSystemNotification,
   playNotificationSound,
@@ -243,15 +244,19 @@ export function autoBindDownloadButtons() {
 /**
  * Activates real-native app notifications
  */
+let _isEnablingAppNotifs = false;
 export async function enableAppNotificationsWithWelcome() {
-  if (!isSystemNotificationSupported()) {
-    showPwaToast('Push notifications are not supported on this browser.', 'warning');
-    return false;
-  }
-
-  const portalConfig = getPortalConfig();
+  if (_isEnablingAppNotifs) return false;
+  _isEnablingAppNotifs = true;
 
   try {
+    if (!isSystemNotificationSupported()) {
+      showPwaToast('Push notifications are not supported on this browser.', 'warning');
+      return false;
+    }
+
+    const portalConfig = getPortalConfig();
+
     const perm = await requestSystemNotificationPermission();
     if (perm === 'granted') {
       playNotificationSound(portalConfig.type === 'admin' ? 'new_order' : 'order_placed');
@@ -282,6 +287,8 @@ export async function enableAppNotificationsWithWelcome() {
     }
   } catch (err) {
     console.warn('[PWA] Notification enable error:', err);
+  } finally {
+    setTimeout(() => { _isEnablingAppNotifs = false; }, 3000);
   }
   return false;
 }
@@ -544,6 +551,27 @@ export function hideAutoInstallBanner() {
   }
 }
 
+let hasHandledInstall = false;
+
+function handleSuccessfulInstall() {
+  if (hasHandledInstall) return;
+  hasHandledInstall = true;
+  setTimeout(() => { hasHandledInstall = false; }, 15000);
+
+  deferredInstallPrompt = null;
+  if (typeof window !== 'undefined') window.__deferredPwaPrompt = null;
+  hideAllInstallButtons();
+  hideAutoInstallBanner();
+  closePwaInstallModal();
+
+  const config = getPortalConfig();
+  showPwaToast(config.installToast, 'success');
+
+  setTimeout(() => {
+    enableAppNotificationsWithWelcome();
+  }, 1200);
+}
+
 export function initPwaInstallService() {
   if (typeof window === 'undefined') return;
 
@@ -594,18 +622,9 @@ export function initPwaInstallService() {
     }
   });
 
-  // App installed event -> hide all banners & install buttons
+  // Deduplicated single-execution handler for app installation
   window.addEventListener('appinstalled', () => {
-    deferredInstallPrompt = null;
-    window.__deferredPwaPrompt = null;
-    hideAllInstallButtons();
-    hideAutoInstallBanner();
-    closePwaInstallModal();
-    const config = getPortalConfig();
-    showPwaToast(config.installToast, 'success');
-    setTimeout(() => {
-      enableAppNotificationsWithWelcome();
-    }, 1200);
+    handleSuccessfulInstall();
   });
 
   // Check if native notifications need onboarding prompt
@@ -680,13 +699,8 @@ export async function triggerAppDownload({ onInstalled, onCancel } = {}) {
       deferredInstallPrompt = null;
       if (typeof window !== 'undefined') window.__deferredPwaPrompt = null;
       if (choice && choice.outcome === 'accepted') {
-        hideAllInstallButtons();
-        closePwaInstallModal();
-        hideAutoInstallBanner();
+        handleSuccessfulInstall();
         if (typeof onInstalled === 'function') onInstalled();
-        setTimeout(() => {
-          enableAppNotificationsWithWelcome();
-        }, 1200);
       } else {
         if (typeof onCancel === 'function') onCancel();
       }
@@ -1055,7 +1069,6 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
           onInstalled: () => {
             hideAllInstallButtons();
             closePwaInstallModal();
-            showPwaToast(portalConfig.installToast, 'success');
           },
           onCancel: () => {
             installActionBtn.disabled = false;
@@ -1079,16 +1092,13 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
 }
 
 function showPwaToast(message, type = 'info') {
-  if (typeof document === 'undefined') return;
-  const container = document.querySelector('.toast-container') || document.body;
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type} show`;
-  toast.style.cssText = 'position:fixed;bottom:24px;left:24px;z-index:99999;background:#181512;color:#FFF;padding:14px 20px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);display:flex;align-items:center;gap:10px;font-weight:600;';
-  toast.innerHTML = `<span>${message}</span>`;
-  container.appendChild(toast);
-  setTimeout(() => {
-    toast.remove();
-  }, 4000);
+  if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+    return window.showToast(message, type);
+  }
+  if (typeof showSamsungToast === 'function') {
+    return showSamsungToast(message, type);
+  }
+  return null;
 }
 
 /**

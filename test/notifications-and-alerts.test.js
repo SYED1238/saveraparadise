@@ -1396,4 +1396,25 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
     assert.match(notifSrc, /existingToasts\.length\s*>=\s*1/,
       'showSamsungToast must cap visible toasts to at most 1 to prevent covering full interface');
   });
+
+  await t.test('31. PWA installation deduplication: handleSuccessfulInstall executes once and delegates to showSamsungToast', () => {
+    const pwaSrc = fs.readFileSync(
+      new URL('../pwaInstallService.js', import.meta.url),
+      'utf8'
+    );
+
+    // 1. Single install handler with flag
+    assert.match(pwaSrc, /hasHandledInstall\s*=\s*(true|false)/,
+      'pwaInstallService.js must track hasHandledInstall to prevent double notifications');
+    assert.match(pwaSrc, /function\s+handleSuccessfulInstall\(\)/,
+      'pwaInstallService.js must define unified handleSuccessfulInstall handler');
+
+    // 2. Re-entrancy guard on notification enable
+    assert.match(pwaSrc, /_isEnablingAppNotifs\s*=\s*(true|false)/,
+      'pwaInstallService.js must guard enableAppNotificationsWithWelcome against double calls');
+
+    // 3. showPwaToast delegates to Samsung toast system
+    assert.match(pwaSrc, /showSamsungToast\(message,\s*type\)/,
+      'showPwaToast must delegate to showSamsungToast for consistent One UI design');
+  });
 });

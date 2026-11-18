@@ -723,23 +723,23 @@ export function showSamsungToast(message, type = 'info', options = {}) {
 
   // 2. Resolve or create top-level toast container
   let container = options.container;
-  if (typeof container === 'string') {
+  if (typeof container === 'string' && typeof document.querySelector === 'function') {
     container = document.querySelector(container);
   }
   if (!container || !container.appendChild) {
-    container = document.getElementById('toast-container') ||
-                document.getElementById('rider-toast-container') ||
-                document.querySelector('.toast-container');
-    if (!container) {
+    container = (typeof document.getElementById === 'function' ? (document.getElementById('toast-container') || document.getElementById('rider-toast-container')) : null) ||
+                (typeof document.querySelector === 'function' ? document.querySelector('.toast-container') : null);
+    if (!container && typeof document.createElement === 'function' && document.body && typeof document.body.appendChild === 'function') {
       container = document.createElement('div');
       container.className = 'toast-container';
       container.id = 'toast-container';
       document.body.appendChild(container);
     }
   }
+  if (!container || typeof container.appendChild !== 'function') return null;
 
   // 3. Highlight existing visible toast if identical message is already onscreen
-  const existingToasts = container.querySelectorAll('.toast');
+  const existingToasts = typeof container.querySelectorAll === 'function' ? container.querySelectorAll('.toast') : [];
   for (const existing of existingToasts) {
     const textEl = existing.querySelector('.toast-message-text') || existing;
     if (textEl && textEl.textContent && textEl.textContent.trim() === rawMsg) {
