@@ -2476,7 +2476,7 @@ const initDeliveryApp = () => {
     }
     const btnCashfreeText = document.getElementById('btn-cashfree-text');
     if (btnCashfreeText) {
-      btnCashfreeText.textContent = 'Open Official Cashfree Scanner';
+      btnCashfreeText.textContent = 'Check Payment Status';
     }
     if (btnOpenCashfreeCheckout) {
       btnOpenCashfreeCheckout.style.background = '#0F172A';
@@ -2640,9 +2640,10 @@ const initDeliveryApp = () => {
     isOpeningDoorstepScanner = true;
     const cash = extractCashAmount(order.total);
     if (doorstepUpiAmountBadge) doorstepUpiAmountBadge.textContent = `₹${cash}`;
+    if (doorstepQrImg) doorstepQrImg.style.display = 'none';
     if (doorstepQrLoader) doorstepQrLoader.style.display = 'flex';
     if (doorstepUpiLiveStatus) {
-      doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Opening Cashfree Scanner...';
+      doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Generating UPI QR...';
       doorstepUpiLiveStatus.style.color = '#059669';
     }
 
@@ -2668,22 +2669,51 @@ const initDeliveryApp = () => {
         });
         const data = await resp.json().catch(() => ({}));
         if (!data || !data.success || !data.paymentSessionId) {
-          throw new Error(data?.message || data?.error || 'Could not initialize Cashfree session');
+          throw new Error(data?.message || data?.error || 'Could not generate UPI QR');
         }
         currentDoorstepCashfreeSession = data;
       }
 
-      if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
+      // If Cashfree Seamless UPI QR is not enabled on the merchant account in production,
+      // fall back cleanly to Cashfree Checkout instead of showing an untracked VPA QR.
+      if (currentDoorstepCashfreeSession.isCashfreeQr === false && !currentDoorstepCashfreeSession.isMock) {
+        if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
+        if (currentDoorstepCashfreeSession.cfOrderId) {
+          startDoorstepPaymentPolling(currentDoorstepCashfreeSession.cfOrderId, order.id);
+        }
+        const CashfreeFn = (typeof window !== 'undefined' && window.Cashfree) ? window.Cashfree : null;
+        if (CashfreeFn) {
+          const cfMode = currentDoorstepCashfreeSession.cashfreeMode || 'production';
+          const cashfree = CashfreeFn({ mode: cfMode });
+          const cfResult = await cashfree.checkout({
+            paymentSessionId: currentDoorstepCashfreeSession.paymentSessionId,
+            redirectTarget: '_modal',
+            mode: cfMode
+          });
+          if (!cfResult?.error) {
+            await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, order.id, true);
+          }
+          return;
+        }
+      }
 
-      // Local QR rendering fallback for test assertion parity and offline support
-      if (doorstepQrImg && typeof QRCode !== 'undefined' && typeof QRCode.toDataURL === 'function') {
+      // Render QR directly (prefer server qrDataUrl, fallback to local QRCode canvas)
+      let qrSrc = currentDoorstepCashfreeSession.qrDataUrl || '';
+      if (!qrSrc && typeof QRCode !== 'undefined' && typeof QRCode.toDataURL === 'function') {
         const qrPayload = currentDoorstepCashfreeSession.qrPayload || currentDoorstepCashfreeSession.upiIntentUri || '';
         if (qrPayload) {
-          try {
-            const fallbackUrl = await QRCode.toDataURL(qrPayload, { width: 280, margin: 2 });
-            doorstepQrImg.src = fallbackUrl;
-          } catch {}
+          qrSrc = await QRCode.toDataURL(qrPayload, { width: 280, margin: 2 });
         }
+      }
+
+      if (!qrSrc) {
+        throw new Error('QR image could not be generated. Please retry.');
+      }
+
+      if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
+      if (doorstepQrImg) {
+        doorstepQrImg.src = qrSrc;
+        doorstepQrImg.style.display = 'block';
       }
 
       if (currentDoorstepCashfreeSession.cfOrderId) {
@@ -2691,10 +2721,11 @@ const initDeliveryApp = () => {
       }
 
       if (doorstepUpiLiveStatus) {
-        doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Cashfree Active • Waiting for Payment...';
+        doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Ready • Scan QR to Pay';
         doorstepUpiLiveStatus.style.color = '#059669';
       }
 
+      // Preserve local sandbox mock simulation
       if (currentDoorstepCashfreeSession.isMock) {
         const simulatePaid = typeof window.confirm === 'function'
           ? window.confirm(`[Local Sandbox Mode] Cashfree API keys are in mock mode.\n\nSimulate successful doorstep payment for Order #${order.id}?`)
@@ -2702,36 +2733,15 @@ const initDeliveryApp = () => {
         if (simulatePaid) {
           await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, order.id, true);
         }
-        return;
-      }
-
-      const CashfreeFn = (typeof window !== 'undefined' && window.Cashfree) ? window.Cashfree : null;
-      if (!CashfreeFn) {
-        showToast('⚠️ Cashfree SDK is loading. Tap Open Official Cashfree Scanner below to retry.', 'warning');
-        return;
-      }
-
-      const cfMode = currentDoorstepCashfreeSession.cashfreeMode || 'production';
-      const cashfree = CashfreeFn({ mode: cfMode });
-      const cfResult = await cashfree.checkout({
-        paymentSessionId: currentDoorstepCashfreeSession.paymentSessionId,
-        redirectTarget: '_modal',
-        mode: cfMode
-      });
-
-      if (cfResult && cfResult.error) {
-        console.warn('[Rider Cashfree]: modal closed or error:', cfResult.error);
-      } else {
-        await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, order.id, true);
       }
     } catch (err) {
       stopDoorstepPaymentPolling();
       if (doorstepQrLoader) doorstepQrLoader.style.display = 'none';
       if (doorstepUpiLiveStatus) {
-        doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color: #EF4444;"></i> Cashfree error. Tap button below to retry.';
+        doorstepUpiLiveStatus.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color: #EF4444;"></i> QR failed. Tap below to retry.';
         doorstepUpiLiveStatus.style.color = '#EF4444';
       }
-      showToast(`⚠️ ${err.message || 'Could not open Cashfree Scanner'}`, 'error');
+      showToast(`⚠️ ${err.message || 'Could not generate UPI QR'}`, 'error');
     } finally {
       isOpeningDoorstepScanner = false;
     }
@@ -2742,7 +2752,10 @@ const initDeliveryApp = () => {
 
   if (btnOpenCashfreeCheckout) {
     btnOpenCashfreeCheckout.addEventListener('click', async () => {
-      if (activeConfirmOrder) {
+      if (!activeConfirmOrder) return;
+      if (currentDoorstepCashfreeSession?.cfOrderId) {
+        await verifyDoorstepPaymentStatus(currentDoorstepCashfreeSession.cfOrderId, activeConfirmOrder.id, true);
+      } else {
         await openCashfreeDoorstepScanner(activeConfirmOrder);
       }
     });

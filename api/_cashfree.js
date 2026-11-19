@@ -513,6 +513,7 @@ export async function generateDoorstepUpiQr({
 
     let qrPayload = upiIntentUri;
     let qrDataUrl = '';
+    let isCashfreeQr = false;
 
     // Attempt to fetch authentic Cashfree dynamic UPI QR session
     try {
@@ -538,6 +539,7 @@ export async function generateDoorstepUpiQr({
         const sessionData = await sessionResp.json().catch(() => null);
         const cfQr = sessionData?.data?.payload?.qrcode || sessionData?.payload?.qrcode || '';
         if (typeof cfQr === 'string' && cfQr.trim()) {
+          isCashfreeQr = true;
           if (cfQr.startsWith('data:image/')) {
             qrDataUrl = cfQr.trim();
           } else {
@@ -561,6 +563,7 @@ export async function generateDoorstepUpiQr({
       upiIntentUri: qrPayload,
       qrPayload,
       qrDataUrl,
+      isCashfreeQr,
       paymentUrl: cashfreePaymentUrl,
       cfOrderId: pgRes.cfOrderId,
       paymentSessionId: pgRes.paymentSessionId,

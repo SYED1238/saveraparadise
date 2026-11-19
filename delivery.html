@@ -491,7 +491,7 @@
           </label>
         </div>
 
-        <!-- Mode B: Official Cashfree Doorstep Checkout & Scanner -->
+        <!-- Mode B: Direct Dynamic UPI QR Display -->
         <div class="doorstep-upi-qr-box" id="doorstep-upi-qr-box" style="display: none;">
           <div class="upi-qr-card-header">
             <div class="upi-brand-icons">
@@ -503,28 +503,31 @@
             <span class="upi-qr-amount-badge" id="doorstep-upi-amount-badge">₹0</span>
           </div>
 
-          <div class="cashfree-launcher-card" style="padding: 16px 14px; text-align: center; background: #F8FAFC; border: 1.5px dashed #CBD5E1; border-radius: 12px; margin: 12px 0;">
-            <div class="cashfree-launcher-icon" style="font-size: 2.2rem; color: #4F46E5; margin-bottom: 6px;">
-              <i class="fa-solid fa-qrcode"></i>
+          <div class="upi-qr-display-wrap">
+            <div class="upi-qr-frame">
+              <div class="upi-qr-loader" id="doorstep-qr-loader" style="display: flex;">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <span>Generating QR...</span>
+              </div>
+              <img id="doorstep-qr-img" alt="Cashfree Doorstep UPI QR" class="doorstep-qr-img" src="" style="display: none;" />
             </div>
-            <h4 style="margin: 0 0 4px 0; font-size: 0.95rem; color: #0F172A; font-weight: 700;">Official Cashfree PG Checkout</h4>
-            <p style="margin: 0 0 10px 0; font-size: 0.78rem; color: #64748B;">
-              Accept real-time payments via PhonePe, Google Pay, Paytm, or Dynamic QR.
-            </p>
-            <div class="upi-live-status-pill" id="doorstep-upi-live-status" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.8rem; font-weight: 700; color: #059669; padding: 6px 12px; background: #ECFDF5; border-radius: 20px; margin-bottom: 12px;">
-              <i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Waiting for Payment...
-            </div>
-            <button type="button" class="btn-open-cashfree-checkout" id="btn-open-cashfree-checkout" style="width: 100%; padding: 12px 16px; background: #0F172A; color: #FFF; border: none; border-radius: 10px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
-              <i class="fa-solid fa-expand"></i> <span id="btn-cashfree-text">Open Official Cashfree Scanner</span>
-            </button>
-            <div class="upi-security-note" style="margin-top: 10px; font-size: 0.74rem; color: #64748B;">
-              <i class="fa-solid fa-shield-halved" style="color: #10B981;"></i> Money deposits directly to Restaurant Bank Account. Rider Cash Liability remains <strong>₹0</strong>.
+
+            <div class="upi-qr-info">
+              <span class="upi-scan-hint">Ask customer to scan with any UPI app</span>
+              <div class="upi-live-status-pill" id="doorstep-upi-live-status" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.8rem; font-weight: 700; color: #059669; padding: 6px 12px; background: #ECFDF5; border-radius: 20px; margin: 6px 0;">
+                <i class="fa-solid fa-circle-dot fa-fade" style="color: #10B981;"></i> Waiting for Payment...
+              </div>
+              <div class="upi-security-note">
+                <i class="fa-solid fa-shield-halved" style="color: #10B981;"></i> Money deposits directly to Restaurant Bank Account. Rider Cash Liability remains <strong>₹0</strong>.
+              </div>
             </div>
           </div>
 
-          <!-- Hidden legacy anchors preserved for test assertion and DOM compatibility -->
-          <img id="doorstep-qr-img" alt="Cashfree Doorstep UPI QR" class="doorstep-qr-img" src="" style="display: none !important;" />
-          <div id="doorstep-qr-loader" style="display: none !important;"></div>
+          <button type="button" class="btn-open-cashfree-checkout" id="btn-open-cashfree-checkout" style="width: 100%; padding: 10px 14px; background: #0F172A; color: #FFF; border: none; border-radius: 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="fa-solid fa-rotate"></i> <span id="btn-cashfree-text">Check Payment Status</span>
+          </button>
+
+          <!-- Hidden compatibility anchors -->
           <span id="doorstep-vpa-display" style="display: none !important;">Cashfree Verified Merchant (Savera Paradise)</span>
           <input type="checkbox" id="check-upi-verified" style="display: none !important;" />
         </div>
