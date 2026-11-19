@@ -84,11 +84,19 @@ export class NavigationBackManager {
     this.stack.push(entry);
 
     try {
-      window.history.pushState(
-        { portal: this.portalName, stepId, depth: this.stack.length, timestamp: entry.time },
-        '',
-        window.location.href
-      );
+      if (existingIdx !== -1) {
+        window.history.replaceState(
+          { portal: this.portalName, stepId, depth: this.stack.length, timestamp: entry.time },
+          '',
+          window.location.href
+        );
+      } else {
+        window.history.pushState(
+          { portal: this.portalName, stepId, depth: this.stack.length, timestamp: entry.time },
+          '',
+          window.location.href
+        );
+      }
     } catch (err) {
       console.warn('[NavBack] pushState warning:', err);
     }
@@ -108,18 +116,28 @@ export class NavigationBackManager {
       time: Date.now()
     };
 
-    if (this.stack.length > 0) {
+    const isStackEmpty = this.stack.length === 0;
+    if (!isStackEmpty) {
       this.stack[this.stack.length - 1] = entry;
     } else {
+      this._initBaseHistory();
       this.stack.push(entry);
     }
 
     try {
-      window.history.replaceState(
-        { portal: this.portalName, stepId, depth: this.stack.length, timestamp: entry.time },
-        '',
-        window.location.href
-      );
+      if (isStackEmpty) {
+        window.history.pushState(
+          { portal: this.portalName, stepId, depth: this.stack.length, timestamp: entry.time },
+          '',
+          window.location.href
+        );
+      } else {
+        window.history.replaceState(
+          { portal: this.portalName, stepId, depth: this.stack.length, timestamp: entry.time },
+          '',
+          window.location.href
+        );
+      }
     } catch (err) {
       console.warn('[NavBack] replaceState warning:', err);
     }

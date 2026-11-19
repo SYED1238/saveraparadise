@@ -293,7 +293,7 @@ export default async function handler(req, res) {
     }
 
     // Aggregate quantity cap per dish
-    const aggregateKey = itemId || String(item.name || 'dish').toLowerCase();
+    const aggregateKey = String(dish?.id || itemId || item.name || 'dish').toLowerCase();
     const curQty = (dishQtyMap.get(aggregateKey) || 0) + quantity;
     if (curQty > 50) {
       return res.status(400).json({ error: `Maximum quantity per item is 50 (exceeded for '${item.name || 'Item'}')` });
@@ -467,20 +467,9 @@ export default async function handler(req, res) {
   let appliedDeal = null;
   const serverDealsEnabled = settings.unlockedDealsEnabled ?? false;
   if (serverDealsEnabled) {
-    const rawMin = Number(settings.unlockedDealsMinOrder);
-    const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
-    const rawPct = Number(settings.unlockedDealsDiscountPct);
-    const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
-    if (computedSubtotal >= dealsMin) {
-      unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
-      appliedDeal = {
-        label: settings.unlockedDealsTitle || `${dealsPct}% Wholesale Deal`,
-        discountPercent: dealsPct,
-        minSpend: dealsMin
-      };
-    } else if (Array.isArray(settings.unlockedDealsThresholds) && settings.unlockedDealsThresholds.length > 0) {
-      const sorted = [...settings.unlockedDealsThresholds].sort((a, b) => b.minSpend - a.minSpend);
-      const matched = sorted.find(t => computedSubtotal >= t.minSpend);
+    if (Array.isArray(settings.unlockedDealsThresholds) && settings.unlockedDealsThresholds.length > 0) {
+      const sorted = [...settings.unlockedDealsThresholds].sort((a, b) => (Number(b.minSpend) || 0) - (Number(a.minSpend) || 0));
+      const matched = sorted.find(t => computedSubtotal >= (Number(t.minSpend) || 0));
       if (matched) {
         const rawTiersPct = Number(matched.discountPercent) || 0;
         const safeTiersPct = Math.min(Math.max(rawTiersPct, 0), 50);
@@ -488,7 +477,23 @@ export default async function handler(req, res) {
         appliedDeal = {
           label: matched.label || `${safeTiersPct}% Deal`,
           discountPercent: safeTiersPct,
-          minSpend: matched.minSpend
+          minSpend: Number(matched.minSpend) || 0
+        };
+      }
+    }
+    if (!appliedDeal) {
+      const dealsMin = (settings.unlockedDealsMinOrder !== null && settings.unlockedDealsMinOrder !== undefined && settings.unlockedDealsMinOrder !== '' && Number.isFinite(Number(settings.unlockedDealsMinOrder)))
+        ? Math.max(10, Number(settings.unlockedDealsMinOrder))
+        : 299;
+      const dealsPct = (settings.unlockedDealsDiscountPct !== null && settings.unlockedDealsDiscountPct !== undefined && settings.unlockedDealsDiscountPct !== '' && Number.isFinite(Number(settings.unlockedDealsDiscountPct)))
+        ? Math.min(50, Math.max(1, Number(settings.unlockedDealsDiscountPct)))
+        : 15;
+      if (computedSubtotal >= dealsMin) {
+        unlockedDealDiscount = Math.round((computedSubtotal * dealsPct) / 100);
+        appliedDeal = {
+          label: settings.unlockedDealsTitle || `${dealsPct}% Wholesale Deal`,
+          discountPercent: dealsPct,
+          minSpend: dealsMin
         };
       }
     }
@@ -519,7 +524,7 @@ export default async function handler(req, res) {
           deliveryFee = 0;
         }
       }
-    } else if (cleanCode === 'SAVERA20' && computedSubtotal >= 199) {
+    } else if (cleanCode === 'SAVERA20' && computedSubtotal >= ((settings.offerMinOrder !== undefined && settings.offerMinOrder !== null) ? Number(settings.offerMinOrder) : 199)) {
       discount = Math.min(computedSubtotal, Math.round((computedSubtotal * 20) / 100));
       activeAppliedPromo = 'SAVERA20';
     } else if (cleanCode === 'SAVE10' && computedSubtotal >= 149) {

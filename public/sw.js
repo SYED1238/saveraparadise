@@ -62,8 +62,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Map Tiles Caching (Strict Google Maps) with Cache-First Strategy
-  const isMapTile = (url.hostname.includes('google.com') && url.pathname.includes('/vt/')) ||
-                    url.hostname.includes('googleapis.com');
+  const isMapTile = (url.hostname.includes('google.com') || url.hostname.includes('googleapis.com')) &&
+                    (url.pathname.includes('/vt/') || url.pathname.includes('/maps/vt'));
 
   if (isMapTile) {
     const MAP_CACHE_NAME = 'savera-map-tiles-v1';
@@ -134,7 +134,7 @@ self.addEventListener('fetch', (event) => {
         }
         return networkResponse;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(event.request).then(cached => cached || new Response('Offline: Asset not available in cache', { status: 503, statusText: 'Service Unavailable' })))
   );
 });
 

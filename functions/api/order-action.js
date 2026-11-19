@@ -81,6 +81,7 @@ function filterOrdersForRider(orders, riderPin) {
 
 function getKitchenPollCacheRequest(request) {
   const cacheUrl = new URL(request.url);
+  cacheUrl.pathname = '/api/order-action';
   cacheUrl.search = '?action=kitchen_poll';
   return new Request(cacheUrl.toString(), { method: 'GET' });
 }
@@ -1943,14 +1944,19 @@ export async function onRequest(context) {
           cancellation_reason: cancellationReason
         };
 
-        const { data: updatedRows, error: atomicCancelErr } = await sb
+        let cancelQuery = sb
           .from('orders')
           .update(atomicCancelPayload)
           .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
           .neq('status', 'cancelled')
           .neq('status', 'delivered')
-          .neq('status', 'undelivered')
-          .select();
+          .neq('status', 'undelivered');
+
+        if (!isOwner) {
+          cancelQuery = cancelQuery.in('status', ['pending', 'accepted']);
+        }
+
+        const { data: updatedRows, error: atomicCancelErr } = await cancelQuery.select();
 
         if (atomicCancelErr) throw atomicCancelErr;
 
@@ -2193,7 +2199,7 @@ export async function onRequest(context) {
 
         const insertPayload = {
           id: cleanId,
-          created_at: Number(orderData.created_at || orderData.createdAt) || Date.now(),
+          created_at: isStaff ? (Number(orderData.created_at || orderData.createdAt) || Date.now()) : Date.now(),
           customer_name: orderData.customer_name || orderData.customerName || 'Online Guest',
           customer_phone: orderData.customer_phone || orderData.customerPhone || orderData.phone || null,
           customer_email: orderData.customer_email || orderData.customerEmail || null,
@@ -2205,9 +2211,9 @@ export async function onRequest(context) {
           is_paid_online: isPaidOnline,
           doorstep_upi: isStaff ? Boolean(orderData.doorstep_upi || orderData.doorstepUpi) : false,
           cash_collected: 0,
-          step_index: typeof orderData.step_index === 'number' ? orderData.step_index : (typeof orderData.stepIndex === 'number' ? orderData.stepIndex : 0),
+          step_index: isStaff ? (typeof orderData.step_index === 'number' ? orderData.step_index : (typeof orderData.stepIndex === 'number' ? orderData.stepIndex : 0)) : 0,
           status: targetStatus,
-          status_label: orderData.status_label || orderData.statusLabel || targetStatusLabel,
+          status_label: isStaff ? (orderData.status_label || orderData.statusLabel || targetStatusLabel) : targetStatusLabel,
           eta: orderData.eta || '25 - 35 Minutes',
           items_summary: itemsSummary,
           items: enforcedItems,

@@ -156,7 +156,7 @@ export function detectPlatformEnvironment(customUa) {
   const ua = (customUa || (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '').trim();
   const isIOS = /iPhone|iPad|iPod/i.test(ua) || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isAndroid = /Android/i.test(ua);
-  const isInApp = /Instagram|FBAN|FBAV|WhatsApp|Line\/|Snapchat/i.test(ua);
+  const isInApp = /Instagram|FBAN|FBAV|WhatsApp|Line\/|Snapchat|;\s*wv\)/i.test(ua);
 
   if (isIOS) {
     if (isInApp) return 'ios-inapp';

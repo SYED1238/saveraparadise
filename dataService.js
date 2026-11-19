@@ -2725,7 +2725,11 @@ class QuickBiteDataService {
 
       if (!this.dishesCache || this.dishesCache.length === 0 || storedVersion !== MENU_VERSION || hasOldDishes) {
         // Upgrade menu version to Savera Paradise authentic menu
-        const oldDefaultPrefixes = ['dish-chicken-1pc', 'dish-chicken-3pcs', 'dish-chicken-6pcs', 'dish-strips-', 'dish-combo-', 'dish-burger-', 'dish-pizza-', 'dish-sandwich-', 'dish-bites-', 'dish-fries-', 'dish-momos-', 'dish-roll-'];
+        const oldDefaultPrefixes = [
+          'dish-chicken-1pc', 'dish-chicken-3pcs', 'dish-chicken-6pcs', 'dish-strips-', 'dish-combo-',
+          'dish-burger-', 'dish-pizza-', 'dish-sandwich-', 'dish-bites-', 'dish-fries-', 'dish-momos-', 'dish-roll-',
+          'dish-chicken-hyd-biryani', 'dish-mutton-', 'dish-grill-mandi', 'dish-tandoori-chick-half'
+        ];
         const customDishes = (this.dishesCache || []).filter(d => 
           d.id && !oldDefaultPrefixes.some(p => d.id.startsWith(p)) && !DEFAULT_DISHES.some(nd => nd.id === d.id)
         );
@@ -3420,6 +3424,7 @@ class QuickBiteDataService {
 
       this.sharedBroadcastChannel
         .on('broadcast', { event: 'new_order' }, (event) => {
+          if (this.portalType === 'customer' || !this.isStaffAuthorized()) return;
           const payload = event?.payload || {};
           const order = payload.order;
           if (!order || !order.id) return;
@@ -3448,6 +3453,7 @@ class QuickBiteDataService {
           });
         })
         .on('broadcast', { event: 'stop_alarm' }, (event) => {
+          if (this.portalType === 'customer' || !this.isStaffAuthorized()) return;
           const payload = event?.payload || {};
           console.log('[Supabase Realtime] Received cross-device stop_alarm broadcast:', payload);
           // 1. Immediately acknowledge orders locally so subsequent scans never re-trigger alarm
@@ -3527,7 +3533,7 @@ class QuickBiteDataService {
                 }
               }
               this.saveOrders(orders, { action: 'status_updated', orderId: payload.orderId, order: orders[idx], prevStatus, source: 'supabase_broadcast', timestamp: payload.timestamp || Date.now() });
-            } else if (payload.status === 'ready_for_pickup' || (payload.order && payload.order.status === 'ready_for_pickup')) {
+            } else if ((payload.status === 'ready_for_pickup' || (payload.order && payload.order.status === 'ready_for_pickup')) && this.portalType !== 'customer' && this.isStaffAuthorized()) {
               // Eliminate discovery blindspot: sync immediately when an order becomes ready for pickup
               this.syncOrdersFromSupabase(true).catch(() => {});
             }
@@ -3536,6 +3542,14 @@ class QuickBiteDataService {
         .on('broadcast', { event: 'rider_location' }, (event) => {
           const payload = event?.payload || {};
           if (payload.lat && payload.lng) {
+            if (this.portalType === 'customer') {
+              const myIds = new Set(this.getMyOrderIds().map(id => String(id || '').trim().replace(/^#/, '')));
+              const targetIds = Array.isArray(payload.orderIds) && payload.orderIds.length > 0
+                ? payload.orderIds
+                : (payload.orderId ? [payload.orderId] : []);
+              const isForMyOrder = targetIds.some(id => myIds.has(String(id || '').trim().replace(/^#/, '')));
+              if (!isForMyOrder) return;
+            }
             try {
               localStorage.setItem('quickbite_live_rider_location', JSON.stringify(payload));
               if (payload.orderId) {
@@ -3611,6 +3625,7 @@ class QuickBiteDataService {
           }
         })
         .on('broadcast', { event: 'payout_paid' }, (event) => {
+          if (this.portalType === 'customer' || !this.isStaffAuthorized()) return;
           const payload = event?.payload || {};
           if (payload.riderPin) {
             const cleanPin = String(payload.riderPin).trim();
@@ -3631,6 +3646,7 @@ class QuickBiteDataService {
           }
         })
         .on('broadcast', { event: 'cash_settled' }, (event) => {
+          if (this.portalType === 'customer' || !this.isStaffAuthorized()) return;
           const payload = event?.payload || {};
           if (payload.riderPin) {
             const cleanPin = String(payload.riderPin).trim();
@@ -3646,6 +3662,7 @@ class QuickBiteDataService {
           }
         })
         .on('broadcast', { event: 'cash_handover_requested' }, (event) => {
+          if (this.portalType === 'customer' || !this.isStaffAuthorized()) return;
           const payload = event?.payload || {};
           if (payload.riderPin) {
             const cleanPin = String(payload.riderPin).trim();
@@ -3669,6 +3686,7 @@ class QuickBiteDataService {
           }
         })
         .on('broadcast', { event: 'payout_config_updated' }, (event) => {
+          if (this.portalType === 'customer' || !this.isStaffAuthorized()) return;
           const payload = event?.payload || {};
           if (payload.payoutConfig && typeof payload.payoutConfig === 'object') {
             try {
@@ -3927,6 +3945,10 @@ class QuickBiteDataService {
             items_summary: orderData.itemsSummary || '',
             items: orderData.items || [],
             total: orderData.total || '₹0',
+            subtotal: orderData.subtotal || orderData.total || '₹0',
+            discount: orderData.discount || 0,
+            delivery_fee: orderData.deliveryFee || 0,
+            platform_fee: orderData.platformFee || 0,
             lat: (orderData.lat !== undefined && !isNaN(Number(orderData.lat))) ? Number(orderData.lat) : (orderData.addressDetails?.lat ? Number(orderData.addressDetails.lat) : null),
             lng: (orderData.lng !== undefined && !isNaN(Number(orderData.lng))) ? Number(orderData.lng) : (orderData.addressDetails?.lng ? Number(orderData.addressDetails.lng) : null),
             address_details: orderData.addressDetails || null
@@ -3951,6 +3973,11 @@ class QuickBiteDataService {
               delete orderData.pendingRemoteSync;
               if (syncRes && syncRes.trackingToken) {
                 orderData.trackingToken = syncRes.trackingToken;
+                try {
+                  const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
+                  tokens[orderData.id] = syncRes.trackingToken;
+                  localStorage.setItem('quickbite_tracking_tokens', JSON.stringify(tokens));
+                } catch {}
               }
               anySynced = true;
 
@@ -3965,7 +3992,12 @@ class QuickBiteDataService {
               } catch {}
             } else {
               console.warn(`[DataService] Failed to sync offline order ${orderData.id}:`, syncErr || syncRes);
-              if (String(syncErr?.message || '').toLowerCase().includes('fetch failed') || String(syncErr?.message || '').toLowerCase().includes('networkerror')) {
+              const statusCode = syncErr?.status || syncRes?.status;
+              if (statusCode === 400 || statusCode === 401 || statusCode === 403 || statusCode === 409 || String(syncErr?.message || '').includes('expired')) {
+                console.warn(`[DataService] Offline order ${orderData.id} rejected by server with ${statusCode}. Dropping pendingRemoteSync.`);
+                delete orderData.pendingRemoteSync;
+                anySynced = true;
+              } else if (String(syncErr?.message || '').toLowerCase().includes('fetch failed') || String(syncErr?.message || '').toLowerCase().includes('networkerror')) {
                 break;
               }
             }
@@ -4139,7 +4171,21 @@ class QuickBiteDataService {
         }
 
         if (anySynced) {
-          this.saveOrders(list, { action: 'offline_orders_synced', timestamp: Date.now() });
+          const freshList = this.getOrders();
+          freshList.forEach(freshOrder => {
+            const synced = list.find(l => l && l.id === freshOrder.id);
+            if (synced && !synced.pendingRemoteSync && freshOrder.pendingRemoteSync) {
+              delete freshOrder.pendingRemoteSync;
+              if (synced.trackingToken) freshOrder.trackingToken = synced.trackingToken;
+            }
+            if (synced && !synced.pendingStatusSync && freshOrder.pendingStatusSync) {
+              delete freshOrder.pendingStatusSync;
+              freshOrder.status = synced.status;
+              freshOrder.statusLabel = synced.statusLabel;
+              freshOrder.stepIndex = synced.stepIndex;
+            }
+          });
+          this.saveOrders(freshList, { action: 'offline_orders_synced', timestamp: Date.now() });
           this.notifyChange('orders', { action: 'offline_orders_synced' });
         }
       } catch (e) {
@@ -4259,11 +4305,6 @@ class QuickBiteDataService {
         const hasActiveOrders = Array.isArray(orders) && orders.some(
           o => o && !['delivered', 'cancelled', 'undelivered', 'pending_payment'].includes(o.status)
         );
-        // If store is closed and no active orders exist, avoid waking Supabase on tab focus
-        if (!isOpen && !hasActiveOrders) {
-          return;
-        }
-
         const isRealtimeHealthy = this.realtimeChannel && this.realtimeChannel.state === 'joined';
         const isBroadcastHealthy = this.sharedBroadcastChannel && this.sharedBroadcastChannel.state === 'joined';
         if (!isRealtimeHealthy || !isBroadcastHealthy) {
@@ -4275,7 +4316,12 @@ class QuickBiteDataService {
           this.syncSettingsFromSupabase(true);
         }
         if (now - (this._lastDishesSyncTime || 0) > 20000) {
-          this.syncDishesFromSupabase();
+          this.syncDishesFromSupabase(true);
+        }
+
+        // If store is closed and no active orders exist, avoid polling orders on tab focus
+        if (!isOpen && !hasActiveOrders) {
+          return;
         }
         if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
           if (this.isStaffAuthorized() && now - this._lastOrdersSyncTime > 15000) {
@@ -4557,6 +4603,8 @@ class QuickBiteDataService {
               const prevStatus = lo.status;
               Object.assign(lo, mappedRemote);
               changed = true;
+              this.ordersCache = localList;
+              try { localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(localList)); } catch {}
               this.notifyChange('orders', { action: 'status_updated', orderId: lo.id, order: lo, prevStatus, source: 'supabase' });
             } else {
               Object.assign(lo, mappedRemote);
@@ -5685,9 +5733,9 @@ class QuickBiteDataService {
       console.warn('[DataService] LocalStorage quota reached for full dishes payload. Keeping full data in IndexedDB and saving optimized copy to localStorage:', quotaErr?.message || quotaErr);
       try {
         // Strip excessive base64 strings only for localStorage copy so localStorage doesn't throw QuotaExceededError
-        const safeLocalDishes = dishes.map(d => {
+        const safeLocalDishes = sanitizedDishes.map(d => {
           if (d.image && d.image.startsWith('data:') && d.image.length > 40000) {
-            return { ...d, image: d.image.slice(0, 30000) };
+            return { ...d, image: '' };
           }
           return d;
         });
@@ -6088,14 +6136,9 @@ class QuickBiteDataService {
 
   isOrderForCustomer(o, userId = null, email = null, phone = null) {
     if (!o) return false;
-    let myIds = [];
-    try {
-      const stored = localStorage.getItem('quickbite_my_order_ids');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) myIds = parsed;
-      }
-    } catch {}
+    const myIds = this.getMyOrderIds();
+    const norm = (id) => String(id || '').trim().replace(/^#/, '');
+    const cleanOrderId = norm(o.id);
 
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
@@ -6113,7 +6156,7 @@ class QuickBiteDataService {
     if (userId && o.userId && String(o.userId) === String(userId)) return true;
     if (cleanEmail && orderEmail && orderEmail === cleanEmail) return true;
     if (cleanPhone && cleanPhone.length === 10 && orderPhone === cleanPhone) return true;
-    if (myIds.includes(o.id)) return true;
+    if (cleanOrderId && myIds.some(id => norm(id) === cleanOrderId)) return true;
     return false;
   }
 
@@ -7508,8 +7551,8 @@ class QuickBiteDataService {
         reason: 'unpinned'
       };
     }
-    const distance = this.calculateDistanceToRestaurant(numLat, numLng);
-    if (distance === null) {
+    const straight = this.calculateStraightDistance(numLat, numLng);
+    if (straight === null) {
       return {
         deliverable: false,
         distanceKm: null,
@@ -7517,6 +7560,7 @@ class QuickBiteDataService {
         reason: 'unpinned'
       };
     }
+    const distance = Math.round(straight * 1.55 * 10) / 10;
     return {
       deliverable: distance <= radius,
       distanceKm: distance,
@@ -7921,9 +7965,9 @@ class QuickBiteDataService {
               pincode: rawPin,
               details: reconstructedFull,
               fullText: reconstructedFull,
-              lat: Number(row.lat) || RESTAURANT_COORDINATES.lat,
-              lng: Number(row.lng) || RESTAURANT_COORDINATES.lng,
-              distanceKm: Number(row.distance_km) || 0,
+              lat: (row.lat !== null && row.lat !== undefined && !isNaN(Number(row.lat)) && Number(row.lat) !== 0) ? Number(row.lat) : null,
+              lng: (row.lng !== null && row.lng !== undefined && !isNaN(Number(row.lng)) && Number(row.lng) !== 0) ? Number(row.lng) : null,
+              distanceKm: (row.distance_km !== null && row.distance_km !== undefined && !isNaN(Number(row.distance_km))) ? Number(row.distance_km) : null,
               isDefault: Boolean(row.is_default),
               updatedAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
             };

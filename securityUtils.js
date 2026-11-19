@@ -41,9 +41,15 @@ export function escapeHtml(str) {
 export function sanitizeUrl(url, fallback = '#') {
   if (!url || typeof url !== 'string') return fallback;
   const trimmed = url.trim();
-  // Disallow javascript:, vbscript:, data: (except safe raster data:image/ formats — blocks svg+xml scripts)
-  if (/^(javascript|vbscript):/i.test(trimmed)) return fallback;
-  if (/^data:(?!image\/(png|jpeg|jpg|webp|gif))/i.test(trimmed)) return fallback;
+  // Strip control characters, null bytes, and non-printable whitespace before validating protocol
+  const normalized = trimmed.replace(/[\u0000-\u0020\u007F]+/g, '');
+  // Disallow javascript:, vbscript:, and non-raster data: schemes
+  if (/^(javascript|vbscript):/i.test(normalized)) return fallback;
+  if (/^data:/i.test(normalized)) {
+    if (!/^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(normalized)) {
+      return fallback;
+    }
+  }
   return escapeHtml(trimmed);
 }
 
@@ -243,7 +249,9 @@ export async function ensureAdminToken(requiredRole = 'admin', forceRefresh = fa
       const parts = token.split('.');
       if (parts.length === 2) {
         const base64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
-        const json = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+        const padLen = (4 - (base64.length % 4)) % 4;
+        const paddedBase64 = base64 + '='.repeat(padLen);
+        const json = decodeURIComponent(atob(paddedBase64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
         const payload = JSON.parse(json);
         const hasRole = !requiredRole || requiredRole === 'admin' ? (payload.role === 'admin' || payload.role === 'owner') : payload.role === requiredRole;
         if (!forceRefresh && hasRole && payload.exp && (payload.exp - Date.now() > 60000)) {

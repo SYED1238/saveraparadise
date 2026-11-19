@@ -36,7 +36,8 @@ async function fetchAuthoritativeSettings(env = null) {
         apikey: apiKey,
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(3000) : undefined
     });
     if (!res.ok) return authoritativeSettingsCache;
     const data = await res.json();
@@ -118,7 +119,8 @@ async function fetchAuthoritativeDishes(env = null) {
         apikey: apiKey,
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(3000) : undefined
     });
     if (!res.ok) return authoritativeDishesCache;
     const data = await res.json();
@@ -321,7 +323,7 @@ export async function onRequest(context) {
       }
 
       // Aggregate quantity check per dish
-      const aggregateKey = itemId || String(item.name || 'dish');
+      const aggregateKey = String(matchedDish?.id || itemId || item.name || 'dish').toLowerCase();
       const curQty = (dishQtyMap.get(aggregateKey) || 0) + quantity;
       if (curQty > 50) {
         return jsonResponse({ error: `Maximum quantity per item is 50 (exceeded for "${item.name || 'dish'}")` }, 400, Object.fromEntries(corsHeaders.entries()));
@@ -438,9 +440,7 @@ export async function onRequest(context) {
       }
     }
 
-    const minOrderValue = typeof storeSettings?.minOrderValue === 'number'
-      ? storeSettings.minOrderValue
-      : ((typeof storeSettings?.minOrder === 'number') ? storeSettings.minOrder : 0);
+    const minOrderValue = Number(storeSettings?.minOrderValue || storeSettings?.minOrder) || 0;
     if (minOrderValue > 0 && subtotal < minOrderValue) {
       return jsonResponse({
         error: `Order subtotal (₹${subtotal}) does not meet the minimum order value of ₹${minOrderValue}`
@@ -459,7 +459,7 @@ export async function onRequest(context) {
       const code = activePromo.trim().toUpperCase();
       if (code === configuredCode) {
         const discountType = String(storeSettings?.offerDiscountType || 'percent').toLowerCase();
-        const rawPct = Number(storeSettings?.offerDiscountPercent);
+        const rawPct = Number(storeSettings?.offerDiscountPercent || storeSettings?.offerDiscountAmount);
         const discountPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 20;
         const discountAmt = Math.max(0, Number(storeSettings?.offerDiscountAmount || 50));
         const minOrder = (storeSettings?.offerMinOrder !== undefined && storeSettings?.offerMinOrder !== null)
@@ -474,7 +474,7 @@ export async function onRequest(context) {
             promoFreeDelivery = true;
           }
         }
-      } else if (code === 'SAVERA20' && subtotal >= 199) {
+      } else if (code === 'SAVERA20' && subtotal >= ((storeSettings?.offerMinOrder !== undefined && storeSettings?.offerMinOrder !== null) ? Number(storeSettings.offerMinOrder) : 199)) {
         discount = Math.min(subtotal, Math.round((subtotal * 20) / 100));
         appliedPromo = 'SAVERA20';
       } else if (code === 'SAVE10' && subtotal >= 149) {
@@ -491,21 +491,9 @@ export async function onRequest(context) {
 
     const serverDealsEnabled = storeSettings?.unlockedDealsEnabled ?? false;
     if (serverDealsEnabled) {
-      const rawMin = Number(storeSettings?.unlockedDealsMinOrder);
-      const dealsMin = Number.isFinite(rawMin) ? Math.max(10, rawMin) : 299;
-      const rawPct = Number(storeSettings?.unlockedDealsDiscountPct);
-      const dealsPct = Number.isFinite(rawPct) ? Math.min(50, Math.max(1, rawPct)) : 15;
-
-      if (subtotal >= dealsMin) {
-        dealDiscount = Math.round(subtotal * (dealsPct / 100));
-        appliedDeal = {
-          label: storeSettings?.unlockedDealsTitle || `${dealsPct}% Wholesale Deal`,
-          discountPercent: dealsPct,
-          minSpend: dealsMin
-        };
-      } else if (Array.isArray(storeSettings?.unlockedDealsThresholds) && storeSettings.unlockedDealsThresholds.length > 0) {
-        const sorted = [...storeSettings.unlockedDealsThresholds].sort((a, b) => b.minSpend - a.minSpend);
-        const matched = sorted.find(t => subtotal >= t.minSpend);
+      if (Array.isArray(storeSettings?.unlockedDealsThresholds) && storeSettings.unlockedDealsThresholds.length > 0) {
+        const sorted = [...storeSettings.unlockedDealsThresholds].sort((a, b) => (Number(b.minSpend) || 0) - (Number(a.minSpend) || 0));
+        const matched = sorted.find(t => subtotal >= (Number(t.minSpend) || 0));
         if (matched) {
           const rawPct = Number(matched.discountPercent) || 0;
           const safePct = Math.min(Math.max(rawPct, 0), 50);
@@ -513,7 +501,24 @@ export async function onRequest(context) {
           appliedDeal = {
             label: matched.label || `${safePct}% Deal`,
             discountPercent: safePct,
-            minSpend: matched.minSpend
+            minSpend: Number(matched.minSpend) || 0
+          };
+        }
+      }
+      if (!appliedDeal) {
+        const dealsMin = (storeSettings?.unlockedDealsMinOrder !== null && storeSettings?.unlockedDealsMinOrder !== undefined && storeSettings?.unlockedDealsMinOrder !== '' && Number.isFinite(Number(storeSettings?.unlockedDealsMinOrder)))
+          ? Math.max(10, Number(storeSettings.unlockedDealsMinOrder))
+          : 299;
+        const dealsPct = (storeSettings?.unlockedDealsDiscountPct !== null && storeSettings?.unlockedDealsDiscountPct !== undefined && storeSettings?.unlockedDealsDiscountPct !== '' && Number.isFinite(Number(storeSettings?.unlockedDealsDiscountPct)))
+          ? Math.min(50, Math.max(1, Number(storeSettings.unlockedDealsDiscountPct)))
+          : 15;
+
+        if (subtotal >= dealsMin) {
+          dealDiscount = Math.round(subtotal * (dealsPct / 100));
+          appliedDeal = {
+            label: storeSettings?.unlockedDealsTitle || `${dealsPct}% Wholesale Deal`,
+            discountPercent: dealsPct,
+            minSpend: dealsMin
           };
         }
       }
@@ -580,7 +585,6 @@ export async function onRequest(context) {
       deliveryFee,
       platformFee,
       total,
-
       numericTotal: total,
       items: verifiedItems,
       signature: checkoutToken,

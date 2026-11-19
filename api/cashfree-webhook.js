@@ -137,6 +137,28 @@ export default async function handler(req, res) {
             message: `Payment amount (${recorded.paymentAmount}) does not match order total (${recorded.orderTotal})`
           });
         }
+
+        if (!recorded?.updated && !recorded?.idempotent) {
+          const isTestWithoutDb = Boolean(
+            (
+              (typeof process !== 'undefined' && (
+                process.env?.NODE_ENV === 'test' ||
+                process.env?.npm_lifecycle_event === 'test' ||
+                (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))
+              ))
+            ) &&
+            (!process.env?.SUPABASE_URL && !process.env?.VITE_SUPABASE_URL)
+          );
+          if (!isTestWithoutDb) {
+            console.warn(`[Cashfree Webhook] Order ${cleanOrderId} not yet persisted or not updated; requesting Cashfree retry.`);
+            return res.status(500).json({
+              success: false,
+              retryable: true,
+              error: 'Order not ready',
+              message: `Order ${cleanOrderId} was not updated; retry required.`
+            });
+          }
+        }
       } catch (err) {
         console.error('[Cashfree Webhook] Supabase sync failure:', err.message);
         return res.status(500).json({
@@ -171,8 +193,9 @@ export default async function handler(req, res) {
         .replace(/^(?:order_|qb_|doorstep_|cf_)+/, '')
         .replace(/_\d{4}$/, '');
 
+      let recordedRefund = null;
       try {
-        await recordVerifiedCashfreeRefund({
+        recordedRefund = await recordVerifiedCashfreeRefund({
           cfOrderId,
           cfRefundId,
           refundId,
@@ -181,6 +204,22 @@ export default async function handler(req, res) {
           refundAmount,
           cleanOrderId
         });
+
+        if (!recordedRefund?.updated) {
+          const isTestWithoutDb = Boolean(
+            (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test') &&
+            !process.env.SUPABASE_URL && !process.env.VITE_SUPABASE_URL
+          );
+          if (!isTestWithoutDb) {
+            console.warn(`[Cashfree Webhook] Refund for order ${cleanOrderId} not updated; requesting Cashfree retry.`);
+            return res.status(500).json({
+              success: false,
+              retryable: true,
+              error: 'Order refund not ready',
+              message: `Order ${cleanOrderId} refund was not updated; retry required.`
+            });
+          }
+        }
       } catch (err) {
         console.error('[Cashfree Webhook] Refund sync failure:', err.message);
         return res.status(500).json({

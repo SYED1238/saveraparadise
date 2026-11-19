@@ -130,8 +130,6 @@ export async function onRequest(context) {
         return jsonResponse({ error: 'Coordinates are outside the restaurant serviceable delivery region' }, 400, Object.fromEntries(corsHeaders.entries()));
       }
 
-      corsHeaders.set('Cache-Control', 'public, s-maxage=86400, max-age=3600, stale-while-revalidate=43200');
-
       const fetchUrl = `https://api.olamaps.io/places/v1/reverse-geocode?latlng=${parsedLat},${parsedLng}&api_key=${encodeURIComponent(OLA_API_KEY)}`;
       const response = await fetch(fetchUrl, { headers: { 'Accept': 'application/json' } });
 
@@ -139,6 +137,7 @@ export async function onRequest(context) {
         return jsonResponse({ error: 'Ola Maps API reverse geocoding failed' }, response.status, Object.fromEntries(corsHeaders.entries()));
       }
 
+      corsHeaders.set('Cache-Control', 'public, s-maxage=86400, max-age=3600, stale-while-revalidate=43200');
       const data = await response.json();
       return jsonResponse(data, 200, Object.fromEntries(corsHeaders.entries()));
     }
@@ -149,8 +148,6 @@ export async function onRequest(context) {
         return jsonResponse({ error: 'Search input must be between 2 and 80 characters' }, 400, Object.fromEntries(corsHeaders.entries()));
       }
 
-      corsHeaders.set('Cache-Control', 'public, s-maxage=3600, max-age=600, stale-while-revalidate=1800');
-
       const fetchUrl = `https://api.olamaps.io/places/v1/autocomplete?input=${encodeURIComponent(cleanInput)}&location=${STORE_LAT},${STORE_LNG}&api_key=${encodeURIComponent(OLA_API_KEY)}`;
       const response = await fetch(fetchUrl, { headers: { 'Accept': 'application/json' } });
 
@@ -158,6 +155,7 @@ export async function onRequest(context) {
         return jsonResponse({ error: 'Ola Maps API autocomplete failed' }, response.status, Object.fromEntries(corsHeaders.entries()));
       }
 
+      corsHeaders.set('Cache-Control', 'public, s-maxage=3600, max-age=600, stale-while-revalidate=1800');
       const data = await response.json();
       return jsonResponse(data, 200, Object.fromEntries(corsHeaders.entries()));
     }

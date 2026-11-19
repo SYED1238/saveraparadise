@@ -155,9 +155,6 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Coordinates are outside the restaurant serviceable delivery region' });
       }
 
-      // Vercel Edge Cache: Cache reverse geocoded coordinates for 24 hours to preserve quota
-      res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=3600, stale-while-revalidate=43200');
-
       const url = `https://api.olamaps.io/places/v1/reverse-geocode?latlng=${parsedLat},${parsedLng}&api_key=${encodeURIComponent(OLA_API_KEY)}`;
       const response = await fetch(url, {
         headers: { 'Accept': 'application/json' },
@@ -168,6 +165,8 @@ export default async function handler(req, res) {
         return res.status(response.status).json({ error: 'Ola Maps API reverse geocoding failed' });
       }
 
+      // Vercel Edge Cache: Cache reverse geocoded coordinates for 24 hours to preserve quota
+      res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=3600, stale-while-revalidate=43200');
       const data = await response.json();
       return res.status(200).json(data);
     }
@@ -178,9 +177,6 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Search input must be between 2 and 80 characters' });
       }
 
-      // Cache search queries for 1 hour
-      res.setHeader('Cache-Control', 'public, s-maxage=3600, max-age=600, stale-while-revalidate=1800');
-
       const url = `https://api.olamaps.io/places/v1/autocomplete?input=${encodeURIComponent(cleanInput)}&location=${STORE_LAT},${STORE_LNG}&api_key=${encodeURIComponent(OLA_API_KEY)}`;
       const response = await fetch(url, {
         headers: { 'Accept': 'application/json' }
@@ -190,6 +186,8 @@ export default async function handler(req, res) {
         return res.status(response.status).json({ error: 'Ola Maps API autocomplete failed' });
       }
 
+      // Cache search queries for 1 hour
+      res.setHeader('Cache-Control', 'public, s-maxage=3600, max-age=600, stale-while-revalidate=1800');
       const data = await response.json();
       return res.status(200).json(data);
     }

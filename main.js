@@ -334,9 +334,19 @@ function initStorefrontApp() {
         let healed = false;
         cart.forEach(item => {
           const live = dishes.find(d => d.id === item.id);
-          if (live && live.image && (!item.image || item.image.includes('undefined') || item.image.includes('null') || item.image === '/images/crispy-chicken.jpg' || live.image !== item.image)) {
-            item.image = live.image;
-            healed = true;
+          if (live) {
+            if (live.image && (!item.image || item.image.includes('undefined') || item.image.includes('null') || item.image === '/images/crispy-chicken.jpg' || live.image !== item.image)) {
+              item.image = live.image;
+              healed = true;
+            }
+            if (Number.isFinite(Number(live.price)) && Number(live.price) > 0 && Number(item.price) !== Number(live.price)) {
+              item.price = Number(live.price);
+              healed = true;
+            }
+            if (live.name && item.name !== live.name) {
+              item.name = live.name;
+              healed = true;
+            }
           }
         });
         if (healed) {
@@ -795,13 +805,13 @@ function initStorefrontApp() {
       const safeName = escapeHtml(cat.name);
 
       html += `
-        <button class="category-pill cuisine-circle-item ${isActive ? 'active' : ''}" data-filter="${slug}" title="${safeName}">
+        <button class="category-pill cuisine-circle-item ${isActive ? 'active' : ''}" data-filter="${escapeHtml(slug)}" title="${safeName}">
           <div class="cuisine-circle-wrap">
             ${imgUrl ? `
               <img src="${escapeHtml(imgUrl)}" alt="${safeName}" class="cuisine-circle-img" loading="lazy" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
-              <span class="cuisine-circle-fallback" style="display:none;">${emoji}</span>
+              <span class="cuisine-circle-fallback" style="display:none;">${escapeHtml(emoji)}</span>
             ` : `
-              <span class="cuisine-circle-fallback">${emoji}</span>
+              <span class="cuisine-circle-fallback">${escapeHtml(emoji)}</span>
             `}
             <span class="cuisine-check-badge"><i class="fa-solid fa-check"></i></span>
           </div>
@@ -1047,7 +1057,7 @@ function initStorefrontApp() {
         const safeName = escapeHtml(cat.name);
 
         itemsHtml += `
-          <div class="cat-viewall-item ${isActive ? 'active' : ''}" data-filter="${slug}" role="button" tabindex="0">
+          <div class="cat-viewall-item ${isActive ? 'active' : ''}" data-filter="${escapeHtml(slug)}" role="button" tabindex="0">
             <div class="cat-viewall-info">
               <div class="cat-viewall-name-row">
                 <span class="cat-viewall-name">${safeName}</span>
@@ -1059,9 +1069,9 @@ function initStorefrontApp() {
               <div class="cat-viewall-img-glow"></div>
               ${imgUrl ? `
                 <img src="${escapeHtml(imgUrl)}" alt="${safeName}" class="cat-viewall-img" loading="eager" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
-                <span class="cat-viewall-fallback" style="display:none;">${emoji}</span>
+                <span class="cat-viewall-fallback" style="display:none;">${escapeHtml(emoji)}</span>
               ` : `
-                <span class="cat-viewall-fallback">${emoji}</span>
+                <span class="cat-viewall-fallback">${escapeHtml(emoji)}</span>
               `}
             </div>
           </div>
@@ -1438,6 +1448,10 @@ function initStorefrontApp() {
       existing.quantity = Math.min(50, existing.quantity + qty);
       if (item.spice) existing.spice = item.spice;
       if (item.sauce) existing.sauce = item.sauce;
+      if (Number.isFinite(Number(item.price)) && Number(item.price) > 0) {
+        existing.price = Number(item.price);
+      }
+      if (item.name) existing.name = item.name;
     } else {
       cart.push({ ...item, quantity: Math.min(50, qty) });
     }
@@ -1537,13 +1551,13 @@ function initStorefrontApp() {
           stepper.setAttribute('role', 'group');
           stepper.setAttribute('aria-label', `Quantity controls for ${addBtn?.getAttribute('data-name') || 'dish'}`);
           stepper.innerHTML = `
-            <button type="button" class="card-stepper-btn card-stepper-minus" data-id="${dishId}" aria-label="Decrease quantity" title="Decrease">
+            <button type="button" class="card-stepper-btn card-stepper-minus" data-id="${escapeHtml(dishId)}" aria-label="Decrease quantity" title="Decrease">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
             </button>
             <span class="card-stepper-qty" aria-live="polite">${qty}</span>
-            <button type="button" class="card-stepper-btn card-stepper-plus" data-id="${dishId}" aria-label="Increase quantity" title="Increase">
+            <button type="button" class="card-stepper-btn card-stepper-plus" data-id="${escapeHtml(dishId)}" aria-label="Increase quantity" title="Increase">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1711,6 +1725,9 @@ function initStorefrontApp() {
       // 3. Detail Modal live countdown & transition ticker
       if (activeDetailItem && foodDetailBackdrop && foodDetailBackdrop.classList.contains('open')) {
         const liveDish = dishesMap.get(activeDetailItem.id) || activeDetailItem;
+        if (liveDish && liveDish !== activeDetailItem) {
+          activeDetailItem = { ...activeDetailItem, ...liveDish };
+        }
         const sched = getDishScheduleStatus(liveDish, now);
         const countdownBox = document.getElementById('food-detail-countdown-box');
         const countdownText = document.getElementById('food-detail-countdown-text');
@@ -1735,21 +1752,13 @@ function initStorefrontApp() {
     if (!settings || !settings.unlockedDealsEnabled) {
       return { isUnlocked: false, discountPct: 0, discount: 0, minSpend: 0, title: '' };
     }
-    const defMin = Number(settings.unlockedDealsMinOrder || 299);
-    const defPct = Number(settings.unlockedDealsDiscountPct || 15);
+    const defMin = (settings.unlockedDealsMinOrder !== null && settings.unlockedDealsMinOrder !== undefined && settings.unlockedDealsMinOrder !== '' && Number.isFinite(Number(settings.unlockedDealsMinOrder)))
+      ? Math.max(10, Number(settings.unlockedDealsMinOrder))
+      : 299;
+    const defPct = (settings.unlockedDealsDiscountPct !== null && settings.unlockedDealsDiscountPct !== undefined && settings.unlockedDealsDiscountPct !== '' && Number.isFinite(Number(settings.unlockedDealsDiscountPct)))
+      ? Math.min(50, Math.max(1, Number(settings.unlockedDealsDiscountPct)))
+      : 15;
     const defTitle = settings.unlockedDealsTitle || 'Wholesale Club Deals';
-
-    if (subtotal >= defMin && defPct > 0) {
-      const safePct = Math.min(Math.max(defPct, 0), 50);
-      const discount = Math.round((subtotal * safePct) / 100);
-      return {
-        isUnlocked: true,
-        discountPct: safePct,
-        discount,
-        minSpend: defMin,
-        title: defTitle
-      };
-    }
 
     if (Array.isArray(settings.unlockedDealsThresholds) && settings.unlockedDealsThresholds.length > 0) {
       const sorted = [...settings.unlockedDealsThresholds].sort((a, b) => (Number(b.minSpend) || 0) - (Number(a.minSpend) || 0));
@@ -1768,6 +1777,18 @@ function initStorefrontApp() {
       }
     }
 
+    if (subtotal >= defMin && defPct > 0) {
+      const safePct = Math.min(Math.max(defPct, 0), 50);
+      const discount = Math.round((subtotal * safePct) / 100);
+      return {
+        isUnlocked: true,
+        discountPct: safePct,
+        discount,
+        minSpend: defMin,
+        title: defTitle
+      };
+    }
+
     return {
       isUnlocked: false,
       discountPct: defPct,
@@ -1778,6 +1799,28 @@ function initStorefrontApp() {
   }
 
   function renderCart() {
+    if (Array.isArray(cart) && cart.length > 0 && typeof dataService !== 'undefined') {
+      let cartChanged = false;
+      cart.forEach(item => {
+        const live = (typeof dataService.getDishById === 'function')
+          ? (dataService.getDishById(item.id) || (dataService.getDishes && dataService.getDishes().find(d => d.name === item.name)))
+          : null;
+        if (live) {
+          if (Number.isFinite(Number(live.price)) && Number(live.price) > 0 && Number(item.price) !== Number(live.price)) {
+            item.price = Number(live.price);
+            cartChanged = true;
+          }
+          if (live.name && item.name !== live.name) {
+            item.name = live.name;
+            cartChanged = true;
+          }
+        }
+      });
+      if (cartChanged) {
+        saveCart();
+      }
+    }
+
     updateMenuCardSteppers();
     startDishScheduleTicker();
 
@@ -2029,11 +2072,11 @@ function initStorefrontApp() {
     if (unlockedDealDiscount > 0) {
       discount += unlockedDealDiscount;
       const dealTitle = (dealsEval.title || settings.unlockedDealsTitle || 'Wholesale Deal').trim();
-      discountLabels.push(`${escapeHtml(dealTitle)} -${unlockedDiscountPct}%`);
+      discountLabels.push(`${dealTitle} -${unlockedDiscountPct}%`);
     }
     if (isPromoValid && promoResult && promoResult.discount > 0) {
       discount += promoResult.discount;
-      discountLabels.push(`${escapeHtml(promoResult.code)} (${promoResult.discTag})`);
+      discountLabels.push(`${promoResult.code} (${promoResult.discTag})`);
     }
 
     if (discount > 0) {
@@ -2143,10 +2186,10 @@ function initStorefrontApp() {
           btnCheckoutLabel.textContent = `⏳ "${unavailableScheduledItem.name}" Not Serving Now`;
         }
       }
-    } else if (minOrderValue <= 0 || subtotal >= minOrderValue) {
+    } else {
       if (btnCheckout) {
         btnCheckout.classList.remove('disabled-sold-out');
-        if (!btnCheckout.classList.contains('disabled-limit')) {
+        if (!btnCheckout.classList.contains('disabled-limit') && !btnCheckout.classList.contains('disabled-closed')) {
           btnCheckout.disabled = false;
         }
       }
@@ -2266,29 +2309,47 @@ function initStorefrontApp() {
 
     const sched = getDishScheduleStatus(activeDetailItem, new Date());
     if (btnModalAddCart) {
+      let stateKey = '';
+      let targetHtml = '';
+      let targetDisabled = false;
+      let targetOpacity = '';
+      let targetCursor = '';
+
       if (isOut) {
-        btnModalAddCart.disabled = true;
-        btnModalAddCart.innerHTML = `<span>⏳ Back Soon</span>`;
-        btnModalAddCart.style.opacity = '0.65';
-        btnModalAddCart.style.cursor = 'not-allowed';
+        stateKey = 'out';
+        targetDisabled = true;
+        targetHtml = `<span>⏳ Back Soon</span>`;
+        targetOpacity = '0.65';
+        targetCursor = 'not-allowed';
       } else if (!sched.isAvailable) {
-        btnModalAddCart.disabled = true;
-        btnModalAddCart.style.opacity = '0.75';
-        btnModalAddCart.style.cursor = 'not-allowed';
+        targetDisabled = true;
+        targetOpacity = '0.75';
+        targetCursor = 'not-allowed';
         if (sched.status === 'countdown') {
-          btnModalAddCart.innerHTML = `<span><i class="fa-solid fa-clock"></i> ${sched.countdownText}</span>`;
+          stateKey = `countdown_${sched.countdownText}`;
+          targetHtml = `<span><i class="fa-solid fa-clock"></i> ${sched.countdownText}</span>`;
         } else if (sched.status === 'day_inactive') {
-          btnModalAddCart.innerHTML = `<span><i class="fa-regular fa-calendar-day"></i> ${sched.message}</span>`;
+          stateKey = `day_inactive_${sched.message}`;
+          targetHtml = `<span><i class="fa-regular fa-calendar-day"></i> ${sched.message}</span>`;
         } else if (sched.status === 'ended_today') {
-          btnModalAddCart.innerHTML = `<span><i class="fa-solid fa-moon"></i> Service Ended Today</span>`;
+          stateKey = 'ended_today';
+          targetHtml = `<span><i class="fa-solid fa-moon"></i> Service Ended Today</span>`;
         } else {
-          btnModalAddCart.innerHTML = `<span>${sched.message || 'Unavailable'}</span>`;
+          stateKey = `unavailable_${sched.message}`;
+          targetHtml = `<span>${sched.message || 'Unavailable'}</span>`;
         }
       } else {
-        btnModalAddCart.disabled = false;
-        btnModalAddCart.innerHTML = `<span>Add to Basket</span> <span class="submit-separator">•</span> <span id="modal-submit-price">₹${Math.round(total)}</span>`;
-        btnModalAddCart.style.opacity = '';
-        btnModalAddCart.style.cursor = '';
+        stateKey = `available_${total}`;
+        targetDisabled = false;
+        targetHtml = `<span>Add to Basket</span> <span class="submit-separator">•</span> <span id="modal-submit-price">₹${Math.round(total)}</span>`;
+      }
+
+      if (btnModalAddCart.dataset.stateKey !== stateKey) {
+        btnModalAddCart.dataset.stateKey = stateKey;
+        btnModalAddCart.disabled = targetDisabled;
+        btnModalAddCart.innerHTML = targetHtml;
+        btnModalAddCart.style.opacity = targetOpacity;
+        btnModalAddCart.style.cursor = targetCursor;
       }
     }
   }
@@ -2312,9 +2373,13 @@ function initStorefrontApp() {
     if (foodDetailPrice) {
       const liveSettings = (typeof dataService !== 'undefined' && dataService.getSettings) ? dataService.getSettings() : {};
       if (liveSettings.unlockedDealsEnabled) {
-        const discountPct = Number(liveSettings.unlockedDealsDiscountPct || 15);
+        const subtotal = cart.reduce((acc, it) => acc + (it.price * it.quantity), 0);
+        const dealsEval = evaluateUnlockedDeals(subtotal, liveSettings);
+        const lockIcon = dealsEval.isUnlocked ? 'fa-lock-open' : 'fa-lock';
+        const rawPct = Number(dealsEval.discountPct || liveSettings.unlockedDealsDiscountPct || 15);
+        const discountPct = Math.min(50, Math.max(1, rawPct));
         const dealPrice = Math.max(1, Math.round(dish.price * (1 - discountPct / 100)));
-        foodDetailPrice.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${liveSettings.unlockedDealsMinOrder || 299}+"><i class="fa-solid fa-lock" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span> <span class="meta-strike-price" style="text-decoration: line-through; opacity: 0.6; font-size: 0.85em; margin-left: 6px;">₹${Math.round(dish.price)}</span>`;
+        foodDetailPrice.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${liveSettings.unlockedDealsMinOrder || 299}+"><i class="fa-solid ${lockIcon}" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span> <span class="meta-strike-price" style="text-decoration: line-through; opacity: 0.6; font-size: 0.85em; margin-left: 6px;">₹${Math.round(dish.price)}</span>`;
       } else {
         foodDetailPrice.textContent = `₹${Math.round(dish.price)}`;
       }
@@ -2748,26 +2813,35 @@ function initStorefrontApp() {
       // 2. Live Sync Title
       const titleEl = card.querySelector('.recipe-title');
       if (titleEl && dish.name) titleEl.textContent = dish.name;
+      if (dish.category || dish.categoryName) {
+        card.setAttribute('data-category', dish.category || dish.categoryName);
+      }
 
       // 3. Live Sync Badge
-      const badgeEl = card.querySelector('.recipe-card-badge-pill');
-      if (badgeEl) {
-        if (dish.badge && dish.badge.trim()) {
-          badgeEl.textContent = dish.badge;
-          badgeEl.style.display = '';
-        } else {
-          badgeEl.textContent = '';
-          badgeEl.style.display = 'none';
+      let badgeEl = card.querySelector('.recipe-card-badge-pill');
+      if (dish.badge && dish.badge.trim()) {
+        if (!badgeEl) {
+          badgeEl = document.createElement('span');
+          badgeEl.className = 'recipe-card-badge-pill';
+          card.querySelector('.recipe-card-inner')?.prepend(badgeEl);
         }
+        badgeEl.textContent = dish.badge;
+        badgeEl.style.display = '';
+      } else if (badgeEl) {
+        badgeEl.textContent = '';
+        badgeEl.style.display = 'none';
       }
 
       // 4. Live Sync Price
       const priceEl = card.querySelector('.meta-price');
       if (priceEl) {
         if (settings.unlockedDealsEnabled) {
-          const discountPct = Number(settings.unlockedDealsDiscountPct || 15);
+          const subtotal = cart.reduce((acc, it) => acc + (it.price * it.quantity), 0);
+          const dealsEval = evaluateUnlockedDeals(subtotal, settings);
+          const lockIcon = dealsEval.isUnlocked ? 'fa-lock-open' : 'fa-lock';
+          const discountPct = Number(dealsEval.discountPct || settings.unlockedDealsDiscountPct || 15);
           const dealPrice = Math.max(1, Math.round(dish.price * (1 - discountPct / 100)));
-          priceEl.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${settings.unlockedDealsMinOrder || 299}+"><i class="fa-solid fa-lock" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span><span class="meta-strike-price">₹${Math.round(dish.price)}</span>`;
+          priceEl.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${settings.unlockedDealsMinOrder || 299}+"><i class="fa-solid ${lockIcon}" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span><span class="meta-strike-price">₹${Math.round(dish.price)}</span>`;
         } else {
           priceEl.textContent = `₹${Math.round(dish.price)}`;
         }
@@ -2964,7 +3038,7 @@ function initStorefrontApp() {
         if (savedBadge) savedBadge.style.display = 'none';
         floatingBar.classList.remove('is-unlocked');
         if (barIcon) barIcon.textContent = '🔒';
-        const needed = Math.round(minOrder - subtotal);
+        const needed = Math.max(0, Math.round(minOrder - subtotal));
         const pct = Math.min(100, Math.max(8, Math.round((subtotal / minOrder) * 100)));
         const customSubtext = (settings.unlockedDealsSubtext || '').trim();
         if (barText) {
@@ -5333,7 +5407,7 @@ function initStorefrontApp() {
       const isPast = isDelivered || isCancelled || isUndelivered;
       const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Recent Order';
 
-      let statusPillClass = `status-${order.status || 'pending'}`;
+      let statusPillClass = `status-${escapeHtml(order.status || 'pending')}`;
       let statusLabel = order.statusLabel || (isCancelled ? 'Cancelled' : (isUndelivered ? 'Undelivered' : (isDelivered ? 'Delivered' : 'In Progress')));
 
       const safeId = escapeHtml(order.id);
@@ -5351,7 +5425,7 @@ function initStorefrontApp() {
           const cleanPhone = riderPhone.replace(/\D/g, '');
           const dialerPhone = cleanPhone.length === 10 ? `+91${cleanPhone}` : `+${cleanPhone}`;
           cardCallBtnHtml = `
-            <a href="tel:${dialerPhone}" class="btn-card-call-contact rider" title="Call Delivery Partner (${riderPhone})">
+            <a href="tel:${dialerPhone}" class="btn-card-call-contact rider" title="Call Delivery Partner (${escapeHtml(riderPhone)})">
               <i class="fa-solid fa-phone"></i> Call Rider
             </a>
           `;
@@ -5361,7 +5435,7 @@ function initStorefrontApp() {
           const cleanRest = restPhone.replace(/\D/g, '');
           const dialerRest = cleanRest.length === 10 ? `+91${cleanRest}` : `+${cleanRest}`;
           cardCallBtnHtml = `
-            <a href="tel:${dialerRest}" class="btn-card-call-contact kitchen" title="Call Restaurant (${restPhone})">
+            <a href="tel:${dialerRest}" class="btn-card-call-contact kitchen" title="Call Restaurant (${escapeHtml(restPhone)})">
               <i class="fa-solid fa-phone"></i> Call
             </a>
           `;
@@ -5749,8 +5823,8 @@ function initStorefrontApp() {
       const safePhone = escapeHtml(addr.phone || '');
       const safeFlat = escapeHtml(addr.flatNo || '');
       const safeArea = escapeHtml(addr.area || '');
-      const safeCity = addr.city ? ', ' + escapeHtml(addr.city) : '';
-      const safePincode = addr.pincode ? ' - ' + escapeHtml(addr.pincode) : '';
+      const rawCity = addr.city ? ', ' + addr.city : '';
+      const rawPincode = addr.pincode ? ' - ' + addr.pincode : '';
       const dist = Math.round((parseFloat(addr.distanceKm) || 0) * 10) / 10;
 
       return `
@@ -5768,7 +5842,7 @@ function initStorefrontApp() {
               <strong>${safeName}</strong> • ${safePhone ? `📞 ${safePhone}` : '<span style="color:#DC2626; font-weight:700;">⚠️ Mobile number required</span>'}
             </div>
             <div class="checkout-addr-text">
-              ${escapeHtml(addr.details || addr.fullText || `${addr.flatNo || ''}, ${addr.area || ''}${safeCity}${safePincode}`)}
+              ${escapeHtml(addr.details || addr.fullText || `${addr.flatNo || ''}, ${addr.area || ''}${rawCity}${rawPincode}`)}
             </div>
           </div>
         </div>
@@ -6336,6 +6410,10 @@ function initStorefrontApp() {
   }
 
   async function finalizeVerifiedOnlineOrder(serverOrder, fallbackDraft = null, fallbackOrderId = null) {
+    if (activePaymentRecoveryTimer) {
+      clearInterval(activePaymentRecoveryTimer);
+      activePaymentRecoveryTimer = null;
+    }
     const draft = fallbackDraft || {};
     const finalId = serverOrder?.id || draft.id || fallbackOrderId;
     if (!finalId) return;
@@ -6417,11 +6495,18 @@ function initStorefrontApp() {
   }
 
   // 2. Final "Place Order" Action inside Checkout Modal
+  let activePaymentRecoveryTimer = null;
   let isSubmittingOrder = false;
   if (btnPlaceOrderFinal) {
     btnPlaceOrderFinal.addEventListener('click', async () => {
+      if (activePaymentRecoveryTimer) {
+        clearInterval(activePaymentRecoveryTimer);
+        activePaymentRecoveryTimer = null;
+      }
       if (isSubmittingOrder) return;
       isSubmittingOrder = true;
+      let isRedirectingToPayment = false;
+      let shouldClearTurnstile = false;
       btnPlaceOrderFinal.disabled = true;
       const originalBtnHtml = btnPlaceOrderFinal.innerHTML;
       btnPlaceOrderFinal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting Order...';
@@ -6464,8 +6549,8 @@ function initStorefrontApp() {
         // 2. Cart empty check
         if (cart.length === 0) {
           showToast('Your basket is empty! Add items before placing order.', 'warning');
-          closeCheckoutModal();
           resetSubmitState();
+          closeCheckoutModal();
           return;
         }
 
@@ -6565,10 +6650,10 @@ function initStorefrontApp() {
           const firstOrder = activeOrders[0];
           const activeIds = activeOrders.map(o => o.id).join(', ');
           showToast(`⚠️ Active Order Limit: You already have ${activeOrders.length} orders in progress (${activeIds}). You cannot place another order until your 1st order (${firstOrder.id}) is delivered!`, 'error');
+          resetSubmitState();
           closeCheckoutModal();
           renderCartOrderLimitUI(activeOrders, maxAllowed);
           openOrderModal(firstOrder.id, false);
-          resetSubmitState();
           return;
         }
 
@@ -6603,8 +6688,8 @@ function initStorefrontApp() {
 
         // Safe delivery fee extraction: compute arithmetically from store settings rather than scraping DOM text
         const isFreeDelivEnabled = settings.freeDeliveryEnabled !== false;
-        const freeDelivThreshold = (typeof settings.freeDeliveryThreshold === 'number') ? settings.freeDeliveryThreshold : 250;
-        const standardDelivFee = (typeof settings.deliveryFeeStandard === 'number') ? settings.deliveryFeeStandard : 40;
+        const freeDelivThreshold = (settings.freeDeliveryThreshold !== undefined && settings.freeDeliveryThreshold !== null && !isNaN(Number(settings.freeDeliveryThreshold))) ? Number(settings.freeDeliveryThreshold) : 250;
+        const standardDelivFee = (settings.deliveryFeeStandard !== undefined && settings.deliveryFeeStandard !== null && !isNaN(Number(settings.deliveryFeeStandard))) ? Number(settings.deliveryFeeStandard) : 40;
         const promoFreeDelivery = Boolean(promoRes && promoRes.valid && promoRes.freeDelivery);
         const rawDeliveryFee = ((isFreeDelivEnabled && (freeDelivThreshold === 0 || (freeDelivThreshold > 0 && cartSubtotal >= freeDelivThreshold))) || promoFreeDelivery)
           ? 0
@@ -6723,14 +6808,17 @@ function initStorefrontApp() {
               if (widget) {
                 widget.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }
+              shouldClearTurnstile = false;
               resetSubmitState(false);
               return;
             }
             showToast(checkoutErr.error || 'Bot verification failed. Automated traffic blocked.', 'error');
+            shouldClearTurnstile = true;
             resetSubmitState(true);
             return;
           }
           if (checkoutRes.ok) {
+            shouldClearTurnstile = true;
             const checkoutData = await checkoutRes.json();
             if (checkoutData && (typeof checkoutData.numericTotal === 'number' || typeof checkoutData.total === 'number' || typeof checkoutData.total === 'string')) {
               const rawNum = typeof checkoutData.numericTotal === 'number'
@@ -6808,7 +6896,6 @@ function initStorefrontApp() {
               customerEmail: newOrder.customerEmail || 'customer@saveraparadise.com',
               returnUrl,
               checkoutToken: newOrder.checkoutSignature,
-              turnstileToken,
               order: newOrder
             })
           });
@@ -6882,6 +6969,7 @@ function initStorefrontApp() {
 
             if (cfResult && cfResult.redirect) {
               // Browser is redirecting to Cashfree/bank/UPI return URL; return_url handler will complete verification.
+              isRedirectingToPayment = true;
               return;
             }
           }
@@ -6918,6 +7006,7 @@ function initStorefrontApp() {
           const recoveryTimer = setInterval(async () => {
             if (Date.now() - pollStart > 90000) {
               clearInterval(recoveryTimer);
+              activePaymentRecoveryTimer = null;
               return;
             }
             try {
@@ -6934,10 +7023,12 @@ function initStorefrontApp() {
               const pData = await pResp.json().catch(() => ({}));
               if (pResp.ok && pData.success && pData.paid) {
                 clearInterval(recoveryTimer);
+                activePaymentRecoveryTimer = null;
                 await finalizeVerifiedOnlineOrder(pData.order, newOrder, recoveryOrderId);
               }
             } catch {}
           }, 4000);
+          activePaymentRecoveryTimer = recoveryTimer;
           return;
         }
 
@@ -6962,7 +7053,9 @@ function initStorefrontApp() {
         console.error('[Checkout]: Uncaught error during order placement:', submitErr);
         showToast(`❌ Order submission issue: ${submitErr?.message || 'Please check your connection and try again'}.`, 'error');
       } finally {
-        resetSubmitState(true);
+        if (!isRedirectingToPayment) {
+          resetSubmitState(shouldClearTurnstile);
+        }
       }
     });
   }
@@ -7085,7 +7178,9 @@ function initStorefrontApp() {
     // Any order older than 24 hours must NEVER trigger notifications!
     // For delivered or cancelled orders, anything older than 20 minutes is also considered historical.
     const orderAgeMs = order.createdAt ? (Date.now() - Number(order.createdAt)) : 0;
-    if (orderAgeMs > 24 * 60 * 60 * 1000 || ((order.status === 'delivered' || order.status === 'cancelled') && orderAgeMs > 20 * 60 * 1000)) {
+    const statusTimeMs = Number(updatedData?.timestamp || order.updatedAt || order.createdAt || Date.now());
+    const statusAgeMs = Date.now() - statusTimeMs;
+    if (orderAgeMs > 24 * 60 * 60 * 1000 || ((order.status === 'delivered' || order.status === 'cancelled') && statusAgeMs > 20 * 60 * 1000)) {
       markCustomerAlerted(order.id, order.status);
       return;
     }
@@ -7703,18 +7798,24 @@ function initStorefrontApp() {
     updateDetectedAddressUI(currentAddressCoords.lat, currentAddressCoords.lng, detectedAddressDetails.fullText, false);
   }
 
-  async function fetchOsmNominatim(lat, lng) {
+  async function fetchOsmNominatim(lat, lng, seq = null, signal = null) {
+    if (seq !== null && seq !== reverseGeocodeSeq) return;
+    if (signal && signal.aborted) return;
     // 0. Primary: Secure Serverless Ola Maps Proxy (Keeps API key 100% hidden on server)
     try {
       let olaData = null;
       try {
         const proxyRes = await fetch(`/api/ola-maps?action=reverse&lat=${lat}&lng=${lng}`, {
-          headers: { 'Accept': 'application/json' }
+          headers: { 'Accept': 'application/json' },
+          signal: signal || ((typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(6000) : undefined)
         });
         if (proxyRes.ok) {
           olaData = await proxyRes.json();
         }
       } catch {}
+
+      if (seq !== null && seq !== reverseGeocodeSeq) return;
+      if (signal && signal.aborted) return;
 
       if (olaData && olaData.status === 'ok' && Array.isArray(olaData.results) && olaData.results.length > 0) {
         const top = olaData.results[0];
@@ -7836,10 +7937,20 @@ function initStorefrontApp() {
 
   // Reverse Geocoding helper using OpenStreetMap Nominatim
   let reverseGeocodeTimer = null;
+  let reverseGeocodeSeq = 0;
+  let reverseGeocodeAbort = null;
+
   function reverseGeocode(lat, lng) {
     if (reverseGeocodeTimer) clearTimeout(reverseGeocodeTimer);
+    if (reverseGeocodeAbort) {
+      try { reverseGeocodeAbort.abort(); } catch {}
+    }
+    const currentSeq = ++reverseGeocodeSeq;
+    const abortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    reverseGeocodeAbort = abortController;
+
     reverseGeocodeTimer = setTimeout(async () => {
-      fetchOsmNominatim(lat, lng);
+      await fetchOsmNominatim(lat, lng, currentSeq, abortController?.signal);
     }, 350);
   }
 
@@ -7971,8 +8082,8 @@ function initStorefrontApp() {
         updateMapLocation(e.latlng.lat, e.latlng.lng, true, true);
       });
 
-      // Synchronize marker to center of map when user pans canvas
-      addressMap.on('moveend', () => {
+      // Synchronize marker to center of map when user pans canvas (dragend only, not zoom)
+      addressMap.on('dragend', () => {
         if (addressMap && addressMarker) {
           const center = addressMap.getCenter();
           const markerPos = addressMarker.getLatLng();
@@ -10811,16 +10922,21 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
           if (pendingCheckoutAfterAuth || sessionStorage.getItem('quickbite_pending_checkout') === 'true') {
             pendingCheckoutAfterAuth = false;
             sessionStorage.removeItem('quickbite_pending_checkout');
-            const addresses = getCurrentAddresses();
-            if (addresses.length === 0) {
-              pendingCheckoutAfterAddress = true;
-              openAddressModal();
-              showToast('📍 Adding a delivery address is mandatory. Please pin your location on the map.', 'info');
-            } else {
-              openCheckoutModal();
-              showToast('✅ Signed in with Google! Please confirm your address & payment method to checkout.', 'success');
-            }
-          } else {
+            (async () => {
+              try {
+                await dataService.syncUserAddressesFromSupabase(session.user.id, session.user.email);
+              } catch {}
+              const addresses = getCurrentAddresses();
+              if (addresses.length === 0) {
+                pendingCheckoutAfterAddress = true;
+                openAddressModal();
+                showToast('📍 Adding a delivery address is mandatory. Please pin your location on the map.', 'info');
+              } else {
+                openCheckoutModal();
+                showToast('✅ Signed in with Google! Please confirm your address & payment method to checkout.', 'success');
+              }
+            })();
+          } else if (event === 'SIGNED_IN') {
             setTimeout(() => {
               checkAndShowGenderPrompt();
             }, 600);
@@ -11051,6 +11167,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       if (typeof showToast === 'function') {
         showToast('🎉 The kitchen is now OPEN! You can proceed to checkout.', 'success');
       }
+      renderCart();
     }
     wasStoreClosedOnPreviousTick = Boolean(isClosed || isPaused);
 
@@ -11203,11 +11320,14 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     const discountType = settings.offerDiscountType || 'percent';
     const discountPct = Number(settings.offerDiscountPercent) || 20;
     const discountAmt = Number(settings.offerDiscountAmount) || 50;
-    const minOrder = Number(settings.offerMinOrder || 0);
+    const minOrder = (settings.offerMinOrder !== undefined && settings.offerMinOrder !== null && settings.offerMinOrder !== '')
+      ? Number(settings.offerMinOrder)
+      : 199;
     const freeDeliveryThreshold = Number(settings.freeDeliveryThreshold !== undefined ? settings.freeDeliveryThreshold : 250);
     const freeDeliveryEnabled = settings.freeDeliveryEnabled !== false;
 
-    const discountTag = discountType === 'flat' ? `₹${Math.round(discountAmt)} OFF` : `${discountPct}% OFF`;
+    const isFlat = discountType === 'flat' || discountType === 'fixed' || discountType === 'amount';
+    const discountTag = isFlat ? `₹${Math.round(discountAmt)} OFF` : `${discountPct}% OFF`;
     const minOrderStr = minOrder > 0 ? ` on orders above ₹${Math.round(minOrder)}` : '';
     const freeDelivWithCoupon = settings.offerFreeDelivery !== false;
     const freeDelivStr = freeDelivWithCoupon ? ' + Free Delivery' : (freeDeliveryEnabled && freeDeliveryThreshold > 0 ? ` + Free Delivery over ₹${Math.round(freeDeliveryThreshold)}` : '');
@@ -11446,7 +11566,13 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     if (returnParams.get('payment_return') === '1' && returnParams.get('cf_order_id')) {
       const cfOrderIdParam = returnParams.get('cf_order_id');
       const orderIdParam = returnParams.get('order_id') || '';
-      window.history.replaceState({}, document.title, window.location.pathname);
+      const cleanOrderParam = orderIdParam.replace(/^#+/, '');
+      const normalizedOrderId = cleanOrderParam ? `#${cleanOrderParam}` : '';
+      const clearReturnUrlParams = () => {
+        try {
+          window.history.replaceState(window.history.state || {}, document.title, window.location.pathname);
+        } catch {}
+      };
 
       let pendingDraft = null;
       try {
@@ -11454,37 +11580,52 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         if (rawDraft) pendingDraft = JSON.parse(rawDraft);
       } catch {}
 
-      const cleanOrderParam = orderIdParam.replace(/^#+/, '');
       let lookupToken = pendingDraft?.trackingToken || '';
       if (!lookupToken && typeof localStorage !== 'undefined') {
         try {
           const tokens = JSON.parse(localStorage.getItem('quickbite_tracking_tokens') || '{}');
-          lookupToken = tokens[`#${cleanOrderParam}`] || tokens[cleanOrderParam] || '';
+          lookupToken = tokens[normalizedOrderId] || tokens[cleanOrderParam] || '';
         } catch {}
       }
 
       showToast('⏳ Verifying your Cashfree payment...', 'info');
-      fetch('/api/cashfree-create-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'verify_payment',
-          cfOrderId: cfOrderIdParam,
-          orderId: orderIdParam ? `#${cleanOrderParam}` : '',
-          trackingToken: lookupToken
-        })
-      })
-        .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
-        .then(async ({ ok, data }) => {
-          if (ok && data?.success && data?.paid) {
-            await finalizeVerifiedOnlineOrder(data.order, pendingDraft, data.orderId || orderIdParam);
-          } else {
-            showToast(`⚠️ Payment not completed (${data?.paymentStatus || 'CANCELLED'}). Your basket is still saved.`, 'warning');
+      const pollStart = Date.now();
+      const verifyRedirectPayment = async () => {
+        try {
+          const resp = await fetch('/api/cashfree-create-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'verify_payment',
+              cfOrderId: cfOrderIdParam,
+              orderId: normalizedOrderId,
+              trackingToken: lookupToken
+            })
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (resp.ok && data?.success && data?.paid) {
+            clearReturnUrlParams();
+            await finalizeVerifiedOnlineOrder(data.order, pendingDraft, data.orderId || normalizedOrderId);
+            return;
           }
-        })
-        .catch(() => {
-          showToast('⚠️ Could not verify payment status immediately. Check My Orders shortly.', 'warning');
-        });
+          const statusUpper = String(data?.paymentStatus || '').toUpperCase();
+          const isTerminalFailure = ['FAILED', 'CANCELLED', 'USER_DROPPED', 'EXPIRED', 'TERMINATED'].includes(statusUpper);
+          if (!isTerminalFailure && (Date.now() - pollStart) < 90000) {
+            setTimeout(verifyRedirectPayment, 4000);
+            return;
+          }
+          clearReturnUrlParams();
+          showToast(`⚠️ Payment not completed (${data?.paymentStatus || 'PENDING'}). If debited, check My Orders shortly.`, 'warning');
+        } catch {
+          if ((Date.now() - pollStart) < 90000) {
+            setTimeout(verifyRedirectPayment, 4000);
+          } else {
+            clearReturnUrlParams();
+            showToast('⚠️ Could not verify payment status immediately. Check My Orders shortly.', 'warning');
+          }
+        }
+      };
+      verifyRedirectPayment();
     }
   } catch {}
 }

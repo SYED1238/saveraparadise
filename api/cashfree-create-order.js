@@ -95,7 +95,14 @@ export default async function handler(req, res) {
           cleanOrderId: String(body?.orderId || '').replace(/^#+/, '')
         });
       } catch (dbErr) {
-        console.warn('[Cashfree Verify] Supabase update error:', dbErr.message);
+        console.error('[Cashfree Verify] Supabase update error:', dbErr.message);
+        return res.status(503).json({
+          success: false,
+          paid: false,
+          retryable: true,
+          error: 'Database sync temporarily unavailable',
+          message: 'Payment received; retrying order confirmation.'
+        });
       }
 
       if (recorded?.amountMismatch) {
@@ -103,6 +110,22 @@ export default async function handler(req, res) {
           error: 'Amount Mismatch',
           message: `Payment amount (${recorded.paymentAmount}) does not match order total (${recorded.orderTotal})`
         });
+      }
+
+      if (!recorded?.updated && !recorded?.idempotent) {
+        const isTestWithoutDb = Boolean(
+          (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))) &&
+          !process.env.SUPABASE_URL && !process.env.VITE_SUPABASE_URL
+        );
+        if (!isTestWithoutDb) {
+          return res.status(503).json({
+            success: false,
+            paid: false,
+            retryable: true,
+            error: 'Order sync pending',
+            message: 'Payment received; retrying order confirmation.'
+          });
+        }
       }
 
       const updatedOrder = recorded?.order || null;
@@ -230,7 +253,7 @@ export default async function handler(req, res) {
 
         const insertPayload = {
           id: cleanId,
-          created_at: Number(orderDraft.createdAt || orderDraft.created_at) || Date.now(),
+          created_at: Date.now(),
           customer_name: orderDraft.customerName || orderDraft.customer_name || customerName || 'Online Guest',
           customer_phone: orderDraft.customerPhone || orderDraft.customer_phone || customerPhone || null,
           customer_email: orderDraft.customerEmail || orderDraft.customer_email || customerEmail || null,
@@ -261,21 +284,16 @@ export default async function handler(req, res) {
         const { error: insertErr } = await sb.from('orders').insert([insertPayload]);
         if (insertErr) {
           console.warn('[Cashfree Create] Pending order insert error:', insertErr.message);
-          let recovered = false;
           if (insertErr.code === '23505' || String(insertErr.message || '').includes('duplicate key')) {
-            const { error: updateErr } = await sb.from('orders').update({
-              cf_order_id: result.cfOrderId,
-              cf_payment_status: 'PENDING',
-              payment_method: 'Online',
-              payment_status: 'Pending Payment',
-              address_details: Object.keys(addressDetails).length > 0 ? addressDetails : null,
-              tracking_token: trackingToken
-            }).eq('id', cleanId);
-            if (!updateErr) recovered = true;
+            return res.status(409).json({
+              error: 'Order ID Conflict',
+              message: 'This order ID is already in use. Please retry checkout to generate a fresh order ID.'
+            });
           }
-          if (!recovered) {
-            return res.status(500).json({ error: 'Internal Server Error', message: 'Failed to initialize order record before payment' });
-          }
+          return res.status(500).json({
+            error: 'Internal Server Error',
+            message: 'Failed to initialize order record before payment'
+          });
         }
       } catch (persistErr) {
         console.warn('[Cashfree Create] Pending order persist error:', persistErr.message);

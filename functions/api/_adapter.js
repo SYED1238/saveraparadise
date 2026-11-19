@@ -57,9 +57,18 @@ export function getClientIp(request) {
 export function jsonResponse(data, status = 200, customHeaders = {}) {
   const headers = new Headers({
     'Content-Type': 'application/json',
-    'Cache-Control': 'no-store, no-cache, must-revalidate',
-    ...customHeaders
+    'Cache-Control': 'no-store, no-cache, must-revalidate'
   });
+  if (customHeaders) {
+    const entries = (typeof customHeaders?.entries === 'function')
+      ? customHeaders.entries()
+      : Object.entries(customHeaders);
+    for (const [k, v] of entries) {
+      if (v !== undefined && v !== null) {
+        headers.set(k, v);
+      }
+    }
+  }
   return new Response(JSON.stringify(data), { status, headers });
 }
 
