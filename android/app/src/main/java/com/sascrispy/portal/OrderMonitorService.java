@@ -790,11 +790,11 @@ public class OrderMonitorService extends Service {
                 if (!isAppInForeground && alarmAgeMs > 35000L) {
                     synchronized (activeRingingOrderIds) {
                         activeRingingOrderIds.retainAll(currentActiveKitchenAlertIds);
-                    }
-                    if (activeRingingOrderIds.isEmpty()) {
-                        Log.i(TAG, "All ringing kitchen orders moved to cooking or cancelled; auto-stopping Kitchen native alarm.");
-                        stopNativeAlarm();
-                        MainActivity.triggerWebAlarmStop();
+                        if (activeRingingOrderIds.isEmpty()) {
+                            Log.i(TAG, "All ringing kitchen orders moved to cooking or cancelled; auto-stopping Kitchen native alarm.");
+                            stopNativeAlarm();
+                            MainActivity.triggerWebAlarmStop();
+                        }
                     }
                 }
             }
@@ -803,11 +803,11 @@ public class OrderMonitorService extends Service {
             if (isRiderApp && isAlarmRinging() && !activeRingingOrderIds.isEmpty()) {
                 synchronized (activeRingingOrderIds) {
                     activeRingingOrderIds.retainAll(currentUnclaimedReadyIds);
-                }
-                if (activeRingingOrderIds.isEmpty()) {
-                    Log.i(TAG, "All ringing ready parcels were claimed or dispatched; auto-stopping Rider native alarm.");
-                    stopNativeAlarm();
-                    MainActivity.triggerWebAlarmStop();
+                    if (activeRingingOrderIds.isEmpty()) {
+                        Log.i(TAG, "All ringing ready parcels were claimed or dispatched; auto-stopping Rider native alarm.");
+                        stopNativeAlarm();
+                        MainActivity.triggerWebAlarmStop();
+                    }
                 }
             }
         } catch (Exception e) {

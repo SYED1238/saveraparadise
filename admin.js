@@ -3274,7 +3274,7 @@ const initAdminApp = () => {
       }
 
       const updated = dataService.updateOrderStatus(orderId, targetStatus);
-      if (targetStatus !== 'accepted' && targetStatus !== 'pending' && isKitchenAlarmRinging) {
+      if (targetStatus !== 'pending' && isKitchenAlarmRinging) {
         stopKitchenAlarm(true, { orderId });
       }
 
@@ -3321,7 +3321,7 @@ const initAdminApp = () => {
       btnModalAdvanceStatus.disabled = true;
 
       const updated = dataService.updateOrderStatus(orderId, nextStatus);
-      if (nextStatus !== 'accepted' && nextStatus !== 'pending' && isKitchenAlarmRinging) {
+      if (nextStatus !== 'pending' && isKitchenAlarmRinging) {
         stopKitchenAlarm(true, { orderId });
       }
 

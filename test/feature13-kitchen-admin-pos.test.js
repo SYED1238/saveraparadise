@@ -108,8 +108,8 @@ test('FEATURE #13: KITCHEN ADMIN POS, ORDER LIFECYCLE, SOUNDBOX ALARMS & THERMAL
   // =========================================================================
   await t.test('14. Bug 1: Step-by-step pipeline guard prevents skipping cooking to ready_for_pickup & stops alarm', () => {
     assert.match(adminJs, /if\s*\(targetStatus === 'ready_for_pickup' && \(order\?\.status === 'accepted' \|\| order\?\.status === 'pending'\)\)/, 'orderStatusStepPills must require cooking before ready_for_pickup');
-    assert.match(adminJs, /if\s*\(targetStatus !== 'accepted' && targetStatus !== 'pending' && isKitchenAlarmRinging\)\s*\{\s*stopKitchenAlarm\(true,\s*\{\s*orderId\s*\}\);/, 'Order status pill update must silence kitchen alarm on any advance');
-    assert.match(adminJs, /if\s*\(nextStatus !== 'accepted' && nextStatus !== 'pending' && isKitchenAlarmRinging\)\s*\{\s*stopKitchenAlarm\(true,\s*\{\s*orderId\s*\}\);/, 'Modal advance button must silence kitchen alarm on any advance');
+    assert.match(adminJs, /if\s*\(targetStatus !== 'pending' && isKitchenAlarmRinging\)\s*\{\s*stopKitchenAlarm\(true,\s*\{\s*orderId\s*\}\);/, 'Order status pill update must silence kitchen alarm on any advance');
+    assert.match(adminJs, /if\s*\(nextStatus !== 'pending' && isKitchenAlarmRinging\)\s*\{\s*stopKitchenAlarm\(true,\s*\{\s*orderId\s*\}\);/, 'Modal advance button must silence kitchen alarm on any advance');
   });
 
   await t.test('15. Bug 2: updateOrderStatus, broadcastStopAlarm, and broadcastSettings await joined broadcast channel', () => {
