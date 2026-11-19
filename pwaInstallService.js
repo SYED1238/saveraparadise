@@ -54,7 +54,7 @@ export function getPortalConfig() {
       fullName: 'Savera Paradise Kitchen Hub',
       shortName: 'Savera Admin',
       subtitle: 'Restaurant management, live kitchen orders & stock control',
-      icon: '/icon-admin-192.svg',
+      icon: '/icon-admin-192.png',
       themeColor: '#0F172A',
       installToast: '🎉 Savera Paradise Kitchen Hub Installed Successfully!',
       welcomeTitle: '👨‍🍳 Savera Paradise Kitchen Hub Active!',
@@ -77,7 +77,7 @@ export function getPortalConfig() {
       fullName: 'Savera Paradise Rider Partner App',
       shortName: 'Savera Rider',
       subtitle: 'Turn-by-turn navigation, live dispatch queue & COD tracking',
-      icon: '/icon-rider-192.svg',
+      icon: '/icon-rider-192.png',
       themeColor: '#059669',
       installToast: '🎉 Savera Paradise Rider App Installed Successfully!',
       welcomeTitle: '🏍️ Savera Paradise Rider Partner App Active!',
@@ -100,7 +100,7 @@ export function getPortalConfig() {
       fullName: 'Savera Paradise Owner Portal',
       shortName: 'Savera Owner',
       subtitle: 'Executive overview, live revenue, rider cash settlements & fleet payouts',
-      icon: '/icon-owner-192.svg',
+      icon: '/icon-owner-192.png',
       themeColor: '#4338CA',
       installToast: '🎉 Savera Paradise Owner Portal Installed Successfully!',
       welcomeTitle: '👑 Savera Paradise Owner Portal Active!',
@@ -123,7 +123,7 @@ export function getPortalConfig() {
       fullName: 'Savera Paradise Food App',
       shortName: 'Savera Paradise',
       subtitle: 'Fast, standalone app with instant background alerts & hot food delivery',
-      icon: '/icon-192.svg',
+      icon: '/icon-192.png',
       themeColor: '#FF5A26',
       installToast: '🎉 Savera Paradise Web App Installed Successfully!',
       welcomeTitle: '🍗 Welcome to Savera Paradise!',
@@ -495,7 +495,7 @@ export function showAutoInstallBanner() {
       <button type="button" class="pwa-autoinstall-close" id="btn-close-autoinstall" aria-label="Dismiss">✕</button>
       <div class="pwa-autoinstall-header">
         <div class="pwa-app-icon-wrap" style="width: 52px; height: 52px;">
-          <img src="${portalConfig.icon}" alt="${portalConfig.name} Icon" class="pwa-modal-app-icon" style="width: 100%; height: 100%; border-radius: 14px;">
+          <img src="${portalConfig.icon}" alt="${portalConfig.name} Icon" class="pwa-modal-app-icon" style="width: 100%; height: 100%; border-radius: 14px;" onerror="this.onerror=null; this.src='/icon-192.png';">
           <span class="pwa-verified-badge" style="width: 18px; height: 18px; font-size: 0.6rem;"><i class="fa-solid fa-check"></i></span>
         </div>
         <div class="pwa-autoinstall-info">
@@ -780,8 +780,16 @@ function startDownloadingProgress(container, portalConfig) {
   const barEl = container.querySelector('#pwa-download-progress-bar');
   const sectionEl = container.querySelector('#pwa-downloading-section');
   const installBtn = container.querySelector('#btn-pwa-install-action');
+  const btnTextEl = container.querySelector('#pwa-install-btn-text');
+  const subtextEl = container.querySelector('#pwa-install-subtext');
+  const pointerBanner = container.querySelector('#pwa-install-pointer-banner');
+  const readyBanner = container.querySelector('#pwa-card-ready-banner');
+  const openChromeBtn = container.querySelector('#btn-pwa-open-chrome');
 
   if (!titleEl || !percentEl || !barEl) return;
+
+  const isIOS = container.classList.contains('pwa-backdrop-ios-sheet') || 
+                (typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent));
 
   const startTime = Date.now();
   const totalDuration = 1200; // 1.2s smooth simulated download
@@ -795,18 +803,56 @@ function startDownloadingProgress(container, portalConfig) {
     barEl.style.width = `${progress}%`;
 
     if (progress < 45) {
+      titleEl.textContent = 'Step 1/2: Preparing App...';
       if (captionEl) captionEl.textContent = 'Caching dishes, photos & offline resources...';
-    } else if (progress < 90) {
+    } else if (progress < 85) {
+      titleEl.textContent = 'Step 1/2: Preparing App...';
       if (captionEl) captionEl.textContent = 'Configuring fast 1-tap ordering engine...';
     } else if (progress < 100) {
-      if (captionEl) captionEl.textContent = 'Finalizing package verification...';
+      titleEl.textContent = 'Step 1/2: Almost Ready...';
+      if (captionEl) captionEl.textContent = 'Finalizing package — next step: tap button below...';
     } else {
-      titleEl.textContent = '✅ Web App Ready to Install!';
-      if (captionEl) captionEl.textContent = 'Package verified & ready for 1-tap installation';
-      percentEl.textContent = '100%';
-      if (sectionEl) sectionEl.classList.add('is-ready');
+      // 100% COMPLETE: Direct user clearly to Step 2
+      if (isIOS) {
+        titleEl.textContent = '✅ Guide Ready (3 Quick Steps)';
+        if (captionEl) captionEl.textContent = 'Follow the steps below to add to your Home Screen:';
+      } else {
+        titleEl.textContent = '✅ Step 1 Done: App Package Ready!';
+        if (captionEl) captionEl.textContent = '👇 Step 2: Tap the orange button below to finish adding app to phone!';
+      }
+
+      percentEl.textContent = 'Ready';
+      if (sectionEl) {
+        sectionEl.classList.add('is-ready');
+        sectionEl.style.cursor = 'pointer';
+      }
       barEl.classList.add('is-finished');
-      if (installBtn) installBtn.classList.add('pwa-btn-pulse');
+
+      if (readyBanner) {
+        readyBanner.style.display = 'flex';
+      }
+
+      if (pointerBanner && !isIOS) {
+        pointerBanner.style.display = 'flex';
+        pointerBanner.classList.add('is-visible');
+      }
+
+      if (installBtn) {
+        installBtn.classList.add('pwa-btn-pulse', 'pwa-btn-ready-urgent');
+        if (btnTextEl) {
+          btnTextEl.textContent = '👇 TAP HERE TO INSTALL APP (Step 2)';
+        }
+      }
+
+      if (openChromeBtn) {
+        openChromeBtn.classList.add('pwa-btn-pulse', 'pwa-btn-ready-urgent');
+      }
+
+      if (subtextEl) {
+        subtextEl.innerHTML = '<strong>👆 Tap the orange button above</strong> to finish adding to Home Screen';
+        subtextEl.classList.add('subtext-highlight');
+      }
+
       return;
     }
 
@@ -814,6 +860,37 @@ function startDownloadingProgress(container, portalConfig) {
   };
 
   requestAnimationFrame(step);
+
+  // If user taps the download card itself after ready, trigger the install action
+  if (sectionEl) {
+    const triggerInstallFromCard = () => {
+      if (sectionEl.classList.contains('is-ready')) {
+        if (installBtn && !installBtn.disabled) {
+          installBtn.click();
+        } else if (openChromeBtn && !openChromeBtn.disabled) {
+          openChromeBtn.click();
+        }
+      }
+    };
+    sectionEl.addEventListener('click', triggerInstallFromCard);
+    sectionEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        triggerInstallFromCard();
+      }
+    });
+  }
+
+  // Also clicking the pointer banner triggers install
+  if (pointerBanner) {
+    pointerBanner.addEventListener('click', () => {
+      if (installBtn && !installBtn.disabled) {
+        installBtn.click();
+      } else if (openChromeBtn && !openChromeBtn.disabled) {
+        openChromeBtn.click();
+      }
+    });
+  }
 }
 
 function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
@@ -981,9 +1058,9 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          <span>Install Savera Paradise App</span>
+          <span id="pwa-install-btn-text">Install Savera Paradise App</span>
         </button>
-        <p class="pwa-install-subtext">Adds directly to your Home Screen • Instant 1-tap ordering</p>
+        <p class="pwa-install-subtext" id="pwa-install-subtext">Adds directly to your Home Screen • Instant 1-tap ordering</p>
       </div>
     `;
   }
@@ -995,7 +1072,7 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
 
       <div class="pwa-modal-header">
         <div class="pwa-app-icon-wrap">
-          <img src="${portalConfig.icon}" alt="${portalConfig.name} App Icon" class="pwa-modal-app-icon">
+          <img src="${portalConfig.icon}" alt="${portalConfig.name} App Icon" class="pwa-modal-app-icon" onerror="this.onerror=null; this.src='/icon-192.png';">
           <span class="pwa-verified-badge"><i class="fa-solid fa-check"></i></span>
         </div>
         <div class="pwa-modal-title-group">
@@ -1005,7 +1082,7 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
       </div>
 
       <!-- Live Downloading Animation Section -->
-      <div class="pwa-downloading-section" id="pwa-downloading-section">
+      <div class="pwa-downloading-section" id="pwa-downloading-section" role="button" tabindex="0" aria-label="App preparation status. Tap to install.">
         <div class="pwa-downloading-card">
           <div class="pwa-downloading-icon-wrap">
             <div class="pwa-download-arrow-wrap">
@@ -1019,14 +1096,38 @@ function createPwaInstallModalElement(env = detectPlatformEnvironment()) {
           </div>
           <div class="pwa-downloading-details">
             <div class="pwa-downloading-status-row">
-              <span class="pwa-downloading-title" id="pwa-download-title">Downloading Web App...</span>
+              <span class="pwa-downloading-title" id="pwa-download-title">Step 1/2: Preparing App...</span>
               <span class="pwa-downloading-percent" id="pwa-download-percent">0%</span>
             </div>
-            <p class="pwa-downloading-caption" id="pwa-download-caption">Preparing offline menu &amp; fast ordering assets</p>
+            <p class="pwa-downloading-caption" id="pwa-download-caption">Loading offline menu &amp; fast ordering assets</p>
             <div class="pwa-progress-track">
               <div class="pwa-progress-bar" id="pwa-download-progress-bar" style="width: 0%;"></div>
             </div>
           </div>
+        </div>
+        <div class="pwa-card-ready-banner" id="pwa-card-ready-banner" style="display: none;">
+          <span class="ready-banner-pill">⚡ Step 1 Done</span>
+          <span class="ready-banner-text">Tap here or button below to finish</span>
+        </div>
+      </div>
+
+      <!-- Prominent Step 2 Bouncing Pointer (Appears at 100% to direct eyes to button) -->
+      <div class="pwa-install-pointer-banner" id="pwa-install-pointer-banner" style="display: none;" aria-hidden="true">
+        <div class="pointer-bounce-arrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <polyline points="19 12 12 19 5 12"></polyline>
+          </svg>
+        </div>
+        <div class="pointer-text-group">
+          <span class="pointer-step-badge">STEP 2 OF 2</span>
+          <span class="pointer-instruction">TAP THE ORANGE BUTTON BELOW</span>
+        </div>
+        <div class="pointer-bounce-arrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <polyline points="19 12 12 19 5 12"></polyline>
+          </svg>
         </div>
       </div>
 

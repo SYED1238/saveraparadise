@@ -327,13 +327,21 @@ body.pwa-rider-installed #btn-rider-download-app {
   width: 64px;
   height: 64px;
   flex-shrink: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #FF5A26, #F97316);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(255, 90, 38, 0.35);
 }
 
 .pwa-modal-app-icon {
   width: 100%;
   height: 100%;
   border-radius: 16px;
-  box-shadow: 0 8px 20px rgba(255, 90, 38, 0.35);
+  object-fit: cover;
+  display: block;
 }
 
 .pwa-verified-badge {
@@ -769,6 +777,129 @@ body.pwa-rider-installed #btn-rider-download-app {
   background: linear-gradient(90deg, #10B981, #059669);
 }
 
+/* Card Ready Banner (appears at 100% inside the card) */
+.pwa-card-ready-banner {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(16, 185, 129, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  animation: pwa-banner-fade-in 0.3s ease-out;
+}
+
+.ready-banner-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #10B981;
+  color: #FFFFFF;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.ready-banner-text {
+  font-size: 0.74rem;
+  color: #A7F3D0;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Prominent Step 2 Bouncing Pointer (appears at 100% between card and button) */
+.pwa-install-pointer-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 10px 0 6px 0;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(255, 90, 38, 0.18), rgba(249, 115, 22, 0.28));
+  border: 1.5px solid rgba(255, 90, 38, 0.55);
+  border-radius: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(255, 90, 38, 0.25);
+  animation: pwa-pointer-banner-glow 1.5s infinite ease-in-out;
+  user-select: none;
+}
+
+.pwa-install-pointer-banner:active {
+  transform: scale(0.98);
+}
+
+.pointer-bounce-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FF5A26;
+  animation: pwa-arrow-bounce-down 0.85s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pointer-bounce-arrow svg {
+  width: 22px;
+  height: 22px;
+  stroke: #FF5A26;
+  filter: drop-shadow(0 2px 4px rgba(255, 90, 38, 0.6));
+}
+
+.pointer-text-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.pointer-step-badge {
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  color: #FF8A00;
+  text-transform: uppercase;
+}
+
+.pointer-instruction {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  letter-spacing: 0.3px;
+  text-align: center;
+}
+
+@keyframes pwa-arrow-bounce-down {
+  0%, 100% {
+    transform: translateY(-2px);
+  }
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+@keyframes pwa-pointer-banner-glow {
+  0%, 100% {
+    box-shadow: 0 4px 16px rgba(255, 90, 38, 0.25);
+    border-color: rgba(255, 90, 38, 0.55);
+  }
+  50% {
+    box-shadow: 0 6px 24px rgba(255, 90, 38, 0.5), 0 0 0 2px rgba(255, 90, 38, 0.2);
+    border-color: #FF5A26;
+  }
+}
+
+@keyframes pwa-banner-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .pwa-modal-actions {
   margin: 12px 0 16px 0;
   display: flex;
@@ -786,6 +917,26 @@ body.pwa-rider-installed #btn-rider-download-app {
   animation: pwa-pulse-glow 2s infinite;
 }
 
+.pwa-btn-install.pwa-btn-ready-urgent {
+  background: linear-gradient(135deg, #FF4500, #FF5A26, #FF8A00);
+  background-size: 200% 200%;
+  animation: pwa-btn-urgent-glow 1.4s infinite ease-in-out;
+  box-shadow: 0 10px 30px rgba(255, 90, 38, 0.65), 0 0 0 3px rgba(255, 90, 38, 0.35);
+  font-size: 1rem;
+  letter-spacing: 0.2px;
+}
+
+@keyframes pwa-btn-urgent-glow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 8px 24px rgba(255, 90, 38, 0.5);
+  }
+  50% {
+    transform: scale(1.025);
+    box-shadow: 0 12px 35px rgba(255, 90, 38, 0.85), 0 0 0 5px rgba(255, 90, 38, 0.35);
+  }
+}
+
 @keyframes pwa-pulse-glow {
   0%, 100% { box-shadow: 0 8px 24px rgba(255, 90, 38, 0.4); }
   50% { box-shadow: 0 10px 30px rgba(255, 90, 38, 0.7), 0 0 0 4px rgba(255, 90, 38, 0.25); }
@@ -796,6 +947,17 @@ body.pwa-rider-installed #btn-rider-download-app {
   font-size: 0.74rem;
   color: rgba(255, 255, 255, 0.6);
   margin: 4px 0 0 0;
+  transition: all 0.2s ease;
+}
+
+.subtext-highlight {
+  color: #FF8A00 !important;
+  font-size: 0.8rem !important;
+  font-weight: 700 !important;
+}
+
+.subtext-highlight strong {
+  color: #FFFFFF !important;
 }
 
 /* Chrome Auto-Install Prominent Bottom Sheet / Toast Banner */
