@@ -77,8 +77,12 @@ export async function onRequest(context) {
         }
 
         if (rider && rider.payout_paid_at && !body?.transferId) {
-          const lastPaidMs = new Date(rider.payout_paid_at).getTime();
-          if (Date.now() - lastPaidMs < 12 * 3600 * 1000) {
+          const rawPaidAt = rider.payout_paid_at;
+          const numericPaidAt = Number(rawPaidAt);
+          const lastPaidMs = Number.isFinite(numericPaidAt) && numericPaidAt > 0
+            ? numericPaidAt
+            : new Date(rawPaidAt).getTime();
+          if (Number.isFinite(lastPaidMs) && (Date.now() - lastPaidMs < 12 * 3600 * 1000)) {
             return jsonResponse({
               error: 'Duplicate Payout Prevented',
               message: `Rider ${cleanPin} was already paid within the last 12 hours. Provide a unique transferId to process an additional payout.`
@@ -110,13 +114,16 @@ export async function onRequest(context) {
       try {
         const { createClient } = await import('@supabase/supabase-js');
         const sb = createClient(supabaseUrl, serviceKey);
-        await sb
+        const { error: paidAtErr } = await sb
           .from('riders')
           .update({
-            payout_paid_at: new Date().toISOString(),
+            payout_paid_at: Date.now(),
             payout_amount_paid: Number(amount)
           })
           .eq('pin', cleanPin);
+        if (paidAtErr) {
+          console.error('[Cashfree Payout] Failed to persist payout_paid_at:', paidAtErr.message);
+        }
       } catch (saveErr) {
         console.warn('[Cashfree Payout] Rider payout timestamp update warning:', saveErr?.message);
       }

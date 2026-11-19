@@ -64,6 +64,10 @@ export async function onRequest(context) {
       headers: requestHeaders
     });
 
+    if (!r2Res.ok) {
+      return jsonResponse({ error: 'Upstream R2 error', statusCode: r2Res.status }, 502, Object.fromEntries(corsHeaders.entries()));
+    }
+
     const body = await r2Res.text();
     const keys = [];
     const regex = /<Key>([^<]+)<\/Key>/g;

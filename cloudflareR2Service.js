@@ -188,8 +188,17 @@ class CloudflareR2Service {
     try {
       let key = keyOrUrl;
       if (keyOrUrl.includes('?key=')) {
-        const urlObj = new URL(keyOrUrl, window.location.origin);
-        key = urlObj.searchParams.get('key') || keyOrUrl;
+        try {
+          const u = new URL(keyOrUrl, window.location.origin);
+          key = u.searchParams.get('key') || keyOrUrl;
+        } catch {
+          key = keyOrUrl.split('?key=')[1] || keyOrUrl;
+        }
+      } else if (/^https?:\/\//i.test(keyOrUrl)) {
+        try {
+          const u = new URL(keyOrUrl);
+          key = decodeURIComponent(u.pathname.replace(/^\/+/, ''));
+        } catch {}
       }
 
       await ensureAdminToken();

@@ -61,6 +61,12 @@ export default {
       };
       return handler(context);
     }
+    if (pathname.startsWith('/api/')) {
+      return new Response(JSON.stringify({ error: 'API route not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+      });
+    }
 
     // 2. Custom Clean URL Aliases (e.g. /poster -> /qr-standee.html)
     if (CUSTOM_REWRITES[pathname] && env.ASSETS) {

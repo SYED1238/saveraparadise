@@ -595,7 +595,10 @@ export default async function handler(req, res) {
           return res.status(404).json({ error: 'Order not found' });
         }
 
-        const STATUS_RANKS = { pending: -1, accepted: 0, cooking: 1, ready_for_pickup: 2, on_the_way: 3, delivered: 4, undelivered: 4, cancelled: 4 };
+        const STATUS_RANKS = { pending_payment: -2, pending: -1, accepted: 0, cooking: 1, ready_for_pickup: 2, on_the_way: 3, delivered: 4, undelivered: 4, cancelled: 4 };
+        if (existing.status === 'pending_payment' && status !== 'cancelled') {
+          return res.status(400).json({ error: 'Cannot advance an unpaid order (pending_payment) before payment confirmation' });
+        }
         if (['delivered', 'undelivered', 'cancelled'].includes(existing.status) && status !== existing.status) {
           return res.status(400).json({ error: `Order is in terminal state (${existing.status}) and cannot be modified` });
         }
@@ -1017,7 +1020,8 @@ export default async function handler(req, res) {
 
         // Fast clock check: between 1:00 AM and 9:00 AM IST (closed night quiet hours), short-circuit with 0 DB queries
         const istHour = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).getHours();
-        if (istHour >= 1 && istHour < 9 && !hasRecentActiveOrderInMemory(now)) {
+        const hasWarmEmptyCache = kitchenPollCache !== null && Array.isArray(kitchenPollCache) && kitchenPollCache.length === 0;
+        if (istHour >= 1 && istHour < 9 && !hasRecentActiveOrderInMemory(now) && hasWarmEmptyCache) {
           kitchenPollCache = [];
           kitchenPollCachedAt = now;
           res.setHeader('Cache-Control', KITCHEN_POLL_CACHE_HEADER);
@@ -1228,7 +1232,10 @@ export default async function handler(req, res) {
           return res.status(404).json({ error: 'Order not found' });
         }
 
-        const STATUS_RANKS = { pending: -1, accepted: 0, cooking: 1, ready_for_pickup: 2, on_the_way: 3, delivered: 4, undelivered: 4, cancelled: 4 };
+        const STATUS_RANKS = { pending_payment: -2, pending: -1, accepted: 0, cooking: 1, ready_for_pickup: 2, on_the_way: 3, delivered: 4, undelivered: 4, cancelled: 4 };
+        if (existing.status === 'pending_payment' && status !== 'cancelled') {
+          return res.status(400).json({ error: 'Cannot advance an unpaid order (pending_payment) before payment confirmation' });
+        }
         if (['delivered', 'undelivered', 'cancelled'].includes(existing.status) && status !== existing.status) {
           return res.status(400).json({ error: `Order is in terminal state (${existing.status}) and cannot be modified` });
         }
@@ -1405,15 +1412,17 @@ export default async function handler(req, res) {
           query = query
             .eq('assigned_rider_pin', riderPin)
             .eq('status', 'on_the_way');
+        } else {
+          query = query.eq('status', existing.status);
         }
 
         const { data: updatedList, error: updateErr } = await query.select();
 
         if (updateErr) throw updateErr;
 
-        if (auth.payload?.role === 'rider' && (!updatedList || updatedList.length === 0)) {
+        if (!updatedList || updatedList.length === 0) {
           return res.status(409).json({
-            error: 'Order ownership or status has changed. Delivery status update rejected.'
+            error: 'Order ownership or status has changed. Status update rejected.'
           });
         }
 
@@ -1598,7 +1607,7 @@ export default async function handler(req, res) {
 
           if (isRider) {
             const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
-            query = query.or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${safePin}`);
+            query = query.or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.,assigned_rider_pin.eq.${safePin}`);
           }
 
           const { data: updatedList, error: updateErr } = await query.select();
@@ -1800,7 +1809,7 @@ export default async function handler(req, res) {
             const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
             query = query
               .in('status', ['ready_for_pickup', 'on_the_way'])
-              .or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.'',assigned_rider_pin.eq.${safePin}`);
+              .or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.,assigned_rider_pin.eq.${safePin}`);
           }
 
           const { data: updatedList, error: updateErr } = await query.select();

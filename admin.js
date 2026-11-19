@@ -199,10 +199,11 @@ const initAdminApp = () => {
       // In Android APK, persist token in localStorage so WebView reloads retain staff session
       if (typeof window !== 'undefined' && Boolean(window.AndroidNative)) {
         try {
-          const tok = sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem(STORAGE_KEYS.ADMIN_AUTH);
+          const ADMIN_AUTH_KEY = 'quickbite_admin_session_auth';
+          const tok = sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem(ADMIN_AUTH_KEY);
           if (tok) {
             localStorage.setItem('quickbite_admin_token', tok);
-            localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, tok);
+            localStorage.setItem(ADMIN_AUTH_KEY, tok);
             if (typeof window.AndroidNative.setStaffAuthToken === 'function') {
               window.AndroidNative.setStaffAuthToken(tok);
             }
@@ -223,13 +224,14 @@ const initAdminApp = () => {
     const isNativeApk = typeof window !== 'undefined' && Boolean(window.AndroidNative);
     if (isNativeApk) {
       try {
-        const savedTok = localStorage.getItem('quickbite_admin_token') || localStorage.getItem(STORAGE_KEYS.ADMIN_AUTH);
+        const ADMIN_AUTH_KEY = 'quickbite_admin_session_auth';
+        const savedTok = localStorage.getItem('quickbite_admin_token') || localStorage.getItem(ADMIN_AUTH_KEY);
         if (savedTok && typeof sessionStorage !== 'undefined') {
           if (!sessionStorage.getItem('quickbite_admin_token')) {
             sessionStorage.setItem('quickbite_admin_token', savedTok);
           }
-          if (!sessionStorage.getItem(STORAGE_KEYS.ADMIN_AUTH)) {
-            sessionStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, savedTok.startsWith('qb_sess_') ? savedTok : `qb_sess_${savedTok.slice(0, 32)}`);
+          if (!sessionStorage.getItem(ADMIN_AUTH_KEY)) {
+            sessionStorage.setItem(ADMIN_AUTH_KEY, savedTok.startsWith('qb_sess_') ? savedTok : `qb_sess_${savedTok.slice(0, 32)}`);
           }
         }
       } catch {}
@@ -246,7 +248,7 @@ const initAdminApp = () => {
       if (typeof window !== 'undefined' && Boolean(window.AndroidNative)) {
         try {
           localStorage.setItem('quickbite_admin_token', validToken);
-          localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, validToken);
+          localStorage.setItem('quickbite_admin_session_auth', validToken);
           if (typeof window.AndroidNative.setStaffAuthToken === 'function') {
             window.AndroidNative.setStaffAuthToken(validToken);
           }
@@ -282,7 +284,7 @@ const initAdminApp = () => {
       clearStaffSession('owner');
       try {
         localStorage.removeItem('quickbite_admin_token');
-        localStorage.removeItem(STORAGE_KEYS.ADMIN_AUTH);
+        localStorage.removeItem('quickbite_admin_session_auth');
       } catch {}
       releaseWakeLock();
       if (adminLockOverlay) {
@@ -2028,12 +2030,12 @@ const initAdminApp = () => {
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
             const r2Res = await Promise.race([cloudflareR2Service.uploadImage(compressedDataUrl || file, file.name), timeoutPromise]);
             if (r2Res?.url) {
-              if (pendingDishUploadedR2Key && typeof cloudflareR2Service.deleteImage === 'function') {
+              if (files.length === 1 && pendingDishUploadedR2Key && typeof cloudflareR2Service.deleteImage === 'function') {
                 cloudflareR2Service.deleteImage(pendingDishUploadedR2Key).catch(() => {});
               }
               finalUrl = r2Res.url;
               finalFileId = r2Res.key || '';
-              pendingDishUploadedR2Key = finalFileId;
+              pendingDishUploadedR2Key = files.length === 1 ? finalFileId : '';
               await dataService.saveUploadedImage(finalUrl, file.name);
               dishPreviewImg.src = finalUrl;
               dishImageUrl.value = finalUrl;
@@ -3315,6 +3317,9 @@ const initAdminApp = () => {
         return;
       }
 
+      if (btnModalAdvanceStatus.disabled) return;
+      btnModalAdvanceStatus.disabled = true;
+
       const updated = dataService.updateOrderStatus(orderId, nextStatus);
       if (nextStatus !== 'accepted' && nextStatus !== 'pending' && isKitchenAlarmRinging) {
         stopKitchenAlarm(true, { orderId });
@@ -3330,8 +3335,14 @@ const initAdminApp = () => {
             const latestOrder = (dataService.getOrderById ? dataService.getOrderById(orderId) : null) || dataService.getOrders().find(o => o.id === orderId);
             if (latestOrder) updateModalStatusUI(latestOrder);
             renderOrders();
+          }).finally(() => {
+            btnModalAdvanceStatus.disabled = false;
           });
+        } else {
+          btnModalAdvanceStatus.disabled = false;
         }
+      } else {
+        btnModalAdvanceStatus.disabled = false;
       }
     });
   }
@@ -3411,7 +3422,7 @@ const initAdminApp = () => {
     const items = Array.isArray(order.items) ? order.items : [];
     const itemsRows = items.length > 0 ? items.map(item => `
       <tr>
-        <td style="text-align: left; padding: 3px 0; font-weight: 700; width: 15%;">${item.quantity || 1}x</td>
+        <td style="text-align: left; padding: 3px 0; font-weight: 700; width: 15%;">${parseInt(item.quantity, 10) || 1}x</td>
         <td style="text-align: left; padding: 3px 0; width: 60%;">${escapeHtml(item.name || 'Food Item')}</td>
         <td style="text-align: right; padding: 3px 0; font-weight: 700; width: 25%;">₹${Math.round((item.price || 0) * (item.quantity || 1))}</td>
       </tr>
@@ -3881,6 +3892,10 @@ const initAdminApp = () => {
   syncNativeAcknowledgedKitchenAlarms();
 
   function startKitchenAlarm(order) {
+    if (soundTestTimeout) {
+      clearTimeout(soundTestTimeout);
+      soundTestTimeout = null;
+    }
     if (!order || !order.id) return;
     const cleanId = String(order.id).trim();
 
@@ -4265,7 +4280,7 @@ const initAdminApp = () => {
           const modeName = mode === KITCHEN_ALARM_MODES.R2_CUSTOM ? 'Funk Criminal' : 'Classic Chime';
           showToast(`🎵 Testing native ${modeName} alarm (5s)... Tap bell again to stop.`, 'success');
           soundTestTimeout = setTimeout(() => {
-            if (typeof window.AndroidNative.stopAlarm === 'function') {
+            if (!isKitchenAlarmRinging && typeof window.AndroidNative.stopAlarm === 'function') {
               window.AndroidNative.stopAlarm();
             }
             soundTestTimeout = null;
@@ -4285,7 +4300,9 @@ const initAdminApp = () => {
           await startKitchenAlarmAudio();
           showToast('🎵 Testing Funk Criminal alarm (5s)... Tap bell again to stop.', 'success');
           soundTestTimeout = setTimeout(() => {
-            stopKitchenAlarmAudio();
+            if (!isKitchenAlarmRinging) {
+              stopKitchenAlarmAudio();
+            }
             soundTestTimeout = null;
           }, 5000);
         } else {

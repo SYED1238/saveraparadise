@@ -492,6 +492,7 @@ public class MainActivity extends AppCompatActivity {
                 OrderMonitorService.markOrderAlarmAcknowledged(orderId);
             }
             OrderMonitorService.acknowledgeAllActiveAlarms();
+            OrderMonitorService.consumePendingWebAlarmStopSync();
             OrderMonitorService.stopNativeAlarm();
             triggerWebAlarmStop();
             intent.setAction(null);
@@ -509,6 +510,7 @@ public class MainActivity extends AppCompatActivity {
                 OrderMonitorService.markOrderAlarmAcknowledged(orderId);
             }
             OrderMonitorService.acknowledgeAllActiveAlarms();
+            OrderMonitorService.consumePendingWebAlarmStopSync();
             OrderMonitorService.stopNativeAlarm();
             triggerWebAlarmStop();
             getIntent().setAction(null);

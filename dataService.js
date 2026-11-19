@@ -3224,7 +3224,13 @@ class QuickBiteDataService {
                                     local.stepIndex !== effectiveStepIndex ||
                                     local.assignedRiderPin !== mergedOrder.assignedRiderPin ||
                                     local.assignedRiderName !== mergedOrder.assignedRiderName ||
-                                    local.riderPickupStage !== mergedOrder.riderPickupStage;
+                                    local.riderPickupStage !== mergedOrder.riderPickupStage ||
+                                    local.paymentStatus !== mergedOrder.paymentStatus ||
+                                    local.isPaidOnline !== mergedOrder.isPaidOnline ||
+                                    local.cashCollected !== mergedOrder.cashCollected ||
+                                    local.refundStatus !== mergedOrder.refundStatus ||
+                                    local.riderWaitingAtDoorstep !== mergedOrder.riderWaitingAtDoorstep ||
+                                    local.cancellationReason !== mergedOrder.cancellationReason;
               localList[localIdx] = mergedOrder;
               if (hasDifference) {
                 const prevStatus = local.status;
@@ -4268,14 +4274,19 @@ class QuickBiteDataService {
               o => o && !['delivered', 'cancelled', 'undelivered', 'pending_payment'].includes(o.status)
             );
             if (!isOpen && !hasActiveOrders && this.portalType !== 'owner') {
+              if (this.portalType === 'admin') {
+                await this.syncSettingsFromSupabase().catch(() => {});
+              }
               return;
             }
             // Admin, Delivery & Owner portals use force=true on heartbeat because Migration 08/12 RLS
             // blocks anon postgres_changes — this active poll replaces the broken realtime feed
             await this.syncOrdersFromSupabase(this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner');
-            if (this.portalType === 'delivery' || this.portalType === 'owner') {
+            if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
               await this.syncSettingsFromSupabase().catch(() => {});
-              await this.syncRidersFromSupabase().catch(() => {});
+              if (this.portalType !== 'admin') {
+                await this.syncRidersFromSupabase().catch(() => {});
+              }
             }
           }
         } else {
@@ -5032,20 +5043,18 @@ class QuickBiteDataService {
     const tokenKey = isOwnerAction ? 'quickbite_owner_token' : 'quickbite_admin_token';
     let token = null;
 
-    if (typeof sessionStorage !== 'undefined') {
-      token = isOwnerAction
-        ? (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token'))
-        : (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_rider_token'));
-    }
+    const preferredRole = isOwnerAction ? 'owner' : 'admin';
 
-    if (!token && typeof ensureAdminToken === 'function') {
+    if (typeof ensureAdminToken === 'function') {
       try {
         token = await ensureAdminToken(isOwnerAction ? 'owner' : 'admin');
       } catch {}
     }
 
     if (!token && typeof sessionStorage !== 'undefined') {
-      token = sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_rider_token');
+      token = isOwnerAction
+        ? (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token'))
+        : (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_rider_token'));
     }
     if (!token && typeof localStorage !== 'undefined') {
       token = isOwnerAction
@@ -5058,14 +5067,23 @@ class QuickBiteDataService {
 
     if (!token) throw new Error('Unauthorized: Staff or Owner session required');
 
-    const res = await fetch('/api/admin-store', {
+    const executeRequest = (authToken) => fetch('/api/admin-store', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({ action, ...payload })
     });
+
+    let res = await executeRequest(token);
+    if (res.status === 401 && typeof ensureAdminToken === 'function') {
+      const refreshed = await ensureAdminToken(preferredRole, true).catch(() => null);
+      if (refreshed && refreshed !== token) {
+        token = refreshed;
+        res = await executeRequest(token);
+      }
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `Failed to execute ${action}`);
@@ -5234,9 +5252,7 @@ class QuickBiteDataService {
       return { ...payloadSettings, _syncedToCloud: true, _localOnly: false };
     } catch (err) {
       console.warn('[DataService] syncSettingsToSupabase error:', err?.message || err);
-      // Fallback broadcast in case offline/local update
-      this.broadcastSettings(settings);
-      return { ...settings, _syncedToCloud: false, _localOnly: true };
+      return { ...settings, _syncedToCloud: false, _localOnly: true, _error: err?.message || 'Cloud sync failed' };
     }
   }
 
@@ -7222,10 +7238,20 @@ class QuickBiteDataService {
   }
 
   async clearAllOrders() {
+    // Security Hardening: Authorize and clear on server BEFORE wiping local state
+    if (this.isStaffAuthorized()) {
+      try {
+        await this._adminStoreAction('clear_orders');
+      } catch (e) {
+        console.warn('[DataService] clearOrders server sync error:', e?.message);
+        throw e;
+      }
+    }
+
     this._lastOrdersSyncVersion = 0;
     this.ordersCache = [];
-    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
     try {
+      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
       localStorage.removeItem('quickbite_my_order_ids');
       localStorage.removeItem('quickbite_order_status_sync');
       localStorage.removeItem('quickbite_acknowledged_alarms');
@@ -7238,17 +7264,6 @@ class QuickBiteDataService {
         }
       });
     } catch {}
-
-    // Security Hardening: Clearing orders requires authenticated Owner session via /api/admin-store.
-    // Direct browser calls to clear_all_orders RPC have been eliminated.
-    if (this.isStaffAuthorized()) {
-      try {
-        await this._adminStoreAction('clear_orders');
-      } catch (e) {
-        console.warn('[DataService] clearOrders server sync error:', e?.message);
-        throw e;
-      }
-    }
 
     this.notifyChange('orders', { action: 'orders_cleared' });
     return true;
@@ -8029,15 +8044,6 @@ class QuickBiteDataService {
         riders = Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_RIDERS.map(r => ({ ...r }));
       }
 
-      // Self-healing: if localStorage accumulated runaway duplicate test riders (> 10 riders), prune back to canonical roster
-      if (Array.isArray(riders) && riders.length > 10) {
-        const canonicalPins = new Set(DEFAULT_RIDERS.map(r => String(r.pin).trim()));
-        const clean = riders.filter(r => canonicalPins.has(String(r.pin).trim()));
-        riders = clean.length >= 4 ? clean : DEFAULT_RIDERS.map(r => ({ ...r }));
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('quickbite_riders', JSON.stringify(riders));
-        }
-      }
 
       // Sanitize riders (clean broken image URLs mistakenly saved as name/avatar)
       let needsResave = false;

@@ -139,6 +139,12 @@ export default async function handler(req, res) {
         let body = '';
         r2Res.on('data', c => body += c);
         r2Res.on('end', () => {
+          if (r2Res.statusCode < 200 || r2Res.statusCode >= 300) {
+            res.setHeader('Content-Type', 'application/json');
+            res.status(502).json({ error: 'Upstream R2 error', statusCode: r2Res.statusCode });
+            return resolve();
+          }
+
           const keys = [];
           const regex = /<Key>([^<]+)<\/Key>/g;
           let match;

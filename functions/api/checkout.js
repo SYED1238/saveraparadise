@@ -561,7 +561,7 @@ export async function onRequest(context) {
       numericTotal: total,
       items: verifiedItems,
       itemCount: verifiedItems.length,
-      userPhone: userPhone ? String(userPhone).slice(-10) : null,
+      userPhone: phoneDigits ? String(phoneDigits).slice(-10) : null,
       verifiedAt: Date.now(),
       timestamp: Date.now()
     };

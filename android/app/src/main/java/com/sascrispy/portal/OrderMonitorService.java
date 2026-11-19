@@ -95,6 +95,7 @@ public class OrderMonitorService extends Service {
     private static volatile boolean pendingWebAlarmStopSync = false;
     private static volatile OrderMonitorService activeInstance = null;
     private static volatile boolean isAppInForeground = false;
+    private static volatile long lastAlarmStartedElapsedMs = 0L;
 
     public static void setLastAlertNotifId(int notifId) {
         lastAlertNotifId = notifId;
@@ -185,7 +186,9 @@ public class OrderMonitorService extends Service {
                 }
             }
         }
-        pendingWebAlarmStopSync = true;
+        if (!isAppInForeground) {
+            pendingWebAlarmStopSync = true;
+        }
         if (instance != null) {
             instance.saveKnownOrdersToStorage();
         }
@@ -783,13 +786,16 @@ public class OrderMonitorService extends Service {
 
             // Auto-silence Kitchen background alarm if all ringing orders moved past pending/accepted (e.g. cooking or cancelled)
             if (!isRiderApp && !isOwnerApp && isAlarmRinging() && !activeRingingOrderIds.isEmpty()) {
-                synchronized (activeRingingOrderIds) {
-                    activeRingingOrderIds.retainAll(currentActiveKitchenAlertIds);
-                }
-                if (activeRingingOrderIds.isEmpty()) {
-                    Log.i(TAG, "All ringing kitchen orders moved to cooking or cancelled; auto-stopping Kitchen native alarm.");
-                    stopNativeAlarm();
-                    MainActivity.triggerWebAlarmStop();
+                long alarmAgeMs = android.os.SystemClock.elapsedRealtime() - lastAlarmStartedElapsedMs;
+                if (!isAppInForeground && alarmAgeMs > 35000L) {
+                    synchronized (activeRingingOrderIds) {
+                        activeRingingOrderIds.retainAll(currentActiveKitchenAlertIds);
+                    }
+                    if (activeRingingOrderIds.isEmpty()) {
+                        Log.i(TAG, "All ringing kitchen orders moved to cooking or cancelled; auto-stopping Kitchen native alarm.");
+                        stopNativeAlarm();
+                        MainActivity.triggerWebAlarmStop();
+                    }
                 }
             }
 
@@ -1045,6 +1051,10 @@ public class OrderMonitorService extends Service {
     }
 
     public static void stopNativeAlarm() {
+        stopNativeAlarm(true);
+    }
+
+    public static void stopNativeAlarm(boolean shouldAcknowledge) {
         synchronized (alarmLock) {
             if (alarmTimeoutHandler != null && alarmTimeoutRunnable != null) {
                 try {
@@ -1082,7 +1092,7 @@ public class OrderMonitorService extends Service {
             releaseAudioFocus();
         }
 
-        if (!activeRingingOrderIds.isEmpty() || (lastAlertOrderId != null && !lastAlertOrderId.isEmpty())) {
+        if (shouldAcknowledge && (!activeRingingOrderIds.isEmpty() || (lastAlertOrderId != null && !lastAlertOrderId.isEmpty()))) {
             acknowledgeAllActiveAlarms();
         }
 
@@ -1117,6 +1127,7 @@ public class OrderMonitorService extends Service {
     }
 
     private void startNativeAlarmLoop() {
+        lastAlarmStartedElapsedMs = android.os.SystemClock.elapsedRealtime();
         if (isOwnerApp) {
             return;
         }
@@ -1505,7 +1516,7 @@ public class OrderMonitorService extends Service {
     @Override
     public void onDestroy() {
         isRunning = false;
-        stopNativeAlarm();
+        stopNativeAlarm(false);
         if (pollingThread != null) {
             pollingThread.interrupt();
         }

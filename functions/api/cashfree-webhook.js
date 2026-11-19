@@ -204,8 +204,15 @@ export async function onRequest(context) {
 
         if (!recordedRefund?.updated) {
           const isTestWithoutDb = Boolean(
-            (typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || process.env?.npm_lifecycle_event === 'test')) &&
-            (!env?.SUPABASE_URL && !env?.VITE_SUPABASE_URL && !process.env?.SUPABASE_URL)
+            (
+              (typeof process !== 'undefined' && (
+                process.env?.NODE_ENV === 'test' ||
+                process.env?.npm_lifecycle_event === 'test' ||
+                (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))
+              )) ||
+              env?.NODE_ENV === 'test'
+            ) &&
+            (!env?.SUPABASE_URL && !env?.VITE_SUPABASE_URL && !process.env?.SUPABASE_URL && !process.env?.VITE_SUPABASE_URL)
           );
           if (!isTestWithoutDb) {
             console.warn(`[Cashfree Webhook] Refund for order ${cleanOrderId} not updated; requesting Cashfree retry.`);
