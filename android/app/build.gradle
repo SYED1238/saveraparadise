@@ -50,6 +50,8 @@ android {
         rider {
             dimension "portal"
             applicationId "com.foodbliz.rider"
+            versionCode 13
+            versionName "1.2.1"
             resValue "string", "app_name", "Foodbliz Rider"
             resValue "string", "portal_url", "https://rider.foodbliz.in"
             resValue "color", "theme_color", "#059669"
