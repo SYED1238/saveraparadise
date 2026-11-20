@@ -35,8 +35,10 @@ const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
 const STORE_SETTINGS_CACHE_TTL_MS = 3600000; // 1 hour cache (auto-invalidates immediately on admin settings save)
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
-const SYNC_ORDERS_CACHE_TTL_MS = 10000;
+const SYNC_ORDERS_CACHE_TTL_MS = 20000;
+const RIDER_PROFILE_CACHE_TTL_MS = 45000;
 
+const riderProfileCache = new Map();
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
 let kitchenPollStoreSettingsCache = null;
@@ -74,6 +76,7 @@ export function invalidateOrderActionMemoryCache(options = {}) {
   syncOrdersCache = null;
   syncOrdersCachedLimit = 0;
   syncOrdersVersion = '0';
+  riderProfileCache.clear();
   if (options?.markActiveOrder !== false) {
     lastActiveOrderSeenAt = Date.now();
   }
@@ -1050,23 +1053,6 @@ export default async function handler(req, res) {
         if (activeErr) throw activeErr;
 
         let combined = activeOrders || [];
-        if (combined.length < 8) {
-          const { data: recentOrders } = await sb
-            .from('orders')
-            .select('id, status, customer_name, total, pickup_code, created_at, assigned_rider_pin')
-            .neq('status', 'pending_payment')
-            .order('created_at', { ascending: false })
-            .limit(8);
-          if (Array.isArray(recentOrders)) {
-            const seen = new Set(combined.map(o => o.id));
-            for (const r of recentOrders) {
-              if (!seen.has(r.id)) {
-                combined.push(r);
-                seen.add(r.id);
-              }
-            }
-          }
-        }
 
         kitchenPollCache = combined.map(row => ({
           id: row.id,
@@ -1141,6 +1127,14 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: 'Forbidden: Rider PIN missing from token' });
           }
         }
+
+        const cacheKey = `${auth.payload?.role || 'staff'}:${riderPin || 'all'}`;
+        const cachedEntry = !body.force && riderProfileCache.get(cacheKey);
+        const nowProfile = Date.now();
+        if (cachedEntry && (nowProfile - cachedEntry.ts < RIDER_PROFILE_CACHE_TTL_MS)) {
+          return res.status(200).json({ success: true, riders: cachedEntry.rows });
+        }
+
         let query = sb.from('riders').select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at, upi_vpa, bank_account_no, bank_ifsc, payout_method_pref');
         if (riderPin) {
           query = query.eq('pin', riderPin);
@@ -1152,6 +1146,7 @@ export default async function handler(req, res) {
           const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
           return { ...rest, pin_masked: true };
         });
+        riderProfileCache.set(cacheKey, { ts: nowProfile, rows: safeRows });
         return res.status(200).json({ success: true, riders: safeRows });
       }
 

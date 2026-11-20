@@ -20,6 +20,59 @@ export function invalidateRidersListCache() {
   ridersListCachedAt = 0;
 }
 
+const STORE_SETTINGS_CACHE_TTL_MS = 300000;
+const STORE_SETTINGS_CACHE_HEADER = 'public, s-maxage=300, max-age=60, stale-while-revalidate=600';
+let storeSettingsCache = null;
+let storeSettingsCachedAt = 0;
+
+export function invalidateAdminStoreSettingsCache() {
+  storeSettingsCache = null;
+  storeSettingsCachedAt = 0;
+}
+
+function getAdminStoreSettingsCacheRequest(request) {
+  const cacheUrl = new URL(request.url);
+  cacheUrl.pathname = '/api/admin-store';
+  cacheUrl.search = '?action=get_settings';
+  return new Request(cacheUrl.toString(), { method: 'GET' });
+}
+
+export async function purgeAdminStoreSettingsEdgeCache(request, context) {
+  invalidateAdminStoreSettingsCache();
+  try {
+    if (typeof caches !== 'undefined' && caches.default) {
+      const cacheReq = getAdminStoreSettingsCacheRequest(request);
+      const delPromise = caches.default.delete(cacheReq);
+      if (context && typeof context.waitUntil === 'function') {
+        context.waitUntil(delPromise.catch(() => {}));
+      } else {
+        await delPromise;
+      }
+    }
+  } catch {}
+}
+
+async function putAdminStoreSettingsEdgeCache(request, context, payload) {
+  try {
+    if (typeof caches !== 'undefined' && caches.default) {
+      const cacheReq = getAdminStoreSettingsCacheRequest(request);
+      const cacheRes = new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': STORE_SETTINGS_CACHE_HEADER
+        }
+      });
+      const putPromise = caches.default.put(cacheReq, cacheRes);
+      if (context && typeof context.waitUntil === 'function') {
+        context.waitUntil(putPromise.catch(() => {}));
+      } else {
+        await putPromise;
+      }
+    }
+  } catch {}
+}
+
 const ALLOWED_DISH_FIELDS = [
   'id', 'name', 'category', 'category_name', 'price', 'original_price',
   'badge', 'time', 'calories', 'diet', 'description', 'in_stock',
@@ -60,7 +113,7 @@ export async function onRequest(context) {
   const corsHeaders = new Headers();
   if (origin && isOriginAllowed(origin)) {
     corsHeaders.set('Access-Control-Allow-Origin', origin);
-    corsHeaders.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    corsHeaders.set('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
     corsHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-token');
     corsHeaders.set('Access-Control-Allow-Credentials', 'true');
   }
@@ -69,8 +122,76 @@ export async function onRequest(context) {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const parsedUrl = new URL(request.url);
+  const queryAction = parsedUrl.searchParams.get('action');
+
+  if (request.method === 'GET') {
+    if (queryAction === 'get_settings') {
+      if (typeof caches !== 'undefined' && caches.default) {
+        try {
+          const cacheReq = getAdminStoreSettingsCacheRequest(request);
+          const cachedRes = await caches.default.match(cacheReq);
+          if (cachedRes) {
+            const headers = new Headers(cachedRes.headers);
+            corsHeaders.forEach((v, k) => headers.set(k, v));
+            return new Response(cachedRes.body, { status: cachedRes.status, headers });
+          }
+        } catch {}
+      }
+
+      const now = Date.now();
+      if (storeSettingsCache && (now - storeSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
+        const headers = Object.fromEntries(corsHeaders.entries());
+        headers['Cache-Control'] = STORE_SETTINGS_CACHE_HEADER;
+        return jsonResponse({ success: true, settings: storeSettingsCache }, 200, headers);
+      }
+
+      const supabaseUrl = env?.VITE_SUPABASE_URL || env?.SUPABASE_URL;
+      const serviceKey = env?.SUPABASE_SERVICE_ROLE_KEY || env?.SUPABASE_SERVICE_KEY;
+      if (!supabaseUrl || !serviceKey) {
+        return jsonResponse({ success: true, settings: {} }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(supabaseUrl, serviceKey);
+        const { data, error } = await sb
+          .from('store_settings')
+          .select('settings')
+          .eq('id', 'restaurant_config')
+          .maybeSingle();
+
+        let settings = {};
+        if (!error && data?.settings && typeof data.settings === 'object') {
+          settings = data.settings;
+        } else {
+          const { data: mainData } = await sb
+            .from('store_settings')
+            .select('settings')
+            .eq('id', 'main_settings')
+            .maybeSingle();
+          if (mainData?.settings && typeof mainData.settings === 'object') {
+            settings = mainData.settings;
+          }
+        }
+
+        storeSettingsCache = settings;
+        storeSettingsCachedAt = now;
+        await putAdminStoreSettingsEdgeCache(request, context, { success: true, settings });
+
+        const headers = Object.fromEntries(corsHeaders.entries());
+        headers['Cache-Control'] = STORE_SETTINGS_CACHE_HEADER;
+        return jsonResponse({ success: true, settings }, 200, headers);
+      } catch (err) {
+        return jsonResponse({ success: true, settings: {} }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+    }
+
+    corsHeaders.set('Allow', 'POST, GET, OPTIONS');
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
+  }
+
   if (request.method !== 'POST') {
-    corsHeaders.set('Allow', 'POST, OPTIONS');
+    corsHeaders.set('Allow', 'POST, GET, OPTIONS');
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
   }
 
@@ -490,6 +611,7 @@ export async function onRequest(context) {
         ], { onConflict: 'id' }).select();
         if (error) throw error;
         await purgeKitchenPollEdgeCache(request, context);
+        await purgeAdminStoreSettingsEdgeCache(request, context);
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
@@ -503,6 +625,7 @@ export async function onRequest(context) {
           { id: 'category_images', settings: images, updated_at: now }
         ], { onConflict: 'id' }).select();
         if (error) throw error;
+        await purgeAdminStoreSettingsEdgeCache(request, context);
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 

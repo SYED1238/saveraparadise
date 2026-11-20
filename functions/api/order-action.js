@@ -15,8 +15,10 @@ const KITCHEN_POLL_CACHE_TTL_MS = 25000;
 const KITCHEN_POLL_CACHE_HEADER = 'public, s-maxage=25, max-age=15';
 const STORE_SETTINGS_CACHE_TTL_MS = 3600000; // 1 hour cache (auto-invalidates immediately on admin settings save)
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
-const SYNC_ORDERS_CACHE_TTL_MS = 10000;
+const SYNC_ORDERS_CACHE_TTL_MS = 20000;
+const RIDER_PROFILE_CACHE_TTL_MS = 45000;
 
+const riderProfileCache = new Map();
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
 let kitchenPollStoreSettingsCache = null;
@@ -54,6 +56,7 @@ export function invalidateOrderActionMemoryCache(options = {}) {
   syncOrdersCache = null;
   syncOrdersCachedLimit = 0;
   syncOrdersVersion = '0';
+  riderProfileCache.clear();
   if (options?.markActiveOrder !== false) {
     lastActiveOrderSeenAt = Date.now();
   }
@@ -79,10 +82,10 @@ function filterOrdersForRider(orders, riderPin) {
     });
 }
 
-function getKitchenPollCacheRequest(request) {
+function getKitchenPollCacheRequest(request, isAuthKey = false) {
   const cacheUrl = new URL(request.url);
   cacheUrl.pathname = '/api/order-action';
-  cacheUrl.search = '?action=kitchen_poll';
+  cacheUrl.search = isAuthKey ? '?action=kitchen_poll&_auth=1' : '?action=kitchen_poll';
   return new Request(cacheUrl.toString(), { method: 'GET' });
 }
 
@@ -90,21 +93,23 @@ export async function purgeKitchenPollEdgeCache(request, context) {
   invalidateOrderActionMemoryCache();
   try {
     if (typeof caches !== 'undefined' && caches.default) {
-      const cacheReq = getKitchenPollCacheRequest(request);
-      const delPromise = caches.default.delete(cacheReq);
+      const delPromises = Promise.allSettled([
+        caches.default.delete(getKitchenPollCacheRequest(request, false)),
+        caches.default.delete(getKitchenPollCacheRequest(request, true))
+      ]);
       if (context && typeof context.waitUntil === 'function') {
-        context.waitUntil(delPromise.catch(() => {}));
+        context.waitUntil(delPromises.catch(() => {}));
       } else {
-        await delPromise;
+        await delPromises;
       }
     }
   } catch {}
 }
 
-async function putKitchenPollEdgeCache(request, context, payload) {
+async function putKitchenPollEdgeCache(request, context, payload, isAuthKey = false) {
   try {
     if (typeof caches !== 'undefined' && caches.default) {
-      const cacheReq = getKitchenPollCacheRequest(request);
+      const cacheReq = getKitchenPollCacheRequest(request, isAuthKey);
       const cacheRes = new Response(JSON.stringify(payload), {
         status: 200,
         headers: {
@@ -1049,10 +1054,22 @@ export async function onRequest(context) {
 
         if (!hasAuth && typeof caches !== 'undefined' && caches.default) {
           try {
-            const cachedRes = await caches.default.match(getKitchenPollCacheRequest(request));
+            const cachedRes = await caches.default.match(getKitchenPollCacheRequest(request, false));
             if (cachedRes) {
               const headers = new Headers(cachedRes.headers);
               corsHeaders.forEach((v, k) => headers.set(k, v));
+              return new Response(cachedRes.body, { status: cachedRes.status, headers });
+            }
+          } catch {}
+        }
+
+        if (hasAuth && typeof caches !== 'undefined' && caches.default) {
+          try {
+            const cachedRes = await caches.default.match(getKitchenPollCacheRequest(request, true));
+            if (cachedRes) {
+              const headers = new Headers(cachedRes.headers);
+              corsHeaders.forEach((v, k) => headers.set(k, v));
+              headers.set('Cache-Control', isTestEnv ? KITCHEN_POLL_CACHE_HEADER : 'private, no-store');
               return new Response(cachedRes.body, { status: cachedRes.status, headers });
             }
           } catch {}
@@ -1071,7 +1088,8 @@ export async function onRequest(context) {
         if (istHour >= 1 && istHour < 9 && !hasRecentActiveOrderInMemory(now) && hasWarmEmptyCache) {
           kitchenPollCache = [];
           kitchenPollCachedAt = now;
-          await putKitchenPollEdgeCache(request, context, kitchenPollCache);
+          await putKitchenPollEdgeCache(request, context, kitchenPollCache, false);
+          await putKitchenPollEdgeCache(request, context, kitchenPollCache, true);
           const pollHeaders = Object.fromEntries(corsHeaders.entries());
           pollHeaders['Cache-Control'] = hasAuth && !isTestEnv ? 'private, no-store' : KITCHEN_POLL_CACHE_HEADER;
           return jsonResponse(kitchenPollCache, 200, pollHeaders);
@@ -1083,7 +1101,8 @@ export async function onRequest(context) {
         if (storeSettings && !isKitchenScheduleOpenIST(storeSettings) && !hasRecentActiveOrderInMemory(now) && hasWarmCache && !hasActiveCachedOrders) {
           kitchenPollCache = [];
           kitchenPollCachedAt = now;
-          await putKitchenPollEdgeCache(request, context, kitchenPollCache);
+          await putKitchenPollEdgeCache(request, context, kitchenPollCache, false);
+          await putKitchenPollEdgeCache(request, context, kitchenPollCache, true);
           const pollHeaders = Object.fromEntries(corsHeaders.entries());
           pollHeaders['Cache-Control'] = hasAuth && !isTestEnv ? 'private, no-store' : KITCHEN_POLL_CACHE_HEADER;
           return jsonResponse(kitchenPollCache, 200, pollHeaders);
@@ -1101,23 +1120,6 @@ export async function onRequest(context) {
         if (activeErr) throw activeErr;
 
         let combined = activeOrders || [];
-        if (combined.length < 8) {
-          const { data: recentOrders } = await sb
-            .from('orders')
-            .select('id, status, customer_name, total, pickup_code, created_at, assigned_rider_pin')
-            .neq('status', 'pending_payment')
-            .order('created_at', { ascending: false })
-            .limit(8);
-          if (Array.isArray(recentOrders)) {
-            const seen = new Set(combined.map(o => o.id));
-            for (const r of recentOrders) {
-              if (!seen.has(r.id)) {
-                combined.push(r);
-                seen.add(r.id);
-              }
-            }
-          }
-        }
 
         kitchenPollCache = combined.map(row => ({
           id: row.id,
@@ -1138,7 +1140,8 @@ export async function onRequest(context) {
           pickup_code: '',
           created_at: row.created_at,
           assigned_rider_pin: row.assigned_rider_pin ? 'ASSIGNED' : ''
-        })));
+        })), false);
+        await putKitchenPollEdgeCache(request, context, kitchenPollCache, true);
 
         const pollHeaders = Object.fromEntries(corsHeaders.entries());
         pollHeaders['Cache-Control'] = hasAuth && !isTestEnv ? 'private, no-store' : KITCHEN_POLL_CACHE_HEADER;
@@ -1202,6 +1205,14 @@ export async function onRequest(context) {
             return jsonResponse({ error: 'Forbidden: Rider PIN missing from token' }, 403, Object.fromEntries(corsHeaders.entries()));
           }
         }
+
+        const cacheKey = `${auth.payload?.role || 'staff'}:${riderPin || 'all'}`;
+        const cachedEntry = !body.force && riderProfileCache.get(cacheKey);
+        const nowProfile = Date.now();
+        if (cachedEntry && (nowProfile - cachedEntry.ts < RIDER_PROFILE_CACHE_TTL_MS)) {
+          return jsonResponse({ success: true, riders: cachedEntry.rows }, 200, Object.fromEntries(corsHeaders.entries()));
+        }
+
         let query = sb.from('riders').select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at, upi_vpa, bank_account_no, bank_ifsc, payout_method_pref');
         if (riderPin) {
           query = query.eq('pin', riderPin);
@@ -1213,6 +1224,7 @@ export async function onRequest(context) {
           const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
           return { ...rest, pin_masked: true };
         });
+        riderProfileCache.set(cacheKey, { ts: nowProfile, rows: safeRows });
         return jsonResponse({ success: true, riders: safeRows }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 

@@ -14,6 +14,16 @@ export function invalidateRidersListCache() {
   ridersListCachedAt = 0;
 }
 
+const STORE_SETTINGS_CACHE_TTL_MS = 300000;
+const STORE_SETTINGS_CACHE_HEADER = 'public, s-maxage=300, max-age=60, stale-while-revalidate=600';
+let storeSettingsCache = null;
+let storeSettingsCachedAt = 0;
+
+export function invalidateAdminStoreSettingsCache() {
+  storeSettingsCache = null;
+  storeSettingsCachedAt = 0;
+}
+
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:4173',
@@ -72,7 +82,7 @@ export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (origin && isOriginAllowed(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-token');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
@@ -81,8 +91,57 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  const queryAction = req.query?.action || (req.url && req.url.includes('?') ? new URL(req.url, 'http://localhost').searchParams.get('action') : null);
+
+  if (req.method === 'GET') {
+    if (queryAction === 'get_settings') {
+      const now = Date.now();
+      if (storeSettingsCache && (now - storeSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
+        res.setHeader('Cache-Control', STORE_SETTINGS_CACHE_HEADER);
+        return res.status(200).json({ success: true, settings: storeSettingsCache });
+      }
+
+      if (!supabaseUrl || !serviceKey) {
+        return res.status(200).json({ success: true, settings: {} });
+      }
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(supabaseUrl, serviceKey);
+        const { data, error } = await sb
+          .from('store_settings')
+          .select('settings')
+          .eq('id', 'restaurant_config')
+          .maybeSingle();
+
+        let settings = {};
+        if (!error && data?.settings && typeof data.settings === 'object') {
+          settings = data.settings;
+        } else {
+          const { data: mainData } = await sb
+            .from('store_settings')
+            .select('settings')
+            .eq('id', 'main_settings')
+            .maybeSingle();
+          if (mainData?.settings && typeof mainData.settings === 'object') {
+            settings = mainData.settings;
+          }
+        }
+
+        storeSettingsCache = settings;
+        storeSettingsCachedAt = now;
+        res.setHeader('Cache-Control', STORE_SETTINGS_CACHE_HEADER);
+        return res.status(200).json({ success: true, settings });
+      } catch (err) {
+        return res.status(200).json({ success: true, settings: {} });
+      }
+    }
+
+    res.setHeader('Allow', 'POST, GET, OPTIONS');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST, OPTIONS');
+    res.setHeader('Allow', 'POST, GET, OPTIONS');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -482,6 +541,7 @@ export default async function handler(req, res) {
         ], { onConflict: 'id' }).select();
         if (error) throw error;
         invalidateOrderActionMemoryCache();
+        invalidateAdminStoreSettingsCache();
         return res.status(200).json({ success: true, data });
       }
 
@@ -495,6 +555,7 @@ export default async function handler(req, res) {
           { id: 'category_images', settings: images, updated_at: now }
         ], { onConflict: 'id' }).select();
         if (error) throw error;
+        invalidateAdminStoreSettingsCache();
         return res.status(200).json({ success: true, data });
       }
 

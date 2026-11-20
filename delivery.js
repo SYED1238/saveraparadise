@@ -380,7 +380,7 @@ const initDeliveryApp = () => {
       Promise.allSettled([
         dataService.syncOrdersFromSupabase(true),
         dataService.syncSettingsFromSupabase(true),
-        dataService.syncRidersFromSupabase()
+        dataService.syncRidersFromSupabase(true)
       ]).finally(() => {
         renderPortal();
       });
@@ -442,7 +442,7 @@ const initDeliveryApp = () => {
       Promise.allSettled([
         dataService.syncOrdersFromSupabase(true),
         dataService.syncSettingsFromSupabase(true),
-        dataService.syncRidersFromSupabase()
+        dataService.syncRidersFromSupabase(true)
       ]).finally(() => {
         renderPortal();
       });
@@ -3482,7 +3482,7 @@ const initDeliveryApp = () => {
   async function openCashSummaryModal() {
     try {
       await Promise.allSettled([
-        dataService.syncRidersFromSupabase(),
+        dataService.syncRidersFromSupabase(true),
         dataService.syncOrdersFromSupabase(false)
       ]);
     } catch {}
@@ -3623,7 +3623,7 @@ const initDeliveryApp = () => {
   async function openPayoutModal() {
     try {
       await Promise.allSettled([
-        dataService.syncRidersFromSupabase(),
+        dataService.syncRidersFromSupabase(true),
         dataService.syncOrdersFromSupabase(false)
       ]);
     } catch {}
@@ -3738,7 +3738,7 @@ const initDeliveryApp = () => {
         await Promise.allSettled([
           dataService.syncOrdersFromSupabase(true),
           dataService.syncSettingsFromSupabase(true),
-          dataService.syncRidersFromSupabase()
+          dataService.syncRidersFromSupabase(true)
         ]);
       } catch {}
       renderPortal();

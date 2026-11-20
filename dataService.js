@@ -3387,7 +3387,7 @@ class QuickBiteDataService {
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'riders' }, () => {
           if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
-            this.syncRidersFromSupabase();
+            this.syncRidersFromSupabase(true);
           }
         });
 
@@ -4281,6 +4281,24 @@ class QuickBiteDataService {
               }
               return;
             }
+
+            // Adaptive Delivery Heartbeat: if idle (no active assigned order) and realtime connected, poll at 30s instead of 15s
+            if (this.portalType === 'delivery') {
+              const activeRider = this.getActiveRider();
+              const riderPin = activeRider?.pin ? String(activeRider.pin).trim() : null;
+              const hasActiveAssignedOrder = Boolean(riderPin && Array.isArray(orders) && orders.some(o => {
+                if (!o) return false;
+                const assigned = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+                return assigned === riderPin && ['accepted', 'cooking', 'ready_for_pickup', 'on_the_way'].includes(o.status);
+              }));
+              const isRealtimeHealthy = Boolean(this.realtimeChannel && (this.realtimeChannel.state === 'joined' || this.isSupabaseConnected));
+              const nowPoll = Date.now();
+              if (!hasActiveAssignedOrder && isRealtimeHealthy && (nowPoll - (this._lastIdleDeliveryPollAt || 0) < 30000)) {
+                return;
+              }
+              this._lastIdleDeliveryPollAt = nowPoll;
+            }
+
             // Admin, Delivery & Owner portals use force=true on heartbeat because Migration 08/12 RLS
             // blocks anon postgres_changes — this active poll replaces the broken realtime feed
             await this.syncOrdersFromSupabase(this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner');
@@ -5185,17 +5203,36 @@ class QuickBiteDataService {
 
     this._isSyncingSettings = (async () => {
       try {
-        if (!supabase) return null;
-        const { data, error } = await supabase
-          .from('store_settings')
-          .select('*')
-          .in('id', ['restaurant_config', 'main_settings']);
+        let raw = null;
+        if (typeof window !== 'undefined' && typeof fetch === 'function') {
+          try {
+            const url = force ? `/api/admin-store?action=get_settings&_t=${Date.now()}` : '/api/admin-store?action=get_settings';
+            const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            if (res.ok) {
+              const body = await res.json();
+              if (body?.success && body?.settings && typeof body.settings === 'object' && Object.keys(body.settings).length > 0) {
+                raw = body.settings;
+              }
+            }
+          } catch {}
+        }
 
-        if (!error && Array.isArray(data) && data.length > 0) {
-          // Explicitly prioritize restaurant_config over legacy main_settings
-          const configRow = data.find(r => r.id === 'restaurant_config') || data.find(r => r.id === 'main_settings') || data[0];
-          if (configRow && configRow.settings) {
-            const raw = configRow.settings;
+        if (!raw && supabase) {
+          const { data, error } = await supabase
+            .from('store_settings')
+            .select('*')
+            .in('id', ['restaurant_config', 'main_settings']);
+
+          if (!error && Array.isArray(data) && data.length > 0) {
+            // Explicitly prioritize restaurant_config over legacy main_settings
+            const configRow = data.find(r => r.id === 'restaurant_config') || data.find(r => r.id === 'main_settings') || data[0];
+            if (configRow && configRow.settings) {
+              raw = configRow.settings;
+            }
+          }
+        }
+
+        if (raw && typeof raw === 'object') {
             const phone = raw.restaurantPhone || raw.helpline || DEFAULT_SETTINGS.restaurantPhone;
             const merged = {
               ...DEFAULT_SETTINGS,
@@ -5221,7 +5258,6 @@ class QuickBiteDataService {
             this._lastSettingsSyncTime = Date.now();
             return merged;
           }
-        }
       } catch (err) {
         // Silently fall back to localStorage
       }
@@ -8108,8 +8144,12 @@ class QuickBiteDataService {
     }
   }
 
-  async syncRidersFromSupabase() {
+  async syncRidersFromSupabase(force = false) {
+    if (!force && this._lastRidersSyncTime && (Date.now() - this._lastRidersSyncTime < 120000) && this.getRiders().length > 0) {
+      return this.getRiders();
+    }
     try {
+      this._lastRidersSyncTime = Date.now();
       let rawRiders = null;
       const hasAdminOrOwnerToken = (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))) ||
         (typeof localStorage !== 'undefined' && (localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token')));
@@ -8120,7 +8160,7 @@ class QuickBiteDataService {
         try {
           if (this.portalType === 'delivery' && !hasAdminOrOwnerToken) {
             const activeRider = this.getActiveRider();
-            const res = await this._orderAction('sync_rider_profile', { riderPin: activeRider?.pin });
+            const res = await this._orderAction('sync_rider_profile', { riderPin: activeRider?.pin, force });
             if (res && res.success && Array.isArray(res.riders)) {
               rawRiders = res.riders;
             }
