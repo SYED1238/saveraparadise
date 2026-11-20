@@ -2522,7 +2522,12 @@ const initAdminApp = () => {
       } else if (order.status === 'pending') {
         nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="accepted">✅ Accept Order</button>`;
       } else if (order.status === 'accepted') {
-        nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="cooking">🔥 Start Preparing</button>`;
+        const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+        if (isDirectDispatch) {
+          nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="ready_for_pickup" title="Advance directly to Ready to Dispatch & alarm all delivery riders">📦 Ready to Dispatch</button>`;
+        } else {
+          nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="cooking">🔥 Start Preparing</button>`;
+        }
       } else if (order.status === 'cooking') {
         nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="ready_for_pickup">📦 Pack & Ready to Dispatch</button>`;
       } else if (order.status === 'ready_for_pickup') {
@@ -3197,8 +3202,14 @@ const initAdminApp = () => {
           btnModalAdvanceText.textContent = '✅ Accept Order';
         } else if (status === 'accepted') {
           btnModalAdvanceStatus.disabled = false;
-          btnModalAdvanceStatus.setAttribute('data-next', 'cooking');
-          btnModalAdvanceText.textContent = '🔥 Start Preparing';
+          const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+          if (isDirectDispatch) {
+            btnModalAdvanceStatus.setAttribute('data-next', 'ready_for_pickup');
+            btnModalAdvanceText.textContent = '📦 Ready to Dispatch';
+          } else {
+            btnModalAdvanceStatus.setAttribute('data-next', 'cooking');
+            btnModalAdvanceText.textContent = '🔥 Start Preparing';
+          }
         } else if (status === 'cooking') {
           btnModalAdvanceStatus.disabled = false;
           btnModalAdvanceStatus.setAttribute('data-next', 'ready_for_pickup');
@@ -3251,10 +3262,17 @@ const initAdminApp = () => {
       const currentRank = order && STATUS_RANKS[order.status] !== undefined ? STATUS_RANKS[order.status] : 0;
       const targetRank = STATUS_RANKS[targetStatus] !== undefined ? STATUS_RANKS[targetStatus] : -1;
 
-      // STEP-BY-STEP FORWARD PROGRESSION: Must move to Preparing before Ready to Dispatch
+      // STEP-BY-STEP FORWARD PROGRESSION: Must move to Preparing before Ready to Dispatch (unless Direct Dispatch Mode is ON)
       if (targetStatus === 'ready_for_pickup' && (order?.status === 'accepted' || order?.status === 'pending')) {
-        showToast('🔥 Start Preparing first: Move the order to "Preparing" before packing for dispatch!', 'warning');
-        return;
+        if (order?.status === 'pending') {
+          showToast('✅ Accept Order first: Move the order to "Accepted" before dispatching!', 'warning');
+          return;
+        }
+        const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+        if (!isDirectDispatch) {
+          showToast('🔥 Start Preparing first: Move the order to "Preparing" before packing for dispatch!', 'warning');
+          return;
+        }
       }
 
       // STRICT CHECK: Cannot reverse or set to previous/current status
@@ -3762,6 +3780,59 @@ const initAdminApp = () => {
       window.AndroidNative.setKitchenAlarmMode(getKitchenAlarmSoundMode());
     }
   } catch {}
+
+  // Direct Dispatch Mode UI & Controls
+  const btnAdminDirectDispatchToggle = document.getElementById('btn-admin-direct-dispatch-toggle');
+  const directDispatchToggleLabel = document.getElementById('direct-dispatch-toggle-label');
+  const directDispatchToggleDesc = document.getElementById('direct-dispatch-toggle-desc');
+  const directDispatchIconWrap = document.getElementById('direct-dispatch-icon-wrap');
+  const toggleDirectDispatch = document.getElementById('toggle-direct-dispatch');
+  const dispatchModeBadge = document.getElementById('dispatch-mode-badge');
+  const summaryDispatchMode = document.getElementById('summary-dispatch-mode');
+  const summaryDispatchAlarm = document.getElementById('summary-dispatch-alarm');
+  const dispatchToggleStatusIcon = document.getElementById('dispatch-toggle-status-icon');
+  const dispatchToggleStatusLabel = document.getElementById('dispatch-toggle-status-label');
+  const formDispatchWorkflow = document.getElementById('form-dispatch-workflow');
+
+  function updateDirectDispatchUI() {
+    const isDirect = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+    if (directDispatchToggleLabel) {
+      directDispatchToggleLabel.textContent = isDirect ? 'Direct Dispatch: ON' : 'Direct Dispatch: OFF';
+    }
+    if (directDispatchToggleDesc) {
+      directDispatchToggleDesc.textContent = isDirect ? 'Prep click marks Ready & alarms riders' : '2-Step: Prep -> Ready (Standard)';
+    }
+    if (directDispatchIconWrap) {
+      directDispatchIconWrap.className = isDirect ? 'adi-icon adi-emerald' : 'adi-icon adi-amber';
+    }
+    if (btnAdminDirectDispatchToggle) {
+      btnAdminDirectDispatchToggle.title = isDirect
+        ? 'Direct Dispatch is ON (Prep marks Ready & alarms riders) - Click to switch to 2-step'
+        : 'Direct Dispatch is OFF (2-Step Cooking -> Ready) - Click to enable Direct Dispatch';
+    }
+    if (toggleDirectDispatch) {
+      toggleDirectDispatch.checked = isDirect;
+    }
+    if (dispatchModeBadge) {
+      dispatchModeBadge.textContent = isDirect ? 'Direct Dispatch Active' : 'Two-Step Active';
+      dispatchModeBadge.className = isDirect ? 'count-pill offer-status-pill' : 'count-pill offer-status-pill paused';
+    }
+    if (summaryDispatchMode) {
+      summaryDispatchMode.textContent = isDirect ? 'Direct Ready to Dispatch' : 'Two-Stage (Preparing first)';
+    }
+    if (summaryDispatchAlarm) {
+      summaryDispatchAlarm.textContent = isDirect ? 'Auto on Prep Click' : 'Manual on Pack & Ready';
+    }
+    if (dispatchToggleStatusIcon) {
+      dispatchToggleStatusIcon.textContent = isDirect ? '⚡' : '⏳';
+    }
+    if (dispatchToggleStatusLabel) {
+      dispatchToggleStatusLabel.textContent = isDirect ? 'Enabled (Skip Preparing Step)' : 'Disabled (Standard 2-Step)';
+      dispatchToggleStatusLabel.style.color = isDirect ? 'var(--color-success, #16a34a)' : 'var(--color-text-muted, #64748b)';
+    }
+  }
+
+  updateDirectDispatchUI();
 
   // Delegated to notificationService with DynamicsCompressor and volume safeguards
   function playKitchenChime() {
@@ -4363,6 +4434,56 @@ const initAdminApp = () => {
     });
   }
 
+  // Direct Dispatch Mode Toggle Controller
+  async function toggleDirectDispatchMode(forcedVal = null) {
+    const current = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+    const newVal = (forcedVal !== null) ? Boolean(forcedVal) : !current;
+
+    const curSettings = { ...(dataService.getSettings() || {}) };
+    curSettings.directDispatchOnPrep = newVal;
+    if (dataService.settingsCache) dataService.settingsCache.directDispatchOnPrep = newVal;
+    localStorage.setItem('quickbite_settings', JSON.stringify(curSettings));
+
+    updateDirectDispatchUI();
+    renderOrders(); // Re-render order cards so button actions (Start Preparing vs Ready to Dispatch) update immediately
+
+    if (newVal) {
+      showToast('⚡ Direct Dispatch Enabled: Prep click marks orders Ready & alarms riders immediately!', 'success');
+    } else {
+      showToast('⏳ Two-Step Mode Enabled: Orders will move to Preparing first before Ready.', 'info');
+    }
+
+    try {
+      const res = await dataService.saveSettings(curSettings);
+      assertCloudSettingsSynced(res);
+    } catch (err) {
+      console.warn('[Admin] Failed to persist directDispatchOnPrep to cloud settings:', err);
+      showToast(`⚠️ Saved locally, cloud sync issue: ${err?.message || 'Check connection'}`, 'warning');
+    }
+  }
+
+  if (btnAdminDirectDispatchToggle) {
+    btnAdminDirectDispatchToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDirectDispatchMode();
+    });
+  }
+
+  if (toggleDirectDispatch) {
+    toggleDirectDispatch.addEventListener('change', () => {
+      toggleDirectDispatchMode(toggleDirectDispatch.checked);
+    });
+  }
+
+  if (formDispatchWorkflow) {
+    formDispatchWorkflow.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const isChecked = toggleDirectDispatch ? toggleDirectDispatch.checked : true;
+      toggleDirectDispatchMode(isChecked);
+      document.querySelector('.btn-close-hours-panel[data-target="hours-card-dispatch"]')?.click();
+    });
+  }
+
   // Unlock audio on any user gesture across the admin portal (persists across gestures for iPad/tablet longevity)
   const unlockAudioOnGesture = () => {
     const ctx = getAudioContext();
@@ -4833,6 +4954,7 @@ const initAdminApp = () => {
         updateAlarmToggleUI();
         refreshActiveKitchenAlarmAudio();
       }
+      updateDirectDispatchUI();
     }
   });
 
@@ -4845,6 +4967,7 @@ const initAdminApp = () => {
         updateAlarmToggleUI();
         refreshActiveKitchenAlarmAudio();
       }
+      updateDirectDispatchUI();
     }
     if (e.detail?.type === 'kitchen_alarm') {
       if (e.detail?.action === 'stop_alarm') {
@@ -5496,6 +5619,7 @@ const initAdminApp = () => {
     });
 
     startRushTicker();
+    updateDirectDispatchUI();
     if (typeof syncHoursSummaryChips === 'function') {
       syncHoursSummaryChips();
     }
@@ -6303,6 +6427,11 @@ const initAdminApp = () => {
         scheduleStatusBadge.style.color = '#065F46';
       }
     }
+
+    // 3. Kitchen Dispatch Mode chips
+    if (typeof updateDirectDispatchUI === 'function') {
+      updateDirectDispatchUI();
+    }
   }
 
   function syncDeliverySummaryChips() {
@@ -6381,12 +6510,16 @@ const initAdminApp = () => {
   function initHoursAccordion() {
     const rushCard = document.getElementById('hours-card-rush');
     const scheduleCard = document.getElementById('hours-card-schedule');
+    const dispatchCard = document.getElementById('hours-card-dispatch');
     const btnRush = document.getElementById('btn-toggle-rush');
     const btnSchedule = document.getElementById('btn-toggle-schedule');
+    const btnDispatch = document.getElementById('btn-toggle-dispatch');
     const bodyRush = document.getElementById('hours-body-rush');
     const bodySchedule = document.getElementById('hours-body-schedule');
+    const bodyDispatch = document.getElementById('hours-body-dispatch');
     const headerRush = document.getElementById('hours-header-rush');
     const headerSchedule = document.getElementById('hours-header-schedule');
+    const headerDispatch = document.getElementById('hours-header-dispatch');
 
     function toggleHoursCard(card, body, btn, forceOpen = null) {
       if (!card || !body || !btn) return;
@@ -6394,11 +6527,16 @@ const initAdminApp = () => {
       const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
 
       if (shouldOpen) {
-        // When opening one card, collapse the other to save viewport space
+        // When opening one card, collapse the other cards to save viewport space
         if (card === rushCard) {
           toggleHoursCard(scheduleCard, bodySchedule, btnSchedule, false);
+          toggleHoursCard(dispatchCard, bodyDispatch, btnDispatch, false);
         } else if (card === scheduleCard) {
           toggleHoursCard(rushCard, bodyRush, btnRush, false);
+          toggleHoursCard(dispatchCard, bodyDispatch, btnDispatch, false);
+        } else if (card === dispatchCard) {
+          toggleHoursCard(rushCard, bodyRush, btnRush, false);
+          toggleHoursCard(scheduleCard, bodySchedule, btnSchedule, false);
         }
       }
 
@@ -6451,6 +6589,26 @@ const initAdminApp = () => {
       });
     }
 
+    if (btnDispatch) {
+      btnDispatch.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleHoursCard(dispatchCard, bodyDispatch, btnDispatch);
+      });
+    }
+    if (headerDispatch) {
+      headerDispatch.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, select, a, label')) return;
+        toggleHoursCard(dispatchCard, bodyDispatch, btnDispatch);
+      });
+      headerDispatch.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('button, input, select, a, label')) return;
+          e.preventDefault();
+          toggleHoursCard(dispatchCard, bodyDispatch, btnDispatch);
+        }
+      });
+    }
+
     // Close buttons inside expanded panels
     document.querySelectorAll('.btn-close-hours-panel').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -6460,13 +6618,16 @@ const initAdminApp = () => {
           toggleHoursCard(rushCard, bodyRush, btnRush, false);
         } else if (targetId === 'hours-card-schedule') {
           toggleHoursCard(scheduleCard, bodySchedule, btnSchedule, false);
+        } else if (targetId === 'hours-card-dispatch') {
+          toggleHoursCard(dispatchCard, bodyDispatch, btnDispatch, false);
         }
       });
     });
 
-    // Initialize both cards collapsed by default so view is compact and fits without scrolling
+    // Initialize cards collapsed by default so view is compact and fits without scrolling
     toggleHoursCard(rushCard, bodyRush, btnRush, false);
     toggleHoursCard(scheduleCard, bodySchedule, btnSchedule, false);
+    toggleHoursCard(dispatchCard, bodyDispatch, btnDispatch, false);
   }
 
   // ========================================================

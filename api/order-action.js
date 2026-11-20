@@ -639,8 +639,8 @@ export default async function handler(req, res) {
           if (existing.status === 'pending' && status !== 'accepted') {
             return res.status(400).json({ error: 'Pending orders must be Accepted before Cooking' });
           }
-          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'accepted') {
-            return res.status(400).json({ error: 'Order must be marked as Cooking before it can be Ready for Pickup' });
+          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'ready_for_pickup' && status !== 'accepted') {
+            return res.status(400).json({ error: 'Order must be marked as Cooking or Ready for Pickup from Accepted' });
           }
           if (existing.status === 'cooking' && status !== 'ready_for_pickup' && status !== 'cooking') {
             return res.status(400).json({ error: 'Cooking orders can only advance to Ready for Pickup' });
@@ -1272,8 +1272,8 @@ export default async function handler(req, res) {
           if (existing.status === 'pending' && status !== 'accepted') {
             return res.status(400).json({ error: 'Pending orders must be Accepted before Cooking' });
           }
-          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'accepted') {
-            return res.status(400).json({ error: 'Order must be marked as Cooking before it can be Ready for Pickup' });
+          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'ready_for_pickup' && status !== 'accepted') {
+            return res.status(400).json({ error: 'Order must be marked as Cooking or Ready for Pickup from Accepted' });
           }
           if (existing.status === 'cooking' && status !== 'ready_for_pickup' && status !== 'cooking') {
             return res.status(400).json({ error: 'Cooking orders can only advance to Ready for Pickup' });

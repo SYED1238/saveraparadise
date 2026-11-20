@@ -216,6 +216,17 @@
             </div>
 
             <div class="admin-menu-dropdown-list">
+              <!-- 0. Direct Dispatch on Prep Toggle -->
+              <button type="button" class="admin-dropdown-item" id="btn-admin-direct-dispatch-toggle" role="menuitem" title="Toggle Direct Ready to Dispatch">
+                <div class="adi-icon adi-emerald" id="direct-dispatch-icon-wrap">
+                  <i class="fa-solid fa-bolt" id="direct-dispatch-icon"></i>
+                </div>
+                <div class="adi-text">
+                  <span class="adi-title" id="direct-dispatch-toggle-label">Direct Dispatch: ON</span>
+                  <span class="adi-desc" id="direct-dispatch-toggle-desc">Prep click marks Ready & alarms riders</span>
+                </div>
+              </button>
+
               <!-- 1. Ringtone Sound Mode Toggle -->
               <button type="button" class="admin-dropdown-item" id="btn-admin-alarm-toggle" role="menuitem" title="Switch Kitchen Alarm Sound">
                 <div class="adi-icon adi-purple" id="alarm-toggle-icon-wrap">
@@ -784,6 +795,58 @@
                 <i class="fa-solid fa-floppy-disk"></i> Save Operating Timings, Notice & Help Number
               </button>
               <button type="button" class="btn btn-secondary btn-close-hours-panel" data-target="hours-card-schedule" style="margin-left: 8px;">
+                <i class="fa-solid fa-chevron-up"></i> Close Settings
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- 3. KITCHEN PREPARATION & DISPATCH WORKFLOW (ACCORDION CARD) -->
+      <div class="admin-card-section offer-settings-section dispatch-section" id="hours-card-dispatch" style="margin-top: 24px;">
+        <div class="section-title-bar offer-collapsible-header" id="hours-header-dispatch" role="button" tabindex="0" aria-expanded="false" aria-controls="hours-body-dispatch">
+          <div class="offer-header-main">
+            <div class="title-with-count">
+              <span class="section-icon">📦</span>
+              <h2>Kitchen Prep & Dispatch Workflow</h2>
+              <span class="count-pill offer-status-pill" id="dispatch-mode-badge">Direct Dispatch Active</span>
+            </div>
+            <div class="offer-collapsed-summary" id="dispatch-collapsed-summary">
+              <span class="offer-summary-chip"><i class="fa-solid fa-bolt"></i> Mode: <strong id="summary-dispatch-mode">Direct Ready to Dispatch</strong></span>
+              <span class="offer-summary-chip"><i class="fa-solid fa-bell"></i> Rider Alarm: <strong id="summary-dispatch-alarm">Auto on Prep Click</strong></span>
+            </div>
+            <span class="section-hint">Control whether kitchen prep immediately moves accepted orders to Ready to Dispatch and alarms all delivery riders.</span>
+          </div>
+          <div class="offer-header-actions">
+            <button type="button" class="btn-toggle-offer-accordion" id="btn-toggle-dispatch" aria-expanded="false" aria-controls="hours-body-dispatch">
+              <span class="toggle-btn-text">Edit Settings</span>
+              <i class="fa-solid fa-chevron-down toggle-chevron"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="offer-collapsible-body" id="hours-body-dispatch" style="display: none;">
+          <form id="form-dispatch-workflow" class="admin-form dispatch-workflow-form" novalidate>
+            <!-- Direct Ready to Dispatch Toggle -->
+            <div class="offer-toggle-row" style="margin-bottom: 1.25rem;">
+              <div class="offer-toggle-info">
+                <strong style="display: flex; align-items: center; gap: 8px;">
+                  <span id="dispatch-toggle-status-icon">⚡</span>
+                  <span>Direct Ready to Dispatch: <span id="dispatch-toggle-status-label" style="color: var(--color-success, #16a34a);">Enabled (Skip Preparing Step)</span></span>
+                </strong>
+                <span>When ON, clicking the prep button on an Accepted order jumps directly to "Ready to Dispatch" and automatically rings the parcel alarm on all delivery riders' phones. Turn OFF to use standard 2-step (Accepted &rarr; Preparing &rarr; Ready).</span>
+              </div>
+              <label class="switch-toggle" for="toggle-direct-dispatch">
+                <input type="checkbox" id="toggle-direct-dispatch" checked>
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <div class="hours-card-actions">
+              <button type="submit" class="btn btn-brand-primary" id="btn-save-dispatch-mode">
+                <i class="fa-solid fa-floppy-disk"></i> Save Dispatch Mode Settings
+              </button>
+              <button type="button" class="btn btn-secondary btn-close-hours-panel" data-target="hours-card-dispatch" style="margin-left: 8px;">
                 <i class="fa-solid fa-chevron-up"></i> Close Settings
               </button>
             </div>

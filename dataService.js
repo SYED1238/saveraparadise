@@ -225,7 +225,9 @@ export const DEFAULT_SETTINGS = {
   unlockedDealsTitle: 'Wholesale Club Deals',
   unlockedDealsSubtext: 'Shop for ₹299 to unlock special menu prices!',
   // Kitchen Alarm Sound Engine: 'r2_custom' (Funk Criminal) | 'classic_chime' (Synthesized POS bell)
-  kitchenAlarmMode: 'r2_custom'
+  kitchenAlarmMode: 'r2_custom',
+  // Kitchen Dispatch Mode: true = 'accepted' orders directly advance to 'ready_for_pickup' and alarm riders; false = 2-step (accepted -> cooking -> ready_for_pickup)
+  directDispatchOnPrep: true
 };
 
 // ========================================================
@@ -7609,6 +7611,29 @@ class QuickBiteDataService {
     };
     const syncPromise = this.saveSettings(updated);
     return this._wrapWithSettingsPromise(updated, syncPromise);
+  }
+
+  isDirectDispatchOnPrep() {
+    if (this._directDispatchOnPrep !== undefined) {
+      return this._directDispatchOnPrep;
+    }
+    const s = this.getSettings();
+    return s.directDispatchOnPrep !== false;
+  }
+
+  setDirectDispatchOnPrep(enabled) {
+    this._directDispatchOnPrep = Boolean(enabled);
+    const current = this.getSettings();
+    const updated = {
+      ...current,
+      directDispatchOnPrep: Boolean(enabled)
+    };
+    try {
+      const syncPromise = this.saveSettings(updated);
+      return this._wrapWithSettingsPromise ? this._wrapWithSettingsPromise(updated, syncPromise) : updated;
+    } catch {
+      return updated;
+    }
   }
 
   setOffer(offerData) {

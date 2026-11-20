@@ -672,8 +672,8 @@ export async function onRequest(context) {
           if (existing.status === 'pending' && status !== 'accepted') {
             return jsonResponse({ error: 'Pending orders must be Accepted before Cooking' }, 400, Object.fromEntries(corsHeaders.entries()));
           }
-          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'accepted') {
-            return jsonResponse({ error: 'Order must be marked as Cooking before it can be Ready for Pickup' }, 400, Object.fromEntries(corsHeaders.entries()));
+          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'ready_for_pickup' && status !== 'accepted') {
+            return jsonResponse({ error: 'Order must be marked as Cooking or Ready for Pickup from Accepted' }, 400, Object.fromEntries(corsHeaders.entries()));
           }
           if (existing.status === 'cooking' && status !== 'ready_for_pickup' && status !== 'cooking') {
             return jsonResponse({ error: 'Cooking orders can only advance to Ready for Pickup' }, 400, Object.fromEntries(corsHeaders.entries()));
@@ -1333,8 +1333,8 @@ export async function onRequest(context) {
           if (existing.status === 'pending' && status !== 'accepted') {
             return jsonResponse({ error: 'Pending orders must be Accepted before Cooking' }, 400, Object.fromEntries(corsHeaders.entries()));
           }
-          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'accepted') {
-            return jsonResponse({ error: 'Order must be marked as Cooking before it can be Ready for Pickup' }, 400, Object.fromEntries(corsHeaders.entries()));
+          if (existing.status === 'accepted' && status !== 'cooking' && status !== 'ready_for_pickup' && status !== 'accepted') {
+            return jsonResponse({ error: 'Order must be marked as Cooking or Ready for Pickup from Accepted' }, 400, Object.fromEntries(corsHeaders.entries()));
           }
           if (existing.status === 'cooking' && status !== 'ready_for_pickup' && status !== 'cooking') {
             return jsonResponse({ error: 'Cooking orders can only advance to Ready for Pickup' }, 400, Object.fromEntries(corsHeaders.entries()));
