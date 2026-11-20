@@ -366,6 +366,38 @@ public class WebAppInterface {
     }
 
     @JavascriptInterface
+    public void setRestaurantBaseUrl(String baseUrl) {
+        try {
+            if (!isCurrentOriginTrusted()) return;
+            if (baseUrl == null || baseUrl.trim().isEmpty()) return;
+            String clean = baseUrl.trim().replaceAll("/+$", "");
+            Uri parsed = Uri.parse(clean);
+            if (!"https".equalsIgnoreCase(parsed.getScheme()) || !MainActivity.isTrustedPortalHost(parsed.getHost())) {
+                return;
+            }
+            android.content.SharedPreferences prefs = context.getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            if (prefs != null) {
+                prefs.edit().putString("saved_restaurant_base_url", clean).apply();
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
+    public void clearRestaurantBaseUrl() {
+        try {
+            if (!isCurrentOriginTrusted()) return;
+            android.content.SharedPreferences prefs = context.getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            if (prefs != null) {
+                prefs.edit()
+                    .remove("saved_restaurant_base_url")
+                    .remove("active_staff_token")
+                    .apply();
+            }
+            OrderMonitorService.stopNativeAlarm(false);
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
     public boolean isNativeApp() {
         return true;
     }

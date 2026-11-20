@@ -614,14 +614,24 @@ public class OrderMonitorService extends Service {
     private void pollKitchenOrders() {
         HttpURLConnection conn = null;
         try {
+            android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            String endpointUrl = CLOUDFLARE_ENDPOINT;
+            if (isRiderApp) {
+                String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+                if (savedBase == null || !savedBase.startsWith("https://")) {
+                    // Rider has not selected a restaurant code yet; skip polling cleanly
+                    return;
+                }
+                endpointUrl = savedBase.replaceAll("/+$", "") + "/api/order-action?action=kitchen_poll";
+            }
+
             // Priority 1: Cloudflare Edge-Cached endpoint (0 Supabase Log Ingestion)
-            URL url = new URL(CLOUDFLARE_ENDPOINT);
+            URL url = new URL(endpointUrl);
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setRequestProperty("Accept", "application/json");
 
             // Attach configured Kitchen Poll Secret or active staff token header
-            android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
             String pollSecret = prefs != null ? prefs.getString("kitchen_poll_secret", "savera-kitchen-poll-2026") : "savera-kitchen-poll-2026";
             if (pollSecret != null && !pollSecret.trim().isEmpty()) {
                 conn.setRequestProperty("X-Kitchen-Poll-Key", pollSecret.trim());

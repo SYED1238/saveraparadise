@@ -154,13 +154,26 @@ public class MainActivity extends AppCompatActivity {
         setupWebView();
         requestAppPermissions();
 
+        boolean isRiderPackage = getPackageName().toLowerCase().contains("rider");
+
         // Kitchen tablet and Rider app run background OrderMonitorService
         if (shouldRunOrderMonitorService()) {
             startOrderMonitorService();
-            requestBatteryOptimizationExemption();
+            if (!isRiderPackage) {
+                requestBatteryOptimizationExemption();
+            }
         }
 
         String targetUrl = getString(R.string.portal_url);
+        if (isRiderPackage) {
+            try {
+                android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", MODE_PRIVATE);
+                String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+                if (savedBase != null && savedBase.startsWith("https://")) {
+                    targetUrl = savedBase.replaceAll("/+$", "") + "/delivery";
+                }
+            } catch (Exception ignored) {}
+        }
         lastKnownUrl = targetUrl;
         if (savedInstanceState == null) {
             webView.loadUrl(targetUrl);

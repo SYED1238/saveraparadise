@@ -4,13 +4,13 @@ plugins {
 
 android {
     namespace 'com.sascrispy.portal'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         minSdk 24
-        targetSdk 34
-        versionCode 11
-        versionName "1.1.0"
+        targetSdk 36
+        versionCode 12
+        versionName "1.2.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -49,9 +49,9 @@ android {
         }
         rider {
             dimension "portal"
-            applicationId "com.saveraparadise.rider"
-            resValue "string", "app_name", "Savera Paradise Rider"
-            resValue "string", "portal_url", "https://saveraparadise.foodbliz.in/delivery"
+            applicationId "com.foodbliz.rider"
+            resValue "string", "app_name", "Foodbliz Rider"
+            resValue "string", "portal_url", "https://rider.foodbliz.in"
             resValue "color", "theme_color", "#059669"
         }
         owner {
