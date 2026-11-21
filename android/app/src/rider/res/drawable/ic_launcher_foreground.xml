@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
     android:drawable="@drawable/portal_logo"
-    android:inset="14%" />
+    android:insetLeft="21%"
+    android:insetRight="21%"
+    android:insetTop="18%"
+    android:insetBottom="24%" />
