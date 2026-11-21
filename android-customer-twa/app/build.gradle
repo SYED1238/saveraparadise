@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.saveraparadise.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.saveraparadise.app"
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName "1.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        release {
+            if (file("release.jks").exists()) {
+                storeFile file("release.jks")
+                // Read release signing credentials from environment variables (CI/Secrets) with local-dev fallback
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "SaveraParadise2026!"
+                keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: "saveraparadise"
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: "SaveraParadise2026!"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig file("release.jks").exists() ? signingConfigs.release : signingConfigs.debug
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.4'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}

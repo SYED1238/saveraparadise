@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.saveraparadise.app",
+      "sha256_cert_fingerprints": [
+        "4D:A4:8E:A0:71:6D:58:F9:92:DB:1A:67:65:C2:85:73:B4:3C:9D:26:9E:73:C8:3E:4E:19:AE:88:95:B5:7A:3A"
+      ]
+    }
+  }
+]
