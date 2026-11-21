@@ -43,14 +43,7 @@ jobs:
           cd android/app
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "Decoding production release keystore from secrets..."
-            python3 -c "
-import os, base64
-b64 = os.environ.get('KEYSTORE_BASE64', '').strip()
-raw = base64.b64decode(b64)
-with open('release.jks', 'wb') as f:
-    f.write(raw)
-print(f'Successfully decoded release.jks ({len(raw)} bytes).')
-" || {
+            python3 -c "import os, base64; raw = base64.b64decode(os.environ.get('KEYSTORE_BASE64', '').strip()); open('release.jks', 'wb').write(raw); print(f'Successfully decoded release.jks ({len(raw)} bytes).')" || {
               echo "Python decode fallback: using coreutils base64..."
               printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n ' | base64 --decode --ignore-garbage > release.jks
             }
