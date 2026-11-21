@@ -47,6 +47,15 @@ android {
             resValue "string", "portal_url", "https://saveraparadise.foodbliz.in/admin"
             resValue "color", "theme_color", "#0F172A"
         }
+        kitchenPlay {
+            dimension "portal"
+            applicationId "com.foodbliz.kitchen"
+            versionCode 1
+            versionName "1.0.0"
+            resValue "string", "app_name", "FoodBliz Kitchen"
+            resValue "string", "portal_url", "https://kitchen.foodbliz.in"
+            resValue "color", "theme_color", "#1C1410"
+        }
         rider {
             dimension "portal"
             applicationId "com.foodbliz.rider"

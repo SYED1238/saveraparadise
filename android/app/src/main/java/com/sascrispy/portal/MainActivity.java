@@ -155,11 +155,12 @@ public class MainActivity extends AppCompatActivity {
         requestAppPermissions();
 
         boolean isRiderPackage = getPackageName().toLowerCase().contains("rider");
+        boolean isKitchenPlayPackage = getPackageName().toLowerCase().contains("foodbliz.kitchen");
 
         // Kitchen tablet and Rider app run background OrderMonitorService
         if (shouldRunOrderMonitorService()) {
             startOrderMonitorService();
-            if (!isRiderPackage) {
+            if (!isRiderPackage && !isKitchenPlayPackage) {
                 requestBatteryOptimizationExemption();
             }
         }
@@ -171,6 +172,14 @@ public class MainActivity extends AppCompatActivity {
                 String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
                 if (savedBase != null && savedBase.startsWith("https://")) {
                     targetUrl = savedBase.replaceAll("/+$", "") + "/delivery";
+                }
+            } catch (Exception ignored) {}
+        } else if (isKitchenPlayPackage) {
+            try {
+                android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", MODE_PRIVATE);
+                String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+                if (savedBase != null && savedBase.startsWith("https://")) {
+                    targetUrl = savedBase.replaceAll("/+$", "") + "/admin";
                 }
             } catch (Exception ignored) {}
         }
