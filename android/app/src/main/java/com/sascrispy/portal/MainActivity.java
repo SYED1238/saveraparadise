@@ -374,10 +374,24 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean shouldRunOrderMonitorService() {
         String pkg = getPackageName().toLowerCase();
-        return pkg.contains("kitchen") || pkg.contains("rider");
+        boolean isTargetApp = pkg.contains("kitchen") || pkg.contains("rider");
+        if (!isTargetApp) {
+            return false;
+        }
+        if (pkg.startsWith("com.foodbliz.")) {
+            try {
+                android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", MODE_PRIVATE);
+                String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+                return savedBase != null && !savedBase.trim().isEmpty() && savedBase.startsWith("https://");
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void startOrderMonitorService() {
+        if (!shouldRunOrderMonitorService()) return;
         try {
             Intent serviceIntent = new Intent(this, OrderMonitorService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

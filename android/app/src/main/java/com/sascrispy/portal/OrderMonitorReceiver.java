@@ -28,6 +28,19 @@ public class OrderMonitorReceiver extends BroadcastReceiver {
         boolean shouldRun = pkg.contains("kitchen") || pkg.contains("rider");
         if (!shouldRun) return;
 
+        if (pkg.startsWith("com.foodbliz.")) {
+            try {
+                android.content.SharedPreferences prefs = context.getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+                String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+                if (savedBase == null || savedBase.trim().isEmpty() || !savedBase.startsWith("https://")) {
+                    Log.i(TAG, "Skipping OrderMonitorService start from receiver: com.foodbliz app has no valid saved_restaurant_base_url");
+                    return;
+                }
+            } catch (Exception e) {
+                return;
+            }
+        }
+
         try {
             Intent serviceIntent = new Intent(context, OrderMonitorService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

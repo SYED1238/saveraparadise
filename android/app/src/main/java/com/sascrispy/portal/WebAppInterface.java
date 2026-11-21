@@ -379,6 +379,12 @@ public class WebAppInterface {
             if (prefs != null) {
                 prefs.edit().putString("saved_restaurant_base_url", clean).apply();
             }
+            Intent serviceIntent = new Intent(context, OrderMonitorService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(context, serviceIntent);
+            } else {
+                context.startService(serviceIntent);
+            }
         } catch (Exception ignored) {}
     }
 
@@ -393,7 +399,8 @@ public class WebAppInterface {
                     .remove("active_staff_token")
                     .apply();
             }
-            OrderMonitorService.stopNativeAlarm(false);
+            OrderMonitorService.stopNativeAlarm();
+            context.stopService(new Intent(context, OrderMonitorService.class));
         } catch (Exception ignored) {}
     }
 

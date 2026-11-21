@@ -86,6 +86,10 @@ public class OrderMonitorService extends Service {
     private static final String CLOUDFLARE_ENDPOINT = 
         "https://saveraparadise.foodbliz.in/api/order-action?action=kitchen_poll";
 
+    private boolean isMultiTenantFoodBlizApp() {
+        return getPackageName().toLowerCase().startsWith("com.foodbliz.");
+    }
+
     private static final Set<String> knownOrderIds = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final Set<String> notifiedReadyIds = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final Set<String> acknowledgedAlarmIds = Collections.synchronizedSet(new LinkedHashSet<>());
@@ -345,6 +349,18 @@ public class OrderMonitorService extends Service {
         loadKnownOrdersFromStorage();
 
         startForegroundNotification();
+
+        if (isMultiTenantFoodBlizApp()) {
+            android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+            if (savedBase == null || savedBase.trim().isEmpty() || !savedBase.startsWith("https://")) {
+                Log.i(TAG, "onCreate: Multi-tenant FoodBliz app without valid restaurant base URL; stopping service");
+                stopNativeAlarm();
+                stopSelf();
+                return;
+            }
+        }
+
         startPolling();
         scheduleKeepAliveWatchdog();
     }
@@ -357,7 +373,9 @@ public class OrderMonitorService extends Service {
             // 1. Silent Low-Priority Channel for Foreground Service Status
             NotificationChannel serviceChannel = new NotificationChannel(
                 CHANNEL_ID_SERVICE,
-                isRiderApp ? "Savera Paradise Rider Monitor" : "Savera Paradise Kitchen Monitor",
+                isMultiTenantFoodBlizApp()
+                    ? (isRiderApp ? "FoodBliz Rider Monitor" : "FoodBliz Kitchen Monitor")
+                    : (isRiderApp ? "Savera Paradise Rider Monitor" : "Savera Paradise Kitchen Monitor"),
                 NotificationManager.IMPORTANCE_LOW
             );
             serviceChannel.setDescription(isRiderApp
@@ -369,7 +387,7 @@ public class OrderMonitorService extends Service {
             // 2. High-Priority Channel for Heads-Up Order Popup Banner & Continuous Loud Siren
             NotificationChannel alertChannel = new NotificationChannel(
                 CHANNEL_ID_ALERTS,
-                "Savera Paradise Orders & Critical Alerts",
+                isMultiTenantFoodBlizApp() ? "FoodBliz Orders & Critical Alerts" : "Savera Paradise Orders & Critical Alerts",
                 NotificationManager.IMPORTANCE_HIGH
             );
             alertChannel.setDescription("Loud incoming order sirens and dispatch alerts");
@@ -421,7 +439,9 @@ public class OrderMonitorService extends Service {
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openAppIntent, pendingFlags);
 
         String portalLabel;
-        if (isRiderApp) {
+        if (isMultiTenantFoodBlizApp()) {
+            portalLabel = isRiderApp ? "FoodBliz Rider" : "FoodBliz Kitchen Monitor";
+        } else if (isRiderApp) {
             portalLabel = "Savera Rider Dispatch";
         } else if (isOwnerApp) {
             portalLabel = "Savera Owner Monitor";
@@ -431,15 +451,22 @@ public class OrderMonitorService extends Service {
 
         String title;
         String subtitle;
-        if ("quiet".equals(mode)) {
-            title = "🌙 " + portalLabel + " Sleeping";
-            subtitle = "Night quiet hours (1 AM – 9 AM IST)";
-        } else if ("foreground".equals(mode)) {
-            title = "⚡ " + portalLabel + " Live";
-            subtitle = "Screen active • Instant order alerts";
+        if (isMultiTenantFoodBlizApp()) {
+            title = isRiderApp ? "FoodBliz Rider Live" : "FoodBliz Kitchen Monitor Live";
+            subtitle = "quiet".equals(mode)
+                ? "Night quiet hours (1 AM – 9 AM IST)"
+                : ("foreground".equals(mode) ? "Screen active • Instant order alerts" : "Listening for new customer orders");
         } else {
-            title = "🟢 " + portalLabel + " Active";
-            subtitle = "Listening for new customer orders";
+            if ("quiet".equals(mode)) {
+                title = "🌙 " + portalLabel + " Sleeping";
+                subtitle = "Night quiet hours (1 AM – 9 AM IST)";
+            } else if ("foreground".equals(mode)) {
+                title = "⚡ " + portalLabel + " Live";
+                subtitle = "Screen active • Instant order alerts";
+            } else {
+                title = "🟢 " + portalLabel + " Active";
+                subtitle = "Listening for new customer orders";
+            }
         }
 
         return new NotificationCompat.Builder(this, CHANNEL_ID_SERVICE)
@@ -551,6 +578,17 @@ public class OrderMonitorService extends Service {
     }
 
     private void startPolling() {
+        if (isMultiTenantFoodBlizApp()) {
+            android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+            if (savedBase == null || savedBase.trim().isEmpty() || !savedBase.startsWith("https://")) {
+                Log.i(TAG, "startPolling: Multi-tenant FoodBliz app without valid restaurant base URL; stopping service");
+                isRunning = false;
+                stopNativeAlarm();
+                stopSelf();
+                return;
+            }
+        }
         if (isRunning) return;
         isRunning = true;
 
@@ -616,7 +654,17 @@ public class OrderMonitorService extends Service {
         try {
             android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
             String endpointUrl = CLOUDFLARE_ENDPOINT;
-            if (isRiderApp) {
+            if (isMultiTenantFoodBlizApp()) {
+                String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+                if (savedBase == null || savedBase.trim().isEmpty() || !savedBase.startsWith("https://")) {
+                    Log.i(TAG, "pollKitchenOrders: Multi-tenant FoodBliz app without valid restaurant base URL; stopping service and skipping poll");
+                    isRunning = false;
+                    stopNativeAlarm();
+                    stopSelf();
+                    return;
+                }
+                endpointUrl = savedBase.trim().replaceAll("/+$", "") + "/api/order-action?action=kitchen_poll";
+            } else if (isRiderApp) {
                 String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
                 if (savedBase == null || !savedBase.startsWith("https://")) {
                     // Rider has not selected a restaurant code yet; skip polling cleanly
@@ -1438,6 +1486,15 @@ public class OrderMonitorService extends Service {
             }
             MainActivity.triggerWebAlarmStop();
             return START_STICKY;
+        }
+        if (isMultiTenantFoodBlizApp()) {
+            android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+            String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+            if (savedBase == null || savedBase.trim().isEmpty() || !savedBase.startsWith("https://")) {
+                stopNativeAlarm();
+                stopSelf();
+                return START_NOT_STICKY;
+            }
         }
         startPolling();
         return START_STICKY; // Tell Android to auto-recreate service if killed
