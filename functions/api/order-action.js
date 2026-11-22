@@ -307,7 +307,7 @@ export async function onRequest(context) {
   const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
 
   // 1. Role Gate: Enforce authentication for staff-restricted actions
-  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
+  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover'].includes(action)) {
     const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
     if (!auth || !auth.valid) {
       return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -502,8 +502,11 @@ export async function onRequest(context) {
       }
 
       const isOwner = auth?.authenticated && auth?.payload?.role === 'owner';
+      const isStaffReadyCancel = isStaff && existing.status === 'ready_for_pickup' && Boolean(reason && String(reason).trim());
       if (!isOwner && !['pending', 'accepted'].includes(existing.status)) {
-        return jsonResponse({ error: `Cannot cancel order once kitchen preparation has begun (${existing.status})` }, 400, Object.fromEntries(corsHeaders.entries()));
+        if (!isStaffReadyCancel) {
+          return jsonResponse({ error: `Cannot cancel order once kitchen preparation has begun (${existing.status})` }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
       }
 
       // Enforce 2-minute customer cancellation window when not staff (with 15s network grace buffer = 135000ms)
@@ -548,6 +551,17 @@ export async function onRequest(context) {
           ...(refundInfo || {})
         }
       };
+      if (existing.status === 'ready_for_pickup') {
+        updated.assigned_rider_pin = null;
+        updated.assigned_rider_name = null;
+        updated.assigned_rider_phone = null;
+        updated.assigned_rider_vehicle = null;
+        updated.rider_assigned_at = null;
+        if (updated.address_details) {
+          delete updated.address_details.riderPickupStage;
+          delete updated.address_details.riderAssignedAt;
+        }
+      }
       if (body.simulateOrders) {
         const idx = ordersList.findIndex(o => String(o.id).replace(/^#/, '') === cleanId);
         if (idx !== -1) ordersList[idx] = updated;
@@ -564,7 +578,7 @@ export async function onRequest(context) {
       return jsonResponse(sample, 200, pollHeaders);
     }
 
-    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'request_cash_handover'].includes(action)) {
+    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover'].includes(action)) {
       const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
         return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -1023,6 +1037,62 @@ export async function onRequest(context) {
           rider: { pin, cash_handover_status: 'pending_owner_approval', cash_handover_amount: amount, cash_handover_requested_at: requestedAt }
         }, 200, Object.fromEntries(corsHeaders.entries()));
       }
+
+      if (action === 'release_rider') {
+        if (!['admin', 'owner'].includes(auth.payload?.role)) {
+          return jsonResponse({ error: 'Unauthorized: Staff session required to release rider' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+        const { orderId } = body;
+        if (!orderId) return jsonResponse({ error: 'orderId is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
+        if (!existing) return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        if (existing.status !== 'ready_for_pickup') {
+          return jsonResponse({ error: `Cannot release rider: order is no longer waiting on the kitchen shelf (current status: ${existing.status})` }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+        existing.assigned_rider_pin = null;
+        existing.assigned_rider_name = null;
+        existing.assigned_rider_phone = null;
+        existing.assigned_rider_vehicle = null;
+        existing.rider_assigned_at = null;
+        if (existing.address_details) {
+          delete existing.address_details.riderPickupStage;
+          delete existing.address_details.riderAssignedAt;
+        }
+        return jsonResponse({ success: true, order: existing }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      if (action === 'rider_drop_order') {
+        if (auth.payload?.role !== 'rider') {
+          return jsonResponse({ error: 'Unauthorized: Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+        const riderPin = String(auth.payload?.riderPin || '').trim();
+        const { orderId, reason } = body;
+        if (!orderId) return jsonResponse({ error: 'orderId is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        const existing = testOrders.find(o => String(o.id).replace(/^#/, '') === cleanId);
+        if (!existing) return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        if (String(existing.assigned_rider_pin || '').trim() !== riderPin) {
+          return jsonResponse({ error: 'Forbidden: You are not assigned to this order.' }, 403, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (existing.status !== 'ready_for_pickup') {
+          return jsonResponse({ error: 'Cannot drop order once picked up. Use Customer Unreachable if at doorstep.' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        existing.assigned_rider_pin = null;
+        existing.assigned_rider_name = null;
+        existing.assigned_rider_phone = null;
+        existing.assigned_rider_vehicle = null;
+        existing.rider_assigned_at = null;
+        existing.dropped_rider_pins = [
+          ...(Array.isArray(existing.dropped_rider_pins) ? existing.dropped_rider_pins : []),
+          { pin: riderPin, droppedAt: Date.now(), reason: String(reason || 'Unable to pick up').slice(0, 120) }
+        ].slice(-10);
+        if (existing.address_details) {
+          delete existing.address_details.riderPickupStage;
+          delete existing.address_details.riderAssignedAt;
+        }
+        return jsonResponse({ success: true, order: existing }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
     }
     console.warn('[OrderAction] Supabase service credentials missing');
     return jsonResponse({ error: 'Database service credentials not configured on server' }, 503, Object.fromEntries(corsHeaders.entries()));
@@ -1111,7 +1181,7 @@ export async function onRequest(context) {
         // Prioritize active orders (cooking, ready_for_pickup, accepted, pending) so active kitchen prep orders never drop off
         const { data: activeOrders, error: activeErr } = await sb
           .from('orders')
-          .select('id, status, customer_name, total, pickup_code, created_at, assigned_rider_pin')
+          .select('id, status, customer_name, total, pickup_code, created_at, assigned_rider_pin, rider_assigned_at, address_details')
           .neq('status', 'pending_payment')
           .in('status', ['ready_for_pickup', 'cooking', 'accepted', 'pending'])
           .order('created_at', { ascending: false })
@@ -1120,6 +1190,54 @@ export async function onRequest(context) {
         if (activeErr) throw activeErr;
 
         let combined = activeOrders || [];
+
+        // Lazy 15-minute Auto-Release for Abandoned Stage-1 Claims (Zero Cron Overhead)
+        const RIDER_PICKUP_TIMEOUT_MS = 15 * 60 * 1000;
+        const nowMs = Date.now();
+        const expiredOrders = combined.filter(o =>
+          o.status === 'ready_for_pickup' &&
+          Boolean(String(o.assigned_rider_pin || '').trim()) &&
+          (nowMs - Number(o.rider_assigned_at || o.address_details?.riderAssignedAt || 0)) > RIDER_PICKUP_TIMEOUT_MS &&
+          Number(o.rider_assigned_at || o.address_details?.riderAssignedAt || 0) > 0
+        );
+
+        if (expiredOrders.length > 0) {
+          await Promise.allSettled(
+            expiredOrders.map(async (expOrd) => {
+              const cleanedAddr = { ...(expOrd.address_details || {}) };
+              delete cleanedAddr.riderPickupStage;
+              delete cleanedAddr.riderAssignedAt;
+              return sb
+                .from('orders')
+                .update({
+                  assigned_rider_pin: null,
+                  assigned_rider_name: null,
+                  assigned_rider_phone: null,
+                  assigned_rider_vehicle: null,
+                  rider_assigned_at: null,
+                  address_details: cleanedAddr
+                })
+                .eq('id', expOrd.id)
+                .eq('status', 'ready_for_pickup');
+            })
+          );
+
+          const expiredSet = new Set(expiredOrders.map(o => o.id));
+          combined.forEach(o => {
+            if (expiredSet.has(o.id)) {
+              o.assigned_rider_pin = null;
+              o.assigned_rider_name = null;
+              o.assigned_rider_phone = null;
+              o.assigned_rider_vehicle = null;
+              o.rider_assigned_at = null;
+              if (o.address_details) {
+                delete o.address_details.riderPickupStage;
+                delete o.address_details.riderAssignedAt;
+              }
+            }
+          });
+          await purgeKitchenPollEdgeCache(request, context);
+        }
 
         kitchenPollCache = combined.map(row => ({
           id: row.id,
@@ -1585,7 +1703,7 @@ export async function onRequest(context) {
 
           const { data: existing, error: fetchErr } = await sb
             .from('orders')
-            .select('id, status, step_index, eta, assigned_rider_pin, assigned_rider_name, address_details')
+            .select('id, status, step_index, eta, assigned_rider_pin, assigned_rider_name, rider_assigned_at, dropped_rider_pins, address_details')
             .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
             .maybeSingle();
 
@@ -1595,11 +1713,28 @@ export async function onRequest(context) {
           }
 
           const existingPin = String(existing.assigned_rider_pin || '').trim();
+          const STAGE1_TIMEOUT_MS = 15 * 60 * 1000;
+          const assignedAtMs = Number(existing.rider_assigned_at || (existing.address_details && existing.address_details.riderAssignedAt) || 0);
+          const isStage1Expired = assignedAtMs > 0 && (Date.now() - assignedAtMs) > STAGE1_TIMEOUT_MS;
+
           if (existingPin && existingPin !== effectivePin) {
-            return jsonResponse({
-              error: 'Order is already accepted by another rider',
-              claimedBy: existing.assigned_rider_name || null
-            }, 409, Object.fromEntries(corsHeaders.entries()));
+            if (!isStage1Expired) {
+              return jsonResponse({
+                error: 'Order is already accepted by another rider',
+                claimedBy: existing.assigned_rider_name || null
+              }, 409, Object.fromEntries(corsHeaders.entries()));
+            }
+          }
+
+          if (isRider && effectivePin && Array.isArray(existing.dropped_rider_pins)) {
+            const hasRecentDrop = existing.dropped_rider_pins.some(d =>
+              String(d.pin).trim() === effectivePin && (Date.now() - Number(d.droppedAt || 0)) < 180000
+            );
+            if (hasRecentDrop) {
+              return jsonResponse({
+                error: 'Rider recently released this order. Please wait 3 minutes before re-claiming.'
+              }, 409, Object.fromEntries(corsHeaders.entries()));
+            }
           }
           if (existing.status !== 'ready_for_pickup') {
             return jsonResponse({
@@ -1669,6 +1804,7 @@ export async function onRequest(context) {
             assigned_rider_name: riderName ? String(riderName).trim() : null,
             assigned_rider_phone: riderPhone ? String(riderPhone).trim() : null,
             assigned_rider_vehicle: riderVehicle ? String(riderVehicle).trim() : 'Bike',
+            rider_assigned_at: Date.now(),
             address_details: mergedDetails
           };
 
@@ -1680,7 +1816,7 @@ export async function onRequest(context) {
 
           if (isRider) {
             const safePin = String(effectivePin || '').replace(/[^0-9]/g, '');
-            query = query.or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.,assigned_rider_pin.eq.${safePin}`);
+            query = query.or(`assigned_rider_pin.is.null,assigned_rider_pin.eq.,assigned_rider_pin.eq.${safePin}${isStage1Expired && existingPin ? `,assigned_rider_pin.eq.${existingPin}` : ''}`);
           }
 
           const { data: updatedList, error: updateErr } = await query.select();
@@ -1900,6 +2036,140 @@ export async function onRequest(context) {
         });
       }
 
+      // 4b. Release Rider from Order (Kitchen / Owner Unassign)
+      case 'release_rider': {
+        const auth = verifyAdminToken(request, env, ['admin', 'owner']);
+        if (!auth || !auth.valid) {
+          return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required to release rider' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+        const { orderId } = body;
+        if (!orderId) {
+          return jsonResponse({ error: 'orderId is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return jsonResponse({ error: 'Invalid orderId format' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { data: existing, error: fetchErr } = await sb
+          .from('orders')
+          .select('id, status, assigned_rider_pin, address_details')
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+          .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+        if (!existing) {
+          return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (existing.status !== 'ready_for_pickup') {
+          return jsonResponse({
+            error: `Cannot release rider: order is no longer waiting on the kitchen shelf (current status: ${existing.status})`
+          }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const cleanedAddr = { ...(existing.address_details || {}) };
+        delete cleanedAddr.riderPickupStage;
+        delete cleanedAddr.riderAssignedAt;
+
+        const { data: updatedList, error: updateErr } = await sb
+          .from('orders')
+          .update({
+            assigned_rider_pin: null,
+            assigned_rider_name: null,
+            assigned_rider_phone: null,
+            assigned_rider_vehicle: null,
+            rider_assigned_at: null,
+            address_details: cleanedAddr
+          })
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+          .eq('status', 'ready_for_pickup')
+          .select();
+
+        if (updateErr) throw updateErr;
+        if (!updatedList || updatedList.length === 0) {
+          return jsonResponse({
+            error: 'Order status changed concurrently (rider may have already picked up the bag).'
+          }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        await purgeKitchenPollEdgeCache(request, context);
+        return jsonResponse({ success: true, order: updatedList[0] }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      // 4c. Rider Voluntary Drop Order (Stage-1 only: Going to Restaurant)
+      case 'rider_drop_order': {
+        const auth = verifyAdminToken(request, env, ['rider']);
+        if (!auth || !auth.valid) {
+          return jsonResponse({ error: auth?.error || 'Unauthorized: Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+        const riderPin = String(auth.payload?.riderPin || '').trim();
+        if (!riderPin) {
+          return jsonResponse({ error: 'Unauthorized: Rider PIN missing from token' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { orderId, reason } = body;
+        if (!orderId) {
+          return jsonResponse({ error: 'orderId is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const cleanId = String(orderId).replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!cleanId) {
+          return jsonResponse({ error: 'Invalid orderId format' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { data: existing, error: fetchErr } = await sb
+          .from('orders')
+          .select('id, status, assigned_rider_pin, dropped_rider_pins, address_details')
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+          .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+        if (!existing) {
+          return jsonResponse({ error: 'Order not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (String(existing.assigned_rider_pin || '').trim() !== riderPin) {
+          return jsonResponse({ error: 'Forbidden: You are not assigned to this order.' }, 403, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (existing.status !== 'ready_for_pickup') {
+          return jsonResponse({ error: 'Cannot drop order once picked up. Use Customer Unreachable if at doorstep.' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const priorDrops = Array.isArray(existing.dropped_rider_pins) ? existing.dropped_rider_pins : [];
+        const newDrops = [
+          ...priorDrops,
+          { pin: riderPin, droppedAt: Date.now(), reason: String(reason || 'Unable to pick up').slice(0, 120) }
+        ].slice(-10);
+
+        const cleanedAddr = { ...(existing.address_details || {}) };
+        delete cleanedAddr.riderPickupStage;
+        delete cleanedAddr.riderAssignedAt;
+
+        const { data: updatedList, error: updateErr } = await sb
+          .from('orders')
+          .update({
+            assigned_rider_pin: null,
+            assigned_rider_name: null,
+            assigned_rider_phone: null,
+            assigned_rider_vehicle: null,
+            rider_assigned_at: null,
+            dropped_rider_pins: newDrops,
+            address_details: cleanedAddr
+          })
+          .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
+          .eq('status', 'ready_for_pickup')
+          .eq('assigned_rider_pin', riderPin)
+          .select();
+
+        if (updateErr) throw updateErr;
+        if (!updatedList || updatedList.length === 0) {
+          return jsonResponse({
+            error: 'Order status changed concurrently (order may have already progressed or been reassigned).'
+          }, 409, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        await purgeKitchenPollEdgeCache(request, context);
+        return jsonResponse({ success: true, order: updatedList[0] }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
       // 5. Order Cancellation (Customer or Staff)
       case 'cancel_order': {
         const { orderId, trackingToken, reason } = body;
@@ -1941,8 +2211,11 @@ export async function onRequest(context) {
         }
 
         const isOwner = isStaff && auth.payload?.role === 'owner';
+        const isStaffReadyCancel = isStaff && order.status === 'ready_for_pickup' && Boolean(reason && String(reason).trim());
         if (!isOwner && !['pending', 'accepted'].includes(order.status)) {
-          return jsonResponse({ error: `Cannot cancel order once kitchen preparation has begun (${order.status})` }, 400, Object.fromEntries(corsHeaders.entries()));
+          if (!isStaffReadyCancel) {
+            return jsonResponse({ error: `Cannot cancel order once kitchen preparation has begun (${order.status})` }, 400, Object.fromEntries(corsHeaders.entries()));
+          }
         }
 
         // Enforce 2-minute customer cancellation window when not staff (with 15s network grace buffer = 135000ms)
@@ -1959,10 +2232,20 @@ export async function onRequest(context) {
         const cancellationReason = reason || (isStaff ? 'Cancelled by restaurant management' : 'Cancelled by customer');
 
         // Atomically claim the cancellation in Supabase FIRST using a conditional update
+        const cleanedAddr = { ...(order.address_details || {}) };
+        delete cleanedAddr.riderPickupStage;
+        delete cleanedAddr.riderAssignedAt;
+
         const atomicCancelPayload = {
           status: 'cancelled',
           status_label: 'Order Cancelled',
-          cancellation_reason: cancellationReason
+          cancellation_reason: cancellationReason,
+          assigned_rider_pin: null,
+          assigned_rider_name: null,
+          assigned_rider_phone: null,
+          assigned_rider_vehicle: null,
+          rider_assigned_at: null,
+          address_details: cleanedAddr
         };
 
         let cancelQuery = sb
@@ -1973,8 +2256,10 @@ export async function onRequest(context) {
           .neq('status', 'delivered')
           .neq('status', 'undelivered');
 
-        if (!isOwner) {
+        if (!isOwner && !isStaffReadyCancel) {
           cancelQuery = cancelQuery.in('status', ['pending', 'accepted']);
+        } else if (isStaffReadyCancel) {
+          cancelQuery = cancelQuery.eq('status', 'ready_for_pickup');
         }
 
         const { data: updatedRows, error: atomicCancelErr } = await cancelQuery.select();

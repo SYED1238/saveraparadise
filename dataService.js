@@ -3191,10 +3191,21 @@ class QuickBiteDataService {
               packagingFee: Number(remote.packaging_fee ?? remote.address_details?.platformFee ?? remote.address_details?.packagingFee ?? local?.packagingFee ?? local?.addressDetails?.platformFee ?? local?.addressDetails?.packagingFee ?? 0),
               discount: Number(remote.discount ?? remote.address_details?.discount ?? local?.discount ?? local?.addressDetails?.discount ?? 0),
               pickupCode: remote.pickup_code || local?.pickupCode || fallbackPickupCode,
-              assignedRiderPin: remote.assigned_rider_pin || (isOptimisticStage1 ? local?.assignedRiderPin : null) || null,
-              assignedRiderName: remote.assigned_rider_name || (isOptimisticStage1 ? local?.assignedRiderName : null) || null,
-              assignedRiderPhone: remote.assigned_rider_phone || (isOptimisticStage1 ? local?.assignedRiderPhone : null) || null,
-              assignedRiderVehicle: remote.assigned_rider_vehicle || (isOptimisticStage1 ? local?.assignedRiderVehicle : null) || null,
+              assignedRiderPin: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_pin')
+                ? (remote.assigned_rider_pin || (isOptimisticStage1 ? local?.assignedRiderPin : null) || null)
+                : (local?.assignedRiderPin || null),
+              assignedRiderName: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_name')
+                ? (remote.assigned_rider_name || (isOptimisticStage1 ? local?.assignedRiderName : null) || null)
+                : (local?.assignedRiderName || null),
+              assignedRiderPhone: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_phone')
+                ? (remote.assigned_rider_phone || (isOptimisticStage1 ? local?.assignedRiderPhone : null) || null)
+                : (local?.assignedRiderPhone || null),
+              assignedRiderVehicle: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_vehicle')
+                ? (remote.assigned_rider_vehicle || (isOptimisticStage1 ? local?.assignedRiderVehicle : null) || null)
+                : (local?.assignedRiderVehicle || null),
+              riderAssignedAt: Object.prototype.hasOwnProperty.call(remote, 'rider_assigned_at')
+                ? (remote.rider_assigned_at ? Number(remote.rider_assigned_at) : null)
+                : (local?.riderAssignedAt || (local?.addressDetails?.riderAssignedAt ? Number(local.addressDetails.riderAssignedAt) : null)),
               riderPickupStage: effectivePickupStage,
               cancellationReason: remote.cancellation_reason !== undefined ? remote.cancellation_reason : (local?.cancellationReason || null),
               riderWaitingAtDoorstep: remote.address_details?.riderWaitingAtDoorstep !== undefined
@@ -3860,10 +3871,21 @@ class QuickBiteDataService {
         addressDetails: remote.address_details || local?.addressDetails || null,
         address_details: remote.address_details || local?.address_details || local?.addressDetails || null,
         pickupCode: remote.pickup_code || local?.pickupCode || fallbackPickupCode,
-        assignedRiderPin: remote.assigned_rider_pin || local?.assignedRiderPin || null,
-        assignedRiderName: remote.assigned_rider_name || local?.assignedRiderName || null,
-        assignedRiderPhone: remote.assigned_rider_phone || local?.assignedRiderPhone || null,
-        assignedRiderVehicle: remote.assigned_rider_vehicle || local?.assignedRiderVehicle || null,
+        assignedRiderPin: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_pin')
+          ? (remote.assigned_rider_pin || null)
+          : (local?.assignedRiderPin || null),
+        assignedRiderName: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_name')
+          ? (remote.assigned_rider_name || null)
+          : (local?.assignedRiderName || null),
+        assignedRiderPhone: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_phone')
+          ? (remote.assigned_rider_phone || null)
+          : (local?.assignedRiderPhone || null),
+        assignedRiderVehicle: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_vehicle')
+          ? (remote.assigned_rider_vehicle || null)
+          : (local?.assignedRiderVehicle || null),
+        riderAssignedAt: Object.prototype.hasOwnProperty.call(remote, 'rider_assigned_at')
+          ? (remote.rider_assigned_at ? Number(remote.rider_assigned_at) : null)
+          : (local?.riderAssignedAt || (local?.addressDetails?.riderAssignedAt ? Number(local.addressDetails.riderAssignedAt) : null)),
         riderPickupStage: remotePickupStage || (effectiveStatus === 'on_the_way' ? 'picked_up' : null),
         cancellationReason: remote.cancellation_reason !== undefined ? remote.cancellation_reason : (local?.cancellationReason || null),
         trackingToken: remote.tracking_token || local?.trackingToken || null,
@@ -4591,10 +4613,21 @@ class QuickBiteDataService {
               eta: effectiveEta,
               itemsSummary: remote.items_summary || lo.itemsSummary,
               pickupCode: remote.pickup_code || lo.pickupCode,
-              assignedRiderPin: remote.assigned_rider_pin || lo.assignedRiderPin,
-              assignedRiderName: remote.assigned_rider_name || lo.assignedRiderName,
-              assignedRiderPhone: remote.assigned_rider_phone || lo.assignedRiderPhone,
-              assignedRiderVehicle: remote.assigned_rider_vehicle || lo.assignedRiderVehicle,
+              assignedRiderPin: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_pin')
+                ? (remote.assigned_rider_pin || null)
+                : (lo.assignedRiderPin || null),
+              assignedRiderName: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_name')
+                ? (remote.assigned_rider_name || null)
+                : (lo.assignedRiderName || null),
+              assignedRiderPhone: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_phone')
+                ? (remote.assigned_rider_phone || null)
+                : (lo.assignedRiderPhone || null),
+              assignedRiderVehicle: Object.prototype.hasOwnProperty.call(remote, 'assigned_rider_vehicle')
+                ? (remote.assigned_rider_vehicle || null)
+                : (lo.assignedRiderVehicle || null),
+              riderAssignedAt: Object.prototype.hasOwnProperty.call(remote, 'rider_assigned_at')
+                ? (remote.rider_assigned_at ? Number(remote.rider_assigned_at) : null)
+                : (lo.riderAssignedAt || (lo.addressDetails?.riderAssignedAt ? Number(lo.addressDetails.riderAssignedAt) : null)),
               addressDetails: remote.address_details || lo.addressDetails || null,
               address_details: remote.address_details || lo.address_details || lo.addressDetails || null,
               riderPickupStage: loRemoteStage || (effectiveStatus === 'on_the_way' ? 'picked_up' : null),
@@ -6760,7 +6793,11 @@ class QuickBiteDataService {
 
     // Order Cancellation handling
     if (newStatus === 'cancelled') {
-      if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered', 'undelivered'].includes(order.status)) {
+      const isStaff = (source === 'admin' || source === 'owner');
+      const hasReason = Boolean(extraData?.cancellationReason && String(extraData.cancellationReason).trim());
+      const isReadyStaffCancel = isStaff && order.status === 'ready_for_pickup' && hasReason;
+
+      if (['cooking', 'on_the_way', 'delivered', 'undelivered'].includes(order.status) || (order.status === 'ready_for_pickup' && !isReadyStaffCancel)) {
         console.warn(`[DataService] Action blocked: Order ${orderId} cannot be cancelled once kitchen preparation has begun (current status: ${order.status}).`);
         return null;
       }
@@ -6773,9 +6810,9 @@ class QuickBiteDataService {
         return null;
       }
       const prevStatus = order.status;
-    const prevStepIndex = order.stepIndex;
-    const prevStatusLabel = order.statusLabel;
-    const prevEta = order.eta;
+      const prevStepIndex = order.stepIndex;
+      const prevStatusLabel = order.statusLabel;
+      const prevEta = order.eta;
       order.status = 'cancelled';
       order.stepIndex = -1;
       order.statusLabel = 'Cancelled';
@@ -6783,6 +6820,18 @@ class QuickBiteDataService {
       order.cancelledAt = Date.now();
       order._optimisticTimestamp = Date.now();
       order.pendingStatusSync = true;
+      if (prevStatus === 'ready_for_pickup') {
+        order.assignedRiderPin = null;
+        order.assignedRiderName = null;
+        order.assignedRiderPhone = null;
+        order.assignedRiderVehicle = null;
+        order.riderAssignedAt = null;
+        order.riderPickupStage = null;
+        if (order.addressDetails) {
+          delete order.addressDetails.riderPickupStage;
+          delete order.addressDetails.riderAssignedAt;
+        }
+      }
       if (extraData?.cancellationReason) {
         order.cancellationReason = extraData.cancellationReason;
       }
@@ -7159,9 +7208,25 @@ class QuickBiteDataService {
     };
 
     if (updatedOrderData.status === 'cancelled') {
-      if (['cooking', 'ready_for_pickup', 'on_the_way', 'delivered', 'undelivered'].includes(list[idx].status)) {
+      const isStaff = ['admin', 'owner', 'staff', 'system'].includes(updatedOrderData.source);
+      const hasReason = Boolean(updatedOrderData.cancellationReason && String(updatedOrderData.cancellationReason).trim());
+      const isReadyStaffCancel = isStaff && list[idx].status === 'ready_for_pickup' && hasReason;
+
+      if (['cooking', 'on_the_way', 'delivered', 'undelivered'].includes(list[idx].status) || (list[idx].status === 'ready_for_pickup' && !isReadyStaffCancel)) {
         console.warn(`[DataService] Action blocked in updateOrder: Order ${orderId} cannot be cancelled once kitchen preparation has begun (current status: ${list[idx].status}).`);
         return null;
+      }
+      if (list[idx].status === 'ready_for_pickup') {
+        updatedOrderData.assignedRiderPin = null;
+        updatedOrderData.assignedRiderName = null;
+        updatedOrderData.assignedRiderPhone = null;
+        updatedOrderData.assignedRiderVehicle = null;
+        updatedOrderData.riderAssignedAt = null;
+        updatedOrderData.riderPickupStage = null;
+        if (list[idx].addressDetails) {
+          delete list[idx].addressDetails.riderPickupStage;
+          delete list[idx].addressDetails.riderAssignedAt;
+        }
       }
     } else if (updatedOrderData.status) {
       const currentRank = STATUS_RANKS[list[idx].status] !== undefined ? STATUS_RANKS[list[idx].status] : 0;
@@ -10022,6 +10087,124 @@ class QuickBiteDataService {
       extra.riderPayoutFormula = riderPayoutFormula;
     }
     return this.updateOrderStatus(orderId, 'delivered', 'rider', extra);
+  }
+
+  async releaseRiderFromOrder(orderId, reason = 'Released by kitchen staff') {
+    if (!orderId) return { success: false, error: 'Order ID is required' };
+    const cleanId = String(orderId).replace(/^#/, '');
+    const list = this.getOrders();
+    const order = list.find(o => o && String(o.id).replace(/^#/, '') === cleanId);
+
+    try {
+      const res = await this._orderAction('release_rider', { orderId: cleanId, reason });
+      if (res && res.success) {
+        if (order) {
+          order.assignedRiderPin = null;
+          order.assignedRiderName = null;
+          order.assignedRiderPhone = null;
+          order.assignedRiderVehicle = null;
+          order.riderAssignedAt = null;
+          order.riderPickupStage = null;
+          if (order.addressDetails) {
+            delete order.addressDetails.riderPickupStage;
+            delete order.addressDetails.riderAssignedAt;
+          }
+          this.saveOrders(list, { action: 'rider_released', orderId: order.id });
+        }
+        try {
+          localStorage.setItem('quickbite_order_status_sync', JSON.stringify({
+            orderId: order?.id || orderId,
+            action: 'rider_released',
+            status: 'ready_for_pickup',
+            timestamp: Date.now()
+          }));
+        } catch {}
+        if (this.syncBroadcastChannel) {
+          try {
+            this.syncBroadcastChannel.postMessage({
+              type: 'order_status_updated',
+              orderId: order?.id || orderId,
+              status: 'ready_for_pickup',
+              action: 'rider_released',
+              timestamp: Date.now()
+            });
+          } catch {}
+        }
+        if (this.sharedBroadcastChannel && typeof this.sharedBroadcastChannel.send === 'function') {
+          try {
+            this.sharedBroadcastChannel.send({
+              type: 'broadcast',
+              event: 'order_status_updated',
+              payload: { orderId: order?.id || orderId, status: 'ready_for_pickup', action: 'rider_released' }
+            }).catch(() => {});
+          } catch {}
+        }
+        return { success: true, order: res.order || order };
+      }
+      return { success: false, error: res?.error || 'Failed to release rider' };
+    } catch (err) {
+      console.error('[DataService] releaseRiderFromOrder error:', err);
+      return { success: false, error: err?.message || 'Network error releasing rider' };
+    }
+  }
+
+  async dropAssignedOrder(orderId, reason = 'Rider unable to pick up') {
+    if (!orderId) return { success: false, error: 'Order ID is required' };
+    const cleanId = String(orderId).replace(/^#/, '');
+    const list = this.getOrders();
+    const order = list.find(o => o && String(o.id).replace(/^#/, '') === cleanId);
+
+    try {
+      const res = await this._orderAction('rider_drop_order', { orderId: cleanId, reason });
+      if (res && res.success) {
+        if (order) {
+          order.assignedRiderPin = null;
+          order.assignedRiderName = null;
+          order.assignedRiderPhone = null;
+          order.assignedRiderVehicle = null;
+          order.riderAssignedAt = null;
+          order.riderPickupStage = null;
+          if (order.addressDetails) {
+            delete order.addressDetails.riderPickupStage;
+            delete order.addressDetails.riderAssignedAt;
+          }
+          this.saveOrders(list, { action: 'rider_dropped', orderId: order.id });
+        }
+        try {
+          localStorage.setItem('quickbite_order_status_sync', JSON.stringify({
+            orderId: order?.id || orderId,
+            action: 'rider_dropped',
+            status: 'ready_for_pickup',
+            timestamp: Date.now()
+          }));
+        } catch {}
+        if (this.syncBroadcastChannel) {
+          try {
+            this.syncBroadcastChannel.postMessage({
+              type: 'order_status_updated',
+              orderId: order?.id || orderId,
+              status: 'ready_for_pickup',
+              action: 'rider_dropped',
+              timestamp: Date.now()
+            });
+          } catch {}
+        }
+        if (this.sharedBroadcastChannel && typeof this.sharedBroadcastChannel.send === 'function') {
+          try {
+            this.sharedBroadcastChannel.send({
+              type: 'broadcast',
+              event: 'order_status_updated',
+              payload: { orderId: order?.id || orderId, status: 'ready_for_pickup', action: 'rider_dropped' }
+            }).catch(() => {});
+          } catch {}
+        }
+        return { success: true, order: res.order || order };
+      }
+      return { success: false, error: res?.error || 'Failed to drop order' };
+    } catch (err) {
+      console.error('[DataService] dropAssignedOrder error:', err);
+      return { success: false, error: err?.message || 'Network error dropping order' };
+    }
   }
 }
 

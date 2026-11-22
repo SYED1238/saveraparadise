@@ -6423,3 +6423,37 @@ body.rider-alarm-ringing {
     padding: 12px;
   }
 }
+
+/* Stage 1: Unable to Pick Up / Drop Order Styles */
+.btn-rider-drop-order {
+  width: 100%;
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1.5px dashed #FCA5A5;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.btn-rider-drop-order:hover {
+  background: #FEE2E2;
+  border-color: #EF4444;
+}
+
+.btn-drop-reason-pill {
+  transition: all 0.15s ease;
+}
+
+.btn-drop-reason-pill.active {
+  background: #EFF6FF !important;
+  border-color: #3B82F6 !important;
+  color: #1D4ED8 !important;
+}

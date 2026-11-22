@@ -2424,6 +2424,50 @@ const initAdminApp = () => {
     const orders = dataService.getOrders();
     calculateOrderKPIs(orders);
 
+    // Check for stale unresolved orders from prior shift
+    const now = new Date();
+    const todayStart = getShiftStartTimeMs(now);
+    const staleShiftOrders = (orders || []).filter(o => {
+      if (!o) return false;
+      const isUnresolved = ['pending', 'accepted', 'cooking', 'ready_for_pickup'].includes(o.status);
+      if (!isUnresolved) return false;
+      const rawCreated = o.createdAt ?? o.created_at;
+      const createdMs = typeof rawCreated === 'number' ? rawCreated : new Date(rawCreated).getTime();
+      return !isNaN(createdMs) && createdMs > 0 && createdMs < todayStart;
+    });
+
+    const staleBanner = document.getElementById('stale-shift-orders-banner');
+    const staleCountEl = document.getElementById('stale-orders-count');
+    const btnStaleFilter = document.getElementById('btn-stale-orders-filter');
+    const btnStaleDismiss = document.getElementById('btn-stale-orders-dismiss');
+
+    if (staleBanner && staleCountEl) {
+      if (staleShiftOrders.length > 0 && !sessionStorage.getItem('dismiss_stale_shift_banner')) {
+        staleBanner.style.display = 'flex';
+        staleCountEl.textContent = staleShiftOrders.length;
+        if (btnStaleFilter && !btnStaleFilter.dataset.bound) {
+          btnStaleFilter.dataset.bound = '1';
+          btnStaleFilter.addEventListener('click', () => {
+            const firstStale = staleShiftOrders[0];
+            if (firstStale) {
+              orderSearchQuery = firstStale.id ? String(firstStale.id).replace(/\D/g, '').slice(-4) : '';
+              if (orderSearchInput) orderSearchInput.value = orderSearchQuery;
+              renderOrders();
+            }
+          });
+        }
+        if (btnStaleDismiss && !btnStaleDismiss.dataset.bound) {
+          btnStaleDismiss.dataset.bound = '1';
+          btnStaleDismiss.addEventListener('click', () => {
+            sessionStorage.setItem('dismiss_stale_shift_banner', '1');
+            staleBanner.style.display = 'none';
+          });
+        }
+      } else {
+        staleBanner.style.display = 'none';
+      }
+    }
+
     let filtered = Array.isArray(orders) ? orders.filter(Boolean) : [];
     filtered = filtered.filter(o => o.status !== 'pending_payment');
 
@@ -2580,11 +2624,25 @@ const initAdminApp = () => {
         const stageText = isGoingToStore
           ? `Going to Restaurant to Pick Up Bag #${escapeHtml(bagCode)}`
           : (order.status === 'on_the_way' ? 'On the Way to Customer' : 'Assigned Rider');
+
+        const assignedAt = Number(order.riderAssignedAt || order.rider_assigned_at || (order.addressDetails && order.addressDetails.riderAssignedAt) || 0);
+        let waitText = '';
+        if (assignedAt > 0) {
+          const waitMins = Math.max(1, Math.floor((Date.now() - assignedAt) / 60000));
+          waitText = ` <span class="rider-wait-badge" title="Rider claimed ${waitMins}m ago">⏳ ${waitMins}m wait</span>`;
+        }
+        const releaseBtn = order.status === 'ready_for_pickup' ? `
+          <button type="button" class="btn-release-rider" data-id="${safeOrderId}" data-rider-name="${escapeHtml(order.assignedRiderName || 'Rider')}" title="Release rider from this order and return to broadcast pool">
+            <i class="fa-solid fa-user-xmark"></i> Release Rider
+          </button>
+        ` : '';
+
         riderTagHtml = `
-          <div class="order-rider-status-bar">
+          <div class="order-rider-status-bar" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
             <span class="rider-assigned-chip ${isGoingToStore ? 'going-to-restaurant' : ''}" title="${stageText} — ${escapeHtml(order.assignedRiderName)}">
-              <i class="fa-solid ${isGoingToStore ? 'fa-store' : 'fa-motorcycle'}"></i> <strong>${escapeHtml(order.assignedRiderName)}</strong> • ${stageText}
+              <i class="fa-solid ${isGoingToStore ? 'fa-store' : 'fa-motorcycle'}"></i> <strong>${escapeHtml(order.assignedRiderName)}</strong> • ${stageText}${waitText}
             </span>
+            ${releaseBtn}
           </div>
         `;
       } else if (order.status === 'ready_for_pickup') {
@@ -2827,6 +2885,32 @@ const initAdminApp = () => {
         } else {
           showToast('Order details not found.', 'warning');
         }
+      });
+    });
+
+    // 1C. Release Rider from Order Button
+    ordersContainer.querySelectorAll('.btn-release-rider').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const riderName = btn.getAttribute('data-rider-name') || 'assigned rider';
+        if (!id) return;
+        if (!confirm(`Release ${riderName} from order ${id}? This will return the order to the rider broadcast pool so another delivery partner can accept it.`)) {
+          return;
+        }
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Releasing...';
+        try {
+          const res = await dataService.releaseRiderFromOrder(id, 'Kitchen released rider');
+          if (res && res.success) {
+            showToast(`✅ Rider released from order ${id}. Order returned to broadcast pool.`, 'success');
+          } else {
+            showToast(res?.error || 'Failed to release rider', 'warning');
+          }
+        } catch (err) {
+          showToast(`⚠️ Error releasing rider: ${err?.message || err}`, 'error');
+        }
+        renderOrders();
       });
     });
 
@@ -3193,7 +3277,7 @@ const initAdminApp = () => {
         btnModalAdvanceStatus.style.color = '';
         btnModalAdvanceStatus.style.border = '';
         if (btnModalRejectOrder) {
-          btnModalRejectOrder.style.display = (status === 'accepted' || status === 'pending') ? 'inline-flex' : 'none';
+          btnModalRejectOrder.style.display = (status === 'accepted' || status === 'pending' || status === 'ready_for_pickup') ? 'inline-flex' : 'none';
         }
 
         if (status === 'pending') {
@@ -3540,6 +3624,51 @@ const initAdminApp = () => {
         p.classList.remove('active');
       }
     });
+
+    const cancelPrepaidWarning = document.getElementById('cancel-prepaid-warning');
+    const cancelPrepaidConfirmCheck = document.getElementById('cancel-prepaid-confirm-check');
+    const order = (typeof dataService.getOrderById === 'function' ? dataService.getOrderById(orderId) : null) || (dataService.getOrders() || []).find(o => o.id === orderId);
+
+    const isPrepaid = Boolean(
+      order && (
+        order.isPaidOnline ||
+        order.is_paid_online ||
+        String(order.paymentMethod || order.payment_method || '').toLowerCase() === 'online' ||
+        String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid' ||
+        order.cf_payment_id ||
+        order.cfPaymentId
+      )
+    );
+
+    if (cancelPrepaidWarning && cancelPrepaidConfirmCheck) {
+      if (isPrepaid) {
+        cancelPrepaidWarning.style.display = 'block';
+        cancelPrepaidConfirmCheck.checked = false;
+        if (btnConfirmCancelOrder) {
+          btnConfirmCancelOrder.disabled = true;
+          btnConfirmCancelOrder.style.opacity = '0.5';
+          btnConfirmCancelOrder.style.cursor = 'not-allowed';
+        }
+        if (!cancelPrepaidConfirmCheck.dataset.bound) {
+          cancelPrepaidConfirmCheck.dataset.bound = '1';
+          cancelPrepaidConfirmCheck.addEventListener('change', () => {
+            if (btnConfirmCancelOrder) {
+              btnConfirmCancelOrder.disabled = !cancelPrepaidConfirmCheck.checked;
+              btnConfirmCancelOrder.style.opacity = cancelPrepaidConfirmCheck.checked ? '1' : '0.5';
+              btnConfirmCancelOrder.style.cursor = cancelPrepaidConfirmCheck.checked ? 'pointer' : 'not-allowed';
+            }
+          });
+        }
+      } else {
+        cancelPrepaidWarning.style.display = 'none';
+        if (btnConfirmCancelOrder) {
+          btnConfirmCancelOrder.disabled = false;
+          btnConfirmCancelOrder.style.opacity = '1';
+          btnConfirmCancelOrder.style.cursor = 'pointer';
+        }
+      }
+    }
+
     modalCancelOrderBackdrop.classList.add('open');
     modalCancelOrderBackdrop.style.display = 'flex';
     backNav.pushStep('modal-cancel-order', () => {

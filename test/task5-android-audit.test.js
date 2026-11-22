@@ -107,7 +107,7 @@ test('Task 5: Android APK Security, Background Alarms & CI Keystore', async (t) 
 
   await t.test('8. CI Keystore workflow decodes base64 secret and build.gradle reads from environment', () => {
     assert.match(buildApkWorkflow, /ANDROID_KEYSTORE_BASE64/);
-    assert.match(buildApkWorkflow, /base64\s+--decode\s+>\s+release\.jks/);
+    assert.match(buildApkWorkflow, /base64\s+--decode(?:\s+--ignore-garbage)?\s+>\s+release\.jks/);
     assert.match(buildApkWorkflow, /ANDROID_KEYSTORE_PASSWORD/);
     assert.match(buildApkWorkflow, /ANDROID_KEY_ALIAS/);
     assert.match(buildApkWorkflow, /ANDROID_KEY_PASSWORD/);

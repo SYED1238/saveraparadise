@@ -1946,6 +1946,12 @@ const initDeliveryApp = () => {
                     <span style="pointer-events: none;">Pick Up Parcel (Bag #${bagCode})</span>
                   </button>
                 </div>
+                <div class="row-actions-release" style="width: 100%; margin-top: 8px;">
+                  <button type="button" class="btn-rider-drop-order" data-id="${safeId}" title="Unable to reach restaurant? Tap to release order back to available list">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Unable to Pick Up (Release Order)</span>
+                  </button>
+                </div>
               </div>
             </article>
           `;
@@ -2808,6 +2814,13 @@ const initDeliveryApp = () => {
         openUnreachableModal(id);
         return;
       }
+      const dropBtn = e.target.closest('.btn-rider-drop-order');
+      if (dropBtn) {
+        e.preventDefault();
+        const id = dropBtn.getAttribute('data-id');
+        openRiderDropModal(id);
+        return;
+      }
       const pickupBtn = e.target.closest('[data-action="pickup-parcel"]');
       if (pickupBtn) {
         e.preventDefault();
@@ -3038,6 +3051,81 @@ const initDeliveryApp = () => {
           timestamp: Date.now()
         }));
       } catch {}
+    });
+  }
+
+  // ========================================================
+  // RIDER DROP ASSIGNED ORDER (STAGE 1) MODAL CONTROLLER
+  // ========================================================
+  let activeDropOrderId = null;
+  let selectedDropReason = 'Vehicle issue / Puncture';
+
+  const modalRiderDropBackdrop = document.getElementById('modal-rider-drop-backdrop');
+  const btnCloseRiderDrop = document.getElementById('btn-close-rider-drop');
+  const btnCancelRiderDrop = document.getElementById('btn-cancel-rider-drop');
+  const btnConfirmRiderDrop = document.getElementById('btn-confirm-rider-drop');
+  const dropReasonPills = document.querySelectorAll('.btn-drop-reason-pill');
+
+  dropReasonPills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      dropReasonPills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      selectedDropReason = pill.getAttribute('data-reason') || 'Unable to pick up';
+    });
+  });
+
+  function openRiderDropModal(orderId) {
+    if (!modalRiderDropBackdrop) return;
+    activeDropOrderId = orderId;
+    selectedDropReason = 'Vehicle issue / Puncture';
+    dropReasonPills.forEach((p, idx) => {
+      p.classList.toggle('active', idx === 0);
+      if (idx === 0) selectedDropReason = p.getAttribute('data-reason') || 'Vehicle issue / Puncture';
+    });
+    modalRiderDropBackdrop.classList.add('open');
+    modalRiderDropBackdrop.style.display = 'flex';
+    backNav.pushStep('modal-rider-drop', () => closeRiderDropModal());
+  }
+
+  function closeRiderDropModal() {
+    if (!modalRiderDropBackdrop) return;
+    modalRiderDropBackdrop.classList.remove('open');
+    modalRiderDropBackdrop.style.display = 'none';
+    activeDropOrderId = null;
+    if (typeof backNav.removeStep === 'function') {
+      backNav.removeStep('modal-rider-drop');
+    }
+  }
+
+  if (btnCloseRiderDrop) btnCloseRiderDrop.addEventListener('click', closeRiderDropModal);
+  if (btnCancelRiderDrop) btnCancelRiderDrop.addEventListener('click', closeRiderDropModal);
+  if (modalRiderDropBackdrop) {
+    modalRiderDropBackdrop.addEventListener('click', (e) => {
+      if (e.target === modalRiderDropBackdrop) closeRiderDropModal();
+    });
+  }
+
+  if (btnConfirmRiderDrop) {
+    btnConfirmRiderDrop.addEventListener('click', async () => {
+      if (!activeDropOrderId) return;
+      const orderId = activeDropOrderId;
+      btnConfirmRiderDrop.disabled = true;
+      btnConfirmRiderDrop.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Releasing...';
+      try {
+        const res = await dataService.dropAssignedOrder(orderId, selectedDropReason);
+        if (res && res.success) {
+          showToast(`✅ Order ${orderId} released. Returned to available pool.`, 'success');
+          closeRiderDropModal();
+          renderRiderOrders();
+        } else {
+          showToast(res?.error || 'Failed to release order', 'warning');
+        }
+      } catch (err) {
+        showToast(`⚠️ Error releasing order: ${err?.message || err}`, 'error');
+      } finally {
+        btnConfirmRiderDrop.disabled = false;
+        btnConfirmRiderDrop.innerHTML = 'Release Order';
+      }
     });
   }
 

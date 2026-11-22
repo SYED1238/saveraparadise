@@ -7616,3 +7616,110 @@ html, body, .admin-body {
   color: #FFFFFF !important;
   border-color: var(--admin-accent) !important;
 }
+
+/* Stale Previous-Shift Unresolved Orders Banner */
+.stale-shift-orders-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #FFFBEB;
+  border: 1.5px solid #FDE68A;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.08);
+  flex-wrap: wrap;
+}
+
+.stale-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stale-banner-content strong {
+  font-size: 0.95rem;
+  color: #92400E;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stale-banner-content span {
+  font-size: 0.82rem;
+  color: #B45309;
+}
+
+.stale-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-stale-orders-filter {
+  background: #D97706;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease;
+}
+
+.btn-stale-orders-filter:hover {
+  background: #B45309;
+}
+
+.btn-stale-orders-dismiss {
+  background: transparent;
+  border: none;
+  color: #92400E;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.btn-stale-orders-dismiss:hover {
+  background: #FDE68A;
+}
+
+/* Release Rider Button & Wait Badge */
+.btn-release-rider {
+  background: #FEE2E2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-release-rider:hover {
+  background: #FCA5A5;
+  color: #991B1B;
+}
+
+.rider-wait-badge {
+  background: rgba(220, 38, 38, 0.1);
+  color: #DC2626;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}

@@ -556,6 +556,20 @@
         </div>
       </div>
 
+      <!-- Stale Previous-Shift Unresolved Orders Banner -->
+      <div class="stale-shift-orders-banner" id="stale-shift-orders-banner" style="display: none;">
+        <div class="stale-banner-content">
+          <strong id="stale-banner-title">⚠️ <span id="stale-orders-count">0</span> unresolved order(s) from a previous shift</strong>
+          <span id="stale-banner-sub">These orders remained pending from yesterday's operations. Review them to dispatch or cancel.</span>
+        </div>
+        <div class="stale-banner-actions">
+          <button type="button" class="btn-stale-orders-filter" id="btn-stale-orders-filter">
+            <i class="fa-solid fa-filter"></i> Review Orders
+          </button>
+          <button type="button" class="btn-stale-orders-dismiss" id="btn-stale-orders-dismiss" title="Dismiss banner">✕</button>
+        </div>
+      </div>
+
       <!-- Orders List Container -->
       <div class="orders-cards-container" id="orders-cards-container">
         <!-- Dynamically rendered order cards -->
@@ -1953,6 +1967,8 @@
           <div class="cancel-reason-pill-grid">
             <button type="button" class="cancel-reason-pill active" data-reason="Item(s) Out of Stock">🍲 Item(s) Out of Stock</button>
             <button type="button" class="cancel-reason-pill" data-reason="Kitchen Rush / Overloaded">🔥 Kitchen Rush / Overloaded</button>
+            <button type="button" class="cancel-reason-pill" data-reason="Rider No-Show">🛵 Rider No-Show</button>
+            <button type="button" class="cancel-reason-pill" data-reason="Kitchen Closing">🕒 Kitchen Closing</button>
             <button type="button" class="cancel-reason-pill" data-reason="Customer Requested Cancellation">📞 Customer Requested</button>
             <button type="button" class="cancel-reason-pill" data-reason="Delivery Address Out of Reach">📍 Address Out of Reach</button>
             <button type="button" class="cancel-reason-pill" data-reason="Store Closing Early">🌙 Store Closing Early</button>
@@ -1963,6 +1979,19 @@
         <div class="form-group" style="margin-top: 14px;">
           <label for="cancel-order-note" style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 6px;">Customer Explanation Note (Optional):</label>
           <input type="text" id="cancel-order-note" placeholder="e.g. Fresh stock arriving tomorrow morning. Sorry for the inconvenience!" class="admin-text-input" style="width: 100%; height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--admin-border); font-size: 0.9rem;" />
+        </div>
+
+        <div id="cancel-prepaid-warning" style="display: none; margin-top: 14px; padding: 12px 14px; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px;">
+          <div style="display: flex; align-items: flex-start; gap: 10px;">
+            <span style="font-size: 1.2rem; line-height: 1;">⚠️</span>
+            <div style="font-size: 0.85rem; color: #92400E;">
+              <strong>Online Payment (Cashfree):</strong> Cancelling this order will immediately trigger an automated refund to the customer's original payment method within an hour.
+              <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="cancel-prepaid-confirm-check" style="width: 16px; height: 16px; accent-color: #DC2626;" />
+                <span>I understand an automated refund will be initiated</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <div class="modal-card-actions" style="margin-top: 22px;">

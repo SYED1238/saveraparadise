@@ -1400,6 +1400,52 @@ function renderOrdersTable(orders) {
   const tbody = document.getElementById('orders-table-body');
   if (!tbody) return;
 
+  // Stale unresolved or refund review check
+  const now = Date.now();
+  const shiftStartMs = typeof dataService.getShiftStartTimeMs === 'function' ? dataService.getShiftStartTimeMs(new Date()) : (now - 14 * 3600 * 1000);
+  const staleOrders = (orders || []).filter(o => {
+    if (!o) return false;
+    const s = String(o.status || '').toLowerCase();
+    const isUnresolved = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup'].includes(s);
+    const createdMs = parseOrderTimestampMs(o.createdAt || o.created_at);
+    const isPriorShift = createdMs > 0 && createdMs < shiftStartMs;
+    const isRefundRequired = Boolean(
+      (s === 'cancelled' || s === 'undelivered') &&
+      isOnlineOrderPayment(o) &&
+      (o.cf_payment_status === 'FAILED' || o.address_details?.refund_status === 'FAILED' || o.address_details?.refund_status === 'PENDING_REVIEW')
+    );
+    return (isUnresolved && isPriorShift) || isRefundRequired;
+  });
+
+  const staleBanner = document.getElementById('owner-stale-alert-banner');
+  const staleTitle = document.getElementById('owner-stale-banner-title');
+  const staleDesc = document.getElementById('owner-stale-banner-desc');
+  const btnOwnerFilterStale = document.getElementById('btn-owner-filter-stale');
+
+  if (staleBanner) {
+    if (staleOrders.length > 0) {
+      staleBanner.style.display = 'flex';
+      if (staleTitle) staleTitle.textContent = `⚠️ ${staleOrders.length} Order(s) Require Owner Attention`;
+      if (staleDesc) staleDesc.textContent = `Prior shift unresolved orders or pending refunds detected.`;
+      if (btnOwnerFilterStale && !btnOwnerFilterStale.dataset.bound) {
+        btnOwnerFilterStale.dataset.bound = '1';
+        btnOwnerFilterStale.addEventListener('click', () => {
+          const first = staleOrders[0];
+          if (first && first.id) {
+            const input = document.getElementById('order-search-input');
+            if (input) {
+              input.value = String(first.id).replace(/\D/g, '').slice(-4);
+              searchQuery = input.value.toLowerCase().trim();
+              renderOrdersTable(orders);
+            }
+          }
+        });
+      }
+    } else {
+      staleBanner.style.display = 'none';
+    }
+  }
+
   // Update Status Pill Counts
   let countActive = 0;
   let countDelivered = 0;

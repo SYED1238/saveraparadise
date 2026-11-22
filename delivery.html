@@ -694,6 +694,43 @@
     </div>
   </div>
 
+  <!-- Modal: Unable to Pick Up / Drop Order (Stage 1 Only) -->
+  <div class="rider-modal-backdrop" id="modal-rider-drop-backdrop" role="dialog" aria-modal="true" aria-labelledby="drop-modal-title" style="display: none;">
+    <div class="rider-modal-card" style="max-width: 440px;">
+      <button type="button" class="rider-modal-close" id="btn-close-rider-drop" aria-label="Close modal">✕</button>
+      <div class="confirm-modal-header" style="text-align: center; margin-bottom: 12px;">
+        <div style="font-size: 2.2rem; margin-bottom: 6px;">🛵⚠️</div>
+        <h3 id="drop-modal-title" style="margin: 0; font-size: 1.2rem; font-weight: 800; color: #1E293B;">Release Order</h3>
+        <p style="font-size: 0.85rem; color: #64748B; margin-top: 4px;">Unable to reach Savera Paradise to pick up bag? Choose a reason to return the order to the available orders pool.</p>
+      </div>
+
+      <div style="margin: 14px 0;">
+        <label style="font-size: 0.82rem; font-weight: 700; color: #475569; display: block; margin-bottom: 8px;">Reason for Releasing *</label>
+        <div class="drop-reason-grid" style="display: flex; flex-direction: column; gap: 8px;">
+          <button type="button" class="btn-drop-reason-pill active" data-reason="Vehicle issue / Puncture" style="text-align: left; padding: 10px 14px; border: 1.5px solid #E2E8F0; border-radius: 10px; background: #F8FAFC; font-size: 0.88rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+            <span>🔧</span> <span>Vehicle issue / Puncture</span>
+          </button>
+          <button type="button" class="btn-drop-reason-pill" data-reason="Stuck in heavy traffic" style="text-align: left; padding: 10px 14px; border: 1.5px solid #E2E8F0; border-radius: 10px; background: #F8FAFC; font-size: 0.88rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+            <span>🚦</span> <span>Stuck in heavy traffic</span>
+          </button>
+          <button type="button" class="btn-drop-reason-pill" data-reason="Personal emergency / Low battery" style="text-align: left; padding: 10px 14px; border: 1.5px solid #E2E8F0; border-radius: 10px; background: #F8FAFC; font-size: 0.88rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+            <span>🔋</span> <span>Personal emergency / Low phone battery</span>
+          </button>
+        </div>
+      </div>
+
+      <div style="background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 0.78rem; color: #92400E; display: flex; align-items: center; gap: 8px;">
+        <i class="fa-solid fa-clock-rotate-left"></i>
+        <span>Note: You will have a 3-minute cooldown before you can reclaim this same order.</span>
+      </div>
+
+      <div style="display: flex; gap: 10px;">
+        <button type="button" class="btn-cancel-modal" id="btn-cancel-rider-drop" style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid #CBD5E1; background: #FFF; font-weight: 700; cursor: pointer;">Keep Delivery</button>
+        <button type="button" id="btn-confirm-rider-drop" style="flex: 1; padding: 12px; border-radius: 10px; border: none; background: #DC2626; color: #FFF; font-weight: 700; cursor: pointer;">Release Order</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Customer Unreachable at Doorstep Protocol -->
   <div class="rider-modal-backdrop" id="modal-unreachable-backdrop" role="dialog" aria-modal="true" aria-labelledby="unreachable-modal-title">
     <div class="rider-modal-card unreachable-modal-card">
