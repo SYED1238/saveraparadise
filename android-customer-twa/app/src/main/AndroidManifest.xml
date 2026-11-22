@@ -22,22 +22,12 @@
             android:name="asset_statements"
             android:resource="@string/asset_statements" />
 
-        <!-- Permission Entry Activity: Prompts Android 13+ POST_NOTIFICATIONS on first launch -->
+        <!-- Single unified Launcher Activity subclassing LauncherActivity directly -->
         <activity
-            android:name="com.saveraparadise.app.PermissionEntryActivity"
+            android:name="com.saveraparadise.app.SaveraLauncherActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.LauncherActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
-        <activity
-            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
-            android:exported="true"
-            android:label="@string/app_name">
 
             <meta-data
                 android:name="android.support.customtabs.trusted.DEFAULT_URL"
@@ -50,6 +40,11 @@
             <meta-data
                 android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
                 android:resource="@color/navigationColor" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
 
             <!-- Digital Asset Links & Deep Linking intent filter -->
             <intent-filter android:autoVerify="true">
