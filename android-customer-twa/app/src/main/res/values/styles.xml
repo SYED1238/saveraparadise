@@ -2,7 +2,7 @@
 <resources>
     <style name="Theme.LauncherActivity" parent="@android:style/Theme.Translucent.NoTitleBar">
         <item name="android:windowBackground">@color/backgroundColor</item>
-        <item name="android:statusBarColor">@color/backgroundColor</item>
+        <item name="android:statusBarColor">@color/colorPrimary</item>
         <item name="android:navigationBarColor">@color/navigationColor</item>
     </style>
 </resources>
