@@ -409,4 +409,42 @@ test('CATEGORY VIEW ALL & KINETIC ROTATION INTEGRATION SUITE', async (t) => {
     assert.ok(!modalRotMatch[0].includes('__perfTier'), 'View All modal plate rotation must run in all tiers');
   });
 
+  // =========================================================================
+  // 13. Floating Bottom Capsule Category Button Integration
+  // =========================================================================
+  await t.test('16. Floating capsule navigation features dedicated Category button linked to Category Explorer', () => {
+    const indexHtml = fs.readFileSync('index.html', 'utf8');
+    const mainJs = fs.readFileSync('main.js', 'utf8');
+
+    // 1. index.html contains nav-btn-category in floating-capsule
+    assert.ok(
+      indexHtml.includes('id="nav-btn-category"'),
+      'index.html must include nav-btn-category in the bottom floating capsule'
+    );
+    assert.match(
+      indexHtml,
+      /<button class="capsule-nav-btn"[^>]*id="nav-btn-category"[^>]*>[\s\S]*?<span class="capsule-label">Category<\/span>/,
+      'nav-btn-category must render Category label'
+    );
+
+    // 2. main.js queries navBtnCategory
+    assert.ok(
+      mainJs.includes("navBtnCategory = document.getElementById('nav-btn-category')"),
+      'main.js must query nav-btn-category'
+    );
+
+    // 3. Category button triggers openCategoryModal / closeCategoryModal toggle
+    assert.ok(
+      mainJs.includes('openCategoryModal(true)') && mainJs.includes('closeCategoryModal()'),
+      'main.js must wire Category button to category explorer modal'
+    );
+
+    // 4. syncCapsuleNavWithScroll highlights navBtnCategory when cat-viewall-modal is open
+    assert.match(
+      mainJs,
+      /catViewallModal\.classList\.contains\('open'\)[\s\S]*?setActiveCapsuleBtn\(navBtnCategory\)/,
+      'syncCapsuleNavWithScroll must keep navBtnCategory active while modal is open'
+    );
+  });
+
 });

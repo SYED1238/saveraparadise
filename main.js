@@ -1114,6 +1114,12 @@ function initStorefrontApp() {
         document.body.style.overflow = 'hidden';
         isModalOpen = true;
 
+        const navCatBtn = document.getElementById('nav-btn-category') || document.getElementById('nav-btn-categories');
+        if (navCatBtn) {
+          document.querySelectorAll('.capsule-nav-btn').forEach(b => b.classList.remove('active'));
+          navCatBtn.classList.add('active');
+        }
+
         if (triggerBackNav && backNav && typeof backNav.pushStep === 'function') {
           backNav.pushStep('cat-viewall-modal', () => closeCategoryModalInternal());
         }
@@ -1138,6 +1144,9 @@ function initStorefrontApp() {
         }
       }, 350);
       try { btnViewAll.focus(); } catch (_) {}
+      if (typeof syncCapsuleNavWithScroll === 'function') {
+        try { syncCapsuleNavWithScroll(); } catch (_) {}
+      }
     }
 
     // Close Modal
@@ -3128,6 +3137,7 @@ function initStorefrontApp() {
   // Floating Glass Bottom Navigation Listeners (Tailored for Web Food Ordering)
   const navBtnHome = document.getElementById('nav-btn-home');
   const navBtnMenu = document.getElementById('nav-btn-menu');
+  const navBtnCategory = document.getElementById('nav-btn-category') || document.getElementById('nav-btn-categories');
   const navBtnOffers = document.getElementById('nav-btn-offers');
   const navBtnTrack = document.getElementById('nav-btn-track');
   const navBtnCart = document.getElementById('nav-btn-cart');
@@ -3151,8 +3161,13 @@ function initStorefrontApp() {
       if (navBtnCart) setActiveCapsuleBtn(navBtnCart);
       return;
     }
+    const catViewallModal = document.getElementById('cat-viewall-modal');
+    if (catViewallModal && catViewallModal.classList.contains('open')) {
+      if (navBtnCategory) setActiveCapsuleBtn(navBtnCategory);
+      return;
+    }
     if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) {
-      setActiveCapsuleBtn(navBtnOffers);
+      if (navBtnOffers) setActiveCapsuleBtn(navBtnOffers);
       return;
     }
     if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) {
@@ -3220,6 +3235,7 @@ function initStorefrontApp() {
     navBtnHome.addEventListener('click', () => {
       if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) closeOffersModal();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) closeOrderModal();
+      if (typeof closeCategoryModal === 'function') closeCategoryModal();
       setActiveCapsuleBtn(navBtnHome);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
@@ -3229,17 +3245,45 @@ function initStorefrontApp() {
     navBtnMenu.addEventListener('click', () => {
       if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) closeOffersModal();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) closeOrderModal();
+      if (typeof closeCategoryModal === 'function') closeCategoryModal();
       setActiveCapsuleBtn(navBtnMenu);
       const menuSec = document.getElementById('menu-section');
       if (menuSec) menuSec.scrollIntoView({ behavior: 'smooth' });
     });
   }
 
-  // Offers Button on Navigation Bar: Pop open modal directly (NO scrolling!)
+  // Category Button on Navigation Bar: Pop open full Category Explorer modal (toggleable)
+  if (navBtnCategory) {
+    navBtnCategory.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) closeOffersModal();
+      if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) closeOrderModal();
+
+      const catModal = document.getElementById('cat-viewall-modal');
+      const isAlreadyOpen = catModal && catModal.classList.contains('open');
+      if (isAlreadyOpen) {
+        if (typeof closeCategoryModal === 'function') closeCategoryModal();
+        else if (typeof window.closeCategoryModal === 'function') window.closeCategoryModal();
+      } else {
+        if (typeof openCategoryModal === 'function') {
+          openCategoryModal(true);
+        } else if (typeof window.openCategoryModal === 'function') {
+          window.openCategoryModal(true);
+        } else {
+          const catSection = document.getElementById('category-header-row') || document.getElementById('category-sticky-bar');
+          if (catSection) catSection.scrollIntoView({ behavior: 'smooth' });
+        }
+        setActiveCapsuleBtn(navBtnCategory);
+      }
+    });
+  }
+
+  // Offers Button on Navigation Bar (fallback if present)
   if (navBtnOffers) {
     navBtnOffers.addEventListener('click', (e) => {
       e.preventDefault();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) closeOrderModal();
+      if (typeof closeCategoryModal === 'function') closeCategoryModal();
       openOffersModal();
     });
   }
@@ -3297,6 +3341,7 @@ function initStorefrontApp() {
   if (navBtnTrack) {
     navBtnTrack.addEventListener('click', () => {
       if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) closeOffersModal();
+      if (typeof closeCategoryModal === 'function') closeCategoryModal();
       openOrderModal(null, false);
     });
   }
@@ -3347,6 +3392,7 @@ function initStorefrontApp() {
     navBtnProfile.addEventListener('click', () => {
       if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) closeOffersModal();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) closeOrderModal();
+      if (typeof closeCategoryModal === 'function') closeCategoryModal();
       setActiveCapsuleBtn(navBtnProfile);
       openAuthModal();
     });
@@ -3374,6 +3420,7 @@ function initStorefrontApp() {
       e.preventDefault();
       if (offersModalBackdrop && offersModalBackdrop.classList.contains('open')) closeOffersModal();
       if (orderModalBackdrop && orderModalBackdrop.classList.contains('open')) closeOrderModal();
+      if (typeof closeCategoryModal === 'function') closeCategoryModal();
       setActiveCapsuleBtn(navBtnCart);
       openCartDrawer();
     });
