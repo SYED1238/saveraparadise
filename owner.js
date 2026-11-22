@@ -1406,7 +1406,7 @@ function renderOrdersTable(orders) {
   const staleOrders = (orders || []).filter(o => {
     if (!o) return false;
     const s = String(o.status || '').toLowerCase();
-    const isUnresolved = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup'].includes(s);
+    const isUnresolved = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup', 'on_the_way'].includes(s);
     const createdMs = parseOrderTimestampMs(o.createdAt || o.created_at);
     const isPriorShift = createdMs > 0 && createdMs < shiftStartMs;
     const isRefundRequired = Boolean(
@@ -1427,19 +1427,23 @@ function renderOrdersTable(orders) {
       staleBanner.style.display = 'flex';
       if (staleTitle) staleTitle.textContent = `⚠️ ${staleOrders.length} Order(s) Require Owner Attention`;
       if (staleDesc) staleDesc.textContent = `Prior shift unresolved orders or pending refunds detected.`;
-      if (btnOwnerFilterStale && !btnOwnerFilterStale.dataset.bound) {
-        btnOwnerFilterStale.dataset.bound = '1';
-        btnOwnerFilterStale.addEventListener('click', () => {
-          const first = staleOrders[0];
-          if (first && first.id) {
-            const input = document.getElementById('order-search-input');
-            if (input) {
-              input.value = String(first.id).replace(/\D/g, '').slice(-4);
-              searchQuery = input.value.toLowerCase().trim();
-              renderOrdersTable(orders);
+      if (btnOwnerFilterStale) {
+        btnOwnerFilterStale.dataset.firstStaleId = String(staleOrders[0]?.id || '').replace(/\D/g, '').slice(-4);
+        if (!btnOwnerFilterStale.dataset.bound) {
+          btnOwnerFilterStale.dataset.bound = '1';
+          btnOwnerFilterStale.addEventListener('click', () => {
+            const staleId = btnOwnerFilterStale.dataset.firstStaleId;
+            if (staleId) {
+              const input = document.getElementById('order-search-input');
+              if (input) {
+                input.value = staleId;
+                searchQuery = staleId.toLowerCase().trim();
+                const freshOrders = typeof dataService.getOrders === 'function' ? dataService.getOrders() : orders;
+                renderOrdersTable(freshOrders);
+              }
             }
-          }
-        });
+          });
+        }
       }
     } else {
       staleBanner.style.display = 'none';

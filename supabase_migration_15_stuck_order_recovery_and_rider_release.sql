@@ -108,6 +108,7 @@ DECLARE
   v_max_allowed INTEGER := 1;
   v_rider_max INTEGER;
   v_existing_pin TEXT;
+  v_assigned_at BIGINT := 0;
   v_other_active_count INTEGER := 0;
   v_otw_count INTEGER := 0;
   v_first_otw_id TEXT;
@@ -159,11 +160,16 @@ BEGIN
 
     -- Existing assigned rider check: allow atomic takeover if 15-minute timeout expired while still in ready_for_pickup
     IF v_existing_pin <> '' AND v_existing_pin <> COALESCE(TRIM(p_rider_pin), '') THEN
+      v_assigned_at := COALESCE(
+        v_order.rider_assigned_at,
+        FLOOR(COALESCE(NULLIF(v_order.address_details->>'riderAssignedAt', ''), '0')::NUMERIC)::BIGINT,
+        0
+      );
+
       IF NOT (
         v_order.status = 'ready_for_pickup'
-        AND (
-          (v_now_ms - COALESCE(v_order.rider_assigned_at, FLOOR(COALESCE(NULLIF(v_order.address_details->>'riderAssignedAt', ''), '0')::NUMERIC)::BIGINT)) > 900000
-        )
+        AND v_assigned_at > 0
+        AND (v_now_ms - v_assigned_at) > 900000
       ) THEN
         RETURN jsonb_build_object(
           'ok', false,

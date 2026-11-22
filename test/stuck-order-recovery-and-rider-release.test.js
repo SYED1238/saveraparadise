@@ -272,4 +272,36 @@ test('STUCK ORDER RECOVERY, RIDER RELEASE FLOW & TRAP PREVENTION SUITE', async (
     assert.ok(ownerHtml.includes('id="owner-stale-alert-banner"'), 'owner.html must have #owner-stale-alert-banner');
     assert.ok(ownerJs.includes('owner-stale-alert-banner'), 'owner.js must wire #owner-stale-alert-banner');
   });
+
+  await t.test('7. Edge-Case Guards: SQL Timestamp Null Safety & Portal Stale Banner Dynamic Re-binding', () => {
+    const migrationSql = fs.readFileSync(path.join(process.cwd(), 'supabase_migration_15_stuck_order_recovery_and_rider_release.sql'), 'utf8');
+    const ownerJs = fs.readFileSync(path.join(process.cwd(), 'owner.js'), 'utf8');
+    const adminJs = fs.readFileSync(path.join(process.cwd(), 'admin.js'), 'utf8');
+
+    // 7a. SQL RPC must check v_assigned_at > 0 before timeout comparison to prevent instant takeover on null timestamps
+    assert.match(
+      migrationSql,
+      /v_assigned_at\s*>\s*0\s*AND\s*\(v_now_ms\s*-\s*v_assigned_at\)\s*>\s*900000/,
+      'rider_assign_or_claim_order in SQL migration must guard v_assigned_at > 0 before checking 900000 ms timeout'
+    );
+
+    // 7b. Owner portal must include on_the_way in stale shift order audit
+    assert.match(
+      ownerJs,
+      /isUnresolved\s*=\s*\[[^\]]*'on_the_way'[^\]]*\]\.includes\(s\)/,
+      'owner.js must include on_the_way in isUnresolved filter'
+    );
+
+    // 7c. Owner portal must dynamically update dataset.firstStaleId on btnOwnerFilterStale
+    assert.ok(
+      ownerJs.includes('btnOwnerFilterStale.dataset.firstStaleId ='),
+      'owner.js must update btnOwnerFilterStale.dataset.firstStaleId to avoid stale click closure'
+    );
+
+    // 7d. Admin portal must dynamically update dataset.firstStaleId on btnStaleFilter
+    assert.ok(
+      adminJs.includes('btnStaleFilter.dataset.firstStaleId ='),
+      'admin.js must update btnStaleFilter.dataset.firstStaleId to avoid stale click closure'
+    );
+  });
 });

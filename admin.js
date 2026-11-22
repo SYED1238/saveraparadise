@@ -2429,7 +2429,7 @@ const initAdminApp = () => {
     const todayStart = getShiftStartTimeMs(now);
     const staleShiftOrders = (orders || []).filter(o => {
       if (!o) return false;
-      const isUnresolved = ['pending', 'accepted', 'cooking', 'ready_for_pickup'].includes(o.status);
+      const isUnresolved = ['pending', 'accepted', 'cooking', 'ready', 'ready_for_pickup'].includes(o.status);
       if (!isUnresolved) return false;
       const rawCreated = o.createdAt ?? o.created_at;
       const createdMs = typeof rawCreated === 'number' ? rawCreated : new Date(rawCreated).getTime();
@@ -2445,16 +2445,19 @@ const initAdminApp = () => {
       if (staleShiftOrders.length > 0 && !sessionStorage.getItem('dismiss_stale_shift_banner')) {
         staleBanner.style.display = 'flex';
         staleCountEl.textContent = staleShiftOrders.length;
-        if (btnStaleFilter && !btnStaleFilter.dataset.bound) {
-          btnStaleFilter.dataset.bound = '1';
-          btnStaleFilter.addEventListener('click', () => {
-            const firstStale = staleShiftOrders[0];
-            if (firstStale) {
-              orderSearchQuery = firstStale.id ? String(firstStale.id).replace(/\D/g, '').slice(-4) : '';
-              if (orderSearchInput) orderSearchInput.value = orderSearchQuery;
-              renderOrders();
-            }
-          });
+        if (btnStaleFilter) {
+          btnStaleFilter.dataset.firstStaleId = staleShiftOrders[0]?.id ? String(staleShiftOrders[0].id).replace(/\D/g, '').slice(-4) : '';
+          if (!btnStaleFilter.dataset.bound) {
+            btnStaleFilter.dataset.bound = '1';
+            btnStaleFilter.addEventListener('click', () => {
+              const staleId = btnStaleFilter.dataset.firstStaleId;
+              if (staleId) {
+                orderSearchQuery = staleId;
+                if (orderSearchInput) orderSearchInput.value = orderSearchQuery;
+                renderOrders();
+              }
+            });
+          }
         }
         if (btnStaleDismiss && !btnStaleDismiss.dataset.bound) {
           btnStaleDismiss.dataset.bound = '1';
