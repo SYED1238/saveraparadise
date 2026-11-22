@@ -131,7 +131,7 @@ export function getPortalConfig() {
       welcomeTag: 'crispy-app-welcome',
       startUrl: '/',
       notifPromptTitle: 'Turn on App Notifications',
-      notifPromptDesc: 'Get instant order tracking, kitchen alerts & rider updates just like a real app.',
+      notifPromptDesc: 'Get instant order tracking, kitchen alerts & rider updates.',
       featurePills: [
         { icon: '⚡', label: 'Instant Launch' },
         { icon: '🔔', label: 'Background Alerts' },
@@ -190,7 +190,7 @@ export function isAppAlreadyInstalled() {
   return !!(
     (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
     window.navigator.standalone === true ||
-    (typeof document !== 'undefined' && document.referrer && document.referrer.includes('android-app://'))
+    (typeof document !== 'undefined' && document.referrer && (document.referrer.startsWith('android-app://') || document.referrer.includes('android-app://')))
   );
 }
 
@@ -309,6 +309,16 @@ export function hideAppNotificationPromptBanner() {
 export function checkAndPromptAppNotifications() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (!isSystemNotificationSupported()) return;
+
+  // Hide inside Play Store TWA or standalone mode so it never overlaps the bottom nav dock
+  if (
+    (typeof document !== 'undefined' && document.referrer && (document.referrer.startsWith('android-app://') || document.referrer.includes('android-app://'))) ||
+    (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    (typeof window !== 'undefined' && window.navigator && window.navigator.standalone === true) ||
+    isAppAlreadyInstalled()
+  ) {
+    return;
+  }
 
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return;

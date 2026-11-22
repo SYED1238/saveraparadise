@@ -467,7 +467,7 @@ body.pwa-rider-installed #btn-rider-download-app {
 /* Real Native App Notification Prompt Floating Banner */
 .app-notification-prompt-banner {
   position: fixed;
-  bottom: 24px;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%) translateY(140%);
   width: calc(100% - 32px);
@@ -1070,7 +1070,7 @@ body.pwa-rider-installed #btn-rider-download-app {
 
 @media (max-width: 480px) {
   .app-notification-prompt-banner {
-    bottom: 16px;
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
     width: calc(100% - 24px);
     padding: 12px 14px;
     gap: 10px;
