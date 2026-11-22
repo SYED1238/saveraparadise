@@ -4,7 +4,7 @@
 /.well-known/assetlinks.json
   Content-Type: application/json
   Access-Control-Allow-Origin: *
-  Cache-Control: public, max-age=86400
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
 
 /apk/*.apk
   Content-Type: application/vnd.android.package-archive
