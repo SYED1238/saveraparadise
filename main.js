@@ -910,11 +910,11 @@ function initStorefrontApp() {
         } catch (_) {}
       }, 40);
 
-      // Keep dishes and categories comfortably visible if scrolled past
-      const catWrap = document.getElementById('category-sticky-wrapper') || document.getElementById('category-sticky-bar');
+      // Keep dishes and categories comfortably visible if scrolled past or if above on home page
+      const catWrap = document.getElementById('category-sticky-wrapper') || document.getElementById('category-sticky-bar') || document.getElementById('category-header-row');
       if (catWrap) {
         const rect = catWrap.getBoundingClientRect();
-        if (rect.top < -10) {
+        if (rect.top < -10 || rect.top > 80) {
           window.scrollTo({
             top: Math.max(0, window.scrollY + rect.top - 16),
             behavior: 'smooth'
@@ -1209,11 +1209,11 @@ function initStorefrontApp() {
       // Close modal smoothly
       closeCategoryModal();
 
-      // Smooth scroll main view down to categories if needed
-      const catWrap = document.getElementById('category-header-row') || document.getElementById('category-sticky-wrapper');
+      // Smooth scroll main view down to categories/menu so dishes are in view (both when scrolled past OR when on home page)
+      const catWrap = document.getElementById('category-header-row') || document.getElementById('category-sticky-wrapper') || document.getElementById('menu-section');
       if (catWrap) {
         const rect = catWrap.getBoundingClientRect();
-        if (rect.top < -10) {
+        if (rect.top < -10 || rect.top > 50) {
           window.scrollTo({
             top: Math.max(0, window.scrollY + rect.top - 16),
             behavior: 'smooth'
@@ -3265,6 +3265,18 @@ function initStorefrontApp() {
         if (typeof closeCategoryModal === 'function') closeCategoryModal();
         else if (typeof window.closeCategoryModal === 'function') window.closeCategoryModal();
       } else {
+        // If user is currently on the home page above the menu, smoothly scroll down to menu
+        const catTarget = document.getElementById('category-header-row') || document.getElementById('menu-section');
+        if (catTarget) {
+          const rect = catTarget.getBoundingClientRect();
+          if (rect.top > 50) {
+            window.scrollTo({
+              top: Math.max(0, window.scrollY + rect.top - 16),
+              behavior: 'smooth'
+            });
+          }
+        }
+
         if (typeof openCategoryModal === 'function') {
           openCategoryModal(true);
         } else if (typeof window.openCategoryModal === 'function') {
