@@ -412,8 +412,13 @@ export async function onRequest(context) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').insert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price'))) {
           delete dish.r2_key;
+          delete dish.original_price;
+          const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
+          if (match && match[1]) {
+            delete dish[match[1]];
+          }
           const retry = await sb.from('dishes').insert([dish]).select();
           data = retry.data;
           error = retry.error;
@@ -429,19 +434,31 @@ export async function onRequest(context) {
         }
         let updates = sanitizeDishFields(rawUpdates);
         let { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price'))) {
           delete updates.r2_key;
-          const retry = await sb.from('dishes').update(updates).eq('id', id).select();
-          data = retry.data;
-          error = retry.error;
+          delete updates.original_price;
+          const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
+          if (match && match[1]) {
+            delete updates[match[1]];
+          }
+          if (Object.keys(updates).length > 0) {
+            const retry = await sb.from('dishes').update(updates).eq('id', id).select();
+            data = retry.data;
+            error = retry.error;
+          }
         }
         if (error) throw error;
         if (!data || data.length === 0) {
           // If dish record was not yet in table, upsert it with ID to ensure persistence
           const upsertPayload = { id, ...updates };
           let upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
-          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key'))) {
+          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key') || String(upsertRes.error.message || '').includes('original_price'))) {
             delete upsertPayload.r2_key;
+            delete upsertPayload.original_price;
+            const match = String(upsertRes.error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
+            if (match && match[1]) {
+              delete upsertPayload[match[1]];
+            }
             upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
           }
           if (upsertRes.error) throw upsertRes.error;

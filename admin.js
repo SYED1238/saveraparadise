@@ -4574,6 +4574,9 @@ const initAdminApp = () => {
     const curSettings = { ...(dataService.getSettings() || {}) };
     curSettings.directDispatchOnPrep = newVal;
     if (dataService.settingsCache) dataService.settingsCache.directDispatchOnPrep = newVal;
+    if (typeof dataService.setDirectDispatchOnPrep === 'function') {
+      dataService._directDispatchOnPrep = newVal;
+    }
     localStorage.setItem('quickbite_settings', JSON.stringify(curSettings));
 
     updateDirectDispatchUI();

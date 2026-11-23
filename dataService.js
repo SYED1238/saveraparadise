@@ -5276,6 +5276,9 @@ class QuickBiteDataService {
             if (merged.offerTitle && (merged.offerTitle.includes('SMM') || merged.offerTitle.includes('Cryspy'))) {
               merged.offerTitle = merged.offerTitle.replace(/SMM Taj|SMM/gi, 'Savera');
             }
+            if (raw && typeof raw.directDispatchOnPrep !== 'undefined') {
+              this._directDispatchOnPrep = Boolean(raw.directDispatchOnPrep);
+            }
             localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
             if (raw.payoutConfig && typeof raw.payoutConfig === 'object') {
               try {
@@ -7409,6 +7412,9 @@ class QuickBiteDataService {
   }
 
   saveSettings(settings) {
+    if (settings && typeof settings.directDispatchOnPrep !== 'undefined') {
+      this._directDispatchOnPrep = Boolean(settings.directDispatchOnPrep);
+    }
     const phone = settings.restaurantPhone || settings.helpline || DEFAULT_SETTINGS.restaurantPhone;
     // Preserve fixed backend coordinates
     const toSave = {
