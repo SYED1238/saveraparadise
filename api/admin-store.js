@@ -15,7 +15,7 @@ export function invalidateRidersListCache() {
 }
 
 const STORE_SETTINGS_CACHE_TTL_MS = 300000;
-const STORE_SETTINGS_CACHE_HEADER = 'public, s-maxage=300, max-age=60, stale-while-revalidate=600';
+const STORE_SETTINGS_CACHE_HEADER = 'no-cache, no-store, must-revalidate, max-age=0';
 let storeSettingsCache = null;
 let storeSettingsCachedAt = 0;
 
@@ -95,8 +95,16 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     if (queryAction === 'get_settings') {
+      const isBypassRequested = Boolean(
+        req.query?._t ||
+        req.query?.force === 'true' ||
+        (req.url && (req.url.includes('_t=') || req.url.includes('force='))) ||
+        req.headers['cache-control']?.includes('no-cache') ||
+        req.headers['pragma']?.includes('no-cache')
+      );
+
       const now = Date.now();
-      if (storeSettingsCache && (now - storeSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
+      if (!isBypassRequested && storeSettingsCache && (now - storeSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
         res.setHeader('Cache-Control', STORE_SETTINGS_CACHE_HEADER);
         return res.status(200).json({ success: true, settings: storeSettingsCache });
       }
@@ -129,7 +137,7 @@ export default async function handler(req, res) {
 
         storeSettingsCache = settings;
         storeSettingsCachedAt = now;
-        res.setHeader('Cache-Control', STORE_SETTINGS_CACHE_HEADER);
+        res.setHeader('Cache-Control', isBypassRequested ? 'no-store, no-cache, must-revalidate, max-age=0' : STORE_SETTINGS_CACHE_HEADER);
         return res.status(200).json({ success: true, settings });
       } catch (err) {
         return res.status(200).json({ success: true, settings: {} });
@@ -186,7 +194,7 @@ export default async function handler(req, res) {
   );
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !serviceKey) {
     if (isTestEnv) {
@@ -330,8 +338,13 @@ export default async function handler(req, res) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').upsert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price'))) {
           delete dish.r2_key;
+          delete dish.original_price;
+          const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
+          if (match && match[1]) {
+            delete dish[match[1]];
+          }
           const retry = await sb.from('dishes').upsert([dish]).select();
           data = retry.data;
           error = retry.error;
@@ -813,6 +826,6 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error(`[AdminStore] Error executing ${action}:`, err.message);
     const isProd = process.env.NODE_ENV === 'production';
-    return res.status(500).json({ error: isProd ? 'Internal server error' : (err.message || 'Failed to update store data') });
+    return res.status(500).json({ error: err.message || (isProd ? 'Internal server error' : 'Failed to update store data') });
   }
 }

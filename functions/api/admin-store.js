@@ -21,7 +21,7 @@ export function invalidateRidersListCache() {
 }
 
 const STORE_SETTINGS_CACHE_TTL_MS = 300000;
-const STORE_SETTINGS_CACHE_HEADER = 'public, s-maxage=300, max-age=60, stale-while-revalidate=600';
+const STORE_SETTINGS_CACHE_HEADER = 'no-cache, no-store, must-revalidate, max-age=0';
 let storeSettingsCache = null;
 let storeSettingsCachedAt = 0;
 
@@ -45,9 +45,8 @@ export async function purgeAdminStoreSettingsEdgeCache(request, context) {
       const delPromise = caches.default.delete(cacheReq);
       if (context && typeof context.waitUntil === 'function') {
         context.waitUntil(delPromise.catch(() => {}));
-      } else {
-        await delPromise;
       }
+      await delPromise.catch(() => {});
     }
   } catch {}
 }
@@ -127,7 +126,12 @@ export async function onRequest(context) {
 
   if (request.method === 'GET') {
     if (queryAction === 'get_settings') {
-      if (typeof caches !== 'undefined' && caches.default) {
+      const isBypassRequested = parsedUrl.searchParams.has('_t') ||
+        parsedUrl.searchParams.has('force') ||
+        request.headers.get('cache-control')?.includes('no-cache') ||
+        request.headers.get('pragma')?.includes('no-cache');
+
+      if (!isBypassRequested && typeof caches !== 'undefined' && caches.default) {
         try {
           const cacheReq = getAdminStoreSettingsCacheRequest(request);
           const cachedRes = await caches.default.match(cacheReq);
@@ -140,7 +144,7 @@ export async function onRequest(context) {
       }
 
       const now = Date.now();
-      if (storeSettingsCache && (now - storeSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
+      if (!isBypassRequested && storeSettingsCache && (now - storeSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
         const headers = Object.fromEntries(corsHeaders.entries());
         headers['Cache-Control'] = STORE_SETTINGS_CACHE_HEADER;
         return jsonResponse({ success: true, settings: storeSettingsCache }, 200, headers);
@@ -176,10 +180,14 @@ export async function onRequest(context) {
 
         storeSettingsCache = settings;
         storeSettingsCachedAt = now;
-        await putAdminStoreSettingsEdgeCache(request, context, { success: true, settings });
+        if (!isBypassRequested) {
+          await putAdminStoreSettingsEdgeCache(request, context, { success: true, settings });
+        }
 
         const headers = Object.fromEntries(corsHeaders.entries());
-        headers['Cache-Control'] = STORE_SETTINGS_CACHE_HEADER;
+        headers['Cache-Control'] = isBypassRequested
+          ? 'no-store, no-cache, must-revalidate, max-age=0'
+          : STORE_SETTINGS_CACHE_HEADER;
         return jsonResponse({ success: true, settings }, 200, headers);
       } catch (err) {
         return jsonResponse({ success: true, settings: {} }, 200, Object.fromEntries(corsHeaders.entries()));
@@ -244,8 +252,8 @@ export async function onRequest(context) {
   // 3. Initialize authoritative Supabase service client
   const supabaseUrl = (env && (env.VITE_SUPABASE_URL || env.SUPABASE_URL)) ||
     (typeof process !== 'undefined' && process.env && (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL));
-  const serviceKey = (env && env.SUPABASE_SERVICE_ROLE_KEY) ||
-    (typeof process !== 'undefined' && process.env && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const serviceKey = (env && (env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY)) ||
+    (typeof process !== 'undefined' && process.env && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY));
 
   const isTestEnv = Boolean(
     (env && (env.NODE_ENV === 'test' || env.ENVIRONMENT === 'test')) ||
@@ -395,8 +403,13 @@ export async function onRequest(context) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').upsert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price'))) {
           delete dish.r2_key;
+          delete dish.original_price;
+          const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
+          if (match && match[1]) {
+            delete dish[match[1]];
+          }
           const retry = await sb.from('dishes').upsert([dish]).select();
           data = retry.data;
           error = retry.error;
@@ -884,6 +897,6 @@ export async function onRequest(context) {
     console.error(`[AdminStore] Error executing ${action}:`, err.message);
     const isProd = (env && (env.NODE_ENV === 'production' || env.ENVIRONMENT === 'production')) ||
       (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
-    return jsonResponse({ error: isProd ? 'Internal server error' : (err.message || 'Failed to update store data') }, 500, Object.fromEntries(corsHeaders.entries()));
+    return jsonResponse({ error: err.message || (isProd ? 'Internal server error' : 'Failed to update store data') }, 500, Object.fromEntries(corsHeaders.entries()));
   }
 }

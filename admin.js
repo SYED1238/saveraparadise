@@ -296,6 +296,23 @@ const initAdminApp = () => {
     });
   }
 
+  // Handle server-side 401 session expiration cleanly
+  window.addEventListener('quickbite:auth-expired', () => {
+    clearStaffSession('admin');
+    clearStaffSession('owner');
+    try {
+      localStorage.removeItem('quickbite_admin_token');
+      localStorage.removeItem('quickbite_admin_session_auth');
+    } catch {}
+    releaseWakeLock();
+    if (adminLockOverlay) {
+      adminLockOverlay.classList.remove('unlocked');
+      adminLockOverlay.style.display = 'flex';
+    }
+    if (adminPasscodeLock) adminPasscodeLock.reset();
+    showToast('🔒 Session expired. Please re-enter PIN.', 'warning');
+  });
+
   // Idle auto-lock: Locks the screen after 30 minutes of inactivity for counter security
   let idleLockTimer = null;
   function resetIdleLockTimer() {

@@ -3388,6 +3388,39 @@ class QuickBiteDataService {
             this.syncCategoryImagesFromSupabase().then(() => {
               this.notifyChange('categories');
             });
+          } else if (payload && payload.new && (payload.new.id === 'restaurant_config' || payload.new.id === 'main_settings')) {
+            const raw = payload.new.settings;
+            if (raw && typeof raw === 'object' && Object.keys(raw).length > 0) {
+              const phone = raw.restaurantPhone || raw.helpline || DEFAULT_SETTINGS.restaurantPhone;
+              const merged = {
+                ...DEFAULT_SETTINGS,
+                ...raw,
+                restaurantPhone: phone,
+                helpline: phone
+              };
+              if (merged.offerTitle && (merged.offerTitle.includes('SMM') || merged.offerTitle.includes('Cryspy'))) {
+                merged.offerTitle = merged.offerTitle.replace(/SMM Taj|SMM/gi, 'Savera');
+              }
+              if (typeof raw.directDispatchOnPrep !== 'undefined') {
+                this._directDispatchOnPrep = Boolean(raw.directDispatchOnPrep);
+              }
+              localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+              if (raw.payoutConfig && typeof raw.payoutConfig === 'object') {
+                try {
+                  localStorage.setItem('quickbite_payout_config', JSON.stringify(raw.payoutConfig));
+                  if (raw.kmPayoutRate) {
+                    localStorage.setItem('quickbite_owner_km_rate', String(raw.kmPayoutRate));
+                  }
+                } catch {}
+                this.notifyChange('payout_config_updated', raw.payoutConfig);
+                this.notifyChange('km_rate_updated', { rate: raw.kmPayoutRate || raw.payoutConfig?.flatLinear?.ratePerKm });
+              }
+              this.notifyChange('settings', { settings: merged, source: 'realtime' });
+              this._lastSettingsSyncTime = Date.now();
+            } else {
+              if (_settingsDebounceTimer) clearTimeout(_settingsDebounceTimer);
+              _settingsDebounceTimer = setTimeout(() => this.syncSettingsFromSupabase(true), 150);
+            }
           } else {
             if (_settingsDebounceTimer) clearTimeout(_settingsDebounceTimer);
             _settingsDebounceTimer = setTimeout(() => this.syncSettingsFromSupabase(true), 500);
@@ -5138,6 +5171,9 @@ class QuickBiteDataService {
       }
     }
     if (!res.ok) {
+      if (res.status === 401 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('quickbite:auth-expired', { detail: { role: requiredRole, action } }));
+      }
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `Failed to execute ${action}`);
     }
@@ -5210,6 +5246,9 @@ class QuickBiteDataService {
         body: JSON.stringify({ action, ...payload })
       });
       if (!res.ok) {
+        if (res.status === 401 && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('quickbite:auth-expired', { detail: { role: targetRole, action } }));
+        }
         const err = await res.json().catch(() => ({}));
         const httpErr = new Error(err.error || `Failed to execute ${action}`);
         httpErr.status = res.status;
@@ -5239,8 +5278,16 @@ class QuickBiteDataService {
         let raw = null;
         if (typeof window !== 'undefined' && typeof fetch === 'function') {
           try {
-            const url = force ? `/api/admin-store?action=get_settings&_t=${Date.now()}` : '/api/admin-store?action=get_settings';
-            const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+            const url = force ? `/api/admin-store?action=get_settings&force=true&_t=${Date.now()}` : '/api/admin-store?action=get_settings';
+            const fetchOpts = {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json',
+                ...(force ? { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } : {})
+              },
+              ...(force ? { cache: 'no-store' } : {})
+            };
+            const res = await fetch(url, fetchOpts);
             if (res.ok) {
               const body = await res.json();
               if (body?.success && body?.settings && typeof body.settings === 'object' && Object.keys(body.settings).length > 0) {
