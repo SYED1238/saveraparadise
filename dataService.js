@@ -227,7 +227,7 @@ export const DEFAULT_SETTINGS = {
   // Kitchen Alarm Sound Engine: 'r2_custom' (Funk Criminal) | 'classic_chime' (Synthesized POS bell)
   kitchenAlarmMode: 'r2_custom',
   // Kitchen Dispatch Mode: true = 'accepted' orders directly advance to 'ready_for_pickup' and alarm riders; false = 2-step (accepted -> cooking -> ready_for_pickup)
-  directDispatchOnPrep: true
+  directDispatchOnPrep: false
 };
 
 // ========================================================
@@ -7719,7 +7719,7 @@ class QuickBiteDataService {
       return this._directDispatchOnPrep;
     }
     const s = this.getSettings();
-    return s.directDispatchOnPrep !== false;
+    return Boolean(s && s.directDispatchOnPrep === true);
   }
 
   setDirectDispatchOnPrep(enabled) {

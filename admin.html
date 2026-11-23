@@ -218,12 +218,12 @@
             <div class="admin-menu-dropdown-list">
               <!-- 0. Direct Dispatch on Prep Toggle -->
               <button type="button" class="admin-dropdown-item" id="btn-admin-direct-dispatch-toggle" role="menuitem" title="Toggle Direct Ready to Dispatch">
-                <div class="adi-icon adi-emerald" id="direct-dispatch-icon-wrap">
+                <div class="adi-icon adi-amber" id="direct-dispatch-icon-wrap">
                   <i class="fa-solid fa-bolt" id="direct-dispatch-icon"></i>
                 </div>
                 <div class="adi-text">
-                  <span class="adi-title" id="direct-dispatch-toggle-label">Direct Dispatch: ON</span>
-                  <span class="adi-desc" id="direct-dispatch-toggle-desc">Prep click marks Ready & alarms riders</span>
+                  <span class="adi-title" id="direct-dispatch-toggle-label">Direct Dispatch: OFF</span>
+                  <span class="adi-desc" id="direct-dispatch-toggle-desc">2-Step: Prep -> Ready (Standard)</span>
                 </div>
               </button>
 
@@ -845,13 +845,13 @@
             <div class="offer-toggle-row" style="margin-bottom: 1.25rem;">
               <div class="offer-toggle-info">
                 <strong style="display: flex; align-items: center; gap: 8px;">
-                  <span id="dispatch-toggle-status-icon">⚡</span>
-                  <span>Direct Ready to Dispatch: <span id="dispatch-toggle-status-label" style="color: var(--color-success, #16a34a);">Enabled (Skip Preparing Step)</span></span>
+                  <span id="dispatch-toggle-status-icon">⏳</span>
+                  <span>Direct Ready to Dispatch: <span id="dispatch-toggle-status-label" style="color: var(--color-text-muted, #64748b);">Disabled (Standard 2-Step)</span></span>
                 </strong>
                 <span>When ON, clicking the prep button on an Accepted order jumps directly to "Ready to Dispatch" and automatically rings the parcel alarm on all delivery riders' phones. Turn OFF to use standard 2-step (Accepted &rarr; Preparing &rarr; Ready).</span>
               </div>
               <label class="switch-toggle" for="toggle-direct-dispatch">
-                <input type="checkbox" id="toggle-direct-dispatch" checked>
+                <input type="checkbox" id="toggle-direct-dispatch">
                 <span class="switch-slider"></span>
               </label>
             </div>

@@ -395,6 +395,7 @@ async function verifyOwnerPin(pin) {
       const authRes = await fetch('/api/admin-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ pin: cleanPin })
       });
       if (authRes.ok) {

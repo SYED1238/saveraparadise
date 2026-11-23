@@ -2569,7 +2569,7 @@ const initAdminApp = () => {
       } else if (order.status === 'pending') {
         nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="accepted">✅ Accept Order</button>`;
       } else if (order.status === 'accepted') {
-        const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+        const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep === true);
         if (isDirectDispatch) {
           nextActionBtn = `<button class="btn-advance-status" data-id="${safeOrderId}" data-next="ready_for_pickup" title="Advance directly to Ready to Dispatch & alarm all delivery riders">📦 Ready to Dispatch</button>`;
         } else {
@@ -3289,7 +3289,7 @@ const initAdminApp = () => {
           btnModalAdvanceText.textContent = '✅ Accept Order';
         } else if (status === 'accepted') {
           btnModalAdvanceStatus.disabled = false;
-          const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+          const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep === true);
           if (isDirectDispatch) {
             btnModalAdvanceStatus.setAttribute('data-next', 'ready_for_pickup');
             btnModalAdvanceText.textContent = '📦 Ready to Dispatch';
@@ -3355,7 +3355,7 @@ const initAdminApp = () => {
           showToast('✅ Accept Order first: Move the order to "Accepted" before dispatching!', 'warning');
           return;
         }
-        const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+        const isDirectDispatch = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep === true);
         if (!isDirectDispatch) {
           showToast('🔥 Start Preparing first: Move the order to "Preparing" before packing for dispatch!', 'warning');
           return;
@@ -3927,7 +3927,7 @@ const initAdminApp = () => {
   const formDispatchWorkflow = document.getElementById('form-dispatch-workflow');
 
   function updateDirectDispatchUI() {
-    const isDirect = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+    const isDirect = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep === true);
     if (directDispatchToggleLabel) {
       directDispatchToggleLabel.textContent = isDirect ? 'Direct Dispatch: ON' : 'Direct Dispatch: OFF';
     }
@@ -4568,7 +4568,7 @@ const initAdminApp = () => {
 
   // Direct Dispatch Mode Toggle Controller
   async function toggleDirectDispatchMode(forcedVal = null) {
-    const current = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep !== false);
+    const current = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep === true);
     const newVal = (forcedVal !== null) ? Boolean(forcedVal) : !current;
 
     const curSettings = { ...(dataService.getSettings() || {}) };

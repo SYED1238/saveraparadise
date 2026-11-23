@@ -276,6 +276,7 @@ export async function ensureAdminToken(requiredRole = 'admin', forceRefresh = fa
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
+          credentials: 'include',
           body: JSON.stringify({ action: 'refresh', token })
         });
       }
@@ -390,6 +391,7 @@ export async function verifyStaffPin(role, inputPin) {
       const res = await fetch('/api/admin-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ pin: cleanPin })
       });
       if (res.ok) {
@@ -418,6 +420,7 @@ export async function verifyStaffPin(role, inputPin) {
         const res = await fetch('/api/admin-auth', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ pin: cleanPin })
         });
         if (res.status === 401 || res.status === 403) {

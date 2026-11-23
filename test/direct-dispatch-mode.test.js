@@ -53,21 +53,21 @@ test('KITCHEN DIRECT DISPATCH WORKFLOW & RIDER ALARM SUITE', async (t) => {
   // =========================================================================
   // 1. DEFAULT_SETTINGS & DataService Helper Methods
   // =========================================================================
-  await t.test('1. DEFAULT_SETTINGS in dataService.js defines directDispatchOnPrep as true', () => {
-    assert.strictEqual(DEFAULT_SETTINGS.directDispatchOnPrep, true, 'DEFAULT_SETTINGS must have directDispatchOnPrep: true');
+  await t.test('1. DEFAULT_SETTINGS in dataService.js defines directDispatchOnPrep as false', () => {
+    assert.strictEqual(DEFAULT_SETTINGS.directDispatchOnPrep, false, 'DEFAULT_SETTINGS must have directDispatchOnPrep: false');
   });
 
-  await t.test('2. dataService.isDirectDispatchOnPrep() returns current setting and defaults to true', () => {
+  await t.test('2. dataService.isDirectDispatchOnPrep() returns current setting and defaults to false', () => {
     assert.strictEqual(typeof dataService.isDirectDispatchOnPrep, 'function');
-    assert.strictEqual(dataService.isDirectDispatchOnPrep(), true);
+    assert.strictEqual(dataService.isDirectDispatchOnPrep(), false);
   });
 
   await t.test('3. dataService.setDirectDispatchOnPrep() toggles setting and persists', () => {
     assert.strictEqual(typeof dataService.setDirectDispatchOnPrep, 'function');
-    dataService.setDirectDispatchOnPrep(false);
-    assert.strictEqual(dataService.isDirectDispatchOnPrep(), false);
     dataService.setDirectDispatchOnPrep(true);
     assert.strictEqual(dataService.isDirectDispatchOnPrep(), true);
+    dataService.setDirectDispatchOnPrep(false);
+    assert.strictEqual(dataService.isDirectDispatchOnPrep(), false);
   });
 
   // =========================================================================
