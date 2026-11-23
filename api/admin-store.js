@@ -95,19 +95,9 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     if (queryAction === 'get_settings') {
-      const isBypassRequested = Boolean(
-        req.query?._t ||
-        req.query?.force === 'true' ||
-        (req.url && (req.url.includes('_t=') || req.url.includes('force='))) ||
-        req.headers['cache-control']?.includes('no-cache') ||
-        req.headers['pragma']?.includes('no-cache')
-      );
-
-      const now = Date.now();
-      if (!isBypassRequested && storeSettingsCache && (now - storeSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
-        res.setHeader('Cache-Control', STORE_SETTINGS_CACHE_HEADER);
-        return res.status(200).json({ success: true, settings: storeSettingsCache });
-      }
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
 
       if (!supabaseUrl || !serviceKey) {
         return res.status(200).json({ success: true, settings: {} });
@@ -136,8 +126,7 @@ export default async function handler(req, res) {
         }
 
         storeSettingsCache = settings;
-        storeSettingsCachedAt = now;
-        res.setHeader('Cache-Control', isBypassRequested ? 'no-store, no-cache, must-revalidate, max-age=0' : STORE_SETTINGS_CACHE_HEADER);
+        storeSettingsCachedAt = Date.now();
         return res.status(200).json({ success: true, settings });
       } catch (err) {
         return res.status(200).json({ success: true, settings: {} });

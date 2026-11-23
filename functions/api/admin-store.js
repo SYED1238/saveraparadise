@@ -126,34 +126,15 @@ export async function onRequest(context) {
 
   if (request.method === 'GET') {
     if (queryAction === 'get_settings') {
-      const isBypassRequested = parsedUrl.searchParams.has('_t') ||
-        parsedUrl.searchParams.has('force') ||
-        request.headers.get('cache-control')?.includes('no-cache') ||
-        request.headers.get('pragma')?.includes('no-cache');
-
-      if (!isBypassRequested && typeof caches !== 'undefined' && caches.default) {
-        try {
-          const cacheReq = getAdminStoreSettingsCacheRequest(request);
-          const cachedRes = await caches.default.match(cacheReq);
-          if (cachedRes) {
-            const headers = new Headers(cachedRes.headers);
-            corsHeaders.forEach((v, k) => headers.set(k, v));
-            return new Response(cachedRes.body, { status: cachedRes.status, headers });
-          }
-        } catch {}
-      }
-
-      const now = Date.now();
-      if (!isBypassRequested && storeSettingsCache && (now - storeSettingsCachedAt < STORE_SETTINGS_CACHE_TTL_MS)) {
-        const headers = Object.fromEntries(corsHeaders.entries());
-        headers['Cache-Control'] = STORE_SETTINGS_CACHE_HEADER;
-        return jsonResponse({ success: true, settings: storeSettingsCache }, 200, headers);
-      }
+      const headers = Object.fromEntries(corsHeaders.entries());
+      headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0';
+      headers['Pragma'] = 'no-cache';
+      headers['Expires'] = '0';
 
       const supabaseUrl = env?.VITE_SUPABASE_URL || env?.SUPABASE_URL;
       const serviceKey = env?.SUPABASE_SERVICE_ROLE_KEY || env?.SUPABASE_SERVICE_KEY;
       if (!supabaseUrl || !serviceKey) {
-        return jsonResponse({ success: true, settings: {} }, 200, Object.fromEntries(corsHeaders.entries()));
+        return jsonResponse({ success: true, settings: {} }, 200, headers);
       }
       try {
         const { createClient } = await import('@supabase/supabase-js');
@@ -179,18 +160,10 @@ export async function onRequest(context) {
         }
 
         storeSettingsCache = settings;
-        storeSettingsCachedAt = now;
-        if (!isBypassRequested) {
-          await putAdminStoreSettingsEdgeCache(request, context, { success: true, settings });
-        }
-
-        const headers = Object.fromEntries(corsHeaders.entries());
-        headers['Cache-Control'] = isBypassRequested
-          ? 'no-store, no-cache, must-revalidate, max-age=0'
-          : STORE_SETTINGS_CACHE_HEADER;
+        storeSettingsCachedAt = Date.now();
         return jsonResponse({ success: true, settings }, 200, headers);
       } catch (err) {
-        return jsonResponse({ success: true, settings: {} }, 200, Object.fromEntries(corsHeaders.entries()));
+        return jsonResponse({ success: true, settings: {} }, 200, headers);
       }
     }
 

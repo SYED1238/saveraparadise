@@ -5278,14 +5278,15 @@ class QuickBiteDataService {
         let raw = null;
         if (typeof window !== 'undefined' && typeof fetch === 'function') {
           try {
-            const url = force ? `/api/admin-store?action=get_settings&force=true&_t=${Date.now()}` : '/api/admin-store?action=get_settings';
+            const url = `/api/admin-store?action=get_settings&force=true&_t=${Date.now()}`;
             const fetchOpts = {
               method: 'GET',
               headers: {
                 'Accept': 'application/json',
-                ...(force ? { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } : {})
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
               },
-              ...(force ? { cache: 'no-store' } : {})
+              cache: 'no-store'
             };
             const res = await fetch(url, fetchOpts);
             if (res.ok) {
