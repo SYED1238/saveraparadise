@@ -448,23 +448,23 @@ test('CATEGORY VIEW ALL & KINETIC ROTATION INTEGRATION SUITE', async (t) => {
   });
 
   // =========================================================================
-  // 14. Auto-Scroll to Menu from Home Page on Category Selection / Launch
+  // 14. Auto-Scroll to Menu from Home Page on Category Selection
   // =========================================================================
-  await t.test('17. Category explorer scrolls to menu/categories when user selects a category or opens from home page', () => {
+  await t.test('17. Category explorer scrolls to menu/categories when user selects a category without bouncing to home page', () => {
     const mainJs = fs.readFileSync('main.js', 'utf8');
 
-    // 1. Modal category selection scrolls both when scrolled past (rect.top < -10) and when on home page (rect.top > 50)
+    // 1. Modal category selection removes step directly to prevent window.history.back scroll restoration
     assert.match(
       mainJs,
-      /rect\.top\s*<\s*-10\s*\|\|\s*rect\.top\s*>\s*50/,
-      'Modal category click must scroll to menu when user is on home page (rect.top > 50) or scrolled past (rect.top < -10)'
+      /removeStepDirect\('cat-viewall-modal'\)[\s\S]*?closeCategoryModalInternal\(\)/,
+      'Modal category click must remove step directly and close modal without history.back jumping'
     );
 
-    // 2. Bottom nav Category button also scrolls down to menu when launched from home page
+    // 2. Modal category click scrolls to category-header-row / menu-section
     assert.match(
       mainJs,
-      /navBtnCategory[\s\S]*?catTarget\.getBoundingClientRect\(\)[\s\S]*?rect\.top\s*>\s*50[\s\S]*?window\.scrollTo/,
-      'navBtnCategory click must scroll down to menu if user is on home page'
+      /menuTarget[\s\S]*?targetY\s*=\s*menuTarget\.getBoundingClientRect\(\)\.top\s*\+\s*window\.pageYOffset[\s\S]*?window\.scrollTo/,
+      'Modal category click must calculate targetY and scroll to menu'
     );
   });
 

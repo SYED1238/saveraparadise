@@ -1206,20 +1206,30 @@ function initStorefrontApp() {
         });
       }
 
-      // Close modal smoothly
-      closeCategoryModal();
-
-      // Smooth scroll main view down to categories/menu so dishes are in view (both when scrolled past OR when on home page)
-      const catWrap = document.getElementById('category-header-row') || document.getElementById('category-sticky-wrapper') || document.getElementById('menu-section');
-      if (catWrap) {
-        const rect = catWrap.getBoundingClientRect();
-        if (rect.top < -10 || rect.top > 50) {
-          window.scrollTo({
-            top: Math.max(0, window.scrollY + rect.top - 16),
-            behavior: 'smooth'
-          });
-        }
+      // Close modal without triggering history.back scroll restoration to home page
+      if (backNav && typeof backNav.removeStepDirect === 'function') {
+        backNav.removeStepDirect('cat-viewall-modal');
       }
+      if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+        try {
+          window.history.replaceState({ portal: (backNav && backNav.portalName) || 'storefront' }, '', window.location.href);
+        } catch (_) {}
+      }
+      closeCategoryModalInternal();
+
+      // Smoothly scroll down to menu/categories so the selected category dishes are shown
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const menuTarget = document.getElementById('category-header-row') || document.getElementById('category-sticky-wrapper') || document.getElementById('menu-section');
+          if (menuTarget) {
+            const targetY = menuTarget.getBoundingClientRect().top + window.pageYOffset - 16;
+            window.scrollTo({
+              top: Math.max(0, targetY),
+              behavior: 'smooth'
+            });
+          }
+        }, 30);
+      });
     });
 
     // Support keyboard Enter/Space on items
@@ -3265,18 +3275,6 @@ function initStorefrontApp() {
         if (typeof closeCategoryModal === 'function') closeCategoryModal();
         else if (typeof window.closeCategoryModal === 'function') window.closeCategoryModal();
       } else {
-        // If user is currently on the home page above the menu, smoothly scroll down to menu
-        const catTarget = document.getElementById('category-header-row') || document.getElementById('menu-section');
-        if (catTarget) {
-          const rect = catTarget.getBoundingClientRect();
-          if (rect.top > 50) {
-            window.scrollTo({
-              top: Math.max(0, window.scrollY + rect.top - 16),
-              behavior: 'smooth'
-            });
-          }
-        }
-
         if (typeof openCategoryModal === 'function') {
           openCategoryModal(true);
         } else if (typeof window.openCategoryModal === 'function') {
