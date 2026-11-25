@@ -1625,7 +1625,7 @@ export default async function handler(req, res) {
 
           const { data: existing, error: fetchErr } = await sb
             .from('orders')
-            .select('id, status, step_index, eta, assigned_rider_pin, assigned_rider_name, address_details')
+            .select('id, status, step_index, eta, assigned_rider_pin, assigned_rider_name, rider_assigned_at, dropped_rider_pins, address_details')
             .or(`id.eq.${cleanId},id.eq.#${cleanId}`)
             .maybeSingle();
 

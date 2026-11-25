@@ -456,30 +456,66 @@ const initDeliveryApp = () => {
     }
   }
 
+  function lockRiderPortalState({ clearCachedOrders = false, toastMessage = '', toastType = 'info' } = {}) {
+    stopRiderAlarm();
+    if (typeof window !== 'undefined') {
+      window.__lastVerifiedRider = null;
+      window.__verifiedRiderToken = null;
+    }
+    try {
+      localStorage.removeItem('quickbite_active_rider_id');
+      if (clearCachedOrders) {
+        localStorage.removeItem('quickbite_orders');
+      }
+    } catch {}
+    if (clearCachedOrders) {
+      dataService._lastOrdersSyncVersion = 0;
+      dataService._lastOrdersSyncTime = 0;
+      dataService.ordersCache = null;
+      if (typeof knownDeliveryIds !== 'undefined') knownDeliveryIds.clear();
+    }
+    if (activeGpsWatchId !== null && 'geolocation' in navigator) {
+      try { navigator.geolocation.clearWatch(activeGpsWatchId); } catch {}
+      activeGpsWatchId = null;
+    }
+    stopGpsAutoRetryLoop();
+    pendingGpsSyncCallback = null;
+    gpsLastFailureReason = 'none';
+    riderLiveLocation.hasGps = false;
+    riderLiveLocation.lastUpdated = 0;
+    clearPersistedRiderGpsState();
+    clearStaffSession('rider');
+    releaseWakeLock();
+    if (riderLockOverlay) {
+      riderLockOverlay.classList.remove('unlocked');
+      riderLockOverlay.style.display = 'flex';
+    }
+    if (riderPasscodeLock) riderPasscodeLock.reset();
+    if (toastMessage) {
+      showToast(toastMessage, toastType);
+    }
+  }
+
   if (btnRiderLogout) {
     btnRiderLogout.addEventListener('click', () => {
-      stopRiderAlarm();
-      if (typeof window !== 'undefined') {
-        window.__lastVerifiedRider = null;
-      }
-      try {
-        localStorage.removeItem('quickbite_active_rider_id');
-      } catch {}
-      if (activeGpsWatchId !== null && 'geolocation' in navigator) {
-        try { navigator.geolocation.clearWatch(activeGpsWatchId); } catch {}
-        activeGpsWatchId = null;
-      }
-      stopGpsAutoRetryLoop();
-      pendingGpsSyncCallback = null;
-      gpsLastFailureReason = 'none';
-      riderLiveLocation.hasGps = false;
-      riderLiveLocation.lastUpdated = 0;
-      clearPersistedRiderGpsState();
-      clearStaffSession('rider');
-      releaseWakeLock();
-      if (riderLockOverlay) riderLockOverlay.classList.remove('unlocked');
-      if (riderPasscodeLock) riderPasscodeLock.reset();
-      showToast('🔒 Rider Portal Locked', 'info');
+      lockRiderPortalState({
+        clearCachedOrders: true,
+        toastMessage: '🔒 Rider Portal Locked',
+        toastType: 'info'
+      });
+    });
+  }
+
+  // Handle server-side 401 session expiration cleanly
+  if (typeof window !== 'undefined') {
+    window.addEventListener('quickbite:auth-expired', (e) => {
+      const expiredRole = e?.detail?.role;
+      if (expiredRole && expiredRole !== 'rider') return;
+      lockRiderPortalState({
+        clearCachedOrders: true,
+        toastMessage: '🔒 Session expired. Please re-enter PIN.',
+        toastType: 'warning'
+      });
     });
   }
 
@@ -2853,6 +2889,13 @@ const initDeliveryApp = () => {
       }
 
       const orderId = activeConfirmOrder.id;
+      const isAlreadyVerifiedDoorstepUpi = Boolean(
+        activeConfirmOrder?.doorstepUpi ||
+        activeConfirmOrder?.doorstep_upi ||
+        String(activeConfirmOrder?.paymentMethod || activeConfirmOrder?.payment_method || '').toLowerCase() === 'doorstep_upi' ||
+        (String(activeConfirmOrder?.cfOrderId || activeConfirmOrder?.cf_order_id || '').includes('doorstep_') &&
+          String(activeConfirmOrder?.cfPaymentStatus || activeConfirmOrder?.cf_payment_status || '').toUpperCase() === 'SUCCESS')
+      );
       const isCod = isCashOnDelivery(activeConfirmOrder);
       const cash = extractCashAmount(activeConfirmOrder.total);
 
@@ -2861,7 +2904,7 @@ const initDeliveryApp = () => {
       }
 
       // Explicit confirmation check: ensure rider confirmed collection
-      if (isCod) {
+      if (isCod && !isAlreadyVerifiedDoorstepUpi) {
         if (currentDoorstepPaymentMode === 'cash' && checkCashReceived && !checkCashReceived.checked) {
           showToast('⚠️ Please confirm cash collection by checking the box.', 'warning');
           isSubmittingDelivery = false;
@@ -2899,7 +2942,7 @@ const initDeliveryApp = () => {
       );
       const isDoorstepUpi = DOORSTEP_UPI_ENABLED && (isCod && currentDoorstepPaymentMode === 'upi') && (
         hasVerifiedCf || Boolean(activeConfirmOrder?.doorstepUpi || activeConfirmOrder?.doorstep_upi || String(activeConfirmOrder?.cfPaymentStatus || activeConfirmOrder?.cf_payment_status || '').toUpperCase() === 'SUCCESS')
-      );
+      ) || Boolean(DOORSTEP_UPI_ENABLED && isAlreadyVerifiedDoorstepUpi);
       const cashCollected = isDoorstepUpi ? 0 : (isCod ? Number(cash) : 0);
       const finalPaymentMethod = isDoorstepUpi ? 'doorstep_upi' : (isCod ? 'cod' : 'online');
 
@@ -3117,7 +3160,7 @@ const initDeliveryApp = () => {
         if (res && res.success) {
           showToast(`✅ Order ${orderId} released. Returned to available pool.`, 'success');
           closeRiderDropModal();
-          renderRiderOrders();
+          renderPortal();
         } else {
           showToast(res?.error || 'Failed to release order', 'warning');
         }
@@ -4012,6 +4055,7 @@ const initDeliveryApp = () => {
 
   function startRiderAlarm(order) {
     if (!order || !order.id) return;
+    if (!isStaffSessionActive('rider')) return;
     if (!isDutyOn) return;
 
     // Do not ring alarm if rider has already reached their active order concurrency limit
@@ -4144,6 +4188,7 @@ const initDeliveryApp = () => {
 
   function handleRiderIncomingOrder(order) {
     if (!order || !order.id) return;
+    if (!isStaffSessionActive('rider')) return;
     const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
     const cleanId = normalizeId(order.id);
     knownDeliveryIds.add(order.id);
@@ -4234,6 +4279,7 @@ const initDeliveryApp = () => {
 
   function handleRiderOrderStatusSync(payload) {
     if (!payload) return;
+    if (!isStaffSessionActive('rider')) return;
     const orderId = payload.orderId || payload.order?.id;
     const status = payload.status || payload.order?.status;
     if (!orderId || !status) return;
@@ -4319,6 +4365,7 @@ const initDeliveryApp = () => {
   }
 
   function scanRiderNewOrders() {
+    if (!isStaffSessionActive('rider')) return;
     const normalizeId = (id) => String(id || '').trim().replace(/^#/, '');
     const latestList = dataService.getOrders();
     const currentRider = dataService.getActiveRider();
@@ -4989,6 +5036,10 @@ const initDeliveryApp = () => {
     isOpen: () => modalPayoutBackdrop && modalPayoutBackdrop.classList.contains('open'),
     close: () => closePayoutModal()
   });
+  backNav.registerFallbackChecker({
+    isOpen: () => modalRiderDropBackdrop && modalRiderDropBackdrop.classList.contains('open'),
+    close: () => closeRiderDropModal()
+  });
 
   // Listen to rider session / settlement / claim events
   dataService.subscribeToChanges((entity, detail) => {
@@ -5005,7 +5056,12 @@ const initDeliveryApp = () => {
         const currentRider = dataService.getActiveRider();
         const deletedPin = String(detail?.pin || '').trim();
         if (currentRider && deletedPin && String(currentRider.pin).trim() === deletedPin) {
+          stopRiderAlarm();
           clearStaffSession('rider');
+          if (typeof window !== 'undefined') {
+            window.__lastVerifiedRider = null;
+            window.__verifiedRiderToken = null;
+          }
           if (riderLockOverlay) {
             riderLockOverlay.classList.remove('unlocked');
             riderLockOverlay.style.display = 'flex';
