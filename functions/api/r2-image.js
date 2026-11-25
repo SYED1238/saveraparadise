@@ -67,6 +67,7 @@ export async function onRequest(context) {
       const responseHeaders = new Headers();
       responseHeaders.set('Content-Type', r2Res.headers.get('content-type') || 'image/jpeg');
       responseHeaders.set('X-Content-Type-Options', 'nosniff');
+      responseHeaders.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
       responseHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
       responseHeaders.set('Access-Control-Allow-Origin', '*');
 

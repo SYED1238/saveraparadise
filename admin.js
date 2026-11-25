@@ -196,6 +196,7 @@ const initAdminApp = () => {
       requestWakeLock();
       showToast('🔓 Manager Access Granted', 'success');
       resetIdleLockTimer();
+      checkOverduePendingOrders();
       // In Android APK, persist token in localStorage so WebView reloads retain staff session
       if (typeof window !== 'undefined' && Boolean(window.AndroidNative)) {
         try {
@@ -260,6 +261,7 @@ const initAdminApp = () => {
       }
       requestWakeLock();
       resetIdleLockTimer();
+      checkOverduePendingOrders();
       dataService.syncOrdersFromSupabase().then(() => {
         scanAndDetectNewOrders();
         renderOrders();
@@ -286,6 +288,10 @@ const initAdminApp = () => {
         localStorage.removeItem('quickbite_admin_token');
         localStorage.removeItem('quickbite_admin_session_auth');
       } catch {}
+      if (isKitchenAlarmRinging) {
+        stopKitchenAlarm(false);
+      }
+      if (pendingOverdueAlertBanner) pendingOverdueAlertBanner.style.display = 'none';
       releaseWakeLock();
       if (adminLockOverlay) {
         adminLockOverlay.classList.remove('unlocked');
@@ -304,6 +310,10 @@ const initAdminApp = () => {
       localStorage.removeItem('quickbite_admin_token');
       localStorage.removeItem('quickbite_admin_session_auth');
     } catch {}
+    if (isKitchenAlarmRinging) {
+      stopKitchenAlarm(false);
+    }
+    if (pendingOverdueAlertBanner) pendingOverdueAlertBanner.style.display = 'none';
     releaseWakeLock();
     if (adminLockOverlay) {
       adminLockOverlay.classList.remove('unlocked');
@@ -332,6 +342,14 @@ const initAdminApp = () => {
 
           clearStaffSession('admin');
           clearStaffSession('owner');
+          try {
+            localStorage.removeItem('quickbite_admin_token');
+            localStorage.removeItem('quickbite_admin_session_auth');
+          } catch {}
+          if (isKitchenAlarmRinging) {
+            stopKitchenAlarm(false);
+          }
+          if (pendingOverdueAlertBanner) pendingOverdueAlertBanner.style.display = 'none';
           releaseWakeLock();
           if (adminLockOverlay) {
             adminLockOverlay.classList.remove('unlocked');
@@ -921,6 +939,10 @@ const initAdminApp = () => {
   }
 
   function closeCategoryModal() {
+    isUploadingCatPhoto = false;
+    if (btnSaveCat) btnSaveCat.disabled = false;
+    if (catUploadStatus) catUploadStatus.style.display = 'none';
+    if (catFileUpload) catFileUpload.value = '';
     if (!categoryModalSaved && pendingCategoryUploadedR2Key) {
       const orphanKey = pendingCategoryUploadedR2Key;
       pendingCategoryUploadedR2Key = '';
@@ -1011,6 +1033,16 @@ const initAdminApp = () => {
     });
   }
 
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve(ev?.target?.result || '');
+      reader.onerror = () => reject(reader.error || new Error('Failed to read image file'));
+      reader.onabort = () => reject(new Error('Image file read aborted'));
+      reader.readAsDataURL(file);
+    });
+  }
+
   // Upload category image from device / mobile
   if (catFileUpload) {
     catFileUpload.addEventListener('change', async (e) => {
@@ -1026,58 +1058,66 @@ const initAdminApp = () => {
       }
 
       try {
-        const compressedDataUrl = await compressImageFile(file, 640, 0.72);
-        const reader = new FileReader();
-        reader.onload = async (readEvt) => {
-          const dataUrl = compressedDataUrl || readEvt.target.result;
-          // Set visual preview immediately
-          updateCatModalImagePreview(dataUrl);
-          if (catImageInput) catImageInput.value = dataUrl;
+        let dataUrl = await compressImageFile(file, 640, 0.72);
+        if (!dataUrl) {
+          dataUrl = await readFileAsDataUrl(file);
+        }
+        if (!dataUrl || !modalCategoryBackdrop?.classList.contains('open')) {
+          return;
+        }
 
-          // Upload directly to Cloudflare R2 (use compressed JPEG dataUrl so >10MB & HEIC/AVIF mobile photos succeed)
-          try {
-            if (typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && cloudflareR2Service.uploadImage) {
-              if (catUploadStatus) {
-                catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Uploading photo...`;
-              }
-              const catFileName = `category_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-              const r2Res = await cloudflareR2Service.uploadImage(dataUrl, catFileName, 'categories');
-              if (r2Res && r2Res.success && (r2Res.key || r2Res.url)) {
-                if (pendingCategoryUploadedR2Key && typeof cloudflareR2Service.deleteImage === 'function') {
-                  cloudflareR2Service.deleteImage(pendingCategoryUploadedR2Key).catch(() => {});
-                }
-                pendingCategoryUploadedR2Key = r2Res.key || '';
-                const finalImg = r2Res.key
-                  ? `/api/r2-image?key=${encodeURIComponent(r2Res.key)}`
-                  : (typeof dataService.sanitizeCategoryImageUrl === 'function'
-                    ? dataService.sanitizeCategoryImageUrl(r2Res.url)
-                    : r2Res.url);
+        // Set visual preview immediately
+        updateCatModalImagePreview(dataUrl);
+        if (catImageInput) catImageInput.value = dataUrl;
 
-                if (catImageInput) catImageInput.value = finalImg;
-                updateCatModalImagePreview(finalImg);
-                showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
-              } else {
-                showToast('⚠️ Could not save photo to cloud. Please retry.', 'error');
-              }
+        // Upload directly to Cloudflare R2 (use compressed JPEG dataUrl so >10MB & HEIC/AVIF mobile photos succeed)
+        try {
+          if (typeof cloudflareR2Service !== 'undefined' && cloudflareR2Service && cloudflareR2Service.uploadImage) {
+            if (catUploadStatus) {
+              catUploadStatus.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Uploading photo...`;
             }
-          } catch (r2Err) {
-            console.warn('[CategoryUpload] R2 storage note:', r2Err);
-            showToast('⚠️ Photo upload error. Please retry.', 'error');
-          } finally {
-            if (catUploadStatus) catUploadStatus.style.display = 'none';
-            isUploadingCatPhoto = false;
-            if (btnSaveCat) btnSaveCat.disabled = false;
-            if (catFileUpload) catFileUpload.value = '';
+            const catFileName = `category_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+            const r2Res = await cloudflareR2Service.uploadImage(dataUrl, catFileName, 'categories');
+            if (!modalCategoryBackdrop?.classList.contains('open')) {
+              if (r2Res?.key && typeof cloudflareR2Service.deleteImage === 'function') {
+                cloudflareR2Service.deleteImage(r2Res.key).catch(() => {});
+              }
+              return;
+            }
+            if (r2Res && r2Res.success && (r2Res.key || r2Res.url)) {
+              if (pendingCategoryUploadedR2Key && typeof cloudflareR2Service.deleteImage === 'function') {
+                cloudflareR2Service.deleteImage(pendingCategoryUploadedR2Key).catch(() => {});
+              }
+              pendingCategoryUploadedR2Key = r2Res.key || '';
+              const finalImg = r2Res.key
+                ? `/api/r2-image?key=${encodeURIComponent(r2Res.key)}`
+                : (typeof dataService.sanitizeCategoryImageUrl === 'function'
+                  ? dataService.sanitizeCategoryImageUrl(r2Res.url)
+                  : r2Res.url);
+
+              if (catImageInput) catImageInput.value = finalImg;
+              updateCatModalImagePreview(finalImg);
+              showToast('✓ Category photo uploaded! Click Save Category to publish.', 'success');
+            } else {
+              showToast('⚠️ Could not save photo to cloud. Please retry.', 'error');
+            }
           }
-        };
-        reader.readAsDataURL(file);
+        } catch (r2Err) {
+          console.warn('[CategoryUpload] R2 storage note:', r2Err);
+          if (modalCategoryBackdrop?.classList.contains('open')) {
+            showToast('⚠️ Photo upload error. Please retry.', 'error');
+          }
+        }
       } catch (err) {
         console.error('Category photo upload failed:', err);
+        if (modalCategoryBackdrop?.classList.contains('open')) {
+          showToast('Could not load image file', 'error');
+        }
+      } finally {
         if (catUploadStatus) catUploadStatus.style.display = 'none';
         isUploadingCatPhoto = false;
         if (btnSaveCat) btnSaveCat.disabled = false;
         if (catFileUpload) catFileUpload.value = '';
-        showToast('Could not load image file', 'error');
       }
     });
   }
@@ -1372,16 +1412,40 @@ const initAdminApp = () => {
   }
 
   // Preset & Uploaded gallery images in dish modal
-  async function renderPresetGalleryStrip(selectedImg) {
-    const uploaded = (typeof dataService.getUploadedImages === 'function') ? dataService.getUploadedImages() : [];
-    let images = [];
+  let presetGalleryRenderSeq = 0;
 
-    // 1. All Custom Uploaded Photos (Persistently remembered)
+  function extractGalleryR2Key(url, explicitKey = '') {
+    if (explicitKey) return String(explicitKey).trim().replace(/^\/+/, '');
+    const raw = String(url || '').trim();
+    if (!raw.includes('key=')) return '';
+    try {
+      return decodeURIComponent(raw.split('key=')[1].split('&')[0]).replace(/^\/+/, '');
+    } catch {
+      return '';
+    }
+  }
+
+  function normalizeGalleryDedupKey(url, explicitKey = '') {
+    const r2Key = extractGalleryR2Key(url, explicitKey);
+    if (r2Key) return `r2:${r2Key}`;
+    return String(url || '').trim();
+  }
+
+  async function renderPresetGalleryStrip(selectedImg) {
+    const renderSeq = ++presetGalleryRenderSeq;
+    const uploaded = (typeof dataService.getUploadedImages === 'function') ? dataService.getUploadedImages() : [];
+    const presetUrls = new Set((Array.isArray(PRESET_FOOD_IMAGES) ? PRESET_FOOD_IMAGES : []).map(p => normalizeGalleryDedupKey(p.path)));
+    let candidateImages = [];
+
+    // 1. All Custom Uploaded Photos (Persistently remembered; exclude built-in presets)
     if (Array.isArray(uploaded) && uploaded.length > 0) {
       uploaded.forEach(u => {
-        images.push({
+        if (!u || !u.url) return;
+        if (presetUrls.has(normalizeGalleryDedupKey(u.url))) return;
+        candidateImages.push({
           name: u.name || 'Uploaded Photo',
           path: u.url,
+          r2Key: extractGalleryR2Key(u.url, u.r2Key),
           isUploaded: true,
           uploadId: u.id
         });
@@ -1389,11 +1453,12 @@ const initAdminApp = () => {
     }
 
     // 2. If the current selected image is custom/uploaded and not yet in images list, add it first!
-    if (selectedImg && !images.some(img => img.path === selectedImg)) {
-      if (selectedImg.startsWith('data:') || selectedImg.startsWith('blob:') || (selectedImg.startsWith('http') && !selectedImg.includes('unsplash'))) {
-        images.unshift({
+    if (selectedImg && !candidateImages.some(img => normalizeGalleryDedupKey(img.path, img.r2Key) === normalizeGalleryDedupKey(selectedImg))) {
+      if (selectedImg.startsWith('data:') || selectedImg.startsWith('blob:') || (selectedImg.startsWith('http') && !selectedImg.includes('unsplash')) || selectedImg.includes('key=')) {
+        candidateImages.unshift({
           name: 'Current Dish Photo',
           path: selectedImg,
+          r2Key: extractGalleryR2Key(selectedImg),
           isUploaded: true,
           uploadId: 'current-dish-img'
         });
@@ -1403,6 +1468,7 @@ const initAdminApp = () => {
     // 3. Cloudflare R2 bucket images
     try {
       const r2Files = await cloudflareR2Service.listImages();
+      if (renderSeq !== presetGalleryRenderSeq) return;
       if (r2Files && r2Files.length > 0) {
         const r2Items = r2Files.map(rf => ({
           name: `☁️ ${rf.name}`,
@@ -1410,17 +1476,30 @@ const initAdminApp = () => {
           r2Key: rf.key,
           isUploaded: true
         }));
-        images = [...r2Items, ...images];
+        candidateImages = [...r2Items, ...candidateImages];
       }
     } catch (e) {
+      if (renderSeq !== presetGalleryRenderSeq) return;
       console.warn('[Admin] Cloudflare R2 list skipped:', e);
     }
 
-    // 4. Restaurant Presets
-    images = [...images, ...PRESET_FOOD_IMAGES];
+    if (renderSeq !== presetGalleryRenderSeq) return;
 
+    // 4. Restaurant Presets & Deduplicate by normalized URL / R2 key
+    candidateImages = [...candidateImages, ...PRESET_FOOD_IMAGES];
+    const seenKeys = new Set();
+    const images = [];
+    for (const item of candidateImages) {
+      if (!item || !item.path) continue;
+      const dedupKey = normalizeGalleryDedupKey(item.path, item.r2Key);
+      if (!dedupKey || seenKeys.has(dedupKey)) continue;
+      seenKeys.add(dedupKey);
+      images.push(item);
+    }
+
+    const selectedDedupKey = normalizeGalleryDedupKey(selectedImg);
     presetImagesStrip.innerHTML = images.map(p => {
-      const isSel = selectedImg === p.path;
+      const isSel = Boolean(selectedDedupKey && selectedDedupKey === normalizeGalleryDedupKey(p.path, p.r2Key));
       const safePath = sanitizeUrl(p.path, '/images/crispy-chicken.jpg');
       const safeName = escapeHtml(p.name || 'Dish Photo');
       const safeR2 = escapeHtml(p.r2Key || '');
@@ -2173,8 +2252,10 @@ const initAdminApp = () => {
     const catObj = categories.find(c => c.slug === category || c.id === category);
     const categoryName = catObj ? catObj.name : category;
 
-    // Ensure custom uploaded image is saved in the gallery
-    if (image && !image.startsWith('data:')) {
+    // Ensure custom uploaded image is saved in the gallery (never pollute uploaded_images with built-in presets/defaults)
+    const isBuiltInPresetImg = Array.isArray(PRESET_FOOD_IMAGES) && PRESET_FOOD_IMAGES.some(p => p.path === image);
+    const isDefaultFallbackImg = image === '/images/crispy-chicken.jpg' || image === '/api/r2-image?key=dishes/crispy-chicken.jpg';
+    if (image && !image.startsWith('data:') && !isBuiltInPresetImg && !isDefaultFallbackImg) {
       dataService.saveUploadedImage(image, name);
     }
 
@@ -2323,6 +2404,11 @@ const initAdminApp = () => {
   let lastRelativeTimestampRenderAt = Date.now();
 
   function checkOverduePendingOrders() {
+    if (!isStaffSessionActive('admin') && !isStaffSessionActive('owner')) {
+      if (pendingOverdueAlertBanner) pendingOverdueAlertBanner.style.display = 'none';
+      return;
+    }
+
     const orders = dataService.getOrders();
     const now = Date.now();
     const overdueOrders = orders.filter(o => {
@@ -2409,21 +2495,30 @@ const initAdminApp = () => {
     if (btnOverdueQuickAccept) {
       btnOverdueQuickAccept.onclick = (e) => {
         e.stopPropagation();
-        const nextTarget = first.status === 'pending' ? 'accepted' : 'cooking';
+        const isDirectDispatch = dataService.isDirectDispatchOnPrep
+          ? dataService.isDirectDispatchOnPrep()
+          : Boolean(dataService.getSettings()?.directDispatchOnPrep === true);
+        const nextTarget = first.status === 'pending'
+          ? 'accepted'
+          : (isDirectDispatch ? 'ready_for_pickup' : 'cooking');
         const updated = dataService.updateOrderStatus(first.id, nextTarget);
-        if (isKitchenAlarmRinging) {
-          stopKitchenAlarm(true, { orderId: first.id });
-        }
-        const label = nextTarget === 'accepted' ? 'Accepted' : 'Preparing';
-        showToast(`🔥 Order ${firstDisplayId} moved to ${label}!`, 'success');
-        checkOverduePendingOrders();
-        renderOrders();
-        if (updated?.serverPromise) {
-          updated.serverPromise.catch(err => {
-            showToast(`⚠️ Could not update order ${firstDisplayId}: ${err?.message || 'Server rejected transition'}`, 'error');
-            renderOrders();
-            checkOverduePendingOrders();
-          });
+        if (updated) {
+          if (isKitchenAlarmRinging) {
+            stopKitchenAlarm(true, { orderId: first.id });
+          }
+          const label = nextTarget === 'accepted'
+            ? 'Accepted'
+            : (nextTarget === 'ready_for_pickup' ? 'Ready to Dispatch' : 'Preparing');
+          showToast(`🔥 Order ${firstDisplayId} moved to ${label}!`, 'success');
+          checkOverduePendingOrders();
+          renderOrders();
+          if (updated.serverPromise) {
+            updated.serverPromise.catch(err => {
+              showToast(`⚠️ Could not update order ${firstDisplayId}: ${err?.message || 'Server rejected transition'}`, 'error');
+              renderOrders();
+              checkOverduePendingOrders();
+            });
+          }
         }
       };
     }
@@ -2463,14 +2558,21 @@ const initAdminApp = () => {
         staleBanner.style.display = 'flex';
         staleCountEl.textContent = staleShiftOrders.length;
         if (btnStaleFilter) {
-          btnStaleFilter.dataset.firstStaleId = staleShiftOrders[0]?.id ? String(staleShiftOrders[0].id).replace(/\D/g, '').slice(-4) : '';
+          const firstRawId = staleShiftOrders[0]?.id ? String(staleShiftOrders[0].id) : '';
+          const firstDigits = firstRawId.replace(/\D/g, '').slice(-4);
+          btnStaleFilter.dataset.firstStaleId = firstDigits || firstRawId.replace(/^#/, '').trim();
           if (!btnStaleFilter.dataset.bound) {
             btnStaleFilter.dataset.bound = '1';
             btnStaleFilter.addEventListener('click', () => {
-              const staleId = btnStaleFilter.dataset.firstStaleId;
-              if (staleId) {
-                orderSearchQuery = staleId;
-                if (orderSearchInput) orderSearchInput.value = orderSearchQuery;
+              const staleId = (btnStaleFilter.dataset.firstStaleId || '').trim();
+              if (!staleId) return;
+              orderSearchQuery = staleId.toLowerCase();
+              if (orderSearchInput) orderSearchInput.value = staleId;
+              if (typeof setActiveOrderFilter === 'function') {
+                setActiveOrderFilter('all');
+              } else {
+                activeOrderFilter = 'all';
+                adminOrdersPage = 1;
                 renderOrders();
               }
             });
@@ -2946,10 +3048,10 @@ const initAdminApp = () => {
             return;
           }
           const updated = dataService.updateOrderStatus(id, next);
-          if (next !== 'pending' && isKitchenAlarmRinging) {
-            stopKitchenAlarm(true, { orderId: id });
-          }
           if (updated) {
+            if (next !== 'pending' && isKitchenAlarmRinging) {
+              stopKitchenAlarm(true, { orderId: id });
+            }
             const dispId = formatDisplayOrderId(id, updated.pickupCode);
             showToast(`Order ${dispId} advanced to "${next.replace(/_/g, ' ')}"!`, 'success');
             checkOverduePendingOrders();
@@ -3396,11 +3498,11 @@ const initAdminApp = () => {
       }
 
       const updated = dataService.updateOrderStatus(orderId, targetStatus);
-      if (targetStatus !== 'pending' && isKitchenAlarmRinging) {
-        stopKitchenAlarm(true, { orderId });
-      }
 
       if (updated) {
+        if (targetStatus !== 'pending' && isKitchenAlarmRinging) {
+          stopKitchenAlarm(true, { orderId });
+        }
         updateModalStatusUI(updated);
         showToast(`Order status updated to "${updated.statusLabel || targetStatus}"!`, 'success');
         renderOrders();
@@ -3443,11 +3545,11 @@ const initAdminApp = () => {
       btnModalAdvanceStatus.disabled = true;
 
       const updated = dataService.updateOrderStatus(orderId, nextStatus);
-      if (nextStatus !== 'pending' && isKitchenAlarmRinging) {
-        stopKitchenAlarm(true, { orderId });
-      }
 
       if (updated) {
+        if (nextStatus !== 'pending' && isKitchenAlarmRinging) {
+          stopKitchenAlarm(true, { orderId });
+        }
         updateModalStatusUI(updated);
         showToast(`Order advanced to "${updated.statusLabel || nextStatus}"!`, 'success');
         renderOrders();
@@ -4584,13 +4686,21 @@ const initAdminApp = () => {
   }
 
   // Direct Dispatch Mode Toggle Controller
+  let isSavingDirectDispatch = false;
   async function toggleDirectDispatchMode(forcedVal = null) {
+    if (isSavingDirectDispatch) return;
     const current = dataService.isDirectDispatchOnPrep ? dataService.isDirectDispatchOnPrep() : Boolean(dataService.getSettings()?.directDispatchOnPrep === true);
     const newVal = (forcedVal !== null) ? Boolean(forcedVal) : !current;
+    if (forcedVal !== null && newVal === current) {
+      updateDirectDispatchUI();
+      return;
+    }
 
-    const curSettings = { ...(dataService.getSettings() || {}) };
-    curSettings.directDispatchOnPrep = newVal;
-    if (dataService.settingsCache) dataService.settingsCache.directDispatchOnPrep = newVal;
+    isSavingDirectDispatch = true;
+    const prevSettings = { ...(dataService.getSettings() || {}) };
+    const prevDirectFlag = dataService._directDispatchOnPrep;
+    const curSettings = { ...prevSettings, directDispatchOnPrep: newVal };
+    dataService.settingsCache = curSettings;
     if (typeof dataService.setDirectDispatchOnPrep === 'function') {
       dataService._directDispatchOnPrep = newVal;
     }
@@ -4599,18 +4709,26 @@ const initAdminApp = () => {
     updateDirectDispatchUI();
     renderOrders(); // Re-render order cards so button actions (Start Preparing vs Ready to Dispatch) update immediately
 
-    if (newVal) {
-      showToast('⚡ Direct Dispatch Enabled: Prep click marks orders Ready & alarms riders immediately!', 'success');
-    } else {
-      showToast('⏳ Two-Step Mode Enabled: Orders will move to Preparing first before Ready.', 'info');
-    }
-
     try {
       const res = await dataService.saveSettings(curSettings);
       assertCloudSettingsSynced(res);
+      if (newVal) {
+        showToast('⚡ Direct Dispatch Enabled: Prep click marks orders Ready & alarms riders immediately!', 'success');
+      } else {
+        showToast('⏳ Two-Step Mode Enabled: Orders will move to Preparing first before Ready.', 'info');
+      }
     } catch (err) {
       console.warn('[Admin] Failed to persist directDispatchOnPrep to cloud settings:', err);
-      showToast(`⚠️ Saved locally, cloud sync issue: ${err?.message || 'Check connection'}`, 'warning');
+      dataService.settingsCache = prevSettings;
+      dataService._directDispatchOnPrep = prevDirectFlag !== undefined ? prevDirectFlag : Boolean(prevSettings.directDispatchOnPrep === true);
+      try {
+        localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings));
+      } catch (_) {}
+      updateDirectDispatchUI();
+      renderOrders();
+      showToast(`⚠️ Could not sync Direct Dispatch Mode to cloud: ${err?.message || 'Check connection'}`, 'error');
+    } finally {
+      isSavingDirectDispatch = false;
     }
   }
 
@@ -5373,7 +5491,7 @@ const initAdminApp = () => {
     });
   }
 
-  function setDiscountType(type) {
+  function setDiscountType(type, { preserveValue = false } = {}) {
     if (inputOfferType) inputOfferType.value = type;
     if (btnTypePercent) btnTypePercent.classList.toggle('active', type === 'percent');
     if (btnTypeFlat) btnTypeFlat.classList.toggle('active', type === 'flat');
@@ -5390,9 +5508,9 @@ const initAdminApp = () => {
         : 'Quick Percentage Presets:';
     }
 
-    const currentVal = Number(inputOfferDiscount?.value) || 20;
+    const currentVal = Number(inputOfferDiscount?.value) || (type === 'flat' ? 100 : 20);
     let nextVal = currentVal;
-    if (type === 'flat' && currentVal < 30) {
+    if (!preserveValue && type === 'flat' && currentVal < 30) {
       nextVal = 100;
       if (inputOfferDiscount) inputOfferDiscount.value = 100;
     } else if (type === 'percent' && currentVal > 100) {
@@ -5791,7 +5909,7 @@ const initAdminApp = () => {
     if (inputOfferSubtext && document.activeElement !== inputOfferSubtext) inputOfferSubtext.value = settings.offerSubtext || 'Use coupon code at checkout for special discount.';
     if (inputOfferFreeDelivery && document.activeElement !== inputOfferFreeDelivery) inputOfferFreeDelivery.checked = settings.offerFreeDelivery !== false;
 
-    setDiscountType(offerType);
+    setDiscountType(offerType, { preserveValue: true });
 
     // Min order presets active state
     minOrderPresetsContainer?.querySelectorAll('.min-order-preset-btn').forEach(btn => {

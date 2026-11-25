@@ -92,6 +92,8 @@ export default async function handler(req, res) {
   }
 
   const queryAction = req.query?.action || (req.url && req.url.includes('?') ? new URL(req.url, 'http://localhost').searchParams.get('action') : null);
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
   if (req.method === 'GET') {
     if (queryAction === 'get_settings') {
@@ -181,9 +183,6 @@ export default async function handler(req, res) {
     process.env.NODE_ENV === 'test' || process.env.ENVIRONMENT === 'test' ||
     process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))
   );
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !serviceKey) {
     if (isTestEnv) {

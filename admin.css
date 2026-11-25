@@ -5552,7 +5552,7 @@ body.kitchen-alarm-ringing::before {
   left: 50%;
   transform: translateX(-50%);
   width: min(95%, 920px);
-  z-index: 9999;
+  z-index: 100010;
   background: linear-gradient(135deg, #180D08 0%, #260E0B 50%, #1A0907 100%);
   border: 2px solid #EF4444;
   border-radius: 20px;

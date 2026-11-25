@@ -1635,10 +1635,12 @@ export default async function handler(req, res) {
           }
 
           const existingPin = String(existing.assigned_rider_pin || '').trim();
+          const STAGE1_TIMEOUT_MS = 15 * 60 * 1000;
+          const assignedAtMs = Number(existing.rider_assigned_at || (existing.address_details && existing.address_details.riderAssignedAt) || 0);
+          const isStage1Expired = assignedAtMs > 0 && (Date.now() - assignedAtMs) > STAGE1_TIMEOUT_MS;
+
           if (existingPin && existingPin !== effectivePin) {
-            const assignedAt = Number(existing.rider_assigned_at || existing.address_details?.riderAssignedAt || 0);
-            const isExpired = existing.status === 'ready_for_pickup' && assignedAt > 0 && (Date.now() - assignedAt) > 15 * 60 * 1000;
-            if (!isExpired) {
+            if (!isStage1Expired) {
               return res.status(409).json({
                 error: 'Order is already accepted by another rider',
                 claimedBy: existing.assigned_rider_name || null
