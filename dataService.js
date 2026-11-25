@@ -308,10 +308,47 @@ export const CANONICAL_CATEGORY_IMAGES = {
   'shawarma-rolls': '/api/r2-image?key=categories%2Fcategory_1792937884259_Chicken_shawarma_wrap_and_rolls_2K_20261025194737-removebg-preview.png',
   'cat-shawarma': '/api/r2-image?key=categories%2Fcategory_1792937884259_Chicken_shawarma_wrap_and_rolls_2K_20261025194737-removebg-preview.png',
   'veg-gravy': '/api/r2-image?key=categories%2Fcategory_1792937628345_Serving_paneer_gravy_and_dal_2K_20261025194236-removebg-preview.png',
-  'cat-veg': '/api/r2-image?key=categories%2Fcategory_1792937628345_Serving_paneer_gravy_and_dal_2K_20261025194236-removebg-preview.png'
+  'cat-veg': '/api/r2-image?key=categories%2Fcategory_1792937628345_Serving_paneer_gravy_and_dal_2K_20261025194236-removebg-preview.png',
+  'combos': '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png',
+  'combo': '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png',
+  'cat-combos': '/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png'
 };
 
+export function isComboCategory(cat) {
+  if (!cat) return false;
+  if (typeof cat === 'string') {
+    const val = cat.trim().toLowerCase();
+    return val === 'combos' || val === 'combo' || val === 'cat-combos' || /\bcombos?\b/i.test(val);
+  }
+  const id = String(cat.id || '').trim().toLowerCase();
+  const slug = String(cat.slug || '').trim().toLowerCase();
+  const name = String(cat.name || '').trim().toLowerCase();
+  return (
+    id === 'cat-combos' ||
+    id === 'cat-combo' ||
+    slug === 'combos' ||
+    slug === 'combo' ||
+    /\bcombos?\b/i.test(slug) ||
+    /\bcombos?\b/i.test(name)
+  );
+}
+
+export function isComboDish(dish) {
+  if (!dish || typeof dish !== 'object') return false;
+  if (dish.isCombo === true) return true;
+  if (isComboCategory({ slug: dish.category, name: dish.categoryName })) return true;
+  const badge = String(dish.badge || '').trim();
+  return /\bcombos?\b/i.test(badge);
+}
+
 export const DEFAULT_CATEGORIES = [
+  {
+    "id": "cat-combos",
+    "name": "Combos",
+    "emoji": "🍱",
+    "image": "/api/r2-image?key=categories%2Fcategory_1792937665372_e003a872-4cf0-4cde-8519-8970b8b3f8dd-removebg-preview.png",
+    "slug": "combos"
+  },
   {
     "id": "cat-biryani",
     "name": "Rice & Biryani",
@@ -2938,7 +2975,8 @@ class QuickBiteDataService {
               image: existingImg
             };
           });
-          localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(merged));
+          const sortedCategories = this._sortCategoriesList(merged);
+          localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(sortedCategories));
           this.notifyChange('categories');
           this.isSupabaseConnected = true;
           this._lastCategoriesSyncTime = Date.now();
@@ -2976,6 +3014,7 @@ class QuickBiteDataService {
           const localDishes = this.getDishes();
           const localMap = new Map(localDishes.map(d => [String(d.id), d]));
           const mapped = data.map(d => {
+            const localMatch = localMap.get(String(d.id));
             const finalImage = sanitizeDishImageUrl(d.image) || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=80';
             const mappedItem = {
               id: d.id,
@@ -2983,6 +3022,10 @@ class QuickBiteDataService {
               category: d.category,
               categoryName: d.category_name,
               price: parseFloat(d.price) || 0,
+              originalPrice: (d.original_price !== null && d.original_price !== undefined)
+                ? (parseFloat(d.original_price) || null)
+                : (localMatch?.originalPrice ?? null),
+              isCombo: Boolean(localMatch?.isCombo) || isComboCategory({ slug: d.category, name: d.category_name }) || /\bcombos?\b/i.test(String(d.badge || '')),
               rating: '',
               image: finalImage,
               badge: d.badge || '',
@@ -2996,7 +3039,7 @@ class QuickBiteDataService {
                 availableFrom: d.available_from || '',
                 availableTo: d.available_to || '',
                 r2Key: d.r2_key || d.r2Key || '',
-                createdAt: d.created_at || localMap.get(String(d.id))?.createdAt || undefined
+                createdAt: d.created_at || localMatch?.createdAt || undefined
             };
             if (!mappedItem.r2Key && finalImage && finalImage.includes('key=')) {
               mappedItem.r2Key = decodeURIComponent(finalImage.split('key=')[1].split('&')[0]);
@@ -5548,6 +5591,24 @@ class QuickBiteDataService {
     return this.saveCategoryImage(idOrSlug, '');
   }
 
+  isComboCategory(cat) {
+    return isComboCategory(cat);
+  }
+
+  isComboDish(dish) {
+    return isComboDish(dish);
+  }
+
+  _sortCategoriesList(list) {
+    if (!Array.isArray(list)) return [];
+    return list.slice().sort((a, b) => {
+      const comboA = isComboCategory(a) ? 0 : 1;
+      const comboB = isComboCategory(b) ? 0 : 1;
+      if (comboA !== comboB) return comboA - comboB;
+      return 0;
+    });
+  }
+
   getCategories() {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
@@ -5557,8 +5618,8 @@ class QuickBiteDataService {
         localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES));
       }
       const customImages = this.getCategoryImages();
-      // Enrich categories with user custom photos first, then default photos
-      return list.map(cat => {
+      // Enrich categories with user custom photos first, then default photos, keeping Combos first
+      const enriched = list.map(cat => {
         const customImg = (customImages[cat.id] || (cat.slug ? customImages[cat.slug] : '') || cat.image || '').trim();
         if (customImg && !customImg.includes('unsplash.com')) {
           return { ...cat, image: sanitizeCategoryImageUrl(customImg) };
@@ -5570,17 +5631,19 @@ class QuickBiteDataService {
         const canonical = CANONICAL_CATEGORY_IMAGES[cat.slug] || CANONICAL_CATEGORY_IMAGES[cat.id] || '';
         return { ...cat, image: sanitizeCategoryImageUrl(canonical || cat.image || '') };
       });
+      return this._sortCategoriesList(enriched);
     } catch {
-      return DEFAULT_CATEGORIES;
+      return this._sortCategoriesList(DEFAULT_CATEGORIES);
     }
   }
 
   saveCategories(categories) {
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
-    if (Array.isArray(categories)) {
+    const sorted = Array.isArray(categories) ? this._sortCategoriesList(categories) : categories;
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(sorted));
+    if (Array.isArray(sorted)) {
       const customImages = this.getCategoryImages();
       let hasNew = false;
-      categories.forEach(cat => {
+      sorted.forEach(cat => {
         if (cat && cat.image && typeof cat.image === 'string' && cat.image.trim()) {
           const trimmed = sanitizeCategoryImageUrl(cat.image.trim());
           if (cat.id && customImages[cat.id] !== trimmed) {
@@ -5607,12 +5670,54 @@ class QuickBiteDataService {
     this.notifyChange('categories');
   }
 
+  async ensureCombosCategory() {
+    const categories = this.getCategories();
+    const existing = categories.find(c => isComboCategory(c));
+    if (existing) return existing;
+
+    const comboImg = CANONICAL_CATEGORY_IMAGES['combos'];
+    const comboCat = {
+      id: 'cat-combos',
+      name: 'Combos',
+      emoji: '🍱',
+      image: comboImg,
+      slug: 'combos'
+    };
+
+    const prevCategories = [...categories];
+    this.saveCategories([comboCat, ...categories]);
+
+    try {
+      if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+        await this._adminStoreAction('save_category', { category: comboCat });
+      } else if (supabase) {
+        const { error } = await supabase.from('categories').upsert([comboCat]);
+        if (error) console.warn('[DataService] Direct supabase ensureCombosCategory error:', error.message);
+      }
+    } catch (err) {
+      console.warn('[DataService] ensureCombosCategory server error:', err?.message || err);
+      if (this.isStaffAuthorized()) {
+        this.saveCategories(prevCategories);
+        throw err;
+      }
+    }
+    return comboCat;
+  }
+
   addCategory(category) {
     const list = this.getCategories();
     const slug = category.slug || category.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const existing = list.find(c => (category.id && c.id === category.id) || (slug && c.slug === slug));
+    if (existing) {
+      return {
+        ...existing,
+        then: (onF) => Promise.resolve(existing).then(onF),
+        catch: () => Promise.resolve(existing)
+      };
+    }
     const imageVal = sanitizeCategoryImageUrl((category.image || '').trim());
     const newCat = {
-      id: 'cat-' + Date.now(),
+      id: (category.id && String(category.id).trim()) ? String(category.id).trim() : ('cat-' + Date.now()),
       name: category.name.trim(),
       emoji: category.emoji || '🍽️',
       image: imageVal,
@@ -5793,10 +5898,25 @@ class QuickBiteDataService {
     return m ? Number(m[1]) : 0;
   }
 
+  _getDishComboPriority(dish) {
+    if (!dish || typeof dish !== 'object') return 2;
+    if (dish.isCombo === true || isComboCategory({ slug: dish.category, name: dish.categoryName })) {
+      return 0; // Dedicated Combos category / explicitly flagged combos always appear first
+    }
+    if (/\bcombos?\b/i.test(String(dish.badge || ''))) {
+      return 1; // Combo-badged dishes appear before regular dishes
+    }
+    return 2;
+  }
+
   _sortDishesList(list) {
     if (!Array.isArray(list)) return [];
     const defaultDishOrderMap = new Map(DEFAULT_DISHES.map((dish, i) => [dish.id, i]));
     return list.slice().sort((a, b) => {
+      const comboRankA = this._getDishComboPriority(a);
+      const comboRankB = this._getDishComboPriority(b);
+      if (comboRankA !== comboRankB) return comboRankA - comboRankB;
+
       const posA = defaultDishOrderMap.has(a.id) ? defaultDishOrderMap.get(a.id) : -1;
       const posB = defaultDishOrderMap.has(b.id) ? defaultDishOrderMap.get(b.id) : -1;
       if (posA !== posB) return posA - posB;
@@ -5834,6 +5954,7 @@ class QuickBiteDataService {
     list = this._sortDishesList(list);
     this.dishesCache = list.map(d => ({
       ...d,
+      isCombo: isComboDish(d),
       image: sanitizeDishImageUrl(d.image),
         availableDays: (Array.isArray(d.availableDays) && d.availableDays.length > 0) ? d.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
         timeRestricted: Boolean(d.timeRestricted),
@@ -5961,6 +6082,7 @@ class QuickBiteDataService {
       categoryName: dishData.categoryName || '',
       price: parseFloat(dishData.price) || 199,
       originalPrice: dishData.originalPrice !== undefined ? (parseFloat(dishData.originalPrice) || null) : null,
+      isCombo: Boolean(dishData.isCombo) || isComboCategory({ slug: dishData.category, name: dishData.categoryName }) || /\bcombos?\b/i.test(String(dishData.badge || '')),
       rating: '',
       image: sanitizedImage,
       badge: dishData.badge !== undefined ? dishData.badge : '',

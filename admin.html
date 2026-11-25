@@ -317,6 +317,9 @@
           <p class="admin-view-sub">Manage your restaurant categories, dishes, prices, descriptions, and food images.</p>
         </div>
         <div class="header-cta-group" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-brand-primary btn-add-combo-trigger" id="btn-open-add-combo">
+            <i class="fa-solid fa-layer-group"></i> + Add Combo
+          </button>
           <button type="button" class="btn btn-secondary" id="btn-open-edit-all-cat" style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 0.88rem; cursor: pointer; border: 1.5px solid rgba(234, 88, 12, 0.4); background: rgba(234, 88, 12, 0.12); color: #FB923C;">
             <i class="fa-solid fa-camera"></i> Edit "All" Photo
           </button>
@@ -1616,10 +1619,10 @@
       <div class="sheet-drag-handle-bar"><div class="sheet-drag-pill"></div></div>
       <button class="admin-modal-close" id="modal-dish-close">✕</button>
       <div class="modal-card-header">
-        <div class="modal-header-icon">🍔</div>
+        <div class="modal-header-icon" id="dish-modal-icon">🍔</div>
         <div>
           <h3 class="modal-card-title" id="dish-modal-title">Add Food Dish</h3>
-          <p class="modal-card-sub">Fill out the dish details, pricing, and choose or upload a food image.</p>
+          <p class="modal-card-sub" id="dish-modal-sub">Fill out the dish details, pricing, and choose or upload a food image.</p>
         </div>
       </div>
 
@@ -1636,6 +1639,18 @@
           <input type="hidden" id="dish-stock-hidden" value="true">
         </div>
 
+        <!-- Combo Meal Feature Switch (Visible First in Menu) -->
+        <div class="modal-combo-feature-row" id="modal-combo-feature-row">
+          <div class="combo-feature-info">
+            <span class="combo-feature-title">🍱 Combo Meal (Show First in Menu)</span>
+            <span class="combo-feature-sub">Highlights this item as a Value Combo at the top of the storefront menu.</span>
+          </div>
+          <label class="admin-switch">
+            <input type="checkbox" id="input-dish-is-combo">
+            <span class="admin-slider"></span>
+          </label>
+        </div>
+
         <div class="form-row-2">
           <div class="form-group">
             <label for="dish-name-input">Dish Title / Name *</label>
@@ -1650,16 +1665,24 @@
           </div>
         </div>
 
-        <div class="form-row-3">
+        <div class="form-row-2">
           <div class="form-group">
             <label for="dish-price-input">Price (₹) *</label>
             <input type="number" id="dish-price-input" step="any" min="10" placeholder="240" required>
           </div>
 
           <div class="form-group">
+            <label for="dish-original-price-input">Regular Price (₹) <small style="font-weight:500; color:#6B7280;">(Optional, shows savings)</small></label>
+            <input type="number" id="dish-original-price-input" step="any" min="0" placeholder="e.g. 320">
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
             <label for="dish-badge-input">Badge / Tag</label>
             <select id="dish-badge-input">
               <option value="" selected>None</option>
+              <option value="🔥 Value Combo">🔥 Value Combo</option>
               <option value="🔥 Bestseller">🔥 Bestseller</option>
               <option value="👑 House Signature">👑 House Signature</option>
               <option value="🌿 Vegetarian">🌿 Vegetarian</option>

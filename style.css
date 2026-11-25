@@ -3045,6 +3045,12 @@ body.pwa-customer-installed .header-pwa-dock {
   display: none !important;
 }
 
+.recipe-card.is-combo-dish .recipe-card-badge-pill {
+  background: linear-gradient(135deg, rgba(234, 88, 12, 0.94), rgba(217, 119, 6, 0.94));
+  border-color: rgba(254, 215, 170, 0.55);
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.35);
+}
+
 .recipe-card-stock-pill {
   position: absolute;
   top: 14px;

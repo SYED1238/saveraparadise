@@ -4,7 +4,7 @@
 import './performanceGovernor.js';
 import './performanceTier.css';
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h, formatDisplayOrderId, getNowInIST } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h, formatDisplayOrderId, getNowInIST, isComboCategory, isComboDish } from './dataService.js';
 import { supabase } from './supabaseClient.js';
 import {
   playNotificationSound,
@@ -792,8 +792,16 @@ function initStorefrontApp() {
       </button>
     `;
 
+    const allDishes = (typeof dataService.getDishes === 'function') ? (dataService.getDishes() || []) : [];
+
     categories.forEach(cat => {
       const slug = cat.slug || cat.id.replace(/^cat-/, '');
+      if (isComboCategory(cat)) {
+        const comboCatCount = allDishes.filter(d =>
+          d && (d.category === slug || d.category === cat.id || (d.categoryName && d.categoryName.toLowerCase().replace(/[^a-z0-9]/g, '-') === slug))
+        ).length;
+        if (comboCatCount === 0) return;
+      }
       const isActive = activeFilter === slug;
       const rawImg = (cat.image || '').trim();
       const imgUrl = (typeof dataService.sanitizeCategoryImageUrl === 'function')
@@ -1047,6 +1055,7 @@ function initStorefrontApp() {
         const slug = cat.slug || cat.id.replace(/^cat-/, '');
         const isActive = currentFilter === slug;
         const count = getDishCount(slug);
+        if (isComboCategory(cat) && count === 0) return;
         const rawImg = (cat.image || '').trim();
         const imgUrl = (typeof dataService.sanitizeCategoryImageUrl === 'function')
           ? dataService.sanitizeCategoryImageUrl(rawImg)
@@ -2244,10 +2253,10 @@ function initStorefrontApp() {
       defaultIngredients = ['Prime farm fresh chicken', '24h buttermilk herb brine', 'Double-crunch coating', 'Secret house spices'];
       defaultSpices = ['Classic Golden Crunch', 'Peri-Peri Shaken 🌶️', 'Nashville Hot 🔥'];
       defaultSauces = ['Garlic Ranch Dip', 'Smoky Honey BBQ', 'Sweet Chili Mayo'];
-    } else if (dish.category === 'combos') {
-      defaultIngredients = ['Crispy chicken / burger', 'Golden potato fries', 'Chilled beverage', 'Signature dipping sauces'];
+    } else if (dish.category === 'combos' || isComboDish(dish)) {
+      defaultIngredients = ['Signature main dish & sides', 'House special accompaniment / dip', 'Freshly prepared combo meal'];
       defaultSpices = ['Original Classic', 'Extra Spicy Zing 🌶️'];
-      defaultSauces = ['Cheesy Jalapeno Dip', 'Smoky BBQ', 'Tangy Tomato Dip'];
+      defaultSauces = ['Mint Chutney', 'Smoky BBQ', 'Garlic Mayo'];
     } else if (dish.category === 'burger') {
       defaultIngredients = ['Crispy chicken patty/fillet', 'Toasted butter brioche bun', 'Aged cheddar cheese', 'Fresh crisp lettuce', 'House burger spread'];
       defaultSpices = ['Savory Herb', 'Spicy Pepper Jack 🌶️', 'Ghost Fire 🔥'];
@@ -2399,6 +2408,8 @@ function initStorefrontApp() {
         const discountPct = Math.min(50, Math.max(1, rawPct));
         const dealPrice = Math.max(1, Math.round(dish.price * (1 - discountPct / 100)));
         foodDetailPrice.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${liveSettings.unlockedDealsMinOrder || 299}+"><i class="fa-solid ${lockIcon}" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span> <span class="meta-strike-price" style="text-decoration: line-through; opacity: 0.6; font-size: 0.85em; margin-left: 6px;">₹${Math.round(dish.price)}</span>`;
+      } else if (dish.originalPrice && Number(dish.originalPrice) > Number(dish.price)) {
+        foodDetailPrice.innerHTML = `₹${Math.round(dish.price)} <span class="meta-strike-price" style="text-decoration: line-through; opacity: 0.6; font-size: 0.85em; margin-left: 6px;">₹${Math.round(dish.originalPrice)}</span>`;
       } else {
         foodDetailPrice.textContent = `₹${Math.round(dish.price)}`;
       }
@@ -2799,11 +2810,14 @@ function initStorefrontApp() {
 
       if (!card) return;
 
-      // 0. Live Sync Favorite Status
+      // 0. Live Sync Favorite & Combo Status
       const dId = String(dish.id || '').trim().toLowerCase();
       const dName = String(dish.name || '').trim().toLowerCase();
       const isFav = (dId && favDishIds.has(dId)) || (dName && favDishIds.has(dName));
       card.classList.toggle('is-favorite', Boolean(isFav));
+      const isComboItem = isComboDish(dish);
+      card.classList.toggle('is-combo-dish', isComboItem);
+      card.setAttribute('data-combo', isComboItem ? 'true' : 'false');
 
       // 1. Live Sync Dish Image (Updates storefront whenever admin changes photo)
       const imgEl = card.querySelector('.recipe-img') || card.querySelector('img');
@@ -2861,6 +2875,8 @@ function initStorefrontApp() {
           const discountPct = Number(dealsEval.discountPct || settings.unlockedDealsDiscountPct || 15);
           const dealPrice = Math.max(1, Math.round(dish.price * (1 - discountPct / 100)));
           priceEl.innerHTML = `<span class="meta-deal-price" title="Unlock on orders ₹${settings.unlockedDealsMinOrder || 299}+"><i class="fa-solid ${lockIcon}" style="font-size:0.75em; margin-right:3px;"></i>₹${dealPrice}</span><span class="meta-strike-price">₹${Math.round(dish.price)}</span>`;
+        } else if (dish.originalPrice && Number(dish.originalPrice) > Number(dish.price)) {
+          priceEl.innerHTML = `₹${Math.round(dish.price)} <span class="meta-strike-price">₹${Math.round(dish.originalPrice)}</span>`;
         } else {
           priceEl.textContent = `₹${Math.round(dish.price)}`;
         }
@@ -2953,13 +2969,42 @@ function initStorefrontApp() {
       }
     });
 
+    // Ensure DOM order in #recipe-grid matches sorted dishes order (Combos first in menu)
+    if (recipeGrid) {
+      const orderedCards = [];
+      const seenCards = new Set();
+      dishes.forEach(d => {
+        const c = document.getElementById(`card-${d.id}`) || recipeGrid.querySelector(`.recipe-card[data-id="${d.id}"]`);
+        if (c && !seenCards.has(c)) {
+          seenCards.add(c);
+          orderedCards.push(c);
+        }
+      });
+      const currentChildren = Array.from(recipeGrid.children);
+      const needsReorder = orderedCards.some((card, idx) => currentChildren[idx] !== card);
+      if (needsReorder) {
+        const frag = document.createDocumentFragment();
+        orderedCards.forEach(card => frag.appendChild(card));
+        currentChildren.forEach(c => {
+          if (!seenCards.has(c)) frag.appendChild(c);
+        });
+        recipeGrid.appendChild(frag);
+        didChangeCards = true;
+      }
+    }
+
     updateMenuCardSteppers();
-    if (didChangeCards && typeof filterDishes === 'function') {
-      const searchVal = (typeof recipeSearchInput !== 'undefined' && recipeSearchInput) ? recipeSearchInput.value.trim() : '';
-      if (!searchVal) {
-        const activePill = (typeof pillsWrap !== 'undefined' && pillsWrap) ? pillsWrap.querySelector('.category-pill.active') : null;
-        const activeCat = activePill ? (activePill.getAttribute('data-filter') || 'all') : 'all';
-        filterDishes(activeCat);
+    if (didChangeCards) {
+      if (typeof syncStorefrontCategories === 'function') {
+        try { syncStorefrontCategories(); } catch {}
+      }
+      if (typeof filterDishes === 'function') {
+        const searchVal = (typeof recipeSearchInput !== 'undefined' && recipeSearchInput) ? recipeSearchInput.value.trim() : '';
+        if (!searchVal) {
+          const activePill = (typeof pillsWrap !== 'undefined' && pillsWrap) ? pillsWrap.querySelector('.category-pill.active') : null;
+          const activeCat = activePill ? (activePill.getAttribute('data-filter') || 'all') : 'all';
+          filterDishes(activeCat);
+        }
       }
     }
   }

@@ -4,7 +4,7 @@
  * and data synchronization with dataService.
  */
 
-import { dataService, CANONICAL_CATEGORY_IMAGES, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs } from './dataService.js';
+import { dataService, CANONICAL_CATEGORY_IMAGES, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs, isComboCategory, isComboDish } from './dataService.js';
 import { cloudflareR2Service } from './cloudflareR2Service.js';
 import {
   playNotificationSound,
@@ -521,6 +521,7 @@ const initAdminApp = () => {
   const catFileUpload = document.getElementById('cat-file-upload');
   const catUploadStatus = document.getElementById('cat-upload-status');
   const btnOpenAddCat = document.getElementById('btn-open-add-cat');
+  const btnOpenAddCombo = document.getElementById('btn-open-add-combo');
   const btnOpenEditAllCat = document.getElementById('btn-open-edit-all-cat');
   const modalCatClose = document.getElementById('modal-cat-close');
   const btnCancelCat = document.getElementById('btn-cancel-cat');
@@ -574,10 +575,14 @@ const initAdminApp = () => {
   let isSubmittingDish = false;
   let isUploadingDishPhoto = false;
   const dishModalTitle = document.getElementById('dish-modal-title');
+  const dishModalIcon = document.getElementById('dish-modal-icon');
+  const dishModalSub = document.getElementById('dish-modal-sub');
   const dishEditId = document.getElementById('dish-edit-id');
+  const dishIsComboInput = document.getElementById('input-dish-is-combo');
   const dishNameInput = document.getElementById('dish-name-input');
   const dishCategorySelect = document.getElementById('dish-category-select');
   const dishPriceInput = document.getElementById('dish-price-input');
+  const dishOriginalPriceInput = document.getElementById('dish-original-price-input');
   const dishBadgeInput = document.getElementById('dish-badge-input');
   const dishBadgeCustomInput = document.getElementById('dish-badge-custom-input');
   const dishTimeInput = document.getElementById('dish-time-input');
@@ -752,8 +757,30 @@ const initAdminApp = () => {
 
     // Render category cards (touch to open category)
     if (categoriesGrid) {
+      const hasComboCategory = categories.some(c => isComboCategory(c));
+      const starterComboCardHtml = !hasComboCategory ? `
+        <div class="category-admin-card combo-starter-card" id="btn-quick-create-combo-card" title="Click to add your first Combo Meal (shown first in menu)">
+          <div class="cat-card-top">
+            <div class="cat-emoji-badge">🍱</div>
+            <span class="cat-first-pill">FIRST IN MENU</span>
+          </div>
+          <div class="cat-card-info">
+            <h3 class="cat-info-title">Combos</h3>
+            <span class="cat-info-count">Tap to add your first combo</span>
+          </div>
+          <div class="cat-card-touch-indicator">
+            <span>+ Add Combo Meal</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </div>
+        </div>
+      ` : '';
+
       const regularCardsHtml = categories.map(cat => {
         const dishCount = dishes.filter(d => d.category === cat.slug || d.category === cat.id).length;
+        const isComboCat = isComboCategory(cat);
         const safeName = escapeHtml(cat.name);
         const safeEmoji = escapeHtml(cat.emoji || '🍽️');
         const safeId = escapeHtml(cat.id);
@@ -773,7 +800,7 @@ const initAdminApp = () => {
           : `<div class="cat-emoji-badge">${safeEmoji}</div>`;
 
         return `
-          <div class="category-admin-card" data-id="${safeId}" data-slug="${safeSlug}" title="Touch or click to open ${safeName}">
+          <div class="category-admin-card ${isComboCat ? 'is-combo-cat' : ''}" data-id="${safeId}" data-slug="${safeSlug}" title="Touch or click to open ${safeName}">
             <div class="cat-card-top">
               ${thumbHtml}
               <div class="cat-action-btns">
@@ -794,7 +821,7 @@ const initAdminApp = () => {
               </div>
             </div>
             <div class="cat-card-info">
-              <h3 class="cat-info-title">${safeName}</h3>
+              <h3 class="cat-info-title">${safeName}${isComboCat ? '<span class="cat-first-pill">FIRST IN MENU</span>' : ''}</h3>
               <span class="cat-info-count">${dishCount} dish${dishCount === 1 ? '' : 'es'}</span>
             </div>
             <div class="cat-card-touch-indicator">
@@ -816,7 +843,15 @@ const initAdminApp = () => {
         `;
       }).join('');
 
-      categoriesGrid.innerHTML = regularCardsHtml;
+      categoriesGrid.innerHTML = starterComboCardHtml + regularCardsHtml;
+
+      const quickComboCard = document.getElementById('btn-quick-create-combo-card');
+      if (quickComboCard) {
+        quickComboCard.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openAddComboModal();
+        });
+      }
 
       // Attach Category Event Listeners
       categoriesGrid.querySelectorAll('.edit-cat-btn').forEach(btn => {
@@ -837,6 +872,7 @@ const initAdminApp = () => {
 
       // Touching/clicking category card opens it to add/remove food inside
       categoriesGrid.querySelectorAll('.category-admin-card').forEach(card => {
+        if (card.id === 'btn-quick-create-combo-card') return;
         card.addEventListener('click', () => {
           const slug = card.getAttribute('data-slug');
           if (slug) {
@@ -852,7 +888,9 @@ const initAdminApp = () => {
 
   function updateCategoryDropdowns(categories) {
     if (dishCategorySelect) {
-      dishCategorySelect.innerHTML = categories.map(c => `
+      const hasComboCat = Array.isArray(categories) && categories.some(c => isComboCategory(c));
+      const comboOpt = hasComboCat ? '' : '<option value="combos">🍱 Combos</option>';
+      dishCategorySelect.innerHTML = comboOpt + categories.map(c => `
         <option value="${escapeHtml(c.slug)}">${escapeHtml(c.emoji)} ${escapeHtml(c.name)}</option>
       `).join('');
     }
@@ -1000,6 +1038,9 @@ const initAdminApp = () => {
   }
 
   btnOpenAddCat.addEventListener('click', openAddCategoryModal);
+  if (btnOpenAddCombo) {
+    btnOpenAddCombo.addEventListener('click', openAddComboModal);
+  }
   if (btnOpenEditAllCat) {
     btnOpenEditAllCat.addEventListener('click', () => openEditCategoryModal('all'));
   }
@@ -1257,9 +1298,20 @@ const initAdminApp = () => {
     const categoryDishes = allDishes.filter(d => d.category === cat.slug || d.category === cat.id);
 
     // Update Category Detail Header
+    const isComboCatDetail = isComboCategory(cat);
     if (catDetailEmoji) catDetailEmoji.textContent = cat.emoji || '🍽️';
     if (catDetailName) catDetailName.textContent = cat.name;
-    if (catDetailCount) catDetailCount.textContent = `${categoryDishes.length} Dish${categoryDishes.length === 1 ? '' : 'es'}`;
+    if (catDetailCount) catDetailCount.textContent = `${categoryDishes.length} ${isComboCatDetail ? 'Combo' : 'Dish'}${categoryDishes.length === 1 ? '' : (isComboCatDetail ? 's' : 'es')}`;
+    if (btnCatAddDish) {
+      btnCatAddDish.innerHTML = isComboCatDetail
+        ? '<i class="fa-solid fa-layer-group"></i> + Add Combo'
+        : '<i class="fa-solid fa-burger"></i> + Add Food Dish';
+    }
+    if (btnCatEmptyAddDish) {
+      btnCatEmptyAddDish.innerHTML = isComboCatDetail
+        ? '<i class="fa-solid fa-layer-group"></i> + Add Combo'
+        : '<i class="fa-solid fa-burger"></i> + Add Food Dish';
+    }
 
     // Filter by search query within this category
     let filteredDishes = categoryDishes;
@@ -1296,6 +1348,7 @@ const initAdminApp = () => {
       const safeImage = sanitizeUrl(dish.image, '/images/crispy-chicken.jpg');
       const safeBadge = dish.badge ? escapeHtml(dish.badge) : '';
       const safePrice = Math.round(parseFloat(dish.price) || 0);
+      const safeOrigPrice = (dish.originalPrice && parseFloat(dish.originalPrice) > safePrice) ? Math.round(parseFloat(dish.originalPrice)) : 0;
 
       return `
         <article class="dish-admin-card app-style-card ${!isStock ? 'sold-out' : ''}" data-id="${safeId}">
@@ -1338,7 +1391,7 @@ const initAdminApp = () => {
               ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
               <h3 class="dish-title" title="${safeName}">${safeName}</h3>
               <div class="dish-meta-sub">
-                <span class="meta-price">₹${safePrice}</span>
+                <span class="meta-price">₹${safePrice}${safeOrigPrice ? ` <span style="text-decoration:line-through; opacity:0.65; font-size:0.82em; margin-left:4px;">₹${safeOrigPrice}</span>` : ''}</span>
                 ${!isStock ? '<span class="meta-dot">•</span><span class="meta-sold-tag">Sold Out</span>' : ''}
               </div>
             </div>
@@ -1675,10 +1728,20 @@ const initAdminApp = () => {
     });
   });
 
-  function openAddDishModal(defaultCategorySlug = '') {
-    dishModalTitle.textContent = 'Add New Food Dish';
+  function openAddDishModal(defaultCategorySlug = '', opts = {}) {
+    const targetSlug = defaultCategorySlug || (currentOpenedCategorySlug && currentOpenedCategorySlug !== 'all' ? currentOpenedCategorySlug : '');
+    const isComboMode = Boolean(opts.isCombo) || isComboCategory(targetSlug);
+
+    dishModalTitle.textContent = isComboMode ? 'Add New Combo Meal' : 'Add New Food Dish';
+    if (dishModalIcon) dishModalIcon.textContent = isComboMode ? '🍱' : '🍔';
+    if (dishModalSub) {
+      dishModalSub.textContent = isComboMode
+        ? 'Create a value combo meal — automatically featured first at the top of the storefront menu.'
+        : 'Fill out the dish details, pricing, and choose or upload a food image.';
+    }
     dishEditId.value = '';
     dishNameInput.value = '';
+    dishNameInput.placeholder = isComboMode ? 'e.g. Chicken Biryani + 2pc Kebab Combo' : 'e.g. Signature Double Smash Burger';
     currentDishGdriveFileId = '';
     
     if (defaultCategorySlug) {
@@ -1687,8 +1750,11 @@ const initAdminApp = () => {
       dishCategorySelect.value = currentOpenedCategorySlug;
     }
 
-    dishPriceInput.value = '199';
-    dishBadgeInput.value = '';
+    dishPriceInput.value = isComboMode ? '249' : '199';
+    if (dishOriginalPriceInput) dishOriginalPriceInput.value = '';
+    if (dishIsComboInput) dishIsComboInput.checked = isComboMode;
+
+    dishBadgeInput.value = isComboMode ? '🔥 Value Combo' : '';
     if (dishBadgeCustomInput) {
       dishBadgeCustomInput.style.display = 'none';
       dishBadgeCustomInput.value = '';
@@ -1697,6 +1763,9 @@ const initAdminApp = () => {
     dishCaloriesInput.value = '560 kcal';
     dishDietInput.value = 'Fresh Daily';
     dishDescInput.value = '';
+    dishDescInput.placeholder = isComboMode
+      ? 'List everything included in this combo (e.g. 1 Chicken Biryani + 2 Kebabs + Cold Drink)...'
+      : 'Describe the flavors, seasoning, and texture...';
 
     setModalDishStock(true);
     if (btnModalDeleteDish) btnModalDeleteDish.style.display = 'none';
@@ -1719,12 +1788,27 @@ const initAdminApp = () => {
     dishNameInput.focus();
   }
 
+  function openAddComboModal() {
+    const categories = dataService.getCategories();
+    updateCategoryDropdowns(categories);
+    const comboCat = categories.find(c => isComboCategory(c));
+    const targetSlug = comboCat ? (comboCat.slug || comboCat.id) : 'combos';
+    openAddDishModal(targetSlug, { isCombo: true });
+  }
+
   function openEditDishModal(id) {
     const dishes = dataService.getDishes();
     const dish = dishes.find(d => d.id === id);
     if (!dish) return;
 
-    dishModalTitle.textContent = 'Edit Food Dish';
+    const isComboItem = isComboDish(dish);
+    dishModalTitle.textContent = isComboItem ? 'Edit Combo Meal' : 'Edit Food Dish';
+    if (dishModalIcon) dishModalIcon.textContent = isComboItem ? '🍱' : '🍔';
+    if (dishModalSub) {
+      dishModalSub.textContent = isComboItem
+        ? 'Update combo meal details — combos are shown first at the top of the menu.'
+        : 'Fill out the dish details, pricing, and choose or upload a food image.';
+    }
     dishEditId.value = dish.id;
     dishNameInput.value = dish.name;
 
@@ -1735,6 +1819,12 @@ const initAdminApp = () => {
     }
 
     dishPriceInput.value = dish.price;
+    if (dishOriginalPriceInput) {
+      dishOriginalPriceInput.value = (dish.originalPrice && Number(dish.originalPrice) > Number(dish.price)) ? dish.originalPrice : '';
+    }
+    if (dishIsComboInput) {
+      dishIsComboInput.checked = isComboItem;
+    }
 
     const rawBadge = (dish.badge || '').trim();
     const hasOption = Array.from(dishBadgeInput.options).some(o => o.value === rawBadge);
@@ -1924,6 +2014,7 @@ const initAdminApp = () => {
       const safeBadge = dish.badge ? escapeHtml(dish.badge) : '';
       const safeCategory = escapeHtml(dish.categoryName || dish.category || 'Menu');
       const safePrice = Math.round(parseFloat(dish.price) || 0);
+      const safeOrigPrice = (dish.originalPrice && parseFloat(dish.originalPrice) > safePrice) ? Math.round(parseFloat(dish.originalPrice)) : 0;
 
       return `
         <article class="dish-admin-card app-style-card ${!isStock ? 'sold-out' : ''}" data-id="${safeId}">
@@ -1967,7 +2058,7 @@ const initAdminApp = () => {
               ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
               <h3 class="dish-title" title="${safeName}">${safeName}</h3>
               <div class="dish-meta-sub">
-                <span class="meta-price">₹${safePrice}</span>
+                <span class="meta-price">₹${safePrice}${safeOrigPrice ? ` <span style="text-decoration:line-through; opacity:0.65; font-size:0.82em; margin-left:4px;">₹${safeOrigPrice}</span>` : ''}</span>
                 ${!isStock ? '<span class="meta-dot">•</span><span class="meta-sold-tag">Sold Out</span>' : ''}
               </div>
             </div>
@@ -2187,6 +2278,37 @@ const initAdminApp = () => {
           dishBadgeCustomInput.style.display = 'none';
         }
       }
+      if (dishIsComboInput && /\bcombos?\b/i.test(dishBadgeInput.value)) {
+        dishIsComboInput.checked = true;
+      }
+    });
+  }
+
+  if (dishIsComboInput) {
+    dishIsComboInput.addEventListener('change', () => {
+      if (dishIsComboInput.checked) {
+        if (dishBadgeInput && !dishBadgeInput.value) {
+          dishBadgeInput.value = '🔥 Value Combo';
+        }
+        if (!dishEditId?.value && dishModalTitle) {
+          dishModalTitle.textContent = 'Add New Combo Meal';
+          if (dishModalIcon) dishModalIcon.textContent = '🍱';
+        }
+      } else if (!dishEditId?.value && dishModalTitle) {
+        dishModalTitle.textContent = 'Add New Food Dish';
+        if (dishModalIcon) dishModalIcon.textContent = '🍔';
+      }
+    });
+  }
+
+  if (dishCategorySelect) {
+    dishCategorySelect.addEventListener('change', () => {
+      if (isComboCategory(dishCategorySelect.value)) {
+        if (dishIsComboInput) dishIsComboInput.checked = true;
+        if (dishBadgeInput && !dishBadgeInput.value) {
+          dishBadgeInput.value = '🔥 Value Combo';
+        }
+      }
     });
   }
 
@@ -2214,9 +2336,16 @@ const initAdminApp = () => {
     }
     const price = Math.round(parsedPrice);
 
+    const parsedOrigPrice = dishOriginalPriceInput ? parseFloat(dishOriginalPriceInput.value) : NaN;
+    const originalPrice = (!isNaN(parsedOrigPrice) && parsedOrigPrice > price) ? Math.round(parsedOrigPrice) : null;
+
+    const isCombo = Boolean(dishIsComboInput?.checked) || isComboCategory(category);
     let badge = dishBadgeInput.value.trim();
     if (badge === 'Custom') {
       badge = dishBadgeCustomInput ? dishBadgeCustomInput.value.trim() : '';
+    }
+    if (isCombo && !badge) {
+      badge = '🔥 Value Combo';
     }
     const time = dishTimeInput.value.trim();
     const calories = dishCaloriesInput.value.trim();
@@ -2248,9 +2377,14 @@ const initAdminApp = () => {
       }
     }
 
+    // Ensure Combos category exists in database/storage when saving a dish into Combos
+    if (isComboCategory(category) && typeof dataService.ensureCombosCategory === 'function') {
+      await dataService.ensureCombosCategory();
+    }
+
     const categories = dataService.getCategories();
     const catObj = categories.find(c => c.slug === category || c.id === category);
-    const categoryName = catObj ? catObj.name : category;
+    const categoryName = catObj ? catObj.name : (isComboCategory(category) ? 'Combos' : category);
 
     // Ensure custom uploaded image is saved in the gallery (never pollute uploaded_images with built-in presets/defaults)
     const isBuiltInPresetImg = Array.isArray(PRESET_FOOD_IMAGES) && PRESET_FOOD_IMAGES.some(p => p.path === image);
@@ -2277,6 +2411,8 @@ const initAdminApp = () => {
           category,
           categoryName,
           price,
+          originalPrice,
+          isCombo,
           badge,
           time,
           calories,
@@ -2298,13 +2434,15 @@ const initAdminApp = () => {
             cloudflareR2Service.deleteImage(prevR2Key).catch(() => {});
           }
         }
-        showToast(`Dish "${name}" updated successfully!`, 'success');
+        showToast(`${isCombo ? 'Combo' : 'Dish'} "${name}" updated successfully!`, 'success');
       } else {
         await dataService.addDish({
           name,
           category,
           categoryName,
           price,
+          originalPrice,
+          isCombo,
           badge,
           time,
           calories,
@@ -2319,7 +2457,7 @@ const initAdminApp = () => {
           r2Key: currentDishGdriveFileId,
           gdriveFileId
         });
-        showToast(`New dish "${name}" added to menu!`, 'success');
+        showToast(`New ${isCombo ? 'combo' : 'dish'} "${name}" added to menu!`, 'success');
       }
 
       pendingDishUploadedR2Key = '';
