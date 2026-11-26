@@ -73,8 +73,8 @@ async function putAdminStoreSettingsEdgeCache(request, context, payload) {
 }
 
 const ALLOWED_DISH_FIELDS = [
-  'id', 'name', 'category', 'category_name', 'price', 'original_price', 'is_combo',
-  'badge', 'time', 'calories', 'diet', 'description', 'in_stock',
+  'id', 'name', 'category', 'category_name', 'price', 'original_price', 'is_combo', 'sort_order',
+  'badge', 'time', 'calories', 'diet', 'description', 'in_stock', 'stock_out_date',
   'image', 'available_days', 'time_restricted', 'available_from', 'available_to', 'r2_key'
 ];
 
@@ -90,7 +90,7 @@ function sanitizeDishFields(input) {
 }
 
 const ALLOWED_CATEGORY_FIELDS = [
-  'id', 'name', 'emoji', 'slug', 'image', 'created_at'
+  'id', 'name', 'emoji', 'slug', 'image', 'sort_order', 'created_at'
 ];
 
 function sanitizeCategoryFields(input) {
@@ -218,7 +218,7 @@ export async function onRequest(context) {
   if (action === 'save_settings' && userRole !== 'owner' && userRole !== 'admin') {
     return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
-  if (['add_dish', 'update_dish', 'toggle_stock', 'save_dish', 'delete_dish', 'add_category', 'update_category', 'save_category', 'delete_category', 'save_category_images'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
+  if (['add_dish', 'update_dish', 'toggle_stock', 'restock_daily', 'save_dish', 'delete_dish', 'add_category', 'update_category', 'save_category', 'delete_category', 'save_category_images'].includes(action) && userRole !== 'owner' && userRole !== 'admin') {
     return jsonResponse({ error: `Forbidden: Staff or Owner role required for ${action}` }, 403, Object.fromEntries(corsHeaders.entries()));
   }
 
@@ -339,6 +339,31 @@ export async function onRequest(context) {
         }
         return jsonResponse({ success: true, data: [sanitizeDishFields(dish)] }, 200, Object.fromEntries(corsHeaders.entries()));
       }
+      if (action === 'toggle_stock') {
+        const { id, in_stock, stock_out_date } = body;
+        if (!id || typeof in_stock !== 'boolean') {
+          return jsonResponse({ error: 'Dish ID and in_stock boolean are required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const resolvedDate = stock_out_date !== undefined ? (in_stock ? null : (stock_out_date || null)) : undefined;
+        return jsonResponse({
+          success: true,
+          data: [{ id, in_stock, ...(resolvedDate !== undefined ? { stock_out_date: resolvedDate } : {}) }],
+          simulated: true
+        }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+      if (action === 'restock_daily') {
+        const rawIds = Array.isArray(body.ids) ? body.ids : [];
+        const cleanIds = rawIds.map(x => String(x || '').trim()).filter(x => x && /^[a-zA-Z0-9_-]{1,120}$/.test(x));
+        if (cleanIds.length === 0) {
+          return jsonResponse({ error: 'Valid non-empty dish ids array is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        return jsonResponse({
+          success: true,
+          data: cleanIds.map(id => ({ id, in_stock: true, stock_out_date: null })),
+          restockedCount: cleanIds.length,
+          simulated: true
+        }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
       if (action === 'save_category' || action === 'add_category' || action === 'update_category') {
         const cat = body.category || (body.id ? { id: body.id, ...(body.updates || {}) } : null);
         if (!cat || (!cat.id && !body.id)) {
@@ -376,10 +401,12 @@ export async function onRequest(context) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').upsert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date'))) {
           delete dish.r2_key;
           delete dish.original_price;
           delete dish.is_combo;
+          delete dish.sort_order;
+          delete dish.stock_out_date;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete dish[match[1]];
@@ -399,10 +426,12 @@ export async function onRequest(context) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').insert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date'))) {
           delete dish.r2_key;
           delete dish.original_price;
           delete dish.is_combo;
+          delete dish.sort_order;
+          delete dish.stock_out_date;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete dish[match[1]];
@@ -422,10 +451,12 @@ export async function onRequest(context) {
         }
         let updates = sanitizeDishFields(rawUpdates);
         let { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date'))) {
           delete updates.r2_key;
           delete updates.original_price;
           delete updates.is_combo;
+          delete updates.sort_order;
+          delete updates.stock_out_date;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete updates[match[1]];
@@ -441,10 +472,12 @@ export async function onRequest(context) {
           // If dish record was not yet in table, upsert it with ID to ensure persistence
           const upsertPayload = { id, ...updates };
           let upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
-          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key') || String(upsertRes.error.message || '').includes('original_price') || String(upsertRes.error.message || '').includes('is_combo'))) {
+          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key') || String(upsertRes.error.message || '').includes('original_price') || String(upsertRes.error.message || '').includes('is_combo') || String(upsertRes.error.message || '').includes('sort_order') || String(upsertRes.error.message || '').includes('stock_out_date'))) {
             delete upsertPayload.r2_key;
             delete upsertPayload.original_price;
             delete upsertPayload.is_combo;
+            delete upsertPayload.sort_order;
+            delete upsertPayload.stock_out_date;
             const match = String(upsertRes.error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
             if (match && match[1]) {
               delete upsertPayload[match[1]];
@@ -461,17 +494,34 @@ export async function onRequest(context) {
       }
 
       case 'toggle_stock': {
-        const { id, in_stock } = body;
+        const { id, in_stock, stock_out_date } = body;
         if (!id || typeof in_stock !== 'boolean') {
           return jsonResponse({ error: 'Dish ID and in_stock boolean are required' }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        let { data, error } = await sb.from('dishes').update({ in_stock }).eq('id', id).select();
+        const updateFields = {
+          in_stock,
+          ...(stock_out_date !== undefined ? { stock_out_date: in_stock ? null : (stock_out_date || null) } : {})
+        };
+        let { data, error } = await sb.from('dishes').update(updateFields).eq('id', id).select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('stock_out_date'))) {
+          const retry = await sb.from('dishes').update({ in_stock }).eq('id', id).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) throw error;
         if (!data || data.length === 0) {
           const rawDish = body.dish;
           if (rawDish && rawDish.name) {
-            const upsertPayload = sanitizeDishFields({ ...rawDish, id, in_stock });
-            const upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+            const upsertPayload = sanitizeDishFields({ ...rawDish, id, ...updateFields });
+            let upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+            if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('stock_out_date') || String(upsertRes.error.message || '').includes('sort_order') || String(upsertRes.error.message || '').includes('is_combo') || String(upsertRes.error.message || '').includes('original_price') || String(upsertRes.error.message || '').includes('r2_key'))) {
+              delete upsertPayload.r2_key;
+              delete upsertPayload.original_price;
+              delete upsertPayload.is_combo;
+              delete upsertPayload.sort_order;
+              delete upsertPayload.stock_out_date;
+              upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
+            }
             if (upsertRes.error) throw upsertRes.error;
             data = upsertRes.data;
           }
@@ -480,6 +530,30 @@ export async function onRequest(context) {
           return jsonResponse({ error: `Dish '${id}' not found in database to toggle stock` }, 404, Object.fromEntries(corsHeaders.entries()));
         }
         return jsonResponse({ success: true, data }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      case 'restock_daily': {
+        const rawIds = Array.isArray(body.ids) ? body.ids : [];
+        const cleanIds = rawIds.map(x => String(x || '').trim()).filter(x => x && /^[a-zA-Z0-9_-]{1,120}$/.test(x));
+        if (cleanIds.length === 0) {
+          return jsonResponse({ error: 'Valid non-empty dish ids array is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        let { data, error } = await sb
+          .from('dishes')
+          .update({ in_stock: true, stock_out_date: null })
+          .in('id', cleanIds)
+          .select();
+        if (error && (error.code === '42703' || String(error.message || '').includes('stock_out_date'))) {
+          const retry = await sb
+            .from('dishes')
+            .update({ in_stock: true })
+            .in('id', cleanIds)
+            .select();
+          data = retry.data;
+          error = retry.error;
+        }
+        if (error) throw error;
+        return jsonResponse({ success: true, data: data || [], restockedCount: Array.isArray(data) ? data.length : 0 }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       case 'delete_dish': {
@@ -502,8 +576,9 @@ export async function onRequest(context) {
         }
         const catPayload = sanitizeCategoryFields(category);
         let { data, error } = await sb.from('categories').upsert([catPayload]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
-          delete catPayload.image;
+        if (error && (error.code === '42703' || String(error.message || '').includes('image') || String(error.message || '').includes('sort_order'))) {
+          if (String(error.message || '').includes('image')) delete catPayload.image;
+          delete catPayload.sort_order;
           const retry = await sb.from('categories').upsert([catPayload]).select();
           data = retry.data;
           error = retry.error;
@@ -519,8 +594,9 @@ export async function onRequest(context) {
         }
         const catPayload = sanitizeCategoryFields(category);
         let { data, error } = await sb.from('categories').insert([catPayload]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
-          delete catPayload.image;
+        if (error && (error.code === '42703' || String(error.message || '').includes('image') || String(error.message || '').includes('sort_order'))) {
+          if (String(error.message || '').includes('image')) delete catPayload.image;
+          delete catPayload.sort_order;
           const retry = await sb.from('categories').insert([catPayload]).select();
           data = retry.data;
           error = retry.error;
@@ -537,19 +613,31 @@ export async function onRequest(context) {
         let cleanUpdates = sanitizeCategoryFields(updates);
         delete cleanUpdates.id;
         let { data, error } = await sb.from('categories').update(cleanUpdates).eq('id', id).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('image'))) {
-          delete cleanUpdates.image;
-          const retry = await sb.from('categories').update(cleanUpdates).eq('id', id).select();
-          data = retry.data;
-          error = retry.error;
+        if (error && (error.code === '42703' || String(error.message || '').includes('image') || String(error.message || '').includes('sort_order'))) {
+          if (String(error.message || '').includes('image')) delete cleanUpdates.image;
+          if (error.code === '42703' || String(error.message || '').includes('sort_order')) delete cleanUpdates.sort_order;
+          if (Object.keys(cleanUpdates).length > 0) {
+            const retry = await sb.from('categories').update(cleanUpdates).eq('id', id).select();
+            data = retry.data;
+            error = retry.error;
+          } else {
+            const existing = await sb.from('categories').select('*').eq('id', id);
+            data = existing.data;
+            error = existing.error;
+          }
         }
         if (error) throw error;
-        if (!data || data.length === 0) {
+        if ((!data || data.length === 0) && Object.keys(cleanUpdates).length > 0) {
           const upsertPayload = { id, ...cleanUpdates };
           let upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
-          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('image'))) {
-            delete upsertPayload.image;
-            upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('image') || String(upsertRes.error.message || '').includes('sort_order'))) {
+            if (String(upsertRes.error.message || '').includes('image')) delete upsertPayload.image;
+            if (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('sort_order')) delete upsertPayload.sort_order;
+            if (Object.keys(upsertPayload).length > 1) {
+              upsertRes = await sb.from('categories').upsert([upsertPayload]).select();
+            } else {
+              upsertRes = { data: [], error: null };
+            }
           }
           if (upsertRes.error) throw upsertRes.error;
           data = upsertRes.data;
@@ -637,23 +725,13 @@ export async function onRequest(context) {
       }
 
       case 'list_riders': {
-        const now = Date.now();
-        if (ridersListCache && (now - ridersListCachedAt < RIDERS_CACHE_TTL_MS)) {
-          const safeRiders = ridersListCache.map(r => {
-            if (userRole === 'owner') return r;
-            const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
-            return { ...rest, pin_masked: true };
-          });
-          return jsonResponse({ success: true, riders: safeRiders }, 200, Object.fromEntries(corsHeaders.entries()));
-        }
         const { data, error } = await sb
           .from('riders')
           .select('*')
           .order('created_at', { ascending: true });
         if (error) throw error;
-        ridersListCache = data || [];
-        ridersListCachedAt = now;
-        const safeRiders = ridersListCache.map(r => {
+        const rows = data || [];
+        const safeRiders = rows.map(r => {
           if (userRole === 'owner') return r;
           const { pin, upi_vpa, bank_account_no, bank_ifsc, ...rest } = r;
           return { ...rest, pin_masked: true };
@@ -781,6 +859,7 @@ export async function onRequest(context) {
           cashHandoverAmount: sanitizedRider.cash_handover_amount,
           cashHandoverRequestedAt: sanitizedRider.cash_handover_requested_at
         };
+        invalidateOrderActionMemoryCache();
         invalidateRidersListCache();
         return jsonResponse({ success: true, rider: returnRider }, 200, Object.fromEntries(corsHeaders.entries()));
       }
@@ -792,6 +871,7 @@ export async function onRequest(context) {
         }
         const { error } = await sb.from('riders').delete().eq('pin', pin);
         if (error) throw error;
+        invalidateOrderActionMemoryCache();
         invalidateRidersListCache();
         return jsonResponse({ success: true, pin }, 200, Object.fromEntries(corsHeaders.entries()));
       }
@@ -804,6 +884,7 @@ export async function onRequest(context) {
         }
         const { data, error } = await sb.from('riders').update({ status }).eq('pin', pin).select();
         if (error) throw error;
+        invalidateOrderActionMemoryCache();
         invalidateRidersListCache();
         return jsonResponse({ success: true, rider: data && data.length > 0 ? data[0] : null }, 200, Object.fromEntries(corsHeaders.entries()));
       }

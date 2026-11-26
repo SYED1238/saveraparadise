@@ -52,9 +52,37 @@ async function fetchAuthoritativeSettings(env = null) {
   }
 }
 
-function isDishAvailableNow(dish, now = new Date()) {
+const IST_SHIFT_OFFSET_MS = 4.5 * 60 * 60 * 1000; // UTC+5:30 minus 1:00 AM IST daily shift boundary
+
+function getOperationalDayKey(refTime = Date.now()) {
+  const num = Number(refTime);
+  const safeMs = Number.isFinite(num) ? num : Date.now();
+  return new Date(safeMs + IST_SHIFT_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function normalizeOperationalDayKey(val) {
+  if (!val || typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+function resolveEffectiveDishInStock(dish, settings = null, refTime = Date.now()) {
   if (!dish) return true;
-  if (dish.is_available === false || dish.in_stock === false || dish.inStock === false) return false;
+  const rawInStock = dish.is_available !== false && dish.in_stock !== false && dish.inStock !== false;
+  if (rawInStock) return true;
+  if (!settings || settings.returnStockEveryDay !== true) return false;
+  const todayKey = getOperationalDayKey(refTime);
+  const outDay = normalizeOperationalDayKey(dish.stockOutDate ?? dish.stock_out_date);
+  const enabledDay = normalizeOperationalDayKey(settings.returnStockEnabledDate);
+  const effectiveAnchor = (enabledDay && (!outDay || enabledDay > outDay))
+    ? enabledDay
+    : (outDay || todayKey);
+  return todayKey > effectiveAnchor;
+}
+
+function isDishAvailableNow(dish, now = new Date(), settings = null) {
+  if (!dish) return true;
+  if (!resolveEffectiveDishInStock(dish, settings, now.getTime())) return false;
 
   const timeRestricted = Boolean(dish.timeRestricted ?? dish.time_restricted);
   const availableDays = dish.availableDays ?? dish.available_days;
@@ -226,6 +254,8 @@ export async function onRequest(context) {
       unlockedDealsEnabled: false,
       unlockedDealsMinOrder: 299,
       unlockedDealsDiscountPct: 15,
+      returnStockEveryDay: false,
+      returnStockEnabledDate: null,
       minOrderValue: 0,
       offerActive: true,
       offerCode: 'SAVERA20',
@@ -298,10 +328,10 @@ export async function onRequest(context) {
       }
 
       if (matchedDish) {
-        if (matchedDish.is_available === false || matchedDish.in_stock === false || matchedDish.inStock === false) {
+        if (!resolveEffectiveDishInStock(matchedDish, storeSettings)) {
           return jsonResponse({ error: `Item "${matchedDish.name}" is currently out of stock` }, 400, Object.fromEntries(corsHeaders.entries()));
         }
-        if (!isDishAvailableNow(matchedDish)) {
+        if (!isDishAvailableNow(matchedDish, new Date(), storeSettings)) {
           return jsonResponse({ error: `Item "${matchedDish.name}" is not currently being served (outside serving hours)` }, 400, Object.fromEntries(corsHeaders.entries()));
         }
         authoritativePrice = Number(matchedDish.price);

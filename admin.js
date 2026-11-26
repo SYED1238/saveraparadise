@@ -4,7 +4,7 @@
  * and data synchronization with dataService.
  */
 
-import { dataService, CANONICAL_CATEGORY_IMAGES, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs, isComboCategory, isComboDish } from './dataService.js';
+import { dataService, CANONICAL_CATEGORY_IMAGES, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs, isComboCategory, isComboDish, normalizeSortOrder } from './dataService.js';
 import { cloudflareR2Service } from './cloudflareR2Service.js';
 import {
   playNotificationSound,
@@ -132,8 +132,9 @@ const initAdminApp = () => {
       if (refreshIcon) refreshIcon.classList.add('fa-spin');
       try {
         await dataService.syncOrdersFromSupabase(true).catch(() => {});
-        await dataService.syncRidersFromSupabase().catch(() => {});
+        await dataService.syncRidersFromSupabase(true).catch(() => {});
         renderOrders();
+        renderAdminRidersFleet();
         updateOrderBadges();
         showToast('🟢 Orders & connection synchronized', 'success');
       } finally {
@@ -514,6 +515,8 @@ const initAdminApp = () => {
   const catModalTitle = document.getElementById('cat-modal-title');
   const catEditId = document.getElementById('cat-edit-id');
   const catNameInput = document.getElementById('cat-name-input');
+  const catSortOrderGroup = document.getElementById('cat-sort-order-group');
+  const catSortOrderInput = document.getElementById('cat-sort-order-input');
   const catEmojiInput = document.getElementById('cat-emoji-input');
   const catImageInput = document.getElementById('cat-image-input');
   const catImagePreview = document.getElementById('cat-image-preview');
@@ -547,12 +550,21 @@ const initAdminApp = () => {
   // DOM Elements - Global Menu Dish Search Across All Categories
   const globalDishSearchInput = document.getElementById('global-dish-search-input');
   const btnClearGlobalDishSearch = document.getElementById('btn-clear-global-dish-search');
+  const btnAdminAllItemsOrder = document.getElementById('btn-admin-all-items-order');
+  const adminDailyRestockBar = document.getElementById('admin-daily-restock-bar');
+  const btnAdminReturnStockDaily = document.getElementById('btn-admin-return-stock-daily');
+  const adminReturnStockPill = document.getElementById('admin-return-stock-pill');
+  const adminReturnStockSub = document.getElementById('admin-return-stock-sub');
   const globalDishSearchResultsPanel = document.getElementById('global-dish-search-results-panel');
   const globalDishesResultsGrid = document.getElementById('global-dishes-results-grid');
   const globalSearchCountBadge = document.getElementById('global-search-count-badge');
+  const globalResultsIcon = document.getElementById('global-results-icon');
+  const globalResultsTitle = document.getElementById('global-results-title');
+  const globalResultsHint = document.getElementById('global-results-hint');
   const categoriesGridTitleBar = document.getElementById('categories-grid-title-bar');
   const categoriesAdminGrid = document.getElementById('categories-admin-grid');
   let globalDishSearchQuery = '';
+  let showingAllItemsOrder = false;
 
   let currentOpenedCategorySlug = null;
   let catDishSearchQuery = '';
@@ -583,6 +595,7 @@ const initAdminApp = () => {
   const dishCategorySelect = document.getElementById('dish-category-select');
   const dishPriceInput = document.getElementById('dish-price-input');
   const dishOriginalPriceInput = document.getElementById('dish-original-price-input');
+  const dishSortOrderInput = document.getElementById('dish-sort-order-input');
   const dishBadgeInput = document.getElementById('dish-badge-input');
   const dishBadgeCustomInput = document.getElementById('dish-badge-custom-input');
   const dishTimeInput = document.getElementById('dish-time-input');
@@ -678,6 +691,10 @@ const initAdminApp = () => {
       if (viewMenu) viewMenu.classList.add('active');
       if (topBtnMenu) topBtnMenu.classList.add('active');
       if (capsuleBtnMenu) capsuleBtnMenu.classList.add('active');
+      if (typeof updateReturnStockDailyUI === 'function') updateReturnStockDailyUI();
+      if (typeof dataService.reconcileDailyStockIfNeeded === 'function') {
+        dataService.reconcileDailyStockIfNeeded().catch(() => {});
+      }
       renderCategories();
       renderDishes();
     } else if (targetView === 'view-hours') {
@@ -781,6 +798,7 @@ const initAdminApp = () => {
       const regularCardsHtml = categories.map(cat => {
         const dishCount = dishes.filter(d => d.category === cat.slug || d.category === cat.id).length;
         const isComboCat = isComboCategory(cat);
+        const catOrderNum = normalizeSortOrder(cat.sortOrder ?? cat.sort_order);
         const safeName = escapeHtml(cat.name);
         const safeEmoji = escapeHtml(cat.emoji || '🍽️');
         const safeId = escapeHtml(cat.id);
@@ -821,7 +839,7 @@ const initAdminApp = () => {
               </div>
             </div>
             <div class="cat-card-info">
-              <h3 class="cat-info-title">${safeName}${isComboCat ? '<span class="cat-first-pill">FIRST IN MENU</span>' : ''}</h3>
+              <h3 class="cat-info-title">${catOrderNum ? `<span class="cat-order-pill">#${catOrderNum}</span>` : ''}${safeName}${isComboCat ? '<span class="cat-first-pill">FIRST IN MENU</span>' : ''}</h3>
               <span class="cat-info-count">${dishCount} dish${dishCount === 1 ? '' : 'es'}</span>
             </div>
             <div class="cat-card-touch-indicator">
@@ -918,8 +936,18 @@ const initAdminApp = () => {
   let initialCategoryModalImage = '';
   let categoryModalSaved = false;
 
+  function syncOrderPresetActiveState(selector, valStr) {
+    const cleanVal = String(valStr ?? '').trim();
+    document.querySelectorAll(selector).forEach(btn => {
+      btn.classList.toggle('active', String(btn.getAttribute('data-order') ?? '') === cleanVal);
+    });
+  }
+
   function openAddCategoryModal() {
     catNameInput.disabled = false;
+    if (catSortOrderGroup) catSortOrderGroup.style.display = '';
+    if (catSortOrderInput) catSortOrderInput.value = '';
+    syncOrderPresetActiveState('.btn-cat-order-preset', '');
     catModalTitle.textContent = 'Add New Category';
     catEditId.value = '';
     catNameInput.value = '';
@@ -944,6 +972,8 @@ const initAdminApp = () => {
       catEditId.value = 'all';
       catNameInput.value = 'All Categories (Storefront Circle)';
       catNameInput.disabled = true;
+      if (catSortOrderGroup) catSortOrderGroup.style.display = 'none';
+      if (catSortOrderInput) catSortOrderInput.value = '';
       catEmojiInput.value = '🍽️';
       if (catImageInput) catImageInput.value = allImg;
       if (catUploadStatus) catUploadStatus.style.display = 'none';
@@ -957,6 +987,7 @@ const initAdminApp = () => {
     }
 
     catNameInput.disabled = false;
+    if (catSortOrderGroup) catSortOrderGroup.style.display = '';
     const categories = dataService.getCategories();
     const cat = categories.find(c => c.id === id || c.slug === id);
     if (!cat) return;
@@ -964,6 +995,9 @@ const initAdminApp = () => {
     catModalTitle.textContent = 'Edit Category';
     catEditId.value = cat.id;
     catNameInput.value = cat.name;
+    const currentCatOrder = normalizeSortOrder(cat.sortOrder ?? cat.sort_order);
+    if (catSortOrderInput) catSortOrderInput.value = currentCatOrder || '';
+    syncOrderPresetActiveState('.btn-cat-order-preset', currentCatOrder || '');
     catEmojiInput.value = cat.emoji || '🍽️';
     if (catImageInput) catImageInput.value = cat.image || '';
     if (catUploadStatus) catUploadStatus.style.display = 'none';
@@ -1049,6 +1083,34 @@ const initAdminApp = () => {
   modalCategoryBackdrop.addEventListener('click', (e) => {
     if (e.target === modalCategoryBackdrop) closeCategoryModal();
   });
+
+  document.querySelectorAll('.btn-cat-order-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orderVal = btn.getAttribute('data-order') || '';
+      if (catSortOrderInput) catSortOrderInput.value = orderVal;
+      syncOrderPresetActiveState('.btn-cat-order-preset', orderVal);
+    });
+  });
+
+  if (catSortOrderInput) {
+    catSortOrderInput.addEventListener('input', () => {
+      syncOrderPresetActiveState('.btn-cat-order-preset', catSortOrderInput.value.trim());
+    });
+  }
+
+  document.querySelectorAll('.btn-dish-order-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orderVal = btn.getAttribute('data-order') || '';
+      if (dishSortOrderInput) dishSortOrderInput.value = orderVal;
+      syncOrderPresetActiveState('.btn-dish-order-preset', orderVal);
+    });
+  });
+
+  if (dishSortOrderInput) {
+    dishSortOrderInput.addEventListener('input', () => {
+      syncOrderPresetActiveState('.btn-dish-order-preset', dishSortOrderInput.value.trim());
+    });
+  }
 
   // Quick emoji clickers in category modal
   document.querySelectorAll('.btn-quick-emoji').forEach(btn => {
@@ -1209,6 +1271,8 @@ const initAdminApp = () => {
         }
       }
 
+      const sortOrder = catSortOrderInput ? normalizeSortOrder(catSortOrderInput.value.trim()) : null;
+
       if (editId === 'all' || editId === 'cat-all') {
         const saveRes = (typeof dataService.setAllCategoryImage === 'function')
           ? await dataService.setAllCategoryImage(image)
@@ -1219,10 +1283,16 @@ const initAdminApp = () => {
           showToast('"All" category photo updated successfully!', 'success');
         }
       } else if (editId) {
-        await dataService.updateCategory(editId, { name, emoji, image });
+        const prevCat = dataService.getCategories().find(c => c.id === editId);
+        const prevSortOrder = prevCat ? normalizeSortOrder(prevCat.sortOrder ?? prevCat.sort_order) : null;
+        if (sortOrder !== prevSortOrder) {
+          await dataService.updateCategory(editId, { name, emoji, image, sortOrder });
+        } else {
+          await dataService.updateCategory(editId, { name, emoji, image });
+        }
         showToast(`Category updated to "${name}"!`, 'success');
       } else {
-        await dataService.addCategory({ name, emoji, image });
+        await dataService.addCategory({ name, emoji, image, sortOrder });
         showToast(`Category "${name}" created!`, 'success');
       }
 
@@ -1347,6 +1417,7 @@ const initAdminApp = () => {
       const safeName = escapeHtml(dish.name);
       const safeImage = sanitizeUrl(dish.image, '/images/crispy-chicken.jpg');
       const safeBadge = dish.badge ? escapeHtml(dish.badge) : '';
+      const dishOrderNum = normalizeSortOrder(dish.sortOrder ?? dish.sort_order);
       const safePrice = Math.round(parseFloat(dish.price) || 0);
       const safeOrigPrice = (dish.originalPrice && parseFloat(dish.originalPrice) > safePrice) ? Math.round(parseFloat(dish.originalPrice)) : 0;
 
@@ -1386,6 +1457,7 @@ const initAdminApp = () => {
 
             <!-- Bottom Content Info -->
             <div class="dish-bottom-info">
+              ${dishOrderNum ? `<div class="dish-top-order-chip">📌 #${dishOrderNum} Top</div>` : ''}
               ${safeBadge ? `<div class="dish-category-badge-chip">${safeBadge}</div>` : ''}
               ${(dish.timeRestricted && dish.availableFrom && dish.availableTo) ? `<div class="dish-schedule-badge time-badge"><i class="fa-regular fa-clock"></i> ${formatTime12h(dish.availableFrom)} - ${formatTime12h(dish.availableTo)}</div>` : ''}
               ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
@@ -1459,7 +1531,7 @@ const initAdminApp = () => {
     if (currentOpenedCategorySlug) {
       renderCategoryDishes();
     }
-    if (globalDishSearchQuery && typeof renderGlobalDishes === 'function') {
+    if ((globalDishSearchQuery || showingAllItemsOrder) && typeof renderGlobalDishes === 'function') {
       renderGlobalDishes();
     }
   }
@@ -1752,6 +1824,8 @@ const initAdminApp = () => {
 
     dishPriceInput.value = isComboMode ? '249' : '199';
     if (dishOriginalPriceInput) dishOriginalPriceInput.value = '';
+    if (dishSortOrderInput) dishSortOrderInput.value = '';
+    syncOrderPresetActiveState('.btn-dish-order-preset', '');
     if (dishIsComboInput) dishIsComboInput.checked = isComboMode;
 
     dishBadgeInput.value = isComboMode ? '🔥 Value Combo' : '';
@@ -1822,6 +1896,11 @@ const initAdminApp = () => {
     if (dishOriginalPriceInput) {
       dishOriginalPriceInput.value = (dish.originalPrice && Number(dish.originalPrice) > Number(dish.price)) ? dish.originalPrice : '';
     }
+    const currentDishOrder = normalizeSortOrder(dish.sortOrder ?? dish.sort_order);
+    if (dishSortOrderInput) {
+      dishSortOrderInput.value = currentDishOrder || '';
+    }
+    syncOrderPresetActiveState('.btn-dish-order-preset', currentDishOrder || '');
     if (dishIsComboInput) {
       dishIsComboInput.checked = isComboItem;
     }
@@ -1970,10 +2049,10 @@ const initAdminApp = () => {
     });
   }
 
-  // Global Menu Search Controller
+  // Global Menu Search & All Items Display Order Controller
   function renderGlobalDishes() {
     if (!globalDishesResultsGrid || !globalDishSearchResultsPanel) return;
-    if (!globalDishSearchQuery) {
+    if (!globalDishSearchQuery && !showingAllItemsOrder) {
       globalDishSearchResultsPanel.style.display = 'none';
       if (categoriesGridTitleBar) categoriesGridTitleBar.style.display = 'flex';
       if (categoriesAdminGrid) categoriesAdminGrid.style.display = 'grid';
@@ -1981,15 +2060,26 @@ const initAdminApp = () => {
     }
 
     const allDishes = dataService.getDishes() || [];
-    const tokens = globalDishSearchQuery.toLowerCase().split(/\s+/).filter(Boolean);
-    const matched = allDishes.filter(d => {
-      const fullText = `${d.name || ''} ${d.categoryName || ''} ${d.category || ''} ${d.desc || ''} ${d.badge || ''}`.toLowerCase();
-      return tokens.every(token => fullText.includes(token));
-    });
+    const allPosMap = new Map(allDishes.map((d, i) => [d.id, i + 1]));
+    const tokens = globalDishSearchQuery ? globalDishSearchQuery.toLowerCase().split(/\s+/).filter(Boolean) : [];
+    const matched = tokens.length > 0
+      ? allDishes.filter(d => {
+          const fullText = `${d.name || ''} ${d.categoryName || ''} ${d.category || ''} ${d.desc || ''} ${d.badge || ''}`.toLowerCase();
+          return tokens.every(token => fullText.includes(token));
+        })
+      : allDishes;
 
     if (categoriesGridTitleBar) categoriesGridTitleBar.style.display = 'none';
     if (categoriesAdminGrid) categoriesAdminGrid.style.display = 'none';
     globalDishSearchResultsPanel.style.display = 'block';
+
+    if (globalResultsIcon) globalResultsIcon.textContent = tokens.length > 0 ? '🔍' : '📌';
+    if (globalResultsTitle) globalResultsTitle.textContent = tokens.length > 0 ? 'Menu Search Results' : 'All Items Display Order';
+    if (globalResultsHint) {
+      globalResultsHint.textContent = tokens.length > 0
+        ? 'Instant 1-tap in-stock toggle or edit dish'
+        : 'Shown in exact storefront "All" order — tap any item to set Position #';
+    }
 
     if (globalSearchCountBadge) {
       globalSearchCountBadge.textContent = `${matched.length} Dish${matched.length === 1 ? '' : 'es'}`;
@@ -2006,12 +2096,13 @@ const initAdminApp = () => {
       return;
     }
 
-    globalDishesResultsGrid.innerHTML = matched.map(dish => {
+    globalDishesResultsGrid.innerHTML = matched.map((dish, idx) => {
       const isStock = dish.inStock !== false;
       const safeId = escapeHtml(dish.id);
       const safeName = escapeHtml(dish.name);
       const safeImage = sanitizeUrl(dish.image, '/images/crispy-chicken.jpg');
       const safeBadge = dish.badge ? escapeHtml(dish.badge) : '';
+      const dishOrderNum = normalizeSortOrder(dish.sortOrder ?? dish.sort_order);
       const safeCategory = escapeHtml(dish.categoryName || dish.category || 'Menu');
       const safePrice = Math.round(parseFloat(dish.price) || 0);
       const safeOrigPrice = (dish.originalPrice && parseFloat(dish.originalPrice) > safePrice) ? Math.round(parseFloat(dish.originalPrice)) : 0;
@@ -2050,6 +2141,7 @@ const initAdminApp = () => {
             </div>
 
             <div class="dish-bottom-info">
+              ${dishOrderNum ? `<div class="dish-top-order-chip">📌 #${dishOrderNum} Top</div>` : (showingAllItemsOrder ? `<div class="dish-category-badge-chip" style="background: rgba(15, 23, 42, 0.72); color: #FDE68A; font-weight: 700; margin-bottom: 4px;">Pos #${allPosMap.get(dish.id) ?? (idx + 1)}</div>` : '')}
               <div class="dish-category-badge-chip" style="background: rgba(0,0,0,0.55); backdrop-filter: blur(4px); color: #FFFFFF; font-weight: 600; margin-bottom: 4px;">
                 📂 ${safeCategory}
               </div>
@@ -2130,6 +2222,13 @@ const initAdminApp = () => {
       globalDishSearchInput.value = '';
       globalDishSearchQuery = '';
       btnClearGlobalDishSearch.style.display = 'none';
+      renderGlobalDishes();
+    });
+  }
+  if (btnAdminAllItemsOrder) {
+    btnAdminAllItemsOrder.addEventListener('click', () => {
+      showingAllItemsOrder = !showingAllItemsOrder;
+      btnAdminAllItemsOrder.classList.toggle('active', showingAllItemsOrder);
       renderGlobalDishes();
     });
   }
@@ -2348,6 +2447,7 @@ const initAdminApp = () => {
     const originalPrice = (!isNaN(parsedOrigPrice) && parsedOrigPrice > price) ? Math.round(parsedOrigPrice) : null;
 
     const isCombo = dishIsComboInput ? Boolean(dishIsComboInput.checked) : isComboCategory(category);
+    const sortOrder = dishSortOrderInput ? normalizeSortOrder(dishSortOrderInput.value.trim()) : null;
     let badge = dishBadgeInput.value.trim();
     if (badge === 'Custom') {
       badge = dishBadgeCustomInput ? dishBadgeCustomInput.value.trim() : '';
@@ -2423,6 +2523,7 @@ const initAdminApp = () => {
           price,
           originalPrice,
           isCombo,
+          sortOrder,
           badge,
           time,
           calories,
@@ -2453,6 +2554,7 @@ const initAdminApp = () => {
           price,
           originalPrice,
           isCombo,
+          sortOrder,
           badge,
           time,
           calories,
@@ -4233,6 +4335,32 @@ const initAdminApp = () => {
 
   updateDirectDispatchUI();
 
+  function updateReturnStockDailyUI() {
+    const isEnabled = dataService.isReturnStockEveryDay
+      ? dataService.isReturnStockEveryDay()
+      : Boolean(dataService.getSettings()?.returnStockEveryDay === true);
+    if (adminDailyRestockBar) {
+      adminDailyRestockBar.classList.toggle('is-enabled', isEnabled);
+    }
+    if (btnAdminReturnStockDaily) {
+      btnAdminReturnStockDaily.classList.toggle('is-enabled', isEnabled);
+      btnAdminReturnStockDaily.setAttribute('aria-checked', isEnabled ? 'true' : 'false');
+      btnAdminReturnStockDaily.title = isEnabled
+        ? 'Return Stock Every Day is ON — Out-of-stock dishes return In Stock every day at 1:00 AM IST'
+        : 'Return Stock Every Day is OFF — Out-of-stock dishes stay off until manually marked In Stock';
+    }
+    if (adminReturnStockPill) {
+      adminReturnStockPill.textContent = isEnabled ? 'ON' : 'OFF';
+    }
+    if (adminReturnStockSub) {
+      adminReturnStockSub.textContent = isEnabled
+        ? 'ON — Any dish marked Out of Stock today automatically returns In Stock next day (1:00 AM IST)'
+        : 'OFF — Out-of-stock dishes stay off until you manually turn them back On';
+    }
+  }
+
+  updateReturnStockDailyUI();
+
   // Delegated to notificationService with DynamicsCompressor and volume safeguards
   function playKitchenChime() {
     try {
@@ -4887,6 +5015,68 @@ const initAdminApp = () => {
     });
   }
 
+  // Daily Auto-Restock Toggle Controller
+  let isSavingReturnStockDaily = false;
+  async function toggleReturnStockEveryDay(forcedVal = null) {
+    if (isSavingReturnStockDaily) return;
+    const current = dataService.isReturnStockEveryDay
+      ? dataService.isReturnStockEveryDay()
+      : Boolean(dataService.getSettings()?.returnStockEveryDay === true);
+    const newVal = (forcedVal !== null) ? Boolean(forcedVal) : !current;
+    if (forcedVal !== null && newVal === current) {
+      updateReturnStockDailyUI();
+      return;
+    }
+
+    isSavingReturnStockDaily = true;
+    if (btnAdminReturnStockDaily) btnAdminReturnStockDaily.disabled = true;
+    const prevSettings = { ...(dataService.getSettings() || {}) };
+
+    try {
+      const savePromise = typeof dataService.setReturnStockEveryDay === 'function'
+        ? dataService.setReturnStockEveryDay(newVal)
+        : dataService.saveSettings({ ...prevSettings, returnStockEveryDay: newVal });
+
+      updateReturnStockDailyUI();
+      renderCategories();
+      if (typeof renderGlobalDishes === 'function') renderGlobalDishes();
+      if (typeof renderCategoryDishes === 'function') renderCategoryDishes();
+
+      const res = await savePromise;
+      assertCloudSettingsSynced(res);
+      showToast(
+        newVal
+          ? '🔄 Return Stock Every Day ON: Out-of-stock items will automatically return In Stock tomorrow (1:00 AM IST).'
+          : '⏸️ Return Stock Every Day OFF: Out-of-stock items will stay off until turned back In Stock.',
+        newVal ? 'success' : 'info'
+      );
+    } catch (err) {
+      console.warn('[Admin] Failed to persist returnStockEveryDay to cloud settings:', err);
+      dataService.settingsCache = prevSettings;
+      try {
+        localStorage.setItem('quickbite_settings', JSON.stringify(prevSettings));
+      } catch (_) {}
+      if (typeof dataService.refreshDishesEffectiveStock === 'function') {
+        dataService.refreshDishesEffectiveStock(prevSettings);
+      }
+      updateReturnStockDailyUI();
+      renderCategories();
+      if (typeof renderGlobalDishes === 'function') renderGlobalDishes();
+      if (typeof renderCategoryDishes === 'function') renderCategoryDishes();
+      showToast(`⚠️ Could not save Return Stock Every Day setting: ${err?.message || 'Check connection'}`, 'error');
+    } finally {
+      isSavingReturnStockDaily = false;
+      if (btnAdminReturnStockDaily) btnAdminReturnStockDaily.disabled = false;
+    }
+  }
+
+  if (btnAdminReturnStockDaily) {
+    btnAdminReturnStockDaily.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleReturnStockEveryDay();
+    });
+  }
+
   if (toggleDirectDispatch) {
     toggleDirectDispatch.addEventListener('change', () => {
       toggleDirectDispatchMode(toggleDirectDispatch.checked);
@@ -5373,6 +5563,7 @@ const initAdminApp = () => {
         refreshActiveKitchenAlarmAudio();
       }
       updateDirectDispatchUI();
+      if (typeof updateReturnStockDailyUI === 'function') updateReturnStockDailyUI();
     }
   });
 
@@ -5386,6 +5577,7 @@ const initAdminApp = () => {
         refreshActiveKitchenAlarmAudio();
       }
       updateDirectDispatchUI();
+      if (typeof updateReturnStockDailyUI === 'function') updateReturnStockDailyUI();
     }
     if (e.detail?.type === 'kitchen_alarm') {
       if (e.detail?.action === 'stop_alarm') {
@@ -5403,8 +5595,9 @@ const initAdminApp = () => {
       renderOrders();
       updateOrderBadges();
     }
-    if (e.detail?.type === 'riders' || e.detail?.type === 'cash_settled' || e.detail?.type === 'rider_session') {
+    if (e.detail?.type === 'riders' || e.detail?.type === 'cash_settled' || e.detail?.type === 'rider_session' || e.detail?.type === 'rider_duty_updated') {
       renderOrders();
+      renderAdminRidersFleet();
     }
     if (e.detail?.type === 'categories') renderCategories();
     if (e.detail?.type === 'dishes') renderDishes();
@@ -6038,6 +6231,7 @@ const initAdminApp = () => {
 
     startRushTicker();
     updateDirectDispatchUI();
+    if (typeof updateReturnStockDailyUI === 'function') updateReturnStockDailyUI();
     if (typeof syncHoursSummaryChips === 'function') {
       syncHoursSummaryChips();
     }
@@ -6912,13 +7106,15 @@ const initAdminApp = () => {
 
     // 3. Delivery Fleet chip
     const riders = (typeof dataService.getRiders === 'function' ? dataService.getRiders() : []) || [];
+    const activeRoster = riders.filter(r => r && String(r.status || 'online').toLowerCase() !== 'inactive');
+    const onDutyCount = activeRoster.filter(r => String(r.status || 'online').toLowerCase() !== 'offline').length;
     const summaryFleetActive = document.getElementById('summary-fleet-active');
     const fleetBadge = document.getElementById('admin-riders-count-badge');
     if (summaryFleetActive) {
-      summaryFleetActive.textContent = `${riders.length} Active Riders`;
+      summaryFleetActive.textContent = activeRoster.length > 0 ? `${onDutyCount}/${activeRoster.length} On Duty` : '0 Riders';
     }
     if (fleetBadge) {
-      fleetBadge.textContent = `${riders.length} Active`;
+      fleetBadge.textContent = activeRoster.length > 0 ? `${onDutyCount}/${activeRoster.length} On Duty` : '0 Riders';
     }
   }
 
@@ -7102,6 +7298,9 @@ const initAdminApp = () => {
         }
       }
       body.style.display = shouldOpen ? 'block' : 'none';
+      if (card === fleetCard && shouldOpen && typeof dataService.syncRidersFromSupabase === 'function') {
+        dataService.syncRidersFromSupabase(true).catch(() => {});
+      }
     }
 
     if (btnOptions) {
@@ -7276,9 +7475,11 @@ const initAdminApp = () => {
   function renderAdminRidersFleet() {
     if (!adminRidersGrid) return;
     const riders = dataService.getRiders();
+    const activeRoster = (riders || []).filter(r => r && String(r.status || 'online').toLowerCase() !== 'inactive');
+    const onDutyCount = activeRoster.filter(r => String(r.status || 'online').toLowerCase() !== 'offline').length;
 
     if (adminRidersCountBadge) {
-      adminRidersCountBadge.textContent = `${riders.length} Active`;
+      adminRidersCountBadge.textContent = activeRoster.length > 0 ? `${onDutyCount}/${activeRoster.length} On Duty` : '0 Riders';
     }
     if (typeof syncDeliverySummaryChips === 'function') {
       syncDeliverySummaryChips();
@@ -7309,6 +7510,9 @@ const initAdminApp = () => {
       const vehicle = escapeHtml(r.vehicle || '🏍️ Bike');
       const rawAvatar = r.avatar || ((vehicle.includes('🛵') || vehicle.toLowerCase().includes('scooter')) ? '🛵' : ((vehicle.includes('🚗') || vehicle.toLowerCase().includes('car')) ? '🚗' : ((vehicle.includes('🚲') || vehicle.toLowerCase().includes('bicycle')) ? '🚲' : ((vehicle.includes('⚡') || vehicle.toLowerCase().includes('electric') || vehicle.toLowerCase().includes('ev')) ? '⚡' : '🏍️'))));
       const avatar = escapeHtml(rawAvatar);
+      const rawStatus = String(r.status || 'online').trim().toLowerCase();
+      const dutyClass = rawStatus === 'inactive' ? 'inactive' : (rawStatus === 'offline' ? 'offline' : 'online');
+      const dutyLabel = rawStatus === 'inactive' ? 'Deactivated' : (rawStatus === 'offline' ? 'Off Duty • On Break' : 'On Duty • Online');
 
       return `
         <div class="admin-rider-card" data-rider-id="${riderId}">
@@ -7343,9 +7547,9 @@ const initAdminApp = () => {
           </div>
 
           <div class="admin-rider-card-footer">
-            <span class="admin-rider-status-tag">
+            <span class="admin-rider-status-tag ${dutyClass}">
               <span class="status-dot"></span>
-              <span>Active • Fleet Ready</span>
+              <span>${dutyLabel}</span>
             </span>
             <div class="admin-rider-actions">
               ${hasRealPhone ? `
@@ -7365,6 +7569,9 @@ const initAdminApp = () => {
 
   // Subscribe to rider fleet changes across tabs/portals
   dataService.subscribeToChanges('riders', () => {
+    renderAdminRidersFleet();
+  });
+  dataService.subscribeToChanges('rider_duty_updated', () => {
     renderAdminRidersFleet();
   });
 

@@ -66,6 +66,35 @@ export function getRiderInitial(name) {
   return /^[A-Z0-9]$/i.test(first) ? first : 'R';
 }
 
+export function getRiderDutyMeta(rider) {
+  if (rider && rider.isRegistered === false) {
+    return { status: 'unregistered', isOnline: false, label: 'Archived / Removed', shortLabel: 'Archived', cssClass: 'inactive' };
+  }
+  const raw = String(rider?.status || 'online').trim().toLowerCase();
+  if (raw === 'inactive') {
+    return { status: 'inactive', isOnline: false, label: 'Deactivated', shortLabel: 'Inactive', cssClass: 'inactive' };
+  }
+  if (raw === 'offline') {
+    return { status: 'offline', isOnline: false, label: 'Off Duty • On Break', shortLabel: 'Off Duty', cssClass: 'offline' };
+  }
+  return { status: 'online', isOnline: true, label: 'On Duty • Online', shortLabel: 'On Duty', cssClass: 'online' };
+}
+
+export function computeFleetDutyCounts(riders) {
+  const list = Array.isArray(riders) ? riders.filter(r => r && typeof r === 'object') : [];
+  let onDutyCount = 0;
+  let offDutyCount = 0;
+  let inactiveCount = 0;
+  list.forEach(r => {
+    const meta = getRiderDutyMeta(r);
+    if (meta.status === 'inactive') inactiveCount++;
+    else if (meta.isOnline) onDutyCount++;
+    else offDutyCount++;
+  });
+  const activeCount = onDutyCount + offDutyCount;
+  return { totalCount: list.length, activeCount, onDutyCount, offDutyCount, inactiveCount };
+}
+
 // --- STATE MANAGEMENT ---
 const ownerBackNav = (typeof window !== 'undefined') ? createBackNavigationManager('owner') : {
   pushStep: () => {},
@@ -85,6 +114,8 @@ let activeView = 'view-overview'; // 'view-overview' | 'view-orders' | 'view-cas
 let ownerOrdersPage = 1;
 const OWNER_ORDERS_PER_PAGE = 25;
 let isPayoutSettingsOpen = false;
+let lastFleetTabSyncAt = 0;
+let activeModalOrder = null;
 
 // --- CALENDAR & HISTORICAL AUDIT STATE ---
 let calCurrentYear = new Date().getFullYear();
@@ -486,7 +517,7 @@ function unlockOwnerPortal() {
   renderDashboard();
   Promise.allSettled([
     dataService.syncOrdersFromSupabase(true),
-    dataService.syncRidersFromSupabase()
+    dataService.syncRidersFromSupabase(true)
   ]).then(() => {
     renderDashboard();
   }).catch(() => {});
@@ -974,9 +1005,18 @@ function renderKPICards(orders) {
   const kpiActiveRiders = document.getElementById('kpi-active-riders-count');
 
   const allRiders = dataService.getRiders();
+  const dutyCounts = computeFleetDutyCounts(allRiders);
   if (kpiFleetKms) kpiFleetKms.textContent = `${totalFleetKms.toFixed(1)} km`;
   if (kpiAvgKmTag) kpiAvgKmTag.textContent = `${avgKm} km / order`;
-  if (kpiActiveRiders) kpiActiveRiders.textContent = `${allRiders.length} registered riders`;
+  if (kpiActiveRiders) {
+    if (dutyCounts.activeCount === 0) {
+      kpiActiveRiders.textContent = `${allRiders.length} registered riders`;
+    } else if (dutyCounts.offDutyCount > 0) {
+      kpiActiveRiders.textContent = `${dutyCounts.onDutyCount}/${dutyCounts.activeCount} on duty (${dutyCounts.offDutyCount} off)`;
+    } else {
+      kpiActiveRiders.textContent = `${dutyCounts.onDutyCount}/${dutyCounts.activeCount} on duty`;
+    }
+  }
 
   const kpiTotalOrders = document.getElementById('kpi-total-orders');
   const kpiActiveLiveTag = document.getElementById('kpi-active-live-tag');
@@ -1012,6 +1052,16 @@ function renderRiderFleetTable(orders) {
   if (!tbody) return;
 
   const riders = dataService.getRiders();
+  const fleetDutyCounts = computeFleetDutyCounts(riders);
+  const elCountOnline = document.getElementById('fleet-count-online');
+  const elCountOffline = document.getElementById('fleet-count-offline');
+  const elChipInactive = document.getElementById('fleet-chip-inactive');
+  const elCountInactive = document.getElementById('fleet-count-inactive');
+  if (elCountOnline) elCountOnline.textContent = String(fleetDutyCounts.onDutyCount);
+  if (elCountOffline) elCountOffline.textContent = String(fleetDutyCounts.offDutyCount);
+  if (elCountInactive) elCountInactive.textContent = String(fleetDutyCounts.inactiveCount);
+  if (elChipInactive) elChipInactive.style.display = fleetDutyCounts.inactiveCount > 0 ? 'inline-flex' : 'none';
+
   const deliveredOrders = orders.filter(o => o && (String(o.status).toLowerCase() === 'delivered' || String(o.status).toLowerCase() === 'undelivered'));
 
   // Map delivered orders to riders
@@ -1019,11 +1069,17 @@ function renderRiderFleetTable(orders) {
 
   // Initialize registered riders
   riders.forEach(r => {
-    riderStatsMap.set(r.pin, {
-      pin: r.pin,
+    if (!r) return;
+    const rKey = String(r.pin || r.id || '').trim();
+    if (!rKey) return;
+    riderStatsMap.set(rKey, {
+      pin: r.pin || '',
+      id: r.id || (r.pin ? `rider-${r.pin}` : rKey),
       name: r.name || 'Unnamed Rider',
       phone: r.phone || '',
       vehicle: r.vehicle || '🏍️ Bike',
+      status: r.status || 'online',
+      isRegistered: true,
       upiVpa: r.upiVpa || r.upi_vpa || '',
       maxActiveOrders: Math.max(1, Math.min(5, Number(r.maxActiveOrders ?? r.max_active_orders ?? 1) || 1)),
       deliveredOrders: [],
@@ -1049,6 +1105,8 @@ function renderRiderFleetTable(orders) {
         name: o.assignedRiderName || `Rider (${riderPin})`,
         phone: '',
         vehicle: '🏍️ Bike',
+        status: 'offline',
+        isRegistered: false,
         deliveredOrders: [],
         totalKms: 0,
         cashInHand: 0,
@@ -1140,13 +1198,20 @@ function renderRiderFleetTable(orders) {
       netBadgeHtml = `<span class="settle-badge balanced"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`;
     }
 
+    const dutyMeta = getRiderDutyMeta(st);
+
     return `
-      <tr>
+      <tr class="${dutyMeta.isOnline ? '' : 'rider-row-off-duty'}">
         <td>
           <div class="rider-cell-meta">
             <div class="rider-avatar-bubble">${escapeHtml(getRiderInitial(st.name))}</div>
             <div class="rider-name-box">
-              <span class="rider-name">${escapeHtml(st.name || 'Delivery Partner')}</span>
+              <div class="rider-name-row">
+                <span class="rider-name">${escapeHtml(st.name || 'Delivery Partner')}</span>
+                <span class="rider-duty-badge ${dutyMeta.cssClass}" title="Live Rider Duty Status">
+                  <span class="duty-dot"></span> ${escapeHtml(dutyMeta.shortLabel)}
+                </span>
+              </div>
               ${st.phone ? `<a href="tel:${sanitizePhone(st.phone)}" class="rider-phone-link"><i class="fa-solid fa-phone"></i> ${escapeHtml(st.phone)}</a>` : '<span style="font-size:0.74rem;color:#64748b;">No phone</span>'}
               ${st.upiVpa ? `<span style="font-size:0.72rem; color:#2563EB; font-weight:600;"><i class="fa-solid fa-bolt"></i> ${escapeHtml(st.upiVpa)}</span>` : ''}
             </div>
@@ -1261,14 +1326,19 @@ function renderRiderFleetTable(orders) {
           statusFormula = 'All COD cash & delivery earnings settled';
         }
 
+        const dutyMeta = getRiderDutyMeta(st);
+
         return `
-          <div class="rider-card-mobile ${statusClass}">
+          <div class="rider-card-mobile ${statusClass}${dutyMeta.isOnline ? '' : ' is-off-duty'}">
             <div class="rc-header">
               <div class="rc-profile">
                 <div class="rider-avatar-bubble">${escapeHtml(getRiderInitial(st.name))}</div>
                 <div>
                   <h4 class="rc-name">${escapeHtml(st.name || 'Delivery Partner')}</h4>
                   <span class="rc-vehicle">${escapeHtml(st.vehicle || '🏍️ Bike')} • Max ${st.maxActiveOrders || 1} order${(st.maxActiveOrders || 1) > 1 ? 's' : ''}</span>
+                  <span class="rider-duty-badge ${dutyMeta.cssClass}" style="margin-top: 4px;" title="Live Rider Duty Status">
+                    <span class="duty-dot"></span> ${escapeHtml(dutyMeta.label)}
+                  </span>
                   ${st.upiVpa ? `<div style="font-size:0.72rem; color:#2563EB; font-weight:600; margin-top:2px;"><i class="fa-solid fa-bolt"></i> UPI: ${escapeHtml(st.upiVpa)}</div>` : ''}
                 </div>
               </div>
@@ -1789,7 +1859,7 @@ function renderOwnerPagination(totalOrders, totalPages, currentPage, startIndex,
 // ==============================================================
 // 10. READ-ONLY ORDER INVOICE MODAL
 // ==============================================================
-let activeModalOrder = null;
+// activeModalOrder is initialized in top-level state above so sync init never hits TDZ
 
 function openInvoiceModal(order) {
   activeModalOrder = order;
@@ -1988,7 +2058,7 @@ function initActions() {
       else btnRefresh.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Refreshing...';
 
       await dataService.syncOrdersFromSupabase(true).catch(() => {});
-      await dataService.syncRidersFromSupabase().catch(() => {});
+      await dataService.syncRidersFromSupabase(true).catch(() => {});
       renderDashboard();
 
       setTimeout(() => {
@@ -2297,6 +2367,7 @@ function initActions() {
 
   // Cross-tab and Realtime synchronization for riders, orders, cash handovers & payouts
   dataService.subscribeToChanges('riders', () => renderDashboard());
+  dataService.subscribeToChanges('rider_duty_updated', () => renderDashboard());
   dataService.subscribeToChanges('orders', () => {
     const orders = dataService.getOrders();
     let hasNewOrder = false;
@@ -2512,8 +2583,9 @@ async function handleOwnerRiderSubmit(e) {
     showToast('Saving delivery partner to server...', 'info');
     if (originalPin && originalPin !== pin) {
       const existingRider = dataService.getRiderByPin(originalPin) || {};
+      const { status: _preserveServerStatus, ...safeExistingRider } = existingRider;
       const updatedRider = {
-        ...existingRider,
+        ...safeExistingRider,
         pin,
         name,
         phone: formattedPhone,
@@ -2542,8 +2614,9 @@ async function handleOwnerRiderSubmit(e) {
       }
     } else {
       const existingRider = dataService.getRiderByPin(pin) || {};
+      const { status: _preserveServerStatus, ...safeExistingRider } = existingRider;
       saved = await dataService.saveOrUpdateRiderAsync({
-        ...existingRider,
+        ...safeExistingRider,
         pin,
         name,
         phone: formattedPhone,
@@ -2845,6 +2918,10 @@ function switchOwnerView(viewId, recordStep = true) {
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
   renderDashboard();
+  if (viewId === 'view-fleet' && Date.now() - lastFleetTabSyncAt > 5000) {
+    lastFleetTabSyncAt = Date.now();
+    dataService.syncRidersFromSupabase(true).catch(() => {});
+  }
 }
 
 function updateNavigationBadges(orders) {
@@ -2877,7 +2954,10 @@ function updateNavigationBadges(orders) {
   const badgeFleet = document.getElementById('nav-badge-fleet');
   if (badgeFleet) {
     const riders = dataService.getRiders();
-    badgeFleet.textContent = riders.length;
+    const dutyCounts = computeFleetDutyCounts(riders);
+    badgeFleet.textContent = dutyCounts.activeCount > 0 ? `${dutyCounts.onDutyCount}/${dutyCounts.activeCount}` : String(riders.length);
+    badgeFleet.title = `${dutyCounts.onDutyCount} On Duty • ${dutyCounts.offDutyCount} Off Duty`;
+    badgeFleet.classList.toggle('all-offline', dutyCounts.activeCount > 0 && dutyCounts.onDutyCount === 0);
   }
 }
 
@@ -3725,7 +3805,8 @@ export function renderKmPayoutsView(orders) {
           if (rd) {
             rd.upiVpa = targetUpi;
             rd.upi_vpa = targetUpi;
-            dataService.saveOrUpdateRiderAsync({ ...rd, upiVpa: targetUpi, upi_vpa: targetUpi }).catch(err => {
+            const { status: _preserveServerStatus, ...safeRd } = rd;
+            dataService.saveOrUpdateRiderAsync({ ...safeRd, upiVpa: targetUpi, upi_vpa: targetUpi }).catch(err => {
               console.warn('[OwnerPayout] Failed to persist rider UPI VPA:', err);
             });
           }

@@ -74,12 +74,18 @@ function initStorefrontApp() {
   function setupImageSkeleton(img) {
     if (!img) return;
     const container = img.closest('.recipe-card-inner') ||
+                      img.closest('.recent-order-card-inner') ||
                       img.closest('.dish-thumb-box') ||
                       img.closest('.food-modal-hero') ||
                       img.closest('.cart-item-img-wrap') ||
                       img.closest('.promo-visual') ||
                       img.closest('.offers-modal-body') ||
                       img.parentElement;
+
+    if (img._skeletonHandlers) {
+      img.removeEventListener('load', img._skeletonHandlers.onReady);
+      img.removeEventListener('error', img._skeletonHandlers.onError);
+    }
 
     const onReady = () => {
       img.classList.remove('img-has-error');
@@ -98,7 +104,8 @@ function initStorefrontApp() {
         if (img.complete && img.naturalWidth > 0) {
           onReady();
         } else {
-          img.addEventListener("load", onReady, { once: true });
+          img.addEventListener('load', onReady, { once: true });
+          img.addEventListener('error', onError, { once: true });
         }
         return;
       }
@@ -112,6 +119,8 @@ function initStorefrontApp() {
         container.classList.add('is-img-error-skeleton');
       }
     };
+
+    img._skeletonHandlers = { onReady, onError };
 
     if (img.complete) {
       if (img.naturalWidth > 0) {
@@ -131,7 +140,7 @@ function initStorefrontApp() {
   }
 
   function initImageSkeletonSystem() {
-    const selector = '.food-img, .recipe-img, .food-modal-img, .promo-food-img, .offers-modal-food-img, .dish-card-img, .cart-item-img';
+    const selector = '.food-img, .recipe-img, .recent-order-img, .food-modal-img, .promo-food-img, .offers-modal-food-img, .dish-card-img, .cart-item-img';
     document.querySelectorAll(selector).forEach(setupImageSkeleton);
 
     if (window.MutationObserver) {
@@ -749,6 +758,9 @@ function initStorefrontApp() {
     });
 
     updateViewMoreUI(normFilter, totalMatches);
+    if (typeof renderRecentlyOrderedSection === 'function') {
+      renderRecentlyOrderedSection(normFilter);
+    }
   }
 
   if (btnViewMoreMenu) {
@@ -1283,6 +1295,8 @@ function initStorefrontApp() {
 
       if (menuViewMoreShade) menuViewMoreShade.style.display = 'none';
       if (menuShowLessWrap) menuShowLessWrap.style.display = 'none';
+      const recentSectionEl = document.getElementById('recently-ordered-section');
+      if (recentSectionEl) recentSectionEl.style.display = 'none';
 
       if (searchDebounceTimer) {
         clearTimeout(searchDebounceTimer);
@@ -1554,7 +1568,7 @@ function initStorefrontApp() {
       }
     }
 
-    const cards = document.querySelectorAll('.recipe-card');
+    const cards = document.querySelectorAll('.recipe-card, .recent-order-card');
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
       const addBtn = card.querySelector('.btn-add-cart');
@@ -1595,7 +1609,7 @@ function initStorefrontApp() {
           if (addBtn && addBtn.parentNode) {
             addBtn.parentNode.insertBefore(stepper, addBtn.nextSibling);
           } else {
-            const inner = card.querySelector('.recipe-card-inner') || card;
+            const inner = card.querySelector('.recipe-card-inner, .recent-order-card-inner') || card;
             inner.appendChild(stepper);
           }
         } else {
@@ -1880,6 +1894,7 @@ function initStorefrontApp() {
     }
 
     const subtotal = cart.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+    syncRecentlyOrderedDealUI(subtotal, dataService.getSettings());
 
     // Empty state handling
     if (cart.length === 0) {
@@ -2731,15 +2746,15 @@ function initStorefrontApp() {
       }
 
       // 4. Check if food card was clicked (for detail modal)
-      const card = e.target.closest('.recipe-card');
+      const card = e.target.closest('.recipe-card, .recent-order-card');
       if (card) {
         if (e.target.closest('.btn-glass-add') || e.target.closest('.btn-add-cart') || e.target.closest('.dish-action-slot') || e.target.closest('.dish-card-stepper')) return;
         try {
           const btn = card.querySelector('.btn-add-cart') || card.querySelector('[data-id]');
-          const id = btn?.getAttribute('data-id') || card.id?.replace(/^card-/, '');
-          const name = btn?.getAttribute('data-name') || card.querySelector('.recipe-title')?.textContent || 'Special Dish';
+          const id = btn?.getAttribute('data-id') || card.getAttribute('data-id') || card.id?.replace(/^card-/, '');
+          const name = btn?.getAttribute('data-name') || card.querySelector('.recipe-title, .recent-order-title')?.textContent || 'Special Dish';
           const price = parseFloat(btn?.getAttribute('data-price') || card.querySelector('.meta-price')?.textContent?.replace(/[^\d.]/g, '') || '70');
-          const image = btn?.getAttribute('data-image') || card.querySelector('.recipe-img')?.getAttribute('src') || '';
+          const image = btn?.getAttribute('data-image') || card.querySelector('.recipe-img, .recent-order-img')?.getAttribute('src') || '';
 
           const liveDish = (typeof dataService.getDishById === 'function' ? dataService.getDishById(id) : null) || dataService.getDishes().find(d => d.id === id);
           const dish = getEnrichedDishDetail(liveDish || { id, name, price, image });
@@ -3007,6 +3022,173 @@ function initStorefrontApp() {
         }
       }
     }
+    if (typeof renderRecentlyOrderedSection === 'function') {
+      renderRecentlyOrderedSection();
+    }
+  }
+
+  // Render customer-scoped "Your Recently Ordered" horizontal strip strictly from local cached/synced orders (0 extra DB queries)
+  function renderRecentlyOrderedSection(activeFilterOverride) {
+    const section = document.getElementById('recently-ordered-section');
+    const track = document.getElementById('recently-ordered-track');
+    const countEl = document.getElementById('recently-ordered-count');
+    if (!section || !track) return;
+
+    const rawFilter = typeof activeFilterOverride === 'string'
+      ? activeFilterOverride
+      : ((typeof pillsWrap !== 'undefined' && pillsWrap)
+          ? (pillsWrap.querySelector('.category-pill.active')?.getAttribute('data-filter') || 'all')
+          : 'all');
+    const normFilter = String(rawFilter || 'all').trim().toLowerCase() || 'all';
+    const searchEl = (typeof recipeSearchInput !== 'undefined' && recipeSearchInput)
+      ? recipeSearchInput
+      : document.getElementById('recipe-search-input');
+    const hasSearchQuery = Boolean(searchEl && searchEl.value.trim().length > 0);
+
+    if (normFilter !== 'all' || hasSearchQuery) {
+      section.style.display = 'none';
+      return;
+    }
+
+    const recentDishes = typeof dataService.getRecentlyOrderedDishes === 'function'
+      ? dataService.getRecentlyOrderedDishes(
+          currentUser?.id || null,
+          currentUser?.email || '',
+          typeof getCurrentUserPhone === 'function' ? getCurrentUserPhone() : '',
+          8
+        )
+      : [];
+
+    if (!recentDishes.length) {
+      section.style.display = 'none';
+      track.innerHTML = '';
+      if (countEl) countEl.textContent = '';
+      return;
+    }
+
+    const settings = dataService.getSettings();
+    const now = new Date();
+    const cartSubtotal = Array.isArray(cart)
+      ? cart.reduce((acc, it) => acc + ((Number(it.price) || 0) * (Number(it.quantity) || 1)), 0)
+      : 0;
+    const dealsEval = settings.unlockedDealsEnabled ? evaluateUnlockedDeals(cartSubtotal, settings) : null;
+    const cardsHtml = recentDishes.map((dish) => {
+      const safeId = escapeHtml(dish.id);
+      const safeCat = escapeHtml(dish.category || 'all');
+      const safeName = escapeHtml(dish.name || 'Special Dish');
+      const rawImg = sanitizeDishImageUrl(dish.image) || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=600&q=80';
+      const safeImg = escapeHtml(rawImg);
+      const isComboItem = typeof dataService.isComboDish === 'function'
+        ? dataService.isComboDish(dish)
+        : Boolean(dish.isCombo || dish.category === 'combos');
+      const isSoldOut = dish.inStock === false;
+      const sched = typeof getDishScheduleStatus === 'function' ? getDishScheduleStatus(dish, now) : { isAvailable: true };
+      const isSchedCountdown = Boolean(sched && !sched.isAvailable && sched.status === 'countdown');
+      const isSchedInactive = Boolean(sched && !sched.isAvailable && sched.status !== 'countdown');
+      const isUnavailable = isSoldOut || isSchedCountdown || isSchedInactive;
+
+      const qtyBadgeNum = Math.max(1, Number(dish.lastOrderedQty) || 1);
+      let badgeHtml = `<span class="recent-order-badge"><i class="fa-solid fa-rotate-left"></i> Last x${qtyBadgeNum}</span>`;
+      if (isComboItem) {
+        badgeHtml = `<span class="recent-order-badge"><i class="fa-solid fa-box-open"></i> Combo Deal</span>`;
+      } else if (dish.badge) {
+        badgeHtml = `<span class="recent-order-badge">${escapeHtml(dish.badge)}</span>`;
+      }
+
+      let statusHtml = '';
+      if (isSoldOut) {
+        statusHtml = '<span class="recent-order-status-pill">Sold Out</span>';
+      } else if (isSchedCountdown) {
+        statusHtml = `<span class="recent-order-status-pill">${escapeHtml(sched.countdownText || 'Opens soon')}</span>`;
+      } else if (isSchedInactive) {
+        statusHtml = `<span class="recent-order-status-pill">${escapeHtml(sched.message || 'Not serving now')}</span>`;
+      }
+
+      const basePrice = Math.round(Number(dish.price) || 0);
+      const origPrice = (dish.originalPrice && Number(dish.originalPrice) > basePrice) ? Math.round(Number(dish.originalPrice)) : 0;
+      const priceHtml = buildRecentOrderPriceHtml(basePrice, origPrice, dealsEval, settings);
+
+      const btnLabel = isSoldOut ? 'Sold Out' : (isUnavailable ? 'Later' : 'Add +');
+      const cardClass = [
+        'recent-order-card',
+        isComboItem ? 'is-combo-dish' : '',
+        isSoldOut ? 'is-out-of-stock' : '',
+        isSchedCountdown ? 'is-scheduled-countdown' : '',
+        isSchedInactive ? 'is-scheduled-inactive' : ''
+      ].filter(Boolean).join(' ');
+
+      return `
+        <article class="${cardClass}" data-id="${safeId}" data-category="${safeCat}" data-base-price="${basePrice}" data-original-price="${origPrice}">
+          <div class="recent-order-card-inner">
+            <img src="${safeImg}" alt="${safeName}" class="recent-order-img" loading="lazy" />
+            <div class="recent-order-overlay"></div>
+            <div class="recent-order-top-row">
+              ${badgeHtml}
+            </div>
+            <div class="recent-order-body">
+              ${statusHtml}
+              <h4 class="recent-order-title">${safeName}</h4>
+              <div class="recent-order-footer">
+                <div class="recent-order-price-wrap">${priceHtml}</div>
+                <div class="recent-order-action">
+                  <button
+                    type="button"
+                    class="btn-glass-add btn-add-cart"
+                    data-id="${safeId}"
+                    data-name="${safeName}"
+                    data-price="${basePrice}"
+                    data-image="${safeImg}"
+                    ${isUnavailable ? 'disabled aria-disabled="true"' : ''}
+                  >${btnLabel}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    track.innerHTML = cardsHtml;
+    if (typeof setupImageSkeleton === 'function') {
+      track.querySelectorAll('.recent-order-img').forEach(setupImageSkeleton);
+    }
+    if (countEl) {
+      countEl.textContent = `${recentDishes.length} ${recentDishes.length === 1 ? 'dish' : 'dishes'}`;
+    }
+    section.style.display = '';
+    if (typeof updateMenuCardSteppers === 'function') {
+      updateMenuCardSteppers();
+    }
+  }
+
+  function buildRecentOrderPriceHtml(basePrice, origPrice, dealsEval, settings) {
+    if (settings && settings.unlockedDealsEnabled && dealsEval) {
+      const discountPct = Number(dealsEval.discountPct || settings.unlockedDealsDiscountPct || 15);
+      const dealPrice = Math.max(1, Math.round(basePrice * (1 - discountPct / 100)));
+      const minOrder = Number(dealsEval.minSpend || settings.unlockedDealsMinOrder || 299);
+      const lockIcon = dealsEval.isUnlocked ? 'fa-lock-open' : 'fa-lock';
+      const lockColorStyle = dealsEval.isUnlocked ? ' color:#10b981;' : '';
+      return `<span class="meta-deal-price" title="Unlock on orders ₹${minOrder}+"><i class="fa-solid ${lockIcon}" style="font-size:0.75em; margin-right:3px;${lockColorStyle}"></i>₹${dealPrice}</span> <span class="meta-strike-price">₹${basePrice}</span>`;
+    }
+    if (origPrice > basePrice) {
+      return `<span class="meta-price">₹${basePrice}</span> <span class="meta-strike-price">₹${origPrice}</span>`;
+    }
+    return `<span class="meta-price">₹${basePrice}</span>`;
+  }
+
+  function syncRecentlyOrderedDealUI(subtotal = 0, settings = (typeof dataService !== 'undefined' && dataService.getSettings) ? dataService.getSettings() : {}) {
+    const track = document.getElementById('recent-orders-track');
+    if (!track) return;
+    const isDealsEnabled = Boolean(settings && settings.unlockedDealsEnabled);
+    const dealsEval = isDealsEnabled ? evaluateUnlockedDeals(subtotal, settings) : null;
+    track.querySelectorAll('.recent-order-card').forEach(card => {
+      const wrap = card.querySelector('.recent-order-price-wrap');
+      if (!wrap) return;
+      const basePrice = Math.round(Number(card.getAttribute('data-base-price')) || 0);
+      const origPrice = Math.round(Number(card.getAttribute('data-original-price')) || 0);
+      if (basePrice <= 0) return;
+      wrap.innerHTML = buildRecentOrderPriceHtml(basePrice, origPrice, dealsEval, settings);
+    });
   }
   try {
     syncStorefrontCardsWithDataService();
@@ -7454,6 +7636,7 @@ function initStorefrontApp() {
       }
       renderCartOrderLimitUI();
     updateLiveOrderTrackPulse();
+      if (typeof renderRecentlyOrderedSection === 'function') renderRecentlyOrderedSection();
     }
     if (e.key === 'quickbite_settings' || e.key === 'quickbite_settings_sync') {
       updateStoreStatusUI();
@@ -7528,6 +7711,7 @@ function initStorefrontApp() {
       }
       renderCartOrderLimitUI();
     updateLiveOrderTrackPulse();
+      if (typeof renderRecentlyOrderedSection === 'function') renderRecentlyOrderedSection();
     }
     if (e.detail?.type === 'settings') {
       updateStoreStatusUI();
@@ -10723,6 +10907,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
           updateLiveOrderTrackPulse();
           renderMyOrdersList();
           updateProfileStats();
+          if (typeof renderRecentlyOrderedSection === 'function') renderRecentlyOrderedSection();
         });
       });
       dataService.syncCustomerOrdersFromSupabase(user.id, user.email, getCurrentUserPhone()).then(() => {
@@ -10730,10 +10915,13 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
         updateLiveOrderTrackPulse();
         renderMyOrdersList();
         updateProfileStats();
+        if (typeof renderRecentlyOrderedSection === 'function') renderRecentlyOrderedSection();
       });
+      if (typeof renderRecentlyOrderedSection === 'function') renderRecentlyOrderedSection();
     } else {
       syncActiveUserContextToStorage();
       updateProfileStats();
+      if (typeof renderRecentlyOrderedSection === 'function') renderRecentlyOrderedSection();
       if (btnLogin) btnLogin.style.display = 'none';
       if (userProfileMenu) userProfileMenu.style.display = 'none';
       if (userDropdownCard) userDropdownCard.classList.remove('show');

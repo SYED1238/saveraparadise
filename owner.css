@@ -1747,6 +1747,121 @@ body.owner-body .lock-footer-info {
 .rider-name-box {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+}
+
+.rider-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fleet-duty-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.fleet-duty-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid var(--owner-border);
+  background: #F8FAFC;
+  color: #334155;
+}
+
+.fleet-duty-summary-chip.online {
+  background: #ECFDF5;
+  border-color: #A7F3D0;
+  color: #065F46;
+}
+
+.fleet-duty-summary-chip.offline {
+  background: #FEF3C7;
+  border-color: #FDE68A;
+  color: #92400E;
+}
+
+.fleet-duty-summary-chip.inactive {
+  background: #FEF2F2;
+  border-color: #FECACA;
+  color: #991B1B;
+}
+
+.rider-duty-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.3;
+  width: fit-content;
+  white-space: nowrap;
+}
+
+.rider-duty-badge .duty-dot,
+.fleet-duty-summary-chip .duty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rider-duty-badge.online,
+.fleet-duty-summary-chip.online .duty-dot {
+  --dot-color: #10B981;
+}
+
+.rider-duty-badge.online {
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+}
+
+.rider-duty-badge.online .duty-dot,
+.fleet-duty-summary-chip.online .duty-dot {
+  background: #10B981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.22);
+}
+
+.rider-duty-badge.offline {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FCD34D;
+}
+
+.rider-duty-badge.offline .duty-dot,
+.fleet-duty-summary-chip.offline .duty-dot {
+  background: #F59E0B;
+}
+
+.rider-duty-badge.inactive {
+  background: #F1F5F9;
+  color: #64748B;
+  border: 1px solid #CBD5E1;
+}
+
+.rider-duty-badge.inactive .duty-dot,
+.fleet-duty-summary-chip.inactive .duty-dot {
+  background: #94A3B8;
+}
+
+tr.rider-row-off-duty td {
+  background: rgba(248, 250, 252, 0.7);
+}
+
+.rider-card-mobile.is-off-duty {
+  opacity: 0.92;
 }
 
 .rider-name {
@@ -4040,26 +4155,31 @@ body.owner-body .lock-footer-info {
 
 .owner-nav-badge {
   position: absolute;
-  top: -2px;
-  right: -2px;
+  top: -4px;
+  right: -6px;
   background: #10B981;
   color: #FFF;
   font-size: 0.62rem;
   font-weight: 800;
-  min-width: 17px;
+  min-width: 18px;
   height: 17px;
   border-radius: 9999px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
+  padding: 0 5px;
   border: 2px solid #FFFFFF;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .owner-nav-badge.alert {
   background: #EF4444;
   animation: pulseOwnerAlert 1.5s infinite;
+}
+
+.owner-nav-badge.all-offline {
+  background: #F59E0B;
 }
 
 @keyframes pulseOwnerAlert {

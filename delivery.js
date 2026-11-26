@@ -81,6 +81,10 @@ const initDeliveryApp = () => {
   const DOORSTEP_UPI_ENABLED = true; // Enabled for dynamic PhonePe / UPI QR collection at customer doorstep
   let currentDoorstepPaymentMode = 'cash';
   const miniMapInstances = new Map();
+  let isRiderAlarmRinging = false;
+  let riderAlarmInterval = null;
+  const ringingParcelsQueue = [];
+  const knownDeliveryIds = new Set();
 
   // Rider Live GPS Coordinates (Default to Crispy Chicken Central Hub until phone GPS fix)
   const RIDER_GPS_STORAGE_KEY = 'quickbite_rider_gps_state';
@@ -369,6 +373,7 @@ const initDeliveryApp = () => {
         try { window.AndroidNative.setStaffAuthToken(token); } catch {}
       }
       dataService.setActiveRiderPin(cleanPin, rider);
+      syncDutyStateFromRiderProfile(rider);
       updateRiderProfileHeader();
       requestWakeLock();
       restoreRiderGpsState();
@@ -378,11 +383,15 @@ const initDeliveryApp = () => {
       }
       showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
       checkAndHandlePendingGpsResync();
-      Promise.allSettled([
-        dataService.syncOrdersFromSupabase(true),
-        dataService.syncSettingsFromSupabase(true),
-        dataService.syncRidersFromSupabase(true)
-      ]).finally(() => {
+      (async () => {
+        await dataService.syncPendingRiderDutyStatus().catch(() => {});
+        await Promise.allSettled([
+          dataService.syncOrdersFromSupabase(true),
+          dataService.syncSettingsFromSupabase(true),
+          dataService.syncRidersFromSupabase(true)
+        ]);
+      })().finally(() => {
+        syncDutyStateFromRiderProfile(dataService.getActiveRider());
         renderPortal();
       });
     }
@@ -432,6 +441,7 @@ const initDeliveryApp = () => {
         riderLockOverlay.classList.add('unlocked');
         riderLockOverlay.style.display = 'none';
       }
+      syncDutyStateFromRiderProfile(activeRider);
       updateRiderProfileHeader();
       requestWakeLock();
       if (restoreRiderGpsState()) {
@@ -440,11 +450,15 @@ const initDeliveryApp = () => {
       initRiderLiveGeolocation(true);
       renderPortal();
       checkAndHandlePendingGpsResync();
-      Promise.allSettled([
-        dataService.syncOrdersFromSupabase(true),
-        dataService.syncSettingsFromSupabase(true),
-        dataService.syncRidersFromSupabase(true)
-      ]).finally(() => {
+      (async () => {
+        await dataService.syncPendingRiderDutyStatus().catch(() => {});
+        await Promise.allSettled([
+          dataService.syncOrdersFromSupabase(true),
+          dataService.syncSettingsFromSupabase(true),
+          dataService.syncRidersFromSupabase(true)
+        ]);
+      })().finally(() => {
+        syncDutyStateFromRiderProfile(dataService.getActiveRider());
         renderPortal();
       });
     } else {
@@ -466,6 +480,8 @@ const initDeliveryApp = () => {
       localStorage.removeItem('quickbite_active_rider_id');
       if (clearCachedOrders) {
         localStorage.removeItem('quickbite_orders');
+        localStorage.removeItem('quickbite_rider_duty_on');
+        isDutyOn = true;
       }
     } catch {}
     if (clearCachedOrders) {
@@ -563,6 +579,7 @@ const initDeliveryApp = () => {
     }
 
     // Immediately calculate and display payout balance upon login
+    syncDutyStateFromRiderProfile(currentRider);
     updateRiderEarningsUI(currentRider);
   }
 
@@ -1131,38 +1148,82 @@ const initDeliveryApp = () => {
   // ========================================================
   // DUTY TOGGLE
   // ========================================================
-  if (riderDutyToggle) {
-    riderDutyToggle.checked = isDutyOn;
+  function applyRiderDutyUI(onDuty) {
+    isDutyOn = Boolean(onDuty);
+    try { localStorage.setItem('quickbite_rider_duty_on', String(isDutyOn)); } catch {}
+    if (riderDutyToggle) riderDutyToggle.checked = isDutyOn;
     const dutyLabel = document.getElementById('duty-toggle-label');
     if (dutyLabel) dutyLabel.textContent = isDutyOn ? 'On Duty' : 'On Break';
-    if (!isDutyOn) {
+    if (isDutyOn) {
+      if (riderStatusPill) riderStatusPill.className = 'rider-badge-status online';
+      if (riderStatusText) riderStatusText.textContent = 'Online • Active';
+    } else {
+      stopRiderAlarm();
       if (riderStatusPill) riderStatusPill.className = 'rider-badge-status offline';
       if (riderStatusText) riderStatusText.textContent = 'Offline • On Break';
     }
     if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
       try { window.AndroidNative.setDutyStatus(isDutyOn); } catch {}
     }
+  }
+
+  function syncDutyStateFromRiderProfile(rider) {
+    if (!rider) return;
+    const cleanPin = String(rider.pin || '').trim();
+    try {
+      const pendingRaw = localStorage.getItem('quickbite_rider_duty_pending_sync');
+      if (pendingRaw) {
+        const pending = JSON.parse(pendingRaw);
+        if (pending && String(pending.pin || '').trim() === cleanPin) {
+          return;
+        }
+      }
+    } catch {}
+    if (rider.status === 'online' || rider.status === 'offline') {
+      const serverDutyOn = rider.status !== 'offline';
+      const missingLsDuty = typeof localStorage !== 'undefined' && localStorage.getItem('quickbite_rider_duty_on') === null;
+      if (serverDutyOn !== isDutyOn || missingLsDuty) {
+        applyRiderDutyUI(serverDutyOn);
+      }
+    }
+  }
+
+  let dutyToggleSeq = 0;
+
+  if (riderDutyToggle) {
+    applyRiderDutyUI(isDutyOn);
 
     riderDutyToggle.addEventListener('change', (e) => {
-      isDutyOn = e.target.checked;
-      try { localStorage.setItem('quickbite_rider_duty_on', String(isDutyOn)); } catch {}
-      if (dutyLabel) dutyLabel.textContent = isDutyOn ? 'On Duty' : 'On Break';
-      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
-        try { window.AndroidNative.setDutyStatus(isDutyOn); } catch {}
+      const nextDutyOn = Boolean(e.target.checked);
+      const activeRider = dataService.getActiveRider();
+      if (!activeRider || !activeRider.pin) {
+        applyRiderDutyUI(!nextDutyOn);
+        showToast('⚠️ Please unlock the Rider Portal with your PIN first.', 'warning');
+        return;
       }
-      if (isDutyOn) {
-        riderStatusPill.className = 'rider-badge-status online';
-        riderStatusText.textContent = 'Online • Active';
+
+      const mySeq = ++dutyToggleSeq;
+      applyRiderDutyUI(nextDutyOn);
+      if (nextDutyOn) {
         if (getSystemNotificationPermission() === 'default') {
           requestSystemNotificationPermission().catch(() => {});
         }
         showToast('🟢 You are now Online and receiving delivery tasks!', 'success');
       } else {
-        stopRiderAlarm();
-        riderStatusPill.className = 'rider-badge-status offline';
-        riderStatusText.textContent = 'Offline • On Break';
         showToast('⏸️ You are now Offline. No new tasks will be assigned.', 'info');
       }
+
+      dataService.setRiderDutyStatus(activeRider.pin, nextDutyOn).then((res) => {
+        if (mySeq !== dutyToggleSeq) return;
+        if (res && !res.success) {
+          if (!res.queued) {
+            applyRiderDutyUI(!nextDutyOn);
+            showToast(`⚠️ ${res.error || 'Unable to update duty status on server'}`, 'warning');
+          } else {
+            showToast('⏳ Offline: Duty status saved locally and will sync when connected.', 'info');
+          }
+        }
+      }).catch(() => {});
     });
   }
 
@@ -3918,11 +3979,14 @@ const initDeliveryApp = () => {
     btnManualRefresh.addEventListener('click', async () => {
       btnManualRefresh.classList.add('spinning');
       try {
+        await dataService.syncPendingRiderDutyStatus().catch(() => {});
         await Promise.allSettled([
           dataService.syncOrdersFromSupabase(true),
-          dataService.syncSettingsFromSupabase(true)
+          dataService.syncSettingsFromSupabase(true),
+          dataService.syncRidersFromSupabase(true)
         ]);
       } catch {}
+      syncDutyStateFromRiderProfile(dataService.getActiveRider());
       renderPortal();
       showToast('🔄 Live orders updated!', 'info');
       setTimeout(() => {
@@ -4015,9 +4079,7 @@ const initDeliveryApp = () => {
     } catch {}
   }
 
-  let isRiderAlarmRinging = false;
-  let riderAlarmInterval = null;
-  const ringingParcelsQueue = [];
+  // Alarm state variables declared at top of initDeliveryApp to avoid TDZ in applyRiderDutyUI / lockRiderPortalState
 
   function syncNativeAcknowledgedRiderAlarms(extraIds = null) {
     const nativeIds = parseNativeRiderAcknowledgedIds(extraIds);
@@ -4173,7 +4235,7 @@ const initDeliveryApp = () => {
     };
   }
 
-  const knownDeliveryIds = new Set();
+  // knownDeliveryIds initialized at top of initDeliveryApp
   const initOrders = dataService.getOrders();
   if (Array.isArray(initOrders)) {
     initOrders.forEach(o => { 

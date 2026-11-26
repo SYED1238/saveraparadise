@@ -1804,10 +1804,13 @@ input:checked + .slider:before {
 
   @media (max-width: 420px) {
     .rider-toggle-duty .duty-label {
-      display: none;
+      display: inline;
+      font-size: 0.68rem;
+      white-space: nowrap;
     }
     .rider-toggle-duty {
-      padding: 3px 6px;
+      padding: 4px 7px;
+      gap: 5px;
     }
     .rider-greeting h2 {
       font-size: 0.98rem;

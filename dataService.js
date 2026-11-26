@@ -88,6 +88,34 @@ export function getShiftStartTimeMs(refTime = Date.now()) {
   return shiftStart.getTime();
 }
 
+const IST_SHIFT_OFFSET_MS = 4.5 * 60 * 60 * 1000; // UTC+5:30 minus 1:00 AM IST daily shift boundary
+
+export function getOperationalDayKey(refTime = Date.now()) {
+  const num = Number(refTime);
+  const safeMs = Number.isFinite(num) ? num : Date.now();
+  return new Date(safeMs + IST_SHIFT_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+export function normalizeOperationalDayKey(val) {
+  if (!val || typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+export function resolveEffectiveDishInStock(dish, settings = null, refTime = Date.now()) {
+  if (!dish) return true;
+  const rawInStock = dish.is_available !== false && dish.in_stock !== false && dish.inStock !== false;
+  if (rawInStock) return true;
+  if (!settings || settings.returnStockEveryDay !== true) return false;
+  const todayKey = getOperationalDayKey(refTime);
+  const outDay = normalizeOperationalDayKey(dish.stockOutDate ?? dish.stock_out_date);
+  const enabledDay = normalizeOperationalDayKey(settings.returnStockEnabledDate);
+  const effectiveAnchor = (enabledDay && (!outDay || enabledDay > outDay))
+    ? enabledDay
+    : (outDay || todayKey);
+  return todayKey > effectiveAnchor;
+}
+
 export function parseTimestampMs(val) {
   if (!val) return Date.now();
   if (typeof val === 'number') return isNaN(val) ? Date.now() : val;
@@ -227,7 +255,10 @@ export const DEFAULT_SETTINGS = {
   // Kitchen Alarm Sound Engine: 'r2_custom' (Funk Criminal) | 'classic_chime' (Synthesized POS bell)
   kitchenAlarmMode: 'r2_custom',
   // Kitchen Dispatch Mode: true = 'accepted' orders directly advance to 'ready_for_pickup' and alarm riders; false = 2-step (accepted -> cooking -> ready_for_pickup)
-  directDispatchOnPrep: false
+  directDispatchOnPrep: false,
+  // Daily Stock Auto-Return: true = dishes marked Out of Stock today automatically return In Stock the next day (1:00 AM IST)
+  returnStockEveryDay: false,
+  returnStockEnabledDate: null
 };
 
 // ========================================================
@@ -331,6 +362,13 @@ export function isComboCategory(cat) {
     /\bcombos?\b/i.test(slug) ||
     /\bcombos?\b/i.test(name)
   );
+}
+
+export function normalizeSortOrder(val) {
+  if (val === null || val === undefined || val === '') return null;
+  const num = Number(val);
+  if (!Number.isFinite(num) || num < 1) return null;
+  return Math.floor(num);
 }
 
 export function isComboDish(dish) {
@@ -2634,6 +2672,8 @@ class QuickBiteDataService {
     // Persistent cross-tab broadcast channel & cross-device shared realtime channel
     this.syncBroadcastChannel = null;
     this.sharedBroadcastChannel = null;
+    this._lastRemoteDutyUpdates = new Map();
+    this._dutySyncInFlightByPin = new Map();
     try {
       if (typeof BroadcastChannel !== 'undefined' && typeof window !== 'undefined') {
         this.syncBroadcastChannel = new BroadcastChannel('quickbite_sync_channel');
@@ -2650,6 +2690,32 @@ class QuickBiteDataService {
                 }
               }
             }
+            if (data.type === 'orders') {
+              this.ordersCache = null;
+            } else if (data.type === 'dishes') {
+              this.dishesCache = null;
+            } else if (data.type === 'rider_duty_updated') {
+              const nextSt = data.status === 'offline' ? 'offline' : (data.status === 'online' ? 'online' : null);
+              const tId = String(data.riderId || '').trim();
+              if (nextSt && tId) {
+                this._lastRemoteDutyUpdates.set(tId, { status: nextSt, ts: Date.now() });
+                if (Array.isArray(this.ridersCache)) {
+                  const mIdx = this.ridersCache.findIndex(r => r && (String(r.id || '').trim() === tId || (r.pin && `rider-${String(r.pin).trim()}` === tId)));
+                  if (mIdx >= 0 && this.ridersCache[mIdx].status !== 'inactive') {
+                    this.ridersCache[mIdx] = { ...this.ridersCache[mIdx], status: nextSt };
+                  } else if (this.portalType !== 'admin') {
+                    this.ridersCache = null;
+                  }
+                }
+              } else if (this.portalType !== 'admin') {
+                this.ridersCache = null;
+              }
+            } else if (data.type === 'riders' || data.type === 'rider_session' || data.type === 'cash_settled' || data.type === 'payout_paid' || data.type === 'cash_handover_requested') {
+              const hasMaskedCache = Array.isArray(this.ridersCache) && this.ridersCache.some(r => r && r.pin_masked);
+              if (this.portalType !== 'admin' || !hasMaskedCache) {
+                this.ridersCache = null;
+              }
+            }
             window.dispatchEvent(new CustomEvent('quickbite_data_changed', { detail: data }));
           }
         };
@@ -2663,7 +2729,36 @@ class QuickBiteDataService {
             this.ordersCache = null;
           }
           if (!e.key || e.key === 'quickbite_riders') {
-            this.ridersCache = null;
+            const hasMaskedCache = Array.isArray(this.ridersCache) && this.ridersCache.some(r => r && r.pin_masked);
+            if (this.portalType === 'admin' && hasMaskedCache && e.newValue) {
+              try {
+                const parsed = JSON.parse(e.newValue);
+                if (Array.isArray(parsed)) {
+                  const byId = new Map();
+                  parsed.forEach(item => {
+                    if (!item) return;
+                    const keyId = String(item.id || (item.pin ? `rider-${String(item.pin).trim()}` : '')).trim();
+                    if (keyId) byId.set(keyId, item);
+                  });
+                  this.ridersCache = this.ridersCache.map(existing => {
+                    if (!existing) return existing;
+                    const match = byId.get(String(existing.id || '').trim());
+                    if (!match) return existing;
+                    return {
+                      ...existing,
+                      status: match.status || existing.status,
+                      cashSettledAt: match.cashSettledAt ?? existing.cashSettledAt,
+                      payoutPaidAt: match.payoutPaidAt ?? existing.payoutPaidAt,
+                      payoutAmountPaid: match.payoutAmountPaid ?? existing.payoutAmountPaid,
+                      cashHandoverStatus: match.cashHandoverStatus ?? existing.cashHandoverStatus,
+                      cashHandoverAmount: match.cashHandoverAmount ?? existing.cashHandoverAmount
+                    };
+                  });
+                }
+              } catch {}
+            } else {
+              this.ridersCache = null;
+            }
           }
           if (!e.key || e.key === STORAGE_KEYS.DISHES) {
             this.dishesCache = null;
@@ -2673,6 +2768,9 @@ class QuickBiteDataService {
         window.addEventListener('online', () => {
           console.log('[DataService] Network online detected. Triggering offline queue sync...');
           this.syncOfflinePendingOrders();
+          if (this.portalType === 'delivery') {
+            this.syncPendingRiderDutyStatus().catch(() => {});
+          }
           const isRealtimeHealthy = this.realtimeChannel && this.realtimeChannel.state === 'joined';
           const isBroadcastHealthy = this.sharedBroadcastChannel && this.sharedBroadcastChannel.state === 'joined';
           if (!isRealtimeHealthy || !isBroadcastHealthy) {
@@ -2682,6 +2780,10 @@ class QuickBiteDataService {
           if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
             if (this.isStaffAuthorized()) {
               this.syncOrdersFromSupabase(true);
+              if (this.portalType === 'delivery') {
+                this.syncPendingRiderDutyStatus().catch(() => {});
+              }
+              this.syncRidersFromSupabase(true).catch(() => {});
             }
           } else {
             this.syncCustomerActiveOrders(true);
@@ -2945,6 +3047,10 @@ class QuickBiteDataService {
       }
     }
     await Promise.allSettled(syncTasks);
+    this.refreshDishesEffectiveStock();
+    if (this.portalType === 'admin' && this.isStaffAuthorized() && this._lastSettingsSyncTime > 0) {
+      this.reconcileDailyStockIfNeeded().catch(() => {});
+    }
   }
 
   async syncCategoriesFromSupabase(force = false) {
@@ -2973,6 +3079,7 @@ class QuickBiteDataService {
             const existingImg = sanitizeCategoryImageUrl(customImg);
             return {
               ...remoteCat,
+              sortOrder: normalizeSortOrder(remoteCat.sort_order ?? remoteCat.sortOrder),
               image: existingImg
             };
           });
@@ -3012,11 +3119,21 @@ class QuickBiteDataService {
             return;
           }
 
+          if (this._isSyncingSettings) {
+            try { await this._isSyncingSettings; } catch {}
+          }
           const localDishes = this.getDishes();
           const localMap = new Map(localDishes.map(d => [String(d.id), d]));
+          const currentSettings = this.getSettings();
           const mapped = data.map(d => {
             const localMatch = localMap.get(String(d.id));
             const finalImage = sanitizeDishImageUrl(d.image) || 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=80';
+            const rawInStock = d.in_stock !== false;
+            const stockOutDate = normalizeOperationalDayKey(d.stock_out_date !== undefined ? d.stock_out_date : localMatch?.stockOutDate) || null;
+            const effectiveInStock = resolveEffectiveDishInStock(
+              { inStock: rawInStock, stockOutDate },
+              currentSettings
+            );
             const mappedItem = {
               id: d.id,
               name: d.name,
@@ -3031,6 +3148,9 @@ class QuickBiteDataService {
                 : (typeof localMatch?.isCombo === 'boolean'
                     ? localMatch.isCombo
                     : (isComboCategory({ slug: d.category, name: d.category_name }) || /\bcombos?\b/i.test(String(d.badge || '')))),
+              sortOrder: (d.sort_order !== undefined)
+                ? normalizeSortOrder(d.sort_order)
+                : normalizeSortOrder(localMatch?.sortOrder),
               rating: '',
               image: finalImage,
               badge: d.badge || '',
@@ -3038,7 +3158,9 @@ class QuickBiteDataService {
               calories: d.calories || '',
               diet: d.diet || '',
               desc: d.description || d.desc || '',
-              inStock: d.in_stock !== false,
+              rawInStock,
+              stockOutDate,
+              inStock: effectiveInStock,
                 availableDays: (Array.isArray(d.available_days) && d.available_days.length > 0) ? d.available_days.map(x => String(x).toLowerCase()) : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
                 timeRestricted: Boolean(d.time_restricted),
                 availableFrom: d.available_from || '',
@@ -3058,6 +3180,9 @@ class QuickBiteDataService {
           this.populateUploadedImagesFromDishes();
           this.isSupabaseConnected = true;
           this._lastDishesSyncTime = Date.now();
+          if (this.portalType === 'admin' && this.isStaffAuthorized() && this._lastSettingsSyncTime > 0) {
+            this.reconcileDailyStockIfNeeded().catch(() => {});
+          }
         }
       } catch (e) {
         console.warn('[DataService] syncDishesFromSupabase error:', e);
@@ -3453,6 +3578,9 @@ class QuickBiteDataService {
                 this._directDispatchOnPrep = Boolean(raw.directDispatchOnPrep);
               }
               localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+              if (typeof this.refreshDishesEffectiveStock === 'function') {
+                this.refreshDishesEffectiveStock(merged);
+              }
               if (raw.payoutConfig && typeof raw.payoutConfig === 'object') {
                 try {
                   localStorage.setItem('quickbite_payout_config', JSON.stringify(raw.payoutConfig));
@@ -3784,6 +3912,36 @@ class QuickBiteDataService {
               source: 'supabase_broadcast'
             });
           }
+        })
+        .on('broadcast', { event: 'rider_duty_updated' }, (event) => {
+          if (this.portalType === 'customer' || !this.isStaffAuthorized()) return;
+          const payload = event?.payload || {};
+          const nextStatus = payload.status === 'offline' ? 'offline' : (payload.status === 'online' ? 'online' : null);
+          const targetId = String(payload.riderId || '').trim();
+          if (!nextStatus || !targetId) return;
+          if (!this._lastRemoteDutyUpdates) this._lastRemoteDutyUpdates = new Map();
+          this._lastRemoteDutyUpdates.set(targetId, { status: nextStatus, ts: Date.now() });
+          try {
+            const riders = this.getRiders();
+            const idx = riders.findIndex(r => r && (String(r.id || '').trim() === targetId || (r.pin && `rider-${String(r.pin).trim()}` === targetId)));
+            if (idx >= 0 && riders[idx].status !== 'inactive') {
+              riders[idx] = { ...riders[idx], status: nextStatus };
+              this.ridersCache = riders;
+              try {
+                const hasMasked = riders.some(x => x && x.pin_masked);
+                if (!hasMasked) {
+                  localStorage.setItem('quickbite_riders', JSON.stringify(riders));
+                }
+              } catch {}
+              this.notifyChange('riders', {
+                action: 'rider_duty_updated',
+                riderId: targetId,
+                status: nextStatus,
+                source: 'supabase_broadcast'
+              });
+            }
+          } catch {}
+          this.syncRidersFromSupabase(true).catch(() => {});
         })
         .on('broadcast', { event: 'payout_config_updated' }, (event) => {
           if (this.portalType === 'customer' || !this.isStaffAuthorized()) return;
@@ -4407,9 +4565,10 @@ class QuickBiteDataService {
             await this.syncOrdersFromSupabase(this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner');
             if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
               await this.syncSettingsFromSupabase().catch(() => {});
-              if (this.portalType !== 'admin') {
-                await this.syncRidersFromSupabase().catch(() => {});
+              if (this.portalType === 'delivery') {
+                await this.syncPendingRiderDutyStatus().catch(() => {});
               }
+              await this.syncRidersFromSupabase().catch(() => {});
             }
           }
         } else {
@@ -5232,7 +5391,7 @@ class QuickBiteDataService {
     if (typeof window === 'undefined') return null;
     try {
       let targetRole = null;
-      if (this.portalType === 'delivery' || action === 'sync_rider_profile' || action === 'request_cash_handover' || action === 'rider_at_doorstep' || action === 'cancel_doorstep_wait' || action === 'claim_order' || action === 'assign_order') {
+      if (this.portalType === 'delivery' || action === 'sync_rider_profile' || action === 'request_cash_handover' || action === 'rider_at_doorstep' || action === 'cancel_doorstep_wait' || action === 'claim_order' || action === 'assign_order' || (action === 'set_rider_duty' && this.portalType !== 'owner' && this.portalType !== 'admin')) {
         targetRole = 'rider';
       } else if (this.portalType === 'owner') {
         targetRole = 'owner';
@@ -5376,6 +5535,9 @@ class QuickBiteDataService {
               this._directDispatchOnPrep = Boolean(raw.directDispatchOnPrep);
             }
             localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(merged));
+            if (typeof this.refreshDishesEffectiveStock === 'function') {
+              this.refreshDishesEffectiveStock(merged);
+            }
             if (raw.payoutConfig && typeof raw.payoutConfig === 'object') {
               try {
                 localStorage.setItem('quickbite_payout_config', JSON.stringify(raw.payoutConfig));
@@ -5607,6 +5769,14 @@ class QuickBiteDataService {
   _sortCategoriesList(list) {
     if (!Array.isArray(list)) return [];
     return list.slice().sort((a, b) => {
+      const orderA = normalizeSortOrder(a?.sortOrder ?? a?.sort_order);
+      const orderB = normalizeSortOrder(b?.sortOrder ?? b?.sort_order);
+      if (orderA !== null && orderB !== null && orderA !== orderB) {
+        return orderA - orderB;
+      }
+      if (orderA !== null && orderB === null) return -1;
+      if (orderA === null && orderB !== null) return 1;
+
       const comboA = isComboCategory(a) ? 0 : 1;
       const comboB = isComboCategory(b) ? 0 : 1;
       if (comboA !== comboB) return comboA - comboB;
@@ -5623,18 +5793,19 @@ class QuickBiteDataService {
         localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES));
       }
       const customImages = this.getCategoryImages();
-      // Enrich categories with user custom photos first, then default photos, keeping Combos first
+      // Enrich categories with user custom photos first, then default photos, keeping explicit sortOrder & Combos first
       const enriched = list.map(cat => {
+        const sortOrder = normalizeSortOrder(cat.sortOrder ?? cat.sort_order);
         const customImg = (customImages[cat.id] || (cat.slug ? customImages[cat.slug] : '') || cat.image || '').trim();
         if (customImg && !customImg.includes('unsplash.com')) {
-          return { ...cat, image: sanitizeCategoryImageUrl(customImg) };
+          return { ...cat, sortOrder, image: sanitizeCategoryImageUrl(customImg) };
         }
         const match = DEFAULT_CATEGORIES.find(d => d.id === cat.id || d.slug === cat.slug);
         if (match && match.image && !match.image.includes('unsplash.com')) {
-          return { ...cat, image: sanitizeCategoryImageUrl(match.image) };
+          return { ...cat, sortOrder, image: sanitizeCategoryImageUrl(match.image) };
         }
         const canonical = CANONICAL_CATEGORY_IMAGES[cat.slug] || CANONICAL_CATEGORY_IMAGES[cat.id] || '';
-        return { ...cat, image: sanitizeCategoryImageUrl(canonical || cat.image || '') };
+        return { ...cat, sortOrder, image: sanitizeCategoryImageUrl(canonical || cat.image || '') };
       });
       return this._sortCategoriesList(enriched);
     } catch {
@@ -5721,12 +5892,14 @@ class QuickBiteDataService {
       };
     }
     const imageVal = sanitizeCategoryImageUrl((category.image || '').trim());
+    const sortOrder = normalizeSortOrder(category.sortOrder ?? category.sort_order);
     const newCat = {
       id: (category.id && String(category.id).trim()) ? String(category.id).trim() : ('cat-' + Date.now()),
       name: category.name.trim(),
       emoji: category.emoji || '🍽️',
       image: imageVal,
-      slug: slug
+      slug: slug,
+      sortOrder
     };
     const prevCatImages = this.getCategoryImages();
     if (newCat.image) {
@@ -5740,7 +5913,8 @@ class QuickBiteDataService {
       id: newCat.id,
       name: newCat.name,
       emoji: newCat.emoji,
-      slug: newCat.slug
+      slug: newCat.slug,
+      sort_order: newCat.sortOrder
     };
     if (newCat.image) payload.image = newCat.image;
 
@@ -5784,7 +5958,6 @@ class QuickBiteDataService {
         this.saveCategoryImage(list[idx].id, sanitized)?.catch?.(() => {});
         if (list[idx].slug) this.saveCategoryImage(list[idx].slug, sanitized)?.catch?.(() => {});
       }
-      this.saveCategories(list);
 
       // Cascade category name change to dishes
       let dishesChanged = false;
@@ -5805,6 +5978,12 @@ class QuickBiteDataService {
         slug: list[idx].slug
       };
       if (list[idx].image !== undefined) updatePayload.image = list[idx].image;
+      if (updatedData.sortOrder !== undefined || updatedData.sort_order !== undefined) {
+        const normalizedOrder = normalizeSortOrder(updatedData.sortOrder ?? updatedData.sort_order);
+        list[idx].sortOrder = normalizedOrder;
+        updatePayload.sort_order = normalizedOrder;
+      }
+      this.saveCategories(list);
 
       const serverPromise = (async () => {
         try {
@@ -5837,6 +6016,33 @@ class QuickBiteDataService {
       return result;
     }
     return null;
+  }
+
+  async updateCategorySortOrder(id, sortOrder) {
+    const list = this.getCategories();
+    const idx = list.findIndex(c => c.id === id || c.slug === id);
+    if (idx === -1) return null;
+
+    const normalized = normalizeSortOrder(sortOrder);
+    const prevCategories = list.map(c => ({ ...c }));
+    list[idx] = { ...list[idx], sortOrder: normalized };
+    this.saveCategories(list);
+
+    try {
+      if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+        await this._adminStoreAction('update_category', { id: list[idx].id, updates: { sort_order: normalized } });
+      } else if (supabase) {
+        const { error } = await supabase.from('categories').update({ sort_order: normalized }).eq('id', list[idx].id);
+        if (error) console.warn('[DataService] Direct supabase updateCategorySortOrder error:', error.message);
+      }
+    } catch (err) {
+      console.warn('[DataService] updateCategorySortOrder server error:', err?.message || err);
+      if (this.isStaffAuthorized()) {
+        this.saveCategories(prevCategories);
+        throw err;
+      }
+    }
+    return list[idx];
   }
 
   deleteCategory(id) {
@@ -5921,6 +6127,14 @@ class QuickBiteDataService {
     if (!Array.isArray(list)) return [];
     const defaultDishOrderMap = new Map(DEFAULT_DISHES.map((dish, i) => [dish.id, i]));
     return list.slice().sort((a, b) => {
+      const orderA = normalizeSortOrder(a?.sortOrder ?? a?.sort_order);
+      const orderB = normalizeSortOrder(b?.sortOrder ?? b?.sort_order);
+      if (orderA !== null && orderB !== null && orderA !== orderB) {
+        return orderA - orderB;
+      }
+      if (orderA !== null && orderB === null) return -1;
+      if (orderA === null && orderB !== null) return 1;
+
       const comboRankA = this._getDishComboPriority(a);
       const comboRankB = this._getDishComboPriority(b);
       if (comboRankA !== comboRankB) return comboRankA - comboRankB;
@@ -5938,7 +6152,34 @@ class QuickBiteDataService {
   }
 
   getDishes() {
+    const currentSettings = this.getSettings();
+    const todayKey = getOperationalDayKey();
+    const settingsSig = `${Boolean(currentSettings?.returnStockEveryDay)}|${currentSettings?.returnStockEnabledDate || ''}|${todayKey}`;
+
     if (this.dishesCache && Array.isArray(this.dishesCache) && this.dishesCache.length > 0) {
+      if (this._lastDishesEffectiveSig !== settingsSig) {
+        let didChangeStock = false;
+        this.dishesCache = this.dishesCache.map(d => {
+          const rawInStock = d.rawInStock !== undefined ? d.rawInStock !== false : (d.in_stock !== false && d.inStock !== false);
+          const stockOutDate = normalizeOperationalDayKey(d.stockOutDate ?? d.stock_out_date) || null;
+          const effectiveInStock = resolveEffectiveDishInStock({ inStock: rawInStock, stockOutDate }, currentSettings);
+          if (Boolean(d.inStock !== false) !== effectiveInStock) {
+            didChangeStock = true;
+          }
+          return {
+            ...d,
+            rawInStock,
+            stockOutDate,
+            inStock: effectiveInStock
+          };
+        });
+        this._lastDishesEffectiveSig = settingsSig;
+        if (didChangeStock) {
+          try {
+            localStorage.setItem(STORAGE_KEYS.DISHES, JSON.stringify(this.dishesCache));
+          } catch {}
+        }
+      }
       return this.dishesCache;
     }
     let list = null;
@@ -5960,15 +6201,24 @@ class QuickBiteDataService {
       return d;
     });
     list = this._sortDishesList(list);
-    this.dishesCache = list.map(d => ({
-      ...d,
-      isCombo: isComboDish(d),
-      image: sanitizeDishImageUrl(d.image),
-        availableDays: (Array.isArray(d.availableDays) && d.availableDays.length > 0) ? d.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-        timeRestricted: Boolean(d.timeRestricted),
-        availableFrom: d.availableFrom || '',
-        availableTo: d.availableTo || ''
-    }));
+    this.dishesCache = list.map(d => {
+      const rawInStock = d.rawInStock !== undefined ? d.rawInStock !== false : (d.in_stock !== false && d.inStock !== false);
+      const stockOutDate = normalizeOperationalDayKey(d.stockOutDate ?? d.stock_out_date) || null;
+      return {
+        ...d,
+        rawInStock,
+        stockOutDate,
+        inStock: resolveEffectiveDishInStock({ inStock: rawInStock, stockOutDate }, currentSettings),
+        isCombo: isComboDish(d),
+        sortOrder: normalizeSortOrder(d.sortOrder ?? d.sort_order),
+        image: sanitizeDishImageUrl(d.image),
+          availableDays: (Array.isArray(d.availableDays) && d.availableDays.length > 0) ? d.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+          timeRestricted: Boolean(d.timeRestricted),
+          availableFrom: d.availableFrom || '',
+          availableTo: d.availableTo || ''
+      };
+    });
+    this._lastDishesEffectiveSig = settingsSig;
     return this.dishesCache;
   }
 
@@ -6082,8 +6332,14 @@ class QuickBiteDataService {
   addDish(dishData) {
     const list = this.getDishes();
     const sanitizedImage = sanitizeDishImageUrl(dishData.image) || '/api/r2-image?key=dishes/crispy-chicken.jpg';
+    const rawInStock = dishData.inStock !== false;
+    const stockOutDate = rawInStock ? null : (normalizeOperationalDayKey(dishData.stockOutDate ?? dishData.stock_out_date) || getOperationalDayKey());
+    let dishIdTs = Date.now();
+    while (list.some(d => d && d.id === ('item-' + dishIdTs))) {
+      dishIdTs += 1;
+    }
     const newDish = {
-      id: 'item-' + Date.now(),
+      id: 'item-' + dishIdTs,
       createdAt: new Date().toISOString(),
       name: dishData.name.trim(),
       category: dishData.category,
@@ -6093,6 +6349,7 @@ class QuickBiteDataService {
       isCombo: (typeof dishData.isCombo === 'boolean')
         ? dishData.isCombo
         : (isComboCategory({ slug: dishData.category, name: dishData.categoryName }) || /\bcombos?\b/i.test(String(dishData.badge || ''))),
+      sortOrder: normalizeSortOrder(dishData.sortOrder ?? dishData.sort_order),
       rating: '',
       image: sanitizedImage,
       badge: dishData.badge !== undefined ? dishData.badge : '',
@@ -6101,7 +6358,9 @@ class QuickBiteDataService {
       calories: dishData.calories || '520 kcal',
       diet: dishData.diet || 'Fresh Daily',
       desc: dishData.desc || `${dishData.name} prepared fresh in our kitchen with premium ingredients.`,
-      inStock: dishData.inStock !== false,
+      rawInStock,
+      stockOutDate,
+      inStock: rawInStock,
         availableDays: (Array.isArray(dishData.availableDays) && dishData.availableDays.length > 0) ? dishData.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
         timeRestricted: Boolean(dishData.timeRestricted),
         availableFrom: (dishData.availableFrom || '').trim(),
@@ -6123,6 +6382,7 @@ class QuickBiteDataService {
       price: newDish.price,
       original_price: newDish.originalPrice !== undefined ? newDish.originalPrice : null,
       is_combo: newDish.isCombo,
+      sort_order: newDish.sortOrder,
       rating: newDish.rating,
       image: remoteDishImage,
       badge: newDish.badge,
@@ -6131,6 +6391,7 @@ class QuickBiteDataService {
       diet: newDish.diet,
       description: newDish.desc,
       in_stock: newDish.inStock,
+      stock_out_date: newDish.stockOutDate,
       available_days: newDish.availableDays,
       time_restricted: newDish.timeRestricted,
       available_from: newDish.availableFrom,
@@ -6171,7 +6432,21 @@ class QuickBiteDataService {
         updatedData.image = sanitizeDishImageUrl(updatedData.image);
       }
       const previousDish = { ...list[idx] };
-      list[idx] = { ...list[idx], ...updatedData };
+      const normalizedUpdated = { ...updatedData };
+      if (updatedData.sortOrder !== undefined || updatedData.sort_order !== undefined) {
+        normalizedUpdated.sortOrder = normalizeSortOrder(updatedData.sortOrder ?? updatedData.sort_order);
+      }
+      if (updatedData.inStock !== undefined) {
+        const nextStock = Boolean(updatedData.inStock !== false);
+        normalizedUpdated.inStock = nextStock;
+        normalizedUpdated.rawInStock = nextStock;
+        normalizedUpdated.stockOutDate = nextStock
+          ? null
+          : (normalizeOperationalDayKey(updatedData.stockOutDate ?? updatedData.stock_out_date) || getOperationalDayKey());
+      } else if (updatedData.stockOutDate !== undefined || updatedData.stock_out_date !== undefined) {
+        normalizedUpdated.stockOutDate = normalizeOperationalDayKey(updatedData.stockOutDate ?? updatedData.stock_out_date);
+      }
+      list[idx] = { ...list[idx], ...normalizedUpdated };
       this.saveDishes(list);
 
       const d = list[idx];
@@ -6182,12 +6457,14 @@ class QuickBiteDataService {
         price: d.price,
         original_price: d.originalPrice !== undefined ? d.originalPrice : null,
         is_combo: (typeof d.isCombo === 'boolean') ? d.isCombo : isComboDish(d),
+        sort_order: normalizeSortOrder(d.sortOrder ?? d.sort_order),
         badge: d.badge,
         time: d.time,
         calories: d.calories,
         diet: d.diet,
         description: d.desc,
-        in_stock: d.inStock,
+        in_stock: d.rawInStock !== undefined ? d.rawInStock !== false : d.inStock,
+        stock_out_date: normalizeOperationalDayKey(d.stockOutDate ?? d.stock_out_date) || null,
         available_days: d.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
         time_restricted: Boolean(d.timeRestricted),
         available_from: d.availableFrom || '',
@@ -6230,21 +6507,37 @@ class QuickBiteDataService {
     const dish = list.find(d => d.id === id);
     if (dish) {
       const prevStock = dish.inStock;
-      dish.inStock = !dish.inStock;
+      const prevRawStock = dish.rawInStock !== undefined ? dish.rawInStock !== false : (dish.inStock !== false);
+      const prevStockOutDate = dish.stockOutDate || null;
+      const nextInStock = !(dish.inStock !== false);
+      dish.inStock = nextInStock;
+      dish.rawInStock = nextInStock;
+      dish.stockOutDate = nextInStock ? null : getOperationalDayKey();
       this.saveDishes(list);
 
       const serverPromise = (async () => {
         try {
           if (this.isStaffAuthorized() && typeof window !== 'undefined') {
-            await this._adminStoreAction('toggle_stock', { id, in_stock: dish.inStock, dish });
+            await this._adminStoreAction('toggle_stock', {
+              id,
+              in_stock: dish.inStock,
+              stock_out_date: dish.stockOutDate,
+              dish: { ...dish, in_stock: dish.inStock, stock_out_date: dish.stockOutDate }
+            });
           } else if (supabase) {
-            const { error } = await supabase.from('dishes').update({ in_stock: dish.inStock }).eq('id', id);
+            let { error } = await supabase.from('dishes').update({ in_stock: dish.inStock, stock_out_date: dish.stockOutDate }).eq('id', id);
+            if (error && (error.code === '42703' || String(error.message || '').includes('stock_out_date'))) {
+              const retry = await supabase.from('dishes').update({ in_stock: dish.inStock }).eq('id', id);
+              error = retry.error;
+            }
             if (error) console.warn('[DataService] Direct supabase toggleStock error:', error.message);
           }
         } catch (err) {
           console.warn('[DataService] toggleDishStock server error:', err?.message || err);
           if (this.isStaffAuthorized()) {
             dish.inStock = prevStock;
+            dish.rawInStock = prevRawStock;
+            dish.stockOutDate = prevStockOutDate;
             this.saveDishes(list);
             throw err;
           }
@@ -6454,6 +6747,66 @@ class QuickBiteDataService {
   getCustomerPastOrders(userId = null, userEmail = null, userPhone = null) {
     const customerOrders = this.getCustomerOrders(userId, userEmail, userPhone);
     return customerOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.status === 'undelivered');
+  }
+
+  /**
+   * Derives a customer's recently ordered live menu dishes strictly from cached/synced
+   * customer orders (0 extra Supabase queries or log ingestion).
+   */
+  getRecentlyOrderedDishes(userId = null, userEmail = null, userPhone = null, limit = 8) {
+    const customerOrders = this.getCustomerOrders(userId, userEmail, userPhone);
+    if (!Array.isArray(customerOrders) || customerOrders.length === 0) return [];
+
+    const getOrderTimeMs = (o) => {
+      if (!o) return 0;
+      const raw = o.createdAt ?? o.created_at;
+      const num = Number(raw);
+      if (Number.isFinite(num) && num > 0) return num;
+      const parsed = raw ? Date.parse(String(raw)) : NaN;
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const validOrders = customerOrders
+      .filter(o => o && o.status !== 'cancelled' && o.status !== 'pending_payment' && Array.isArray(o.items) && o.items.length > 0)
+      .slice()
+      .sort((a, b) => getOrderTimeMs(b) - getOrderTimeMs(a));
+
+    if (validOrders.length === 0) return [];
+
+    const catalog = this.getDishes() || [];
+    const byId = new Map();
+    const byName = new Map();
+    catalog.forEach(d => {
+      if (!d) return;
+      if (d.id) byId.set(String(d.id).trim(), d);
+      if (d.name) byName.set(String(d.name).trim().toLowerCase(), d);
+    });
+
+    const seenIds = new Set();
+    const results = [];
+    const maxItems = Math.max(1, Math.min(20, Number(limit) || 8));
+
+    for (const order of validOrders) {
+      const orderTimeMs = getOrderTimeMs(order);
+      for (const item of order.items) {
+        if (!item) continue;
+        const rawId = String(item.id || '').replace(/^card-/, '').trim();
+        const rawName = String(item.name || '').trim().toLowerCase();
+        const liveDish = (rawId && byId.get(rawId)) || (rawName && byName.get(rawName)) || null;
+        if (!liveDish || !liveDish.id) continue;
+        if (seenIds.has(liveDish.id)) continue;
+
+        seenIds.add(liveDish.id);
+        results.push({
+          ...liveDish,
+          lastOrderedAt: orderTimeMs,
+          lastOrderedQty: Number(item.qty ?? item.quantity) || 1
+        });
+        if (results.length >= maxItems) return results;
+      }
+    }
+
+    return results;
   }
 
   saveOrders(orders, extra = {}) {
@@ -7607,6 +7960,9 @@ class QuickBiteDataService {
       helpline: phone
     };
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(toSave));
+    if (typeof this.refreshDishesEffectiveStock === 'function') {
+      this.refreshDishesEffectiveStock(toSave);
+    }
     this.notifyChange('settings', { settings: toSave });
     return this.syncSettingsToSupabase(toSave);
   }
@@ -7919,6 +8275,153 @@ class QuickBiteDataService {
     };
     try {
       const syncPromise = this.saveSettings(updated);
+      return this._wrapWithSettingsPromise ? this._wrapWithSettingsPromise(updated, syncPromise) : updated;
+    } catch {
+      return updated;
+    }
+  }
+
+  refreshDishesEffectiveStock(settingsOverride = null, refTime = Date.now()) {
+    const activeSettings = settingsOverride || this.getSettings();
+    const todayKey = getOperationalDayKey(refTime);
+    const settingsSig = `${Boolean(activeSettings?.returnStockEveryDay)}|${activeSettings?.returnStockEnabledDate || ''}|${todayKey}`;
+
+    let list = Array.isArray(this.dishesCache) && this.dishesCache.length > 0 ? this.dishesCache : null;
+    if (!list) {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.DISHES);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) list = parsed;
+        }
+      } catch {}
+    }
+    if (!list) return false;
+
+    let didChange = false;
+    const nextList = list.map(d => {
+      const rawInStock = d.rawInStock !== undefined ? d.rawInStock !== false : (d.in_stock !== false && d.inStock !== false);
+      const stockOutDate = normalizeOperationalDayKey(d.stockOutDate ?? d.stock_out_date) || null;
+      const effectiveInStock = resolveEffectiveDishInStock({ inStock: rawInStock, stockOutDate }, activeSettings, refTime);
+      if (Boolean(d.inStock !== false) !== effectiveInStock) {
+        didChange = true;
+      }
+      return {
+        ...d,
+        rawInStock,
+        stockOutDate,
+        inStock: effectiveInStock
+      };
+    });
+
+    this.dishesCache = nextList;
+    this._lastDishesEffectiveSig = settingsSig;
+    if (didChange) {
+      this.saveDishes(nextList);
+    }
+    return didChange;
+  }
+
+  async reconcileDailyStockIfNeeded(refTime = Date.now(), settingsOverride = null) {
+    const settings = settingsOverride || this.getSettings();
+    if (!settings || settings.returnStockEveryDay !== true) {
+      return { restockedIds: [] };
+    }
+    const list = this.getDishes();
+    if (!Array.isArray(list) || list.length === 0) {
+      return { restockedIds: [] };
+    }
+
+    const expiredIds = [];
+    const settledList = list.map(d => {
+      const rawOut = d.rawInStock === false || d.in_stock === false;
+      const stockOutDate = normalizeOperationalDayKey(d.stockOutDate ?? d.stock_out_date);
+      if (rawOut && resolveEffectiveDishInStock({ inStock: false, stockOutDate }, settings, refTime)) {
+        expiredIds.push(d.id);
+        return {
+          ...d,
+          rawInStock: true,
+          stockOutDate: null,
+          inStock: true
+        };
+      }
+      return d;
+    });
+
+    if (expiredIds.length === 0) {
+      return { restockedIds: [] };
+    }
+
+    const todayKey = getOperationalDayKey(refTime);
+    const batchKey = `${todayKey}|${expiredIds.join(',')}`;
+    if (this.isStaffAuthorized() && typeof window !== 'undefined') {
+      if (this._inFlightDailyReconcile && this._inFlightDailyReconcile.batchKey === batchKey) {
+        return this._inFlightDailyReconcile.promise;
+      }
+      if (this._reconciledDailyBatchKey !== batchKey) {
+        const promise = (async () => {
+          try {
+            await this._adminStoreAction('restock_daily', { ids: expiredIds });
+            this._reconciledDailyBatchKey = batchKey;
+            const expiredIdSet = new Set(expiredIds);
+            const latestList = this.getDishes();
+            const nextList = Array.isArray(latestList)
+              ? latestList.map(d => (d && expiredIdSet.has(d.id)
+                  ? { ...d, rawInStock: true, stockOutDate: null, inStock: true }
+                  : d))
+              : settledList;
+            this.saveDishes(nextList);
+            return { restockedIds: expiredIds };
+          } catch (err) {
+            this._reconciledDailyBatchKey = null;
+            console.warn('[DataService] reconcileDailyStockIfNeeded server error:', err?.message || err);
+            return { restockedIds: [], error: err?.message || 'Daily restock failed' };
+          } finally {
+            if (this._inFlightDailyReconcile && this._inFlightDailyReconcile.promise === promise) {
+              this._inFlightDailyReconcile = null;
+            }
+          }
+        })();
+        this._inFlightDailyReconcile = { batchKey, promise };
+        return promise;
+      }
+    }
+
+    this.saveDishes(settledList);
+    return { restockedIds: expiredIds };
+  }
+
+  isReturnStockEveryDay() {
+    const s = this.getSettings();
+    return Boolean(s && s.returnStockEveryDay === true);
+  }
+
+  setReturnStockEveryDay(enabled, refTime = Date.now()) {
+    const nextEnabled = Boolean(enabled);
+    const todayKey = getOperationalDayKey(refTime);
+    const current = this.getSettings();
+    const shouldSettleExpired = !nextEnabled && current?.returnStockEveryDay === true;
+
+    const updated = {
+      ...current,
+      returnStockEveryDay: nextEnabled,
+      returnStockEnabledDate: nextEnabled ? todayKey : (current?.returnStockEnabledDate || null)
+    };
+    try {
+      const isAuthorizedBrowser = typeof window !== 'undefined' && this.isStaffAuthorized();
+      if (shouldSettleExpired && !isAuthorizedBrowser) {
+        // Offline / unit-test context: settle in-memory immediately before disabling
+        this.reconcileDailyStockIfNeeded(refTime, current).catch(() => {});
+      }
+      let syncPromise = this.saveSettings(updated);
+      if (shouldSettleExpired && isAuthorizedBrowser) {
+        syncPromise = Promise.resolve(syncPromise).then(async (res) => {
+          if (res && res._syncedToCloud !== false) {
+            await this.reconcileDailyStockIfNeeded(refTime, current).catch(() => {});
+          }
+          return res;
+        });
+      }
       return this._wrapWithSettingsPromise ? this._wrapWithSettingsPromise(updated, syncPromise) : updated;
     } catch {
       return updated;
@@ -8398,11 +8901,12 @@ class QuickBiteDataService {
   }
 
   async syncRidersFromSupabase(force = false) {
-    if (!force && this._lastRidersSyncTime && (Date.now() - this._lastRidersSyncTime < 120000) && this.getRiders().length > 0) {
+    if (!force && this._lastRidersSyncTime && (Date.now() - this._lastRidersSyncTime < 25000) && this.getRiders().length > 0) {
       return this.getRiders();
     }
     try {
-      this._lastRidersSyncTime = Date.now();
+      const syncStartedAt = Date.now();
+      this._lastRidersSyncTime = syncStartedAt;
       let rawRiders = null;
       const hasAdminOrOwnerToken = (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_admin_token') || sessionStorage.getItem('quickbite_owner_token'))) ||
         (typeof localStorage !== 'undefined' && (localStorage.getItem('quickbite_admin_token') || localStorage.getItem('quickbite_owner_token')));
@@ -8430,22 +8934,44 @@ class QuickBiteDataService {
 
       if (Array.isArray(rawRiders) && rawRiders.length > 0) {
         const localList = this.getRiders();
-        const localMap = new Map(localList.map(r => [r.pin, r]));
+        const localMapByPin = new Map(localList.filter(r => r && r.pin).map(r => [String(r.pin).trim(), r]));
+        const localMapById = new Map(localList.filter(r => r && r.id).map(r => [String(r.id).trim(), r]));
+        const hasMaskedPins = rawRiders.some(r => r && (r.pin_masked || r.pin === undefined || r.pin === null));
+        const existingHasUnmaskedPins = localList.some(r => r && r.pin && !r.pin_masked);
         const handoverTransitions = [];
         const mapped = rawRiders.map(r => {
-          const pin = String(r.pin).trim();
-          const existing = localMap.get(pin);
+          const isMasked = Boolean(r.pin_masked || r.pin === undefined || r.pin === null);
+          const pin = !isMasked ? String(r.pin).trim() : '';
+          const riderId = String(r.id || (pin ? `rider-${pin}` : '')).trim();
+          const existing = (pin ? localMapByPin.get(pin) : null) || (riderId ? localMapById.get(riderId) : null);
+          const hasNewerLocalDuty = Boolean(
+            this._lastLocalDutyMutation &&
+            this._lastLocalDutyMutation.ts >= (syncStartedAt - 3000) &&
+            ((pin && this._lastLocalDutyMutation.pin === pin) || (riderId && `rider-${this._lastLocalDutyMutation.pin}` === riderId))
+          );
+          const remoteBroadcast = riderId && this._lastRemoteDutyUpdates ? this._lastRemoteDutyUpdates.get(riderId) : null;
+          const hasRecentRemoteBroadcast = Boolean(
+            remoteBroadcast &&
+            (Date.now() - remoteBroadcast.ts < 8000) &&
+            remoteBroadcast.ts >= (syncStartedAt - 5000)
+          );
+          const resolvedStatus = (hasNewerLocalDuty && r.status !== 'inactive')
+            ? this._lastLocalDutyMutation.status
+            : ((hasRecentRemoteBroadcast && r.status !== 'inactive')
+              ? remoteBroadcast.status
+              : (r.status || existing?.status || 'online'));
           const nextHandoverStatus = r.cash_handover_status || r.cashHandoverStatus || existing?.cashHandoverStatus || null;
           const nextHandoverAmount = Number(r.cash_handover_amount ?? r.cashHandoverAmount ?? existing?.cashHandoverAmount ?? 0);
           const nextHandoverRequestedAt = r.cash_handover_requested_at || r.cashHandoverRequestedAt || existing?.cashHandoverRequestedAt || null;
           const mappedRider = {
             ...(existing || {}),
-            pin,
-            id: r.id || `rider-${pin}`,
-            name: r.name || existing?.name || `Rider ${pin}`,
+            pin: isMasked ? (this.portalType === 'admin' ? '' : (existing?.pin || '')) : pin,
+            ...(isMasked ? { pin_masked: true } : { pin_masked: false }),
+            id: riderId || `rider-${pin}`,
+            name: r.name || existing?.name || `Rider ${pin || riderId}`,
             phone: r.phone || existing?.phone || '',
             vehicle: r.vehicle || existing?.vehicle || '🏍️ Bike',
-            status: r.status || existing?.status || 'online',
+            status: resolvedStatus,
             avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
             avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
             earnings: Number(r.earnings ?? existing?.earnings ?? 0),
@@ -8470,7 +8996,7 @@ class QuickBiteDataService {
               (nextHandoverRequestedAt && nextHandoverRequestedAt !== existing.cashHandoverRequestedAt))
           ) {
             handoverTransitions.push({
-              riderPin: pin,
+              riderPin: pin || riderId,
               riderName: mappedRider.name,
               amount: nextHandoverAmount,
               requestedAt: nextHandoverRequestedAt || Date.now(),
@@ -8480,9 +9006,9 @@ class QuickBiteDataService {
           return mappedRider;
         });
         if (this.portalType === 'delivery' && rawRiders.length === 1) {
-          const updatedPin = String(rawRiders[0].pin).trim();
+          const updatedPin = String(rawRiders[0].pin || '').trim();
           const targetRider = mapped[0];
-          const existIdx = localList.findIndex(r => String(r.pin).trim() === updatedPin);
+          const existIdx = localList.findIndex(r => (updatedPin && String(r.pin || '').trim() === updatedPin) || (targetRider.id && r.id === targetRider.id));
           if (existIdx >= 0) {
             localList[existIdx] = targetRider;
           } else {
@@ -8492,7 +9018,9 @@ class QuickBiteDataService {
           localStorage.setItem('quickbite_riders', JSON.stringify(localList));
         } else {
           this.ridersCache = mapped;
-          localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
+          if (!hasMaskedPins) {
+            localStorage.setItem('quickbite_riders', JSON.stringify(mapped));
+          }
         }
         this.notifyChange('riders', { action: 'sync_riders', source: 'server' });
         handoverTransitions.forEach(t => this.notifyChange('cash_handover_requested', t));
@@ -9546,6 +10074,220 @@ class QuickBiteDataService {
 
   settleRiderCash(riderPin) {
     return this.confirmRiderCashTaken(riderPin);
+  }
+
+  async setRiderDutyStatus(riderPin, onDuty, { syncRemote = true } = {}) {
+    const cleanPin = String(riderPin || '').trim();
+    if (!cleanPin) return { success: false, error: 'Rider PIN is required' };
+
+    const isOnline = onDuty === true || String(onDuty).trim().toLowerCase() === 'online';
+    const nextStatus = isOnline ? 'online' : 'offline';
+    const mutationTs = Date.now();
+    this._dutyMutationSeq = (this._dutyMutationSeq || 0) + 1;
+    const mutationSeq = this._dutyMutationSeq;
+
+    const riders = this.getRiders();
+    const idx = riders.findIndex(r => r && String(r.pin || '').trim() === cleanPin);
+    let targetRider = idx >= 0 ? riders[idx] : null;
+    if (targetRider && targetRider.status === 'inactive') {
+      return { success: false, statusCode: 403, error: 'Rider account is deactivated' };
+    }
+
+    const prevInFlight = this._dutySyncInFlightByPin ? this._dutySyncInFlightByPin.get(cleanPin) : null;
+    const activePriorMutation = (prevInFlight && this._lastLocalDutyMutation && this._lastLocalDutyMutation.pin === cleanPin)
+      ? this._lastLocalDutyMutation
+      : null;
+
+    const hadPriorEntry = idx >= 0;
+    const prevStatus = activePriorMutation?.baseStatus || (targetRider ? (targetRider.status || 'online') : 'online');
+    const prevIsOnline = prevStatus !== 'offline';
+    let prevLsDuty = activePriorMutation ? activePriorMutation.baseLsDuty : null;
+    if (!activePriorMutation) {
+      try {
+        if (typeof localStorage !== 'undefined') prevLsDuty = localStorage.getItem('quickbite_rider_duty_on');
+      } catch {}
+    }
+
+    this._lastLocalDutyMutation = {
+      pin: cleanPin,
+      status: nextStatus,
+      ts: mutationTs,
+      seq: mutationSeq,
+      baseStatus: prevStatus,
+      baseLsDuty: prevLsDuty
+    };
+
+    if (idx >= 0) {
+      riders[idx] = { ...riders[idx], status: nextStatus };
+      targetRider = riders[idx];
+      this.saveRiders(riders);
+    } else {
+      const baseRider = (typeof window !== 'undefined' && window.__lastVerifiedRider && String(window.__lastVerifiedRider.pin || '').trim() === cleanPin)
+        ? window.__lastVerifiedRider
+        : { pin: cleanPin, id: `rider-${cleanPin}`, name: 'Delivery Partner', vehicle: '🏍️ Bike' };
+      targetRider = { ...baseRider, status: nextStatus };
+      this.saveOrUpdateRider(targetRider);
+    }
+
+    if (typeof window !== 'undefined' && window.__lastVerifiedRider && String(window.__lastVerifiedRider.pin || '').trim() === cleanPin) {
+      window.__lastVerifiedRider = { ...window.__lastVerifiedRider, status: nextStatus };
+    }
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('quickbite_rider_duty_on', String(isOnline));
+      }
+    } catch {}
+
+    this.notifyChange('rider_session', { pin: cleanPin, rider: targetRider, timestamp: mutationTs });
+    this.notifyChange('rider_duty_updated', {
+      riderId: targetRider.id || `rider-${cleanPin}`,
+      riderName: targetRider.name || '',
+      status: nextStatus,
+      onDuty: isOnline,
+      timestamp: mutationTs
+    });
+
+    if (!syncRemote) {
+      return { success: true, status: nextStatus, rider: targetRider };
+    }
+
+    const pendingKey = 'quickbite_rider_duty_pending_sync';
+    const isSuperseded = () => Boolean(
+      this._lastLocalDutyMutation &&
+      this._lastLocalDutyMutation.pin === cleanPin &&
+      this._lastLocalDutyMutation.seq !== mutationSeq
+    );
+
+    const rollbackDutyState = () => {
+      if (isSuperseded()) return;
+      if (this._lastLocalDutyMutation && this._lastLocalDutyMutation.seq === mutationSeq) {
+        this._lastLocalDutyMutation = null;
+      }
+      const curList = this.getRiders();
+      const curIdx = curList.findIndex(r => r && String(r.pin || '').trim() === cleanPin);
+      if (curIdx >= 0 && hadPriorEntry) {
+        curList[curIdx] = { ...curList[curIdx], status: prevStatus };
+        this.saveRiders(curList);
+      }
+      if (typeof window !== 'undefined' && window.__lastVerifiedRider && String(window.__lastVerifiedRider.pin || '').trim() === cleanPin) {
+        window.__lastVerifiedRider = { ...window.__lastVerifiedRider, status: prevStatus };
+      }
+      try {
+        if (typeof localStorage !== 'undefined') {
+          if (prevLsDuty === null) localStorage.removeItem('quickbite_rider_duty_on');
+          else localStorage.setItem('quickbite_rider_duty_on', String(prevIsOnline));
+          localStorage.removeItem(pendingKey);
+        }
+      } catch {}
+      const rolledRider = curIdx >= 0 ? curList[curIdx] : { ...targetRider, status: prevStatus };
+      this.notifyChange('rider_session', { pin: cleanPin, rider: rolledRider, timestamp: Date.now() });
+      this.notifyChange('rider_duty_updated', {
+        riderId: rolledRider.id || `rider-${cleanPin}`,
+        riderName: rolledRider.name || '',
+        status: prevStatus,
+        onDuty: prevIsOnline,
+        timestamp: Date.now()
+      });
+    };
+
+    const executeDutySync = async () => {
+      if (prevInFlight) {
+        await prevInFlight.catch(() => {});
+      }
+      if (isSuperseded()) {
+        return {
+          success: true,
+          superseded: true,
+          status: this._lastLocalDutyMutation?.status || nextStatus,
+          rider: targetRider
+        };
+      }
+      try {
+        const res = await this._orderAction('set_rider_duty', {
+          riderPin: cleanPin,
+          status: nextStatus,
+          onDuty: isOnline
+        });
+        if (res && res.success) {
+          if (this._lastLocalDutyMutation && this._lastLocalDutyMutation.pin === cleanPin) {
+            this._lastLocalDutyMutation.baseStatus = nextStatus;
+            this._lastLocalDutyMutation.baseLsDuty = String(isOnline);
+          }
+          if (!isSuperseded()) {
+            try {
+              if (typeof localStorage !== 'undefined') localStorage.removeItem(pendingKey);
+            } catch {}
+          }
+          try {
+            this._ensureBroadcastSubscribedAndSend('rider_duty_updated', {
+              riderId: res.rider?.id || targetRider.id || `rider-${cleanPin}`,
+              riderName: res.rider?.name || targetRider.name || '',
+              status: nextStatus,
+              onDuty: isOnline,
+              timestamp: Date.now()
+            }).catch(() => {});
+          } catch {}
+          return { success: true, status: nextStatus, rider: res.rider || targetRider };
+        }
+        rollbackDutyState();
+        return { success: false, revertedStatus: prevStatus, error: res?.error || 'Failed to update duty status' };
+      } catch (err) {
+        const status = Number(err?.status || 0);
+        const isHardReject = [400, 401, 403, 404].includes(status);
+        if (isHardReject) {
+          rollbackDutyState();
+        } else if (!isSuperseded()) {
+          try {
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem(pendingKey, JSON.stringify({
+                pin: cleanPin,
+                onDuty: isOnline,
+                status: nextStatus,
+                timestamp: mutationTs
+              }));
+            }
+          } catch {}
+        }
+        return {
+          success: false,
+          statusCode: status,
+          ...(isHardReject && !isSuperseded() ? { revertedStatus: prevStatus } : {}),
+          error: err?.message || 'Network error updating duty status',
+          queued: !isHardReject
+        };
+      }
+    };
+
+    const syncPromise = executeDutySync();
+    if (this._dutySyncInFlightByPin) {
+      this._dutySyncInFlightByPin.set(cleanPin, syncPromise);
+      syncPromise.finally(() => {
+        if (this._dutySyncInFlightByPin.get(cleanPin) === syncPromise) {
+          this._dutySyncInFlightByPin.delete(cleanPin);
+        }
+      });
+    }
+    return syncPromise;
+  }
+
+  async syncPendingRiderDutyStatus() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const raw = localStorage.getItem('quickbite_rider_duty_pending_sync');
+      if (!raw) return;
+      const pending = JSON.parse(raw);
+      if (!pending || !pending.pin) {
+        localStorage.removeItem('quickbite_rider_duty_pending_sync');
+        return;
+      }
+      const activeRider = this.getActiveRider();
+      if (this.portalType === 'delivery' && activeRider && String(activeRider.pin || '').trim() !== String(pending.pin).trim()) {
+        localStorage.removeItem('quickbite_rider_duty_pending_sync');
+        return;
+      }
+      await this.setRiderDutyStatus(pending.pin, pending.onDuty !== false, { syncRemote: true });
+    } catch {}
   }
 
   requestRiderCashHandover(riderPin) {

@@ -73,9 +73,37 @@ async function fetchAuthoritativeSettings() {
   }
 }
 
-function isDishAvailableNow(dish, now = new Date()) {
+const IST_SHIFT_OFFSET_MS = 4.5 * 60 * 60 * 1000; // UTC+5:30 minus 1:00 AM IST daily shift boundary
+
+function getOperationalDayKey(refTime = Date.now()) {
+  const num = Number(refTime);
+  const safeMs = Number.isFinite(num) ? num : Date.now();
+  return new Date(safeMs + IST_SHIFT_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function normalizeOperationalDayKey(val) {
+  if (!val || typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+function resolveEffectiveDishInStock(dish, settings = null, refTime = Date.now()) {
   if (!dish) return true;
-  if (dish.is_available === false || dish.in_stock === false || dish.inStock === false) return false;
+  const rawInStock = dish.is_available !== false && dish.in_stock !== false && dish.inStock !== false;
+  if (rawInStock) return true;
+  if (!settings || settings.returnStockEveryDay !== true) return false;
+  const todayKey = getOperationalDayKey(refTime);
+  const outDay = normalizeOperationalDayKey(dish.stockOutDate ?? dish.stock_out_date);
+  const enabledDay = normalizeOperationalDayKey(settings.returnStockEnabledDate);
+  const effectiveAnchor = (enabledDay && (!outDay || enabledDay > outDay))
+    ? enabledDay
+    : (outDay || todayKey);
+  return todayKey > effectiveAnchor;
+}
+
+function isDishAvailableNow(dish, now = new Date(), settings = null) {
+  if (!dish) return true;
+  if (!resolveEffectiveDishInStock(dish, settings, now.getTime())) return false;
 
   const timeRestricted = Boolean(dish.timeRestricted ?? dish.time_restricted);
   const availableDays = dish.availableDays ?? dish.available_days;
@@ -230,11 +258,44 @@ export default async function handler(req, res) {
   const isProd = (typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'));
   const allowTestOverrides = !isProd && isTestEnv;
 
+  const DEFAULT_SETTINGS_FALLBACK = {
+    freeDeliveryEnabled: true,
+    freeDeliveryThreshold: 250,
+    deliveryFeeStandard: 40,
+    deliveryRadiusKm: 7,
+    unlockedDealsEnabled: false,
+    unlockedDealsMinOrder: 299,
+    unlockedDealsDiscountPct: 15,
+    returnStockEveryDay: false,
+    returnStockEnabledDate: null,
+    minOrderValue: 0,
+    offerActive: true,
+    offerCode: 'SAVERA20',
+    offerPromoCode: 'SAVERA20',
+    offerMinOrder: 199,
+    offerDiscountPercent: 20
+  };
+  const [dishesRes, serverSettings] = await Promise.all([
+    fetchAuthoritativeDishes().catch(() => null),
+    fetchAuthoritativeSettings().catch(() => null)
+  ]);
+  const serverDishes = dishesRes;
+  const settings = (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0)
+    ? { ...DEFAULT_SETTINGS_FALLBACK, ...(allowTestOverrides ? (storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) : {}), ...serverSettings }
+    : (allowTestOverrides
+        ? { ...DEFAULT_SETTINGS_FALLBACK, ...(storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) }
+        : { ...DEFAULT_SETTINGS_FALLBACK });
+  if (!allowTestOverrides && (!serverSettings || Object.keys(serverSettings).length === 0)) {
+    // In production and non-test environments, never trust unverified client-supplied settings if server settings are unavailable
+    for (const key of Object.keys(settings)) {
+      if (!(key in DEFAULT_SETTINGS_FALLBACK)) {
+        delete settings[key];
+      }
+    }
+    Object.assign(settings, DEFAULT_SETTINGS_FALLBACK);
+  }
+
   const catalogMap = new Map();
-  let serverDishes = null;
-  try {
-    serverDishes = await fetchAuthoritativeDishes();
-  } catch {}
 
   const hasAuthoritativeCatalog = Array.isArray(serverDishes) && serverDishes.length > 0;
   if (hasAuthoritativeCatalog) {
@@ -268,10 +329,10 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: `Item '${item.name || 'dish'}' is not recognized in the active menu catalog` });
     }
 
-    if (dish && (dish.is_available === false || dish.in_stock === false || dish.inStock === false)) {
+    if (dish && !resolveEffectiveDishInStock(dish, settings)) {
       return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' will be back soon` });
     }
-    if (dish && !isDishAvailableNow(dish)) {
+    if (dish && !isDishAvailableNow(dish, new Date(), settings)) {
       return res.status(400).json({ error: `Item '${dish.name || item.name || 'Dish'}' is not currently being served (outside serving hours)` });
     }
     let unitPrice = dish ? Math.max(0, Number(dish.price) || 0) : null;
@@ -313,37 +374,6 @@ export default async function handler(req, res) {
       ...(safeSpice ? { spice: safeSpice } : {}),
       ...(safeSauce ? { sauce: safeSauce } : {})
     });
-  }
-
-  const DEFAULT_SETTINGS_FALLBACK = {
-    freeDeliveryEnabled: true,
-    freeDeliveryThreshold: 250,
-    deliveryFeeStandard: 40,
-    deliveryRadiusKm: 7,
-    unlockedDealsEnabled: false,
-    unlockedDealsMinOrder: 299,
-    unlockedDealsDiscountPct: 15,
-    minOrderValue: 0,
-    offerActive: true,
-    offerCode: 'SAVERA20',
-    offerPromoCode: 'SAVERA20',
-    offerMinOrder: 199,
-    offerDiscountPercent: 20
-  };
-  const serverSettings = await fetchAuthoritativeSettings();
-  const settings = (serverSettings && typeof serverSettings === 'object' && Object.keys(serverSettings).length > 0)
-    ? { ...DEFAULT_SETTINGS_FALLBACK, ...(allowTestOverrides ? (storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) : {}), ...serverSettings }
-    : (allowTestOverrides
-        ? { ...DEFAULT_SETTINGS_FALLBACK, ...(storeSettings && typeof storeSettings === 'object' ? storeSettings : {}) }
-        : { ...DEFAULT_SETTINGS_FALLBACK });
-  if (!allowTestOverrides && (!serverSettings || Object.keys(serverSettings).length === 0)) {
-    // In production and non-test environments, never trust unverified client-supplied settings if server settings are unavailable
-    for (const key of Object.keys(settings)) {
-      if (!(key in DEFAULT_SETTINGS_FALLBACK)) {
-        delete settings[key];
-      }
-    }
-    Object.assign(settings, DEFAULT_SETTINGS_FALLBACK);
   }
 
   // Authoritative Kitchen Availability Verification

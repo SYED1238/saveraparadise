@@ -307,7 +307,7 @@ export async function onRequest(context) {
   const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
 
   // 1. Role Gate: Enforce authentication for staff-restricted actions
-  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover'].includes(action)) {
+  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover', 'set_rider_duty'].includes(action)) {
     const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
     if (!auth || !auth.valid) {
       return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -578,7 +578,7 @@ export async function onRequest(context) {
       return jsonResponse(sample, 200, pollHeaders);
     }
 
-    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover'].includes(action)) {
+    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover', 'set_rider_duty'].includes(action)) {
       const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
         return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -1038,6 +1038,47 @@ export async function onRequest(context) {
         }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
+      if (action === 'set_rider_duty') {
+        if (auth.payload?.role !== 'rider' && auth.payload?.role !== 'owner') {
+          return jsonResponse({ error: 'Forbidden: Rider or Owner session required for set_rider_duty' }, 403, Object.fromEntries(corsHeaders.entries()));
+        }
+        const requestedPin = String(body.riderPin || body.pin || '').trim();
+        let targetPin = requestedPin;
+        if (auth.payload?.role === 'rider') {
+          const tokenPin = String(auth.payload?.riderPin || '').trim();
+          if (!tokenPin) {
+            return jsonResponse({ error: 'Forbidden: Rider PIN missing from token' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+          if (requestedPin && requestedPin !== tokenPin) {
+            return jsonResponse({ error: 'Forbidden: Riders can only update their own duty status' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+          targetPin = tokenPin;
+        } else if (!targetPin) {
+          return jsonResponse({ error: 'riderPin is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        let nextStatus = body.status !== undefined ? String(body.status).trim().toLowerCase() : '';
+        if (!nextStatus && typeof body.onDuty === 'boolean') {
+          nextStatus = body.onDuty ? 'online' : 'offline';
+        }
+        if (!['online', 'offline'].includes(nextStatus)) {
+          return jsonResponse({ error: 'Valid duty status ("online" or "offline") is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+        const simExisting = body.simulateExistingRider || (Array.isArray(body.simulateRiders) ? body.simulateRiders.find(r => String(r.pin).trim() === targetPin) : null);
+        if (simExisting && simExisting.status === 'inactive') {
+          return jsonResponse({ error: 'Forbidden: Rider account is deactivated' }, 403, Object.fromEntries(corsHeaders.entries()));
+        }
+        return jsonResponse({
+          success: true,
+          status: nextStatus,
+          rider: {
+            ...(simExisting || {}),
+            pin: targetPin,
+            id: simExisting?.id || `rider-${targetPin}`,
+            status: nextStatus
+          }
+        }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
       if (action === 'release_rider') {
         if (!['admin', 'owner'].includes(auth.payload?.role)) {
           return jsonResponse({ error: 'Unauthorized: Staff session required to release rider' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -1331,7 +1372,7 @@ export async function onRequest(context) {
           return jsonResponse({ success: true, riders: cachedEntry.rows }, 200, Object.fromEntries(corsHeaders.entries()));
         }
 
-        let query = sb.from('riders').select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at, upi_vpa, bank_account_no, bank_ifsc, payout_method_pref');
+        let query = sb.from('riders').select('id, pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at, upi_vpa, bank_account_no, bank_ifsc, payout_method_pref');
         if (riderPin) {
           query = query.eq('pin', riderPin);
         }
@@ -2395,6 +2436,65 @@ export async function onRequest(context) {
         invalidateOrderActionMemoryCache();
         invalidateRidersListCache();
         return jsonResponse({ success: true, rider: data && data.length > 0 ? data[0] : null }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      // 5c. Rider On Duty / Off Duty Status Toggle
+      case 'set_rider_duty': {
+        const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+        if (!auth || !auth.valid) {
+          return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (auth.payload?.role !== 'rider' && auth.payload?.role !== 'owner') {
+          return jsonResponse({ error: 'Forbidden: Rider or Owner session required for set_rider_duty' }, 403, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const requestedPin = String(body.riderPin || body.pin || '').trim();
+        let targetPin = requestedPin;
+        if (auth.payload?.role === 'rider') {
+          const tokenPin = String(auth.payload?.riderPin || '').trim();
+          if (!tokenPin) {
+            return jsonResponse({ error: 'Forbidden: Rider PIN missing from token' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+          if (requestedPin && requestedPin !== tokenPin) {
+            return jsonResponse({ error: 'Forbidden: Riders can only update their own duty status' }, 403, Object.fromEntries(corsHeaders.entries()));
+          }
+          targetPin = tokenPin;
+        } else if (!targetPin) {
+          return jsonResponse({ error: 'riderPin is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        let nextStatus = body.status !== undefined ? String(body.status).trim().toLowerCase() : '';
+        if (!nextStatus && typeof body.onDuty === 'boolean') {
+          nextStatus = body.onDuty ? 'online' : 'offline';
+        }
+        if (!['online', 'offline'].includes(nextStatus)) {
+          return jsonResponse({ error: 'Valid duty status ("online" or "offline") is required' }, 400, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { data: existingRider, error: lookupError } = await sb
+          .from('riders')
+          .select('pin, id, name, phone, vehicle, status, avatar, avatar_img, max_active_orders')
+          .eq('pin', targetPin)
+          .maybeSingle();
+        if (lookupError) throw lookupError;
+        if (!existingRider) {
+          return jsonResponse({ error: 'Rider not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (existingRider.status === 'inactive') {
+          return jsonResponse({ error: 'Forbidden: Rider account is deactivated' }, 403, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { data, error } = await sb
+          .from('riders')
+          .update({ status: nextStatus })
+          .eq('pin', targetPin)
+          .select();
+        if (error) throw error;
+
+        riderProfileCache.clear();
+        invalidateRidersListCache();
+        const updatedRider = data && data.length > 0 ? data[0] : { ...existingRider, status: nextStatus };
+        return jsonResponse({ success: true, status: nextStatus, rider: updatedRider }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       // 6. Authoritative Order Creation (Prevents Client-Side Price Tampering)

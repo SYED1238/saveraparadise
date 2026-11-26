@@ -115,6 +115,26 @@ function r2DevMiddlewarePlugin() {
                         if (payload && (payload.role === 'admin' || payload.role === 'owner' || payload.role === 'rider')) {
                           const maxRefreshAge = 24 * 60 * 60 * 1000;
                           if (payload.iat && (Date.now() - payload.iat < maxRefreshAge)) {
+                            if (payload.role === 'rider' && payload.riderPin) {
+                              const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+                              const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+                              if (supabaseUrl && serviceKey) {
+                                try {
+                                  const { createClient } = await import('@supabase/supabase-js');
+                                  const sb = createClient(supabaseUrl, serviceKey);
+                                  const { data: dbRider, error } = await sb
+                                    .from('riders')
+                                    .select('pin, status')
+                                    .eq('pin', String(payload.riderPin).trim())
+                                    .maybeSingle();
+                                  if (error || !dbRider || dbRider.status === 'inactive') {
+                                    res.statusCode = 401;
+                                    res.setHeader('Content-Type', 'application/json');
+                                    return res.end(JSON.stringify({ error: 'Rider account is deactivated or no longer exists' }));
+                                  }
+                                } catch {}
+                              }
+                            }
                             const extraPayload = (payload.role === 'rider' && payload.riderPin) ? { riderPin: payload.riderPin } : {};
                             const refreshedToken = createAdminToken(undefined, payload.role, extraPayload);
                             res.statusCode = 200;
@@ -131,20 +151,27 @@ function r2DevMiddlewarePlugin() {
                 return res.end(JSON.stringify({ error: 'Invalid or expired session. Please re-authenticate.' }));
               }
 
+              const DEFAULT_RIDER_PROFILES = {
+                '2233': { name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', avatar: '🏍️', avatarImg: '/avatars/rider-1.svg', maxActiveOrders: 1 },
+                '4422': { name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', avatar: '🏍️', avatarImg: '/avatars/rider-2.svg', maxActiveOrders: 1 },
+                '4455': { name: 'Salman Ahmed', phone: '+91 96666 55555', vehicle: '🛵 TVS Jupiter', avatar: '🛵', avatarImg: '/avatars/rider-1.svg', maxActiveOrders: 1 },
+                '8811': { name: 'Arif Khan', phone: '+91 95555 44444', vehicle: '⚡ Ather 450X EV', avatar: '⚡', avatarImg: '/avatars/rider-2.svg', maxActiveOrders: 1 }
+              };
+
               const pin = body.pin;
               let role = getPinRole(pin);
               let dynamicRider = null;
 
-              if (!role) {
+              if (!role || role === 'rider') {
                 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-                const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+                const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
                 if (supabaseUrl && serviceKey) {
                   try {
                     const { createClient } = await import('@supabase/supabase-js');
                     const sb = createClient(supabaseUrl, serviceKey);
                     const { data: dbRider, error } = await sb
                       .from('riders')
-                      .select('pin, name, phone, vehicle, status')
+                      .select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at')
                       .eq('pin', String(pin).trim())
                       .maybeSingle();
 
@@ -183,8 +210,34 @@ function r2DevMiddlewarePlugin() {
               }
 
               if (role) {
-                const extraPayload = role === 'rider' ? { riderPin: String(pin).trim() } : {};
-                const token = createAdminToken(undefined, role, undefined, extraPayload);
+                const cleanPinStr = String(pin).trim();
+                const extraPayload = role === 'rider' ? { riderPin: cleanPinStr } : {};
+                const token = createAdminToken(undefined, role, extraPayload);
+                let safeRiderProfile = null;
+                if (role === 'rider') {
+                  const fallbackProfile = DEFAULT_RIDER_PROFILES[cleanPinStr] || {};
+                  safeRiderProfile = {
+                    pin: cleanPinStr,
+                    name: dynamicRider?.name || fallbackProfile.name || 'Delivery Partner',
+                    phone: dynamicRider?.phone || fallbackProfile.phone || '',
+                    vehicle: dynamicRider?.vehicle || fallbackProfile.vehicle || '🏍️ Bike',
+                    status: dynamicRider?.status || 'online'
+                  };
+                  if (dynamicRider?.avatar || fallbackProfile.avatar) safeRiderProfile.avatar = dynamicRider?.avatar || fallbackProfile.avatar;
+                  if (dynamicRider?.avatar_img || dynamicRider?.avatarImg || fallbackProfile.avatarImg) {
+                    safeRiderProfile.avatarImg = dynamicRider?.avatar_img || dynamicRider?.avatarImg || fallbackProfile.avatarImg;
+                  }
+                  const maxActive = dynamicRider?.max_active_orders ?? dynamicRider?.maxActiveOrders ?? fallbackProfile.maxActiveOrders;
+                  if (maxActive !== undefined) safeRiderProfile.maxActiveOrders = maxActive;
+                  if (dynamicRider?.cash_settled_at !== undefined) safeRiderProfile.cashSettledAt = dynamicRider.cash_settled_at;
+                  if (dynamicRider?.payout_paid_at !== undefined) safeRiderProfile.payoutPaidAt = dynamicRider.payout_paid_at;
+                  if (dynamicRider?.payout_amount_paid !== undefined) safeRiderProfile.payoutAmountPaid = dynamicRider.payout_amount_paid;
+                  if (dynamicRider?.trips !== undefined) safeRiderProfile.trips = dynamicRider.trips;
+                  if (dynamicRider?.earnings !== undefined) safeRiderProfile.earnings = dynamicRider.earnings;
+                  if (dynamicRider?.cash_handover_status) safeRiderProfile.cashHandoverStatus = dynamicRider.cash_handover_status;
+                  if (dynamicRider?.cash_handover_amount !== undefined) safeRiderProfile.cashHandoverAmount = dynamicRider.cash_handover_amount;
+                  if (dynamicRider?.cash_handover_requested_at) safeRiderProfile.cashHandoverRequestedAt = dynamicRider.cash_handover_requested_at;
+                }
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
                 return res.end(JSON.stringify({
@@ -192,19 +245,8 @@ function r2DevMiddlewarePlugin() {
                   token,
                   role,
                   ...(role === 'rider' ? {
-                    riderPin: String(pin).trim(),
-                    rider: dynamicRider ? {
-                      pin: String(pin).trim(),
-                      name: dynamicRider.name,
-                      phone: dynamicRider.phone,
-                      vehicle: dynamicRider.vehicle,
-                      status: dynamicRider.status
-                    } : {
-                      pin: String(pin).trim(),
-                      name: 'Delivery Partner',
-                      vehicle: '🏍️ Bike',
-                      status: 'online'
-                    }
+                    riderPin: cleanPinStr,
+                    rider: safeRiderProfile
                   } : {}),
                   expiresIn: 43200
                 }));

@@ -329,26 +329,44 @@
         </div>
       </div>
 
+      <!-- Daily Auto-Restock Toggle Bar (Always visible above Menu Categories & Dishes) -->
+      <div class="admin-daily-restock-bar" id="admin-daily-restock-bar">
+        <div class="daily-restock-info">
+          <span class="daily-restock-badge-icon"><i class="fa-solid fa-rotate-right"></i></span>
+          <div>
+            <div class="daily-restock-title">Return Stock Every Day</div>
+            <div class="daily-restock-sub" id="admin-return-stock-sub">OFF — Out-of-stock dishes stay off until you manually turn them back On</div>
+          </div>
+        </div>
+        <button type="button" class="btn-daily-restock-toggle" id="btn-admin-return-stock-daily" role="switch" aria-checked="false" title="Automatically restock Out-of-Stock items every new day (1:00 AM IST)">
+          <span class="daily-restock-pill" id="admin-return-stock-pill">OFF</span>
+          <span class="daily-restock-knob"></span>
+        </button>
+      </div>
+
       <!-- 1. CATEGORIES MANAGEMENT SECTION (OVERVIEW) -->
       <div class="admin-card-section categories-section" id="categories-overview-panel">
-        <!-- Global Dish Search Across All Categories -->
-        <div class="menu-global-search-wrap" style="margin-bottom: 18px;">
-          <div class="cat-search-box" style="display: flex; align-items: center; background: #FFFFFF; border: 1.5px solid var(--admin-border); border-radius: 12px; padding: 0 14px; height: 46px; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
+        <!-- Global Dish Search Across All Categories & Top Order View -->
+        <div class="menu-global-search-wrap" style="margin-bottom: 18px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <div class="cat-search-box" style="flex: 1; min-width: 240px; display: flex; align-items: center; background: #FFFFFF; border: 1.5px solid var(--admin-border); border-radius: 12px; padding: 0 14px; height: 46px; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
             <i class="fa-solid fa-magnifying-glass" style="color: var(--admin-text-muted); margin-right: 10px; font-size: 0.95rem;"></i>
             <input type="text" id="global-dish-search-input" placeholder="Search any food dish across all categories (e.g. Biryani, Crispy Chicken)..." style="flex: 1; border: none; outline: none; background: transparent; font-size: 0.92rem; color: var(--admin-text-main);">
             <button type="button" class="clear-btn" id="btn-clear-global-dish-search" style="display: none; background: none; border: none; cursor: pointer; color: #9CA3AF; font-size: 1.1rem; padding: 4px;">✕</button>
           </div>
+          <button type="button" class="btn-top-order-filter" id="btn-admin-all-items-order" title="View & set which dishes show first in All Items">
+            <i class="fa-solid fa-arrow-up-short-wide"></i> All Items Order
+          </button>
         </div>
 
-        <!-- Global Search Results Container (Hidden by default, shown when query typed) -->
+        <!-- Global Search / All Items Order Results Container -->
         <div id="global-dish-search-results-panel" style="display: none; margin-bottom: 24px;">
           <div class="section-title-bar" style="margin-bottom: 12px;">
             <div class="title-with-count">
-              <span class="section-icon">🔍</span>
-              <h2>Menu Search Results</h2>
+              <span class="section-icon" id="global-results-icon">🔍</span>
+              <h2 id="global-results-title">Menu Search Results</h2>
               <span class="count-pill" id="global-search-count-badge">0 Dishes</span>
             </div>
-            <span class="section-hint">Instant 1-tap in-stock toggle or edit dish</span>
+            <span class="section-hint" id="global-results-hint">Instant 1-tap in-stock toggle or edit dish</span>
           </div>
           <div class="dishes-admin-grid" id="global-dishes-results-grid"></div>
         </div>
@@ -1557,6 +1575,19 @@
           <input type="text" id="cat-name-input" placeholder="e.g. Crispy Specials, Gourmet Bowls" required>
         </div>
 
+        <div class="form-group" id="cat-sort-order-group">
+          <label for="cat-sort-order-input">Category Display Number <small style="font-weight:500; color:#6B7280;">(1 = shows first after "All")</small></label>
+          <div class="order-input-with-presets">
+            <input type="number" id="cat-sort-order-input" min="1" max="999" step="1" placeholder="Auto">
+            <div class="order-preset-pills">
+              <button type="button" class="btn-order-preset btn-cat-order-preset" data-order="1">#1 First</button>
+              <button type="button" class="btn-order-preset btn-cat-order-preset" data-order="2">#2</button>
+              <button type="button" class="btn-order-preset btn-cat-order-preset" data-order="3">#3</button>
+              <button type="button" class="btn-order-preset btn-cat-order-preset" data-order="">Auto</button>
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label>Category Emoji Icon *</label>
           <div class="emoji-picker-container">
@@ -1698,6 +1729,19 @@
           <div class="form-group">
             <label for="dish-time-input">Prep Time</label>
             <input type="text" id="dish-time-input" placeholder="e.g. 10 - 15 mins" value="12 - 15 mins">
+          </div>
+        </div>
+
+        <div class="form-group" id="dish-sort-order-group">
+          <label for="dish-sort-order-input">Menu Top Position # <small style="font-weight:500; color:#6B7280;">(Optional — 1 = shows on top in "All" &amp; category)</small></label>
+          <div class="order-input-with-presets">
+            <input type="number" id="dish-sort-order-input" min="1" max="999" step="1" placeholder="Auto">
+            <div class="order-preset-pills">
+              <button type="button" class="btn-order-preset btn-dish-order-preset" data-order="1">📌 #1 Top</button>
+              <button type="button" class="btn-order-preset btn-dish-order-preset" data-order="2">#2</button>
+              <button type="button" class="btn-order-preset btn-dish-order-preset" data-order="3">#3</button>
+              <button type="button" class="btn-order-preset btn-dish-order-preset" data-order="">Auto</button>
+            </div>
           </div>
         </div>
 

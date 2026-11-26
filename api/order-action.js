@@ -275,7 +275,7 @@ export default async function handler(req, res) {
   const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
 
   // 1. Role Gate: Enforce authentication for staff-restricted actions
-  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover'].includes(action)) {
+  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover', 'set_rider_duty'].includes(action)) {
     const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
     if (!auth || !auth.valid) {
       return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff or Rider session required' });
@@ -543,7 +543,7 @@ export default async function handler(req, res) {
       return res.status(200).json(sample);
     }
 
-    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover'].includes(action)) {
+    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover', 'set_rider_duty'].includes(action)) {
       const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
         return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff session required' });
@@ -1058,6 +1058,47 @@ export default async function handler(req, res) {
           rider: { pin, cash_handover_status: 'pending_owner_approval', cash_handover_amount: amount, cash_handover_requested_at: requestedAt }
         });
       }
+
+      if (action === 'set_rider_duty') {
+        if (auth.payload?.role !== 'rider' && auth.payload?.role !== 'owner') {
+          return res.status(403).json({ error: 'Forbidden: Rider or Owner session required for set_rider_duty' });
+        }
+        const requestedPin = String(body.riderPin || body.pin || '').trim();
+        let targetPin = requestedPin;
+        if (auth.payload?.role === 'rider') {
+          const tokenPin = String(auth.payload?.riderPin || '').trim();
+          if (!tokenPin) {
+            return res.status(403).json({ error: 'Forbidden: Rider PIN missing from token' });
+          }
+          if (requestedPin && requestedPin !== tokenPin) {
+            return res.status(403).json({ error: 'Forbidden: Riders can only update their own duty status' });
+          }
+          targetPin = tokenPin;
+        } else if (!targetPin) {
+          return res.status(400).json({ error: 'riderPin is required' });
+        }
+        let nextStatus = body.status !== undefined ? String(body.status).trim().toLowerCase() : '';
+        if (!nextStatus && typeof body.onDuty === 'boolean') {
+          nextStatus = body.onDuty ? 'online' : 'offline';
+        }
+        if (!['online', 'offline'].includes(nextStatus)) {
+          return res.status(400).json({ error: 'Valid duty status ("online" or "offline") is required' });
+        }
+        const simExisting = body.simulateExistingRider || (Array.isArray(body.simulateRiders) ? body.simulateRiders.find(r => String(r.pin).trim() === targetPin) : null);
+        if (simExisting && simExisting.status === 'inactive') {
+          return res.status(403).json({ error: 'Forbidden: Rider account is deactivated' });
+        }
+        return res.status(200).json({
+          success: true,
+          status: nextStatus,
+          rider: {
+            ...(simExisting || {}),
+            pin: targetPin,
+            id: simExisting?.id || `rider-${targetPin}`,
+            status: nextStatus
+          }
+        });
+      }
     }
     return res.status(503).json({ error: 'Database service credentials not configured on server' });
   }
@@ -1253,7 +1294,7 @@ export default async function handler(req, res) {
           return res.status(200).json({ success: true, riders: cachedEntry.rows });
         }
 
-        let query = sb.from('riders').select('pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at, upi_vpa, bank_account_no, bank_ifsc, payout_method_pref');
+        let query = sb.from('riders').select('id, pin, name, phone, vehicle, status, avatar, avatar_img, max_active_orders, cash_settled_at, payout_paid_at, payout_amount_paid, trips, earnings, cash_handover_status, cash_handover_amount, cash_handover_requested_at, upi_vpa, bank_account_no, bank_ifsc, payout_method_pref');
         if (riderPin) {
           query = query.eq('pin', riderPin);
         }
@@ -2317,6 +2358,65 @@ export default async function handler(req, res) {
         invalidateOrderActionMemoryCache();
         invalidateRidersListCache();
         return res.status(200).json({ success: true, rider: data && data.length > 0 ? data[0] : null });
+      }
+
+      // 5c. Rider On Duty / Off Duty Status Toggle
+      case 'set_rider_duty': {
+        const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+        if (!auth || !auth.valid) {
+          return res.status(401).json({ error: auth?.error || 'Unauthorized: Staff or Rider session required' });
+        }
+        if (auth.payload?.role !== 'rider' && auth.payload?.role !== 'owner') {
+          return res.status(403).json({ error: 'Forbidden: Rider or Owner session required for set_rider_duty' });
+        }
+
+        const requestedPin = String(body.riderPin || body.pin || '').trim();
+        let targetPin = requestedPin;
+        if (auth.payload?.role === 'rider') {
+          const tokenPin = String(auth.payload?.riderPin || '').trim();
+          if (!tokenPin) {
+            return res.status(403).json({ error: 'Forbidden: Rider PIN missing from token' });
+          }
+          if (requestedPin && requestedPin !== tokenPin) {
+            return res.status(403).json({ error: 'Forbidden: Riders can only update their own duty status' });
+          }
+          targetPin = tokenPin;
+        } else if (!targetPin) {
+          return res.status(400).json({ error: 'riderPin is required' });
+        }
+
+        let nextStatus = body.status !== undefined ? String(body.status).trim().toLowerCase() : '';
+        if (!nextStatus && typeof body.onDuty === 'boolean') {
+          nextStatus = body.onDuty ? 'online' : 'offline';
+        }
+        if (!['online', 'offline'].includes(nextStatus)) {
+          return res.status(400).json({ error: 'Valid duty status ("online" or "offline") is required' });
+        }
+
+        const { data: existingRider, error: lookupError } = await sb
+          .from('riders')
+          .select('pin, id, name, phone, vehicle, status, avatar, avatar_img, max_active_orders')
+          .eq('pin', targetPin)
+          .maybeSingle();
+        if (lookupError) throw lookupError;
+        if (!existingRider) {
+          return res.status(404).json({ error: 'Rider not found' });
+        }
+        if (existingRider.status === 'inactive') {
+          return res.status(403).json({ error: 'Forbidden: Rider account is deactivated' });
+        }
+
+        const { data, error } = await sb
+          .from('riders')
+          .update({ status: nextStatus })
+          .eq('pin', targetPin)
+          .select();
+        if (error) throw error;
+
+        riderProfileCache.clear();
+        invalidateRidersListCache();
+        const updatedRider = data && data.length > 0 ? data[0] : { ...existingRider, status: nextStatus };
+        return res.status(200).json({ success: true, status: nextStatus, rider: updatedRider });
       }
 
       // 6. Authoritative Order Creation (Prevents Client-Side Price Tampering)

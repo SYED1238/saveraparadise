@@ -1145,6 +1145,13 @@
             </div>
           </div>
 
+          <!-- Live Fleet Duty Status Summary -->
+          <div class="fleet-duty-summary-bar" id="fleet-duty-summary-bar" aria-live="polite">
+            <span class="fleet-duty-summary-chip online"><span class="duty-dot"></span> <strong id="fleet-count-online">0</strong> On Duty</span>
+            <span class="fleet-duty-summary-chip offline"><span class="duty-dot"></span> <strong id="fleet-count-offline">0</strong> Off Duty</span>
+            <span class="fleet-duty-summary-chip inactive" id="fleet-chip-inactive" style="display: none;"><span class="duty-dot"></span> <strong id="fleet-count-inactive">0</strong> Deactivated</span>
+          </div>
+
           <!-- Mobile Delivery Boy Cards -->
           <div class="owner-cards-grid" id="rider-cards-container">
             <!-- Populated dynamically via owner.js -->
