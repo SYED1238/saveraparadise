@@ -73,7 +73,7 @@ async function putAdminStoreSettingsEdgeCache(request, context, payload) {
 }
 
 const ALLOWED_DISH_FIELDS = [
-  'id', 'name', 'category', 'category_name', 'price', 'original_price',
+  'id', 'name', 'category', 'category_name', 'price', 'original_price', 'is_combo',
   'badge', 'time', 'calories', 'diet', 'description', 'in_stock',
   'image', 'available_days', 'time_restricted', 'available_from', 'available_to', 'r2_key'
 ];
@@ -376,9 +376,10 @@ export async function onRequest(context) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').upsert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo'))) {
           delete dish.r2_key;
           delete dish.original_price;
+          delete dish.is_combo;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete dish[match[1]];
@@ -398,9 +399,10 @@ export async function onRequest(context) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').insert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo'))) {
           delete dish.r2_key;
           delete dish.original_price;
+          delete dish.is_combo;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete dish[match[1]];
@@ -420,9 +422,10 @@ export async function onRequest(context) {
         }
         let updates = sanitizeDishFields(rawUpdates);
         let { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo'))) {
           delete updates.r2_key;
           delete updates.original_price;
+          delete updates.is_combo;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete updates[match[1]];
@@ -438,9 +441,10 @@ export async function onRequest(context) {
           // If dish record was not yet in table, upsert it with ID to ensure persistence
           const upsertPayload = { id, ...updates };
           let upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
-          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key') || String(upsertRes.error.message || '').includes('original_price'))) {
+          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key') || String(upsertRes.error.message || '').includes('original_price') || String(upsertRes.error.message || '').includes('is_combo'))) {
             delete upsertPayload.r2_key;
             delete upsertPayload.original_price;
+            delete upsertPayload.is_combo;
             const match = String(upsertRes.error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
             if (match && match[1]) {
               delete upsertPayload[match[1]];

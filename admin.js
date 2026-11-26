@@ -2280,22 +2280,27 @@ const initAdminApp = () => {
       }
       if (dishIsComboInput && /\bcombos?\b/i.test(dishBadgeInput.value)) {
         dishIsComboInput.checked = true;
+        if (dishModalTitle) dishModalTitle.textContent = dishEditId?.value ? 'Edit Combo Meal' : 'Add New Combo Meal';
+        if (dishModalIcon) dishModalIcon.textContent = '🍱';
       }
     });
   }
 
   if (dishIsComboInput) {
     dishIsComboInput.addEventListener('change', () => {
+      const isEditing = Boolean(dishEditId?.value);
       if (dishIsComboInput.checked) {
         if (dishBadgeInput && !dishBadgeInput.value) {
           dishBadgeInput.value = '🔥 Value Combo';
+          if (dishBadgeCustomInput) dishBadgeCustomInput.style.display = 'none';
         }
-        if (!dishEditId?.value && dishModalTitle) {
-          dishModalTitle.textContent = 'Add New Combo Meal';
-          if (dishModalIcon) dishModalIcon.textContent = '🍱';
+        if (dishModalTitle) dishModalTitle.textContent = isEditing ? 'Edit Combo Meal' : 'Add New Combo Meal';
+        if (dishModalIcon) dishModalIcon.textContent = '🍱';
+      } else {
+        if (dishBadgeInput && dishBadgeInput.value === '🔥 Value Combo') {
+          dishBadgeInput.value = '';
         }
-      } else if (!dishEditId?.value && dishModalTitle) {
-        dishModalTitle.textContent = 'Add New Food Dish';
+        if (dishModalTitle) dishModalTitle.textContent = isEditing ? 'Edit Food Dish' : 'Add New Food Dish';
         if (dishModalIcon) dishModalIcon.textContent = '🍔';
       }
     });
@@ -2307,7 +2312,10 @@ const initAdminApp = () => {
         if (dishIsComboInput) dishIsComboInput.checked = true;
         if (dishBadgeInput && !dishBadgeInput.value) {
           dishBadgeInput.value = '🔥 Value Combo';
+          if (dishBadgeCustomInput) dishBadgeCustomInput.style.display = 'none';
         }
+        if (dishModalTitle) dishModalTitle.textContent = dishEditId?.value ? 'Edit Combo Meal' : 'Add New Combo Meal';
+        if (dishModalIcon) dishModalIcon.textContent = '🍱';
       }
     });
   }
@@ -2339,13 +2347,15 @@ const initAdminApp = () => {
     const parsedOrigPrice = dishOriginalPriceInput ? parseFloat(dishOriginalPriceInput.value) : NaN;
     const originalPrice = (!isNaN(parsedOrigPrice) && parsedOrigPrice > price) ? Math.round(parsedOrigPrice) : null;
 
-    const isCombo = Boolean(dishIsComboInput?.checked) || isComboCategory(category);
+    const isCombo = dishIsComboInput ? Boolean(dishIsComboInput.checked) : isComboCategory(category);
     let badge = dishBadgeInput.value.trim();
     if (badge === 'Custom') {
       badge = dishBadgeCustomInput ? dishBadgeCustomInput.value.trim() : '';
     }
     if (isCombo && !badge) {
       badge = '🔥 Value Combo';
+    } else if (!isCombo && badge === '🔥 Value Combo') {
+      badge = '';
     }
     const time = dishTimeInput.value.trim();
     const calories = dishCaloriesInput.value.trim();

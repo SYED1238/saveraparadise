@@ -156,4 +156,64 @@ describe('COMBOS CREATION & FIRST-IN-MENU VISIBILITY SUITE', () => {
     assert.match(mainJs, /isComboDish\s*\(/, 'main.js must check isComboDish when syncing storefront cards');
     assert.match(mainJs, /needsReorder[\s\S]*?recipeGrid\.appendChild\(frag\)/, 'main.js must reorder #recipe-grid DOM children so combos render first');
   });
+
+  it('8. Explicit isCombo false/true overrides category & badge in isComboDish and _sortDishesList', () => {
+    const now = Date.now();
+    const disabledCombo = {
+      id: `item-${now + 100}`,
+      name: 'Unpinned Combo',
+      category: 'combos',
+      categoryName: 'Combos',
+      badge: '🔥 Value Combo',
+      isCombo: false,
+      createdAt: new Date(now + 100).toISOString()
+    };
+    const pinnedBiryani = {
+      id: `item-${now + 200}`,
+      name: 'Pinned Special Biryani',
+      category: 'biryani',
+      categoryName: 'Rice & Biryani',
+      badge: '⭐ Bestseller',
+      isCombo: true,
+      createdAt: new Date(now + 200).toISOString()
+    };
+
+    assert.strictEqual(isComboDish(disabledCombo), false, 'Explicit isCombo: false must override category/badge');
+    assert.strictEqual(isComboDish(pinnedBiryani), true, 'Explicit isCombo: true must pin non-combo category dish');
+
+    const sorted = dataService._sortDishesList([disabledCombo, DEFAULT_DISHES[1], pinnedBiryani]);
+    assert.strictEqual(sorted[0].id, pinnedBiryani.id, 'Explicitly pinned dish must sort first');
+    assert.strictEqual(sorted[1].id, disabledCombo.id, 'Unpinned custom dish follows regular custom dish order');
+    assert.strictEqual(sorted[2].id, DEFAULT_DISHES[1].id, 'Default regular dish comes after');
+  });
+
+  it('9. admin.js combo toggle honors OFF state and updates edit modal live; Dual-API & Migration 16 support is_combo', () => {
+    const adminJs = fs.readFileSync(path.resolve(process.cwd(), 'admin.js'), 'utf8');
+    const dataServiceJs = fs.readFileSync(path.resolve(process.cwd(), 'dataService.js'), 'utf8');
+    const apiAdminStore = fs.readFileSync(path.resolve(process.cwd(), 'api', 'admin-store.js'), 'utf8');
+    const cfAdminStore = fs.readFileSync(path.resolve(process.cwd(), 'functions', 'api', 'admin-store.js'), 'utf8');
+    const mig16 = fs.readFileSync(path.resolve(process.cwd(), 'supabase_migration_16_dishes_is_combo.sql'), 'utf8');
+    const rollback16 = fs.readFileSync(path.resolve(process.cwd(), 'supabase_rollback_16_dishes_is_combo.sql'), 'utf8');
+
+    assert.match(
+      adminJs,
+      /const\s+isCombo\s*=\s*dishIsComboInput\s*\?\s*Boolean\(dishIsComboInput\.checked\)\s*:\s*isComboCategory\(category\);/,
+      'formDish must honor explicit false state of dishIsComboInput toggle'
+    );
+    assert.match(
+      adminJs,
+      /else\s+if\s*\(\s*!isCombo\s*&&\s*badge\s*===\s*['"]🔥 Value Combo['"]\s*\)\s*\{\s*badge\s*=\s*['"]['"];\s*\}/,
+      'formDish must clear 🔥 Value Combo badge when toggle is OFF'
+    );
+    assert.match(dataServiceJs, /is_combo:\s*newDish\.isCombo/, 'addDish must persist is_combo to Supabase');
+    assert.match(dataServiceJs, /is_combo:\s*\(typeof d\.isCombo === 'boolean'\)/, 'updateDish must persist is_combo to Supabase');
+
+    for (const [name, content] of [['api/admin-store.js', apiAdminStore], ['functions/api/admin-store.js', cfAdminStore]]) {
+      assert.match(content, /'is_combo'/, `${name} ALLOWED_DISH_FIELDS must include is_combo`);
+      assert.match(content, /delete\s+dish\.is_combo/, `${name} must handle missing is_combo column fallback`);
+    }
+
+    assert.match(mig16, /ALTER\s+TABLE\s+public\.dishes\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+is_combo\s+BOOLEAN\s+DEFAULT\s+NULL/i);
+    assert.match(rollback16, /ALTER\s+TABLE\s+public\.dishes\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+is_combo/i);
+  });
 });

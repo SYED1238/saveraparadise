@@ -335,7 +335,8 @@ export function isComboCategory(cat) {
 
 export function isComboDish(dish) {
   if (!dish || typeof dish !== 'object') return false;
-  if (dish.isCombo === true) return true;
+  if (dish.isCombo === false || dish.is_combo === false) return false;
+  if (dish.isCombo === true || dish.is_combo === true) return true;
   if (isComboCategory({ slug: dish.category, name: dish.categoryName })) return true;
   const badge = String(dish.badge || '').trim();
   return /\bcombos?\b/i.test(badge);
@@ -3025,7 +3026,11 @@ class QuickBiteDataService {
               originalPrice: (d.original_price !== null && d.original_price !== undefined)
                 ? (parseFloat(d.original_price) || null)
                 : (localMatch?.originalPrice ?? null),
-              isCombo: Boolean(localMatch?.isCombo) || isComboCategory({ slug: d.category, name: d.category_name }) || /\bcombos?\b/i.test(String(d.badge || '')),
+              isCombo: (typeof d.is_combo === 'boolean')
+                ? d.is_combo
+                : (typeof localMatch?.isCombo === 'boolean'
+                    ? localMatch.isCombo
+                    : (isComboCategory({ slug: d.category, name: d.category_name }) || /\bcombos?\b/i.test(String(d.badge || '')))),
               rating: '',
               image: finalImage,
               badge: d.badge || '',
@@ -5900,7 +5905,10 @@ class QuickBiteDataService {
 
   _getDishComboPriority(dish) {
     if (!dish || typeof dish !== 'object') return 2;
-    if (dish.isCombo === true || isComboCategory({ slug: dish.category, name: dish.categoryName })) {
+    if (dish.isCombo === false || dish.is_combo === false) {
+      return 2; // Explicitly disabled from being forced first
+    }
+    if (dish.isCombo === true || dish.is_combo === true || isComboCategory({ slug: dish.category, name: dish.categoryName })) {
       return 0; // Dedicated Combos category / explicitly flagged combos always appear first
     }
     if (/\bcombos?\b/i.test(String(dish.badge || ''))) {
@@ -6082,7 +6090,9 @@ class QuickBiteDataService {
       categoryName: dishData.categoryName || '',
       price: parseFloat(dishData.price) || 199,
       originalPrice: dishData.originalPrice !== undefined ? (parseFloat(dishData.originalPrice) || null) : null,
-      isCombo: Boolean(dishData.isCombo) || isComboCategory({ slug: dishData.category, name: dishData.categoryName }) || /\bcombos?\b/i.test(String(dishData.badge || '')),
+      isCombo: (typeof dishData.isCombo === 'boolean')
+        ? dishData.isCombo
+        : (isComboCategory({ slug: dishData.category, name: dishData.categoryName }) || /\bcombos?\b/i.test(String(dishData.badge || ''))),
       rating: '',
       image: sanitizedImage,
       badge: dishData.badge !== undefined ? dishData.badge : '',
@@ -6112,6 +6122,7 @@ class QuickBiteDataService {
       category_name: newDish.categoryName,
       price: newDish.price,
       original_price: newDish.originalPrice !== undefined ? newDish.originalPrice : null,
+      is_combo: newDish.isCombo,
       rating: newDish.rating,
       image: remoteDishImage,
       badge: newDish.badge,
@@ -6170,6 +6181,7 @@ class QuickBiteDataService {
         category_name: d.categoryName,
         price: d.price,
         original_price: d.originalPrice !== undefined ? d.originalPrice : null,
+        is_combo: (typeof d.isCombo === 'boolean') ? d.isCombo : isComboDish(d),
         badge: d.badge,
         time: d.time,
         calories: d.calories,
