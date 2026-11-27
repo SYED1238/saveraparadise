@@ -8,6 +8,8 @@ import { createAdminToken } from '../api/_auth.js';
 import { createAdminToken as createCloudflareAdminToken } from '../functions/api/_auth.js';
 import adminStoreHandler from '../api/admin-store.js';
 import { onRequest as cloudflareAdminStoreHandler } from '../functions/api/admin-store.js';
+import orderActionHandler from '../api/order-action.js';
+import { onRequest as cloudflareOrderActionHandler } from '../functions/api/order-action.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -403,5 +405,181 @@ test('RIDER PAYOUT CARRY-FORWARD, FULL RETURN COMPENSATION & ADMIN-STORE PARITY 
     assert.match(deliveryJs, /priorUnpaidCount/, 'delivery.js payout modal must note carried-forward unpaid trips');
     assert.match(deliveryJs, /summary\.isPaidToday\s*&&\s*summary\.payoutBalance\s*>\s*0/, 'delivery.js hero badge must show due balance when new orders accrue after settlement');
     assert.match(deliveryJs, /todayDeliveredCount/, 'delivery.js milestone badge must use current shift delivered count');
+  });
+
+  await t.test('7. End-to-end customer refusal return forwards deliveredAt, clears doorstep wait, zeroes COD cash, and pays full fee across Dual-API', async () => {
+    const origUrl = process.env.SUPABASE_URL;
+    const origKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const origFetch = globalThis.fetch;
+    const origWindow = globalThis.window;
+    const origPortalType = dataService.portalType;
+    const origSharedBroadcast = dataService.sharedBroadcastChannel;
+
+    const nodeRiderToken = createAdminToken(3600000, 'rider', null, { riderPin: '4321' });
+    globalThis.window = { location: { origin: 'https://saveraparadise.foodbliz.in' } };
+    dataService.portalType = 'delivery';
+    dataService.sharedBroadcastChannel = { send: async () => ({ status: 'ok' }) };
+    mockLocalStorage.setItem('quickbite_rider_token', nodeRiderToken);
+
+    dataService.saveRiders([
+      { pin: '4321', name: 'Hameed', phone: '9876543210', status: 'online', payoutPaidAt: null, cashSettledAt: null }
+    ]);
+    dataService.savePayoutConfig({
+      activeMethod: 'tiered_standard',
+      tieredStandard: { basePay: 30, baseKm: 1, extraKmRate: 15 },
+      undeliveredCompensation: { mode: 'full', customAmount: 20 }
+    });
+    const orderCreatedTs = Date.now() - 600_000;
+    dataService.saveOrders([
+      {
+        id: '#QB-9401',
+        status: 'on_the_way',
+        assignedRiderPin: '4321',
+        paymentMethod: 'Cash on Delivery (COD)',
+        total: '₹450',
+        distanceKm: 3.5, // 30 + (3.5 - 1) * 15 = 67.5
+        riderWaitingAtDoorstep: true,
+        waitingStartedAt: Date.now() - 5000,
+        createdAt: orderCreatedTs
+      }
+    ], { silent: true });
+
+    const clientPostedActions = [];
+    const patchedOrderPayloads = [];
+    const existingDbOrder = {
+      id: '#QB-9401',
+      status: 'on_the_way',
+      step_index: 3,
+      status_label: 'On the Way',
+      assigned_rider_pin: '4321',
+      payment_method: 'Cash on Delivery (COD)',
+      payment_status: 'Pending',
+      total: '₹450',
+      numeric_total: 450,
+      cash_collected: 0,
+      is_paid_online: false,
+      doorstep_upi: false,
+      address_details: {
+        distanceKm: 3.5,
+        waitingStartedAt: Date.now() - 5000,
+        riderWaitingAtDoorstep: true
+      }
+    };
+
+    process.env.SUPABASE_URL = 'https://mock-sb.local';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock-service-role-key';
+
+    globalThis.fetch = async (url, init = {}) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/api/order-action')) {
+        const payload = JSON.parse(init.body || '{}');
+        clientPostedActions.push(payload);
+        return new Response(JSON.stringify({ success: true, order: { id: '#QB-9401', status: 'undelivered' } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (urlStr.includes('/rest/v1/orders')) {
+        const method = String(init.method || 'GET').toUpperCase();
+        if (method === 'GET') {
+          return new Response(JSON.stringify(existingDbOrder), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        if (method === 'PATCH') {
+          const patch = JSON.parse(init.body || '{}');
+          patchedOrderPayloads.push(patch);
+          return new Response(JSON.stringify([{ ...existingDbOrder, ...patch }]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      }
+      return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+
+    try {
+      const updated = dataService.riderUndeliveredOrder('#QB-9401', {
+        reason: 'Customer refused to accept order',
+        riderPin: '4321',
+        returnToKitchen: true
+      });
+      assert.equal(updated.status, 'undelivered');
+      assert.equal(updated.cashCollected, 0);
+      assert.ok(Number(updated.undeliveredAt) > 0, 'undeliveredAt must be stamped');
+      if (updated.serverPromise) await updated.serverPromise.catch(() => {});
+
+      assert.equal(clientPostedActions.length, 1);
+      assert.equal(clientPostedActions[0].status, 'undelivered');
+      assert.equal(clientPostedActions[0].cancellationReason, 'Customer refused to accept order');
+      assert.equal(clientPostedActions[0].cashCollected, 0);
+      assert.equal(clientPostedActions[0].deliveredAt, updated.undeliveredAt, 'deliveredAt must forward undeliveredAt');
+
+      // Verify full compensation & ₹0 cash liability
+      const payoutSummary = dataService.getRiderPayoutSummary('4321');
+      assert.equal(payoutSummary.undeliveredCount, 1);
+      assert.equal(payoutSummary.payoutBalance, 67.5);
+      assert.equal(dataService.getRiderCashSummary('4321').cashInHand, 0);
+
+      // Verify Node & Cloudflare Pages /api/order-action DB update path cleanly persists undelivered state
+      const cfRiderToken = createCloudflareAdminToken(3600000, 'rider', process.env, { riderPin: '4321' });
+
+      const { req: oaReq, res: oaRes } = createMockReqRes({
+        url: '/api/order-action',
+        headers: { authorization: `Bearer ${nodeRiderToken}` },
+        body: {
+          action: 'update_status',
+          orderId: '#QB-9401',
+          status: 'undelivered',
+          stepIndex: 4,
+          deliveredAt: updated.undeliveredAt,
+          cancellationReason: 'Customer refused to accept order',
+          cashCollected: 0
+        }
+      });
+      await orderActionHandler(oaReq, oaRes);
+      assert.equal(oaRes.statusCode, 200);
+      const nodePatch = patchedOrderPayloads.pop();
+      assert.equal(nodePatch.status, 'undelivered');
+      assert.equal(nodePatch.cash_collected, 0);
+      assert.equal(nodePatch.delivered_at, updated.undeliveredAt);
+      assert.equal(nodePatch.cancellation_reason, 'Customer refused to accept order');
+      assert.equal(nodePatch.address_details?.riderWaitingAtDoorstep, false);
+      assert.equal(nodePatch.address_details?.waitingStartedAt, undefined);
+
+      const cfOaReq = new Request('https://saveraparadise.foodbliz.in/api/order-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${cfRiderToken}` },
+        body: JSON.stringify({
+          action: 'update_status',
+          orderId: '#QB-9401',
+          status: 'undelivered',
+          stepIndex: 4,
+          deliveredAt: updated.undeliveredAt,
+          cancellationReason: 'Customer refused to accept order',
+          cashCollected: 0
+        })
+      });
+      const cfOaResp = await cloudflareOrderActionHandler({ request: cfOaReq, env: process.env });
+      assert.equal(cfOaResp.status, 200);
+      const cfPatch = patchedOrderPayloads.pop();
+      assert.equal(cfPatch.status, 'undelivered');
+      assert.equal(cfPatch.cash_collected, 0);
+      assert.equal(cfPatch.delivered_at, updated.undeliveredAt);
+      assert.equal(cfPatch.cancellation_reason, 'Customer refused to accept order');
+      assert.equal(cfPatch.address_details?.riderWaitingAtDoorstep, false);
+      assert.equal(cfPatch.address_details?.waitingStartedAt, undefined);
+    } finally {
+      globalThis.fetch = origFetch;
+      if (origWindow === undefined) delete globalThis.window;
+      else globalThis.window = origWindow;
+      dataService.portalType = origPortalType;
+      dataService.sharedBroadcastChannel = origSharedBroadcast;
+      if (origUrl === undefined) delete process.env.SUPABASE_URL;
+      else process.env.SUPABASE_URL = origUrl;
+      if (origKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = origKey;
+    }
   });
 });
