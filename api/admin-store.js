@@ -640,9 +640,32 @@ export default async function handler(req, res) {
       }
 
       case 'save_settings': {
-        const settings = body.settings;
-        if (!settings || typeof settings !== 'object') {
+        const incoming = body.settings;
+        if (!incoming || typeof incoming !== 'object') {
           return res.status(400).json({ error: 'Settings object is required' });
+        }
+        const settings = { ...incoming };
+        const isNonOwnerCaller = userRole !== 'owner';
+        // Preserve owner-managed payout configuration when omitted or when saved from a non-owner portal
+        if (isNonOwnerCaller || !settings.payoutConfig || settings.kmPayoutRate === undefined) {
+          try {
+            const { data: existingRow } = await sb
+              .from('store_settings')
+              .select('settings')
+              .eq('id', 'restaurant_config')
+              .maybeSingle();
+            const existingSettings = existingRow?.settings;
+            if (existingSettings && typeof existingSettings === 'object') {
+              if (existingSettings.payoutConfig && (isNonOwnerCaller || !settings.payoutConfig)) {
+                settings.payoutConfig = existingSettings.payoutConfig;
+              }
+              if (existingSettings.kmPayoutRate !== undefined && (isNonOwnerCaller || settings.kmPayoutRate === undefined)) {
+                settings.kmPayoutRate = existingSettings.kmPayoutRate;
+              }
+            }
+          } catch (preserveErr) {
+            console.warn('[AdminStore] Could not inspect existing payoutConfig before save_settings:', preserveErr?.message || preserveErr);
+          }
         }
         const now = new Date().toISOString();
         const { data, error } = await sb.from('store_settings').upsert([
@@ -862,6 +885,7 @@ export default async function handler(req, res) {
         const { data, error } = await sb.from('riders').update(updateFields).eq('pin', pin).select();
         if (error) throw error;
         invalidateRidersListCache();
+        invalidateOrderActionMemoryCache();
         return res.status(200).json({ success: true, pin, settledAt, data });
       }
 
@@ -874,6 +898,7 @@ export default async function handler(req, res) {
         const { data, error } = await sb.from('riders').update(updateFields).eq('pin', pin).select();
         if (error) throw error;
         invalidateRidersListCache();
+        invalidateOrderActionMemoryCache();
         return res.status(200).json({ success: true, pin, paidAt, data });
       }
 

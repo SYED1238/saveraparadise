@@ -1169,13 +1169,20 @@ function renderRiderFleetTable(orders) {
     const deliveryCount = st.deliveredOrders.filter(o => String(o.status).toLowerCase() === 'delivered').length;
     const kms = Math.round(st.totalKms * 10) / 10;
     const avgKmPerOrder = deliveryCount > 0 ? (kms / deliveryCount).toFixed(1) : '0.0';
-    const cash = st.cashInHand;
+    const liveCashSummary = currentPeriod === 'today' ? dataService.getRiderCashSummary(st.pin) : null;
+    const cash = currentPeriod === 'today' ? Math.max(st.cashInHand, Number(liveCashSummary?.cashInHand) || 0) : st.cashInHand;
     const online = st.onlineOrdersCount;
 
-    // Payout Calculation: Based on owner active compensation model
+    // Payout Calculation: Based on owner active compensation model (including unpaid carry-forward on Today)
     const payoutConfig = dataService.getPayoutConfig();
     const payoutObj = dataService.calculateRiderPayout(st.deliveredOrders, payoutConfig);
-    const riderPayout = payoutObj.exactPayout || payoutObj.totalPayout || 0;
+    const baseRiderPayout = payoutObj.exactPayout || payoutObj.totalPayout || 0;
+    const livePayoutSummary = (currentPeriod === 'today' && typeof dataService.getRiderPayoutSummary === 'function')
+      ? dataService.getRiderPayoutSummary(st.pin)
+      : null;
+    const riderPayout = (livePayoutSummary && livePayoutSummary.hasUnpaidPriorShift)
+      ? (livePayoutSummary.exactEarnings ?? livePayoutSummary.totalEarnings ?? baseRiderPayout)
+      : baseRiderPayout;
 
     // Net Settlement Balance:
     // If Rider collected Cash, they must deposit (Cash - Payout) into the drawer.
@@ -1295,11 +1302,18 @@ function renderRiderFleetTable(orders) {
       riderCardsContainer.innerHTML = statsList.map(st => {
         const deliveryCount = st.deliveredOrders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length;
         const kms = Math.round(st.totalKms * 10) / 10;
-        const cash = st.cashInHand;
+        const liveCashSummary = currentPeriod === 'today' ? dataService.getRiderCashSummary(st.pin) : null;
+        const cash = currentPeriod === 'today' ? Math.max(st.cashInHand, Number(liveCashSummary?.cashInHand) || 0) : st.cashInHand;
         const online = st.onlineOrdersCount;
         const payoutConfig = dataService.getPayoutConfig();
         const payoutObj = dataService.calculateRiderPayout(st.deliveredOrders, payoutConfig);
-        const riderPayout = payoutObj.exactPayout || payoutObj.totalPayout || 0;
+        const baseRiderPayout = payoutObj.exactPayout || payoutObj.totalPayout || 0;
+        const livePayoutSummary = (currentPeriod === 'today' && typeof dataService.getRiderPayoutSummary === 'function')
+          ? dataService.getRiderPayoutSummary(st.pin)
+          : null;
+        const riderPayout = (livePayoutSummary && livePayoutSummary.hasUnpaidPriorShift)
+          ? (livePayoutSummary.exactEarnings ?? livePayoutSummary.totalEarnings ?? baseRiderPayout)
+          : baseRiderPayout;
         const netDeposit = cash - riderPayout;
 
         let statusClass = 'idle';
@@ -3030,7 +3044,16 @@ function renderCashSettlementsView(orders) {
       const codOrdersCount = Array.isArray(summary?.codOrders) ? summary.codOrders.length : 0;
       const isPending = r.cashHandoverStatus === 'pending_owner_approval';
       const takenTs = r.cashTakenAt || r.cashSettledAt;
-      const lastTakenTime = takenTs ? new Date(Number(takenTs) || takenTs).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Not yet today';
+      let lastTakenTime = 'Never settled';
+      if (takenTs) {
+        const takenDate = new Date(Number(takenTs) || takenTs);
+        if (!isNaN(takenDate.getTime())) {
+          const timePart = takenDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+          lastTakenTime = isSameCalendarDay(takenDate, new Date())
+            ? `Today, ${timePart}`
+            : `${takenDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${timePart}`;
+        }
+      }
 
       return {
         pin: String(r.pin || '').trim(),
@@ -3113,7 +3136,7 @@ function renderCashSettlementsView(orders) {
 
             <div class="rc-settle-box" style="margin-top: 10px;">
               <div class="rc-settle-meta">
-                <span class="rc-settle-title">${st.isPending ? 'HANDOVER SUBMITTED' : 'COD CASH BALANCE'}</span>
+                <span class="rc-settle-title">${st.isPending ? 'HANDOVER SUBMITTED' : 'COD CASH BALANCE'}${st.codOrdersCount > 0 ? ` (${st.codOrdersCount} COD)` : ''}</span>
                 <span class="rc-settle-formula">${statusText}</span>
               </div>
               <div class="rc-settle-amount num-amber" style="font-size: 1.25rem; font-weight: 800;">
@@ -3158,11 +3181,34 @@ function renderCashSettlementsView(orders) {
       const pin = btn.getAttribute('data-pin');
       const amount = btn.getAttribute('data-amount');
       if (!pin) return;
-      const res = dataService.confirmRiderCashTaken(pin);
-      if (res.success) {
-        showToast(`💵 Confirmed! ₹${Number(amount || res.amount).toLocaleString('en-IN')} marked as taken from ${res.rider.name} into drawer!`, 'success');
-        renderDashboard();
-      }
+        const prevCashRider = (dataService.getRiders() || []).find(r => String(r?.pin || '').trim() === String(pin).trim());
+        const prevCashSnapshot = prevCashRider ? {
+          cashSettledAt: prevCashRider.cashSettledAt ?? null,
+          cashTakenAt: prevCashRider.cashTakenAt ?? null,
+          cashHandoverStatus: prevCashRider.cashHandoverStatus ?? null,
+          cashHandoverAmount: prevCashRider.cashHandoverAmount ?? 0,
+          lastCashCollectedAmount: prevCashRider.lastCashCollectedAmount ?? 0
+        } : null;
+        const res = dataService.confirmRiderCashTaken(pin);
+        if (res.success) {
+          showToast(`💵 Confirmed! ₹${Number(amount || res.amount).toLocaleString('en-IN')} marked as taken from ${res.rider.name} into drawer!`, 'success');
+          renderDashboard();
+          if (res.serverPromise) {
+            res.serverPromise.catch(async (err) => {
+              if (prevCashSnapshot) {
+                const curRiders = dataService.getRiders() || [];
+                const rIdx = curRiders.findIndex(r => String(r?.pin || '').trim() === String(pin).trim());
+                if (rIdx >= 0) {
+                  Object.assign(curRiders[rIdx], prevCashSnapshot);
+                  dataService.saveRiders(curRiders);
+                }
+              }
+              showToast(`⚠️ Cash settlement failed to sync to server: ${err?.message || 'Check connection'}. Refreshing...`, 'error');
+              await dataService.syncRidersFromSupabase(true).catch(() => {});
+              renderDashboard();
+            });
+          }
+        }
     };
   });
 }
@@ -3424,7 +3470,7 @@ function readCurrentPayoutConfigFromUI() {
       ratePerKm: numVal('cfg-fl-rate', 30)
     },
     undeliveredCompensation: {
-      mode: ['zero', 'half', 'base', 'custom'].includes(undeliveredMode) ? undeliveredMode : 'zero',
+      mode: ['zero', 'half', 'base', 'full', 'custom'].includes(undeliveredMode) ? undeliveredMode : 'zero',
       customAmount: Math.max(0, undeliveredAmount)
     }
   };
@@ -3592,13 +3638,53 @@ export function renderKmPayoutsView(orders) {
           periodBounds.end &&
           (periodBounds.end.getTime() - periodBounds.start.getTime() <= 24 * 60 * 60 * 1000 + 1000)
         );
+        const parseOrderTs = (val) => {
+          if (!val) return 0;
+          if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+          const num = Number(val);
+          if (Number.isFinite(num) && num > 1e11) return num;
+          const ms = Date.parse(val);
+          return Number.isFinite(ms) ? ms : 0;
+        };
+        const maxPeriodOrderTs = riderOrders.reduce((mx, o) => {
+          const ts = parseOrderTs(
+            o?.deliveredAt ||
+            o?.delivered_at ||
+            o?.undeliveredAt ||
+            o?.undelivered_at ||
+            o?.updatedAt ||
+            o?.updated_at ||
+            o?.claimedAt ||
+            o?.claimed_at ||
+            o?.createdAt ||
+            o?.created_at ||
+            o?.ts
+          );
+          return ts > mx ? ts : mx;
+        }, 0);
         const paidInPeriod = Boolean(isSingleHistoricalDay && paidTs && paidTs >= periodBounds.start.getTime() && paidTs <= periodBounds.end.getTime());
-        isPaid = paidInPeriod || (calculatedPayout === 0);
-        paidTime = paidInPeriod && paidDate ? paidDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+        const settledLater = Boolean(
+          !paidInPeriod &&
+          paidTs &&
+          calculatedPayout > 0 &&
+          maxPeriodOrderTs > 0 &&
+          paidTs >= maxPeriodOrderTs
+        );
+        isPaid = paidInPeriod || settledLater || (calculatedPayout === 0);
+        paidTime = (paidInPeriod || settledLater) && paidDate ? paidDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
         paidAmount = paidInPeriod ? (safeNumber(r.payoutAmountPaid) || calculatedPayout) : calculatedPayout;
         currentPayable = 0; // Never allow live shift payout mutations from historical/multi-day audit views
         hasUnpaidBalance = false;
       }
+
+      const deliveredCountVal = (isLiveShift && payoutSummary)
+        ? safeNumber(payoutSummary.deliveredCount)
+        : riderOrders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length;
+      const undeliveredCountVal = (isLiveShift && payoutSummary)
+        ? safeNumber(payoutSummary.undeliveredCount)
+        : riderOrders.filter(o => String(o?.status || '').toLowerCase() === 'undelivered').length;
+      const hasUnpaidPriorShift = (isLiveShift && payoutSummary) ? Boolean(payoutSummary.hasUnpaidPriorShift) : false;
+      const priorUnpaidCount = (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.priorUnpaidCount) : 0;
 
       return {
         pin: riderPinStr,
@@ -3607,7 +3693,10 @@ export function renderKmPayoutsView(orders) {
         phone: riderPhone,
         vehicle: riderVehicle,
         upiVpa: (r.upiVpa || r.upi_vpa || '').trim(),
-        deliveredCount: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.deliveredCount) : riderOrders.filter(o => String(o?.status || '').toLowerCase() === 'delivered').length,
+        deliveredCount: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.deliveredCount) : deliveredCountVal,
+        undeliveredCount: undeliveredCountVal,
+        hasUnpaidPriorShift,
+        priorUnpaidCount,
         kms: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.totalKms) : roundedKms,
         modelBadge,
         calculatedPayout: (isLiveShift && payoutSummary) ? safeNumber(payoutSummary.exactEarnings ?? payoutSummary.totalEarnings) : calculatedPayout,
@@ -3626,13 +3715,16 @@ export function renderKmPayoutsView(orders) {
     // Render Table
     if (tbody) {
       tbody.innerHTML = payoutList.map(st => {
+        const priorBadgeLabel = st.hasUnpaidPriorShift
+          ? `Unpaid (${st.priorUnpaidCount || 1} prior)`
+          : 'Unpaid';
         const statusBadge = (st.isPaid && st.hasUnpaidBalance)
           ? `<span class="badge-payout-pending" style="background:#fef3c7; color:#d97706;"><i class="fa-solid fa-triangle-exclamation"></i> Partial (₹${formatInr(st.paidAmount)} paid, ₹${formatInr(st.currentPayable)} due)</span>`
-          : (st.isPaid
-            ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
-            : (st.calculatedPayout === 0
+          : (st.isPaid && (st.paidAmount > 0 || st.paidTime)
+            ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)}${st.paidTime ? ` (${st.paidTime})` : ''}</span>`
+            : (st.calculatedPayout === 0 && !st.hasUnpaidBalance
               ? `<span class="badge-payout-paid" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`
-              : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`));
+              : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> ${priorBadgeLabel}</span>`));
 
         let actionBtn = '';
         if (activeInFlightPayoutPins && activeInFlightPayoutPins.has(st.pin)) {
@@ -3656,6 +3748,10 @@ export function renderKmPayoutsView(orders) {
           actionBtn = `<button type="button" class="btn-mark-payout-paid" disabled style="opacity:0.6; cursor:default;"><i class="fa-solid fa-check"></i> Paid</button>`;
         }
 
+        const returnedSubLabel = st.undeliveredCount > 0
+          ? ` <span style="font-size:0.72rem; color:#d97706; font-weight:600;">(+${st.undeliveredCount} ret)</span>`
+          : '';
+
         return `
           <tr>
             <td>
@@ -3669,7 +3765,7 @@ export function renderKmPayoutsView(orders) {
               </div>
             </td>
             <td><span style="font-size:0.8rem; color:var(--owner-text-muted);">${escapeHtml(st.vehicle)}</span></td>
-            <td class="text-center font-bold">${st.deliveredCount}</td>
+            <td class="text-center font-bold">${st.deliveredCount}${returnedSubLabel}</td>
             <td class="text-center font-bold" style="color: var(--owner-purple);"><i class="fa-solid fa-route"></i> ${st.kms} km</td>
             <td class="text-center">${st.modelBadge}</td>
             <td class="text-right num-purple" style="font-weight: 800; font-size: 0.95rem;">₹${formatInr(st.calculatedPayout)}</td>
@@ -3684,13 +3780,16 @@ export function renderKmPayoutsView(orders) {
     // Render Mobile Cards
     if (cardsContainer) {
       cardsContainer.innerHTML = payoutList.map(st => {
+        const priorBadgeLabel = st.hasUnpaidPriorShift
+          ? `Unpaid (${st.priorUnpaidCount || 1} prior)`
+          : 'Unpaid';
         const statusBadge = (st.isPaid && st.hasUnpaidBalance)
           ? `<span class="badge-payout-pending" style="background:#fef3c7; color:#d97706;"><i class="fa-solid fa-triangle-exclamation"></i> Partial (₹${formatInr(st.paidAmount)} paid, ₹${formatInr(st.currentPayable)} due)</span>`
-          : (st.isPaid
-            ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)} (${st.paidTime})</span>`
-            : (st.calculatedPayout === 0
+          : (st.isPaid && (st.paidAmount > 0 || st.paidTime)
+            ? `<span class="badge-payout-paid"><i class="fa-solid fa-circle-check"></i> Paid ₹${formatInr(st.paidAmount)}${st.paidTime ? ` (${st.paidTime})` : ''}</span>`
+            : (st.calculatedPayout === 0 && !st.hasUnpaidBalance
               ? `<span class="badge-payout-paid" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-check"></i> Settled (₹0)</span>`
-              : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> Unpaid</span>`));
+              : `<span class="badge-payout-pending"><i class="fa-regular fa-clock"></i> ${priorBadgeLabel}</span>`));
 
         const borderStyle = (st.isPaid && !st.hasUnpaidBalance)
           ? 'border-left: 4px solid #10B981;'
@@ -3712,7 +3811,7 @@ export function renderKmPayoutsView(orders) {
 
             <div class="rc-metrics-grid" style="margin-top: 12px;">
               <div class="rc-metric">
-                <span class="rc-val">${st.deliveredCount}</span>
+                <span class="rc-val">${st.deliveredCount}${st.undeliveredCount > 0 ? ` <small style="font-size:0.7em; color:#d97706;">(+${st.undeliveredCount} ret)</small>` : ''}</span>
                 <span class="rc-lbl">Delivered</span>
               </div>
               <div class="rc-metric">
@@ -3725,7 +3824,7 @@ export function renderKmPayoutsView(orders) {
               </div>
               <div class="rc-metric">
                 <span class="rc-val num-purple">₹${formatInr(st.calculatedPayout)}</span>
-                <span class="rc-lbl">Day Payout</span>
+                <span class="rc-lbl">${st.hasUnpaidPriorShift ? 'Pending Payout' : 'Day Payout'}</span>
               </div>
             </div>
 
@@ -3772,11 +3871,33 @@ export function renderKmPayoutsView(orders) {
         const pin = btn.getAttribute('data-pin');
         const amount = btn.getAttribute('data-amount');
         if (!pin) return;
+        const prevPayRider = (dataService.getRiders() || []).find(r => String(r?.pin || '').trim() === String(pin).trim());
+        const prevPayoutSnapshot = prevPayRider ? {
+          payoutPaidAt: prevPayRider.payoutPaidAt ?? null,
+          payoutAmountPaid: prevPayRider.payoutAmountPaid ?? 0
+        } : null;
         const res = dataService.markRiderPayoutPaid(pin, amount);
         if (res && res.success) {
           const riderName = res.rider?.name || 'Rider';
           showToast(`✅ Payout of ₹${Number(amount || 0).toLocaleString('en-IN')} marked as paid to ${riderName}!`, 'success');
           renderDashboard();
+          if (res.serverPromise && typeof res.serverPromise.catch === 'function') {
+            res.serverPromise.catch(async (err) => {
+              if (prevPayoutSnapshot) {
+                const curRiders = dataService.getRiders() || [];
+                const rIdx = curRiders.findIndex(r => String(r?.pin || '').trim() === String(pin).trim());
+                if (rIdx >= 0) {
+                  Object.assign(curRiders[rIdx], prevPayoutSnapshot);
+                  dataService.saveRiders(curRiders);
+                }
+              }
+              showToast(`⚠️ Server failed to save payout for ${riderName}: ${err?.message || 'Network error'}. Syncing latest state...`, 'error');
+              if (typeof dataService.syncRidersFromSupabase === 'function') {
+                await dataService.syncRidersFromSupabase(true).catch(() => {});
+              }
+              renderDashboard();
+            });
+          }
         }
       };
     });
@@ -3849,7 +3970,12 @@ export function renderKmPayoutsView(orders) {
           });
           const res = await resp.json();
           if (res && res.success && (res.status === 'SUCCESS' || res.status === 'RECEIVED' || res.status === 'PENDING' || !res.status)) {
-            dataService.markRiderPayoutPaid(pin, amount);
+            const payRes = dataService.markRiderPayoutPaid(pin, amount);
+            if (payRes && payRes.serverPromise && typeof payRes.serverPromise.catch === 'function') {
+              await payRes.serverPromise.catch(err => {
+                console.warn('[Owner] Failed to persist UPI payout timestamp to server:', err?.message || err);
+              });
+            }
             playNotificationSound('payout_received');
             triggerDeviceVibration([120, 60, 180]);
             flashTabTitle('⚡ PAYOUT COMPLETED');

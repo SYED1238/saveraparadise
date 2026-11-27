@@ -10382,10 +10382,17 @@ class QuickBiteDataService {
       riders[idx].lastCashCollectedAmount = amount;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
+      let serverPromise = null;
       if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token')))) {
-        this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
-          console.warn('[DataService] Background sync rider error:', err?.message || err);
+        serverPromise = this._adminStoreAction('settle_rider_cash', {
+          riderPin: cleanPin,
+          settledAt: settledTime,
+          amount
+        }).catch(err => {
+          console.warn('[DataService] Background settle_rider_cash error:', err?.message || err);
+          throw err;
         });
+        serverPromise.catch(() => {});
       }
 
       // Audit log into drawer transaction records
@@ -10413,7 +10420,7 @@ class QuickBiteDataService {
       } catch {}
 
       this.notifyChange('cash_settled', { riderPin: cleanPin, settledAt: settledTime, amount });
-      return { success: true, settledAt: settledTime, amount, rider: riders[idx] };
+      return { success: true, settledAt: settledTime, amount, rider: riders[idx], serverPromise };
     }
     return { success: false };
   }
@@ -10483,7 +10490,7 @@ class QuickBiteDataService {
         ratePerKm: parseNum(config.flatLinear?.ratePerKm, 30, 1)
       },
       undeliveredCompensation: {
-        mode: ['zero', 'half', 'base', 'custom'].includes(config.undeliveredCompensation?.mode)
+        mode: ['zero', 'half', 'base', 'full', 'custom'].includes(config.undeliveredCompensation?.mode)
           ? config.undeliveredCompensation.mode
           : 'zero',
         customAmount: parseNum(config.undeliveredCompensation?.customAmount, 20, 0)
@@ -10592,7 +10599,11 @@ class QuickBiteDataService {
       let compAmount = 0;
       let compFormula = '₹0 (Customer unreachable - No compensation policy)';
 
-      if (mode === 'half') {
+      if (mode === 'full') {
+        const standardTrip = this.calculateStandardTripPayout(order, orderIndex, cfg, distanceKm);
+        compAmount = standardTrip.amount;
+        compFormula = `${standardTrip.formula} (100% Full pay - Returned to kitchen)`;
+      } else if (mode === 'half') {
         const standardTrip = this.calculateStandardTripPayout(order, orderIndex, cfg, distanceKm);
         compAmount = Math.round((standardTrip.amount * 0.5) * 100) / 100;
         compFormula = `₹${standardTrip.amount.toFixed(2)} × 50% = ₹${compAmount.toFixed(2)} (Half pay - Customer unreachable)`;
@@ -10733,6 +10744,11 @@ class QuickBiteDataService {
         exactEarnings: 0,
         totalKms: 0,
         deliveredCount: 0,
+        undeliveredCount: 0,
+        todayDeliveredCount: 0,
+        priorUnpaidCount: 0,
+        priorUnpaidBalance: 0,
+        hasUnpaidPriorShift: false,
         surgeCount: 0,
         isPaidToday: false,
         paidAmount: 0,
@@ -10750,6 +10766,8 @@ class QuickBiteDataService {
       return isNaN(parsed) ? (Number(val) || 0) : parsed;
     };
 
+    const getOrderTs = (o) => parseTs(o?.deliveredAt || o?.undeliveredAt || o?.updatedAt || o?.claimedAt || o?.createdAt);
+
     const orders = this.getOrders();
     const riderPinStr = String(rider.pin || '').trim();
     const riderNameStr = String(rider.name || '').trim().toLowerCase();
@@ -10765,34 +10783,76 @@ class QuickBiteDataService {
     });
 
     const shiftStartMs = getShiftStartTimeMs();
-
-    // Bound delivered and undelivered orders to current shift window (resetting daily at 1:00 AM)
-    const shiftDelivered = relevantOrders.filter(o => {
-      const orderTime = parseTs(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
-      return orderTime >= shiftStartMs;
-    });
-
-    const payoutResult = this.calculateRiderPayout(shiftDelivered, cfg);
-
     const paidTs = parseTs(rider.payoutPaidAt);
     const paidDate = paidTs ? new Date(paidTs) : null;
     const isPaidToday = Boolean(paidTs && paidTs >= shiftStartMs);
     const paidTime = (paidDate && !isNaN(paidDate.getTime())) ? paidDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
     const paidAmount = Number(rider.payoutAmountPaid) || 0;
 
-    // Filter orders completed AFTER last payout payment during current shift
-    const unpaidOrders = shiftDelivered.filter(o => {
-      if (!isPaidToday || !paidTs) return true;
-      const orderTime = parseTs(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
-      return orderTime > paidTs;
+    // Orders completed in current shift window (since 1:00 AM today)
+    const shiftDelivered = relevantOrders.filter(o => getOrderTs(o) >= shiftStartMs);
+
+    // Unpaid orders NEVER auto-settle across days: carry forward all orders completed after payoutPaidAt until Owner presses Settle
+    const unpaidOrders = relevantOrders.filter(o => {
+      const orderTime = getOrderTs(o);
+      return !paidTs || orderTime > paidTs;
     });
+    const priorUnpaidOrders = unpaidOrders.filter(o => getOrderTs(o) < shiftStartMs);
 
-    const completedOffset = shiftDelivered.length - unpaidOrders.length;
-    const unpaidPayout = this.calculateRiderPayout(unpaidOrders, cfg, completedOffset + 1);
-    const payoutBalance = isPaidToday ? unpaidPayout.exactPayout : payoutResult.exactPayout;
+    const computeGroupedPayout = (list, countPaidOffsetInShift = false) => {
+      if (!Array.isArray(list) || list.length === 0) {
+        return { totalPayout: 0, exactPayout: 0, totalKms: 0, orderCount: 0, surgeCount: 0, details: [] };
+      }
+      const groups = new Map();
+      list.forEach(o => {
+        const t = getOrderTs(o);
+        const key = t > 0 ? getShiftStartTimeMs(t) : 0;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(o);
+      });
+      const sortedKeys = Array.from(groups.keys()).sort((a, b) => a - b);
+      let sumExact = 0;
+      let sumKms = 0;
+      let sumSurge = 0;
+      const allDetails = [];
+
+      for (const key of sortedKeys) {
+        const groupOrders = groups.get(key);
+        let startIdx = 1;
+        if (countPaidOffsetInShift && paidTs && key > 0 && paidTs >= key) {
+          const alreadyPaidInSameShift = relevantOrders.filter(ro => {
+            const rt = getOrderTs(ro);
+            return rt > 0 && getShiftStartTimeMs(rt) === key && rt <= paidTs;
+          }).length;
+          startIdx = alreadyPaidInSameShift + 1;
+        }
+        const res = this.calculateRiderPayout(groupOrders, cfg, startIdx);
+        sumExact = Math.round((sumExact + (res.exactPayout || 0)) * 100) / 100;
+        sumKms = Math.round((sumKms + (res.totalKms || 0)) * 100) / 100;
+        sumSurge += (res.surgeCount || 0);
+        if (Array.isArray(res.details)) allDetails.push(...res.details);
+      }
+
+      return {
+        totalPayout: Math.round(sumExact),
+        exactPayout: sumExact,
+        totalKms: sumKms,
+        orderCount: list.length,
+        surgeCount: sumSurge,
+        details: allDetails
+      };
+    };
+
+    const activeOrders = priorUnpaidOrders.length > 0 ? [...priorUnpaidOrders, ...shiftDelivered] : shiftDelivered;
+    const payoutResult = computeGroupedPayout(activeOrders, false);
+    const unpaidPayout = computeGroupedPayout(unpaidOrders, true);
+    const priorUnpaidPayout = computeGroupedPayout(priorUnpaidOrders, true);
+
+    const payoutBalance = unpaidPayout.exactPayout;
     const exactBalance = payoutBalance;
-
-    const successfullyDeliveredCount = shiftDelivered.filter(o => o.status === 'delivered').length;
+    const successfullyDeliveredCount = activeOrders.filter(o => String(o.status || '').toLowerCase() === 'delivered').length;
+    const undeliveredCount = activeOrders.filter(o => String(o.status || '').toLowerCase() === 'undelivered').length;
+    const todayDeliveredCount = shiftDelivered.filter(o => String(o.status || '').toLowerCase() === 'delivered').length;
 
     return {
       rider,
@@ -10802,6 +10862,11 @@ class QuickBiteDataService {
       exactEarnings: payoutResult.exactPayout,
       totalKms: payoutResult.totalKms,
       deliveredCount: successfullyDeliveredCount,
+      undeliveredCount,
+      todayDeliveredCount,
+      priorUnpaidCount: priorUnpaidOrders.length,
+      priorUnpaidBalance: priorUnpaidPayout.exactPayout,
+      hasUnpaidPriorShift: priorUnpaidOrders.length > 0,
       surgeCount: payoutResult.surgeCount,
       isPaidToday,
       paidAmount,
@@ -10869,21 +10934,48 @@ class QuickBiteDataService {
     const riders = this.getRiders();
     const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
     if (idx >= 0) {
-      const paidTime = Date.now();
+      const parseTs = (val) => {
+        if (!val) return 0;
+        if (typeof val === 'number') return val;
+        const p = Date.parse(val);
+        return isNaN(p) ? (Number(val) || 0) : p;
+      };
+      const riderOrders = (this.getOrders() || []).filter(o => {
+        if (!o) return false;
+        const st = String(o.status || '').toLowerCase();
+        if (st !== 'delivered' && st !== 'undelivered') return false;
+        return String(o.assignedRiderPin || '').trim() === cleanPin;
+      });
+      const maxOrderTs = riderOrders.reduce((max, o) => {
+        const ts = parseTs(o.deliveredAt || o.undeliveredAt || o.updatedAt || o.claimedAt || o.createdAt);
+        return Math.max(max, ts);
+      }, 0);
+      // Guard against device clock drift so paidTime strictly covers all completed orders being settled
+      const paidTime = Math.max(Date.now(), maxOrderTs + 1000);
       const shiftStartMs = typeof this.getShiftStartTimeMs === 'function' ? this.getShiftStartTimeMs() : 0;
       const prevPaidTs = Number(riders[idx].payoutPaidAt || 0);
       const isSameShift = Boolean(shiftStartMs && prevPaidTs >= shiftStartMs);
       const prevAmount = isSameShift ? Number(riders[idx].payoutAmountPaid || 0) : 0;
-      const newPaidAmount = Math.round((prevAmount + (Number(amount) || 0)) * 100) / 100;
+      const settledAmount = (amount !== undefined && amount !== null && amount !== '' && !isNaN(Number(amount)))
+        ? Number(amount)
+        : (Number(this.getRiderPayoutSummary(cleanPin)?.payoutBalance) || 0);
+      const newPaidAmount = Math.round((prevAmount + settledAmount) * 100) / 100;
 
       riders[idx].payoutPaidAt = paidTime;
       riders[idx].payoutAmountPaid = newPaidAmount;
       this.saveRiders(riders);
       this.saveOrUpdateRider(riders[idx]);
+      let serverPromise = null;
       if (this.isStaffAuthorized() || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_owner_token') || sessionStorage.getItem('quickbite_admin_token')))) {
-        this.saveOrUpdateRiderAsync(riders[idx]).catch(err => {
-          console.warn('[DataService] Background sync rider error:', err?.message || err);
+        serverPromise = this._adminStoreAction('record_rider_payout', {
+          riderPin: cleanPin,
+          paidAt: paidTime,
+          amount: newPaidAmount
+        }).catch(err => {
+          console.warn('[DataService] Background record_rider_payout error:', err?.message || err);
+          throw err;
         });
+        serverPromise.catch(() => {});
       }
       try {
         localStorage.setItem(`quickbite_rider_payout_paid_${cleanPin}`, JSON.stringify({
@@ -10899,7 +10991,7 @@ class QuickBiteDataService {
           payload: { riderPin: cleanPin, paidAt: paidTime, amount: newPaidAmount }
         }).catch(() => {});
       }
-      return { success: true, paidAt: paidTime, amount: newPaidAmount, rider: riders[idx] };
+      return { success: true, paidAt: paidTime, amount: newPaidAmount, rider: riders[idx], serverPromise };
     }
     return { success: false };
   }

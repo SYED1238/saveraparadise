@@ -599,9 +599,15 @@ const initDeliveryApp = () => {
 
     // Hero Status
     if (heroPayoutStatus) {
-      if (summary.isPaidToday) {
+      if (summary.isPaidToday && summary.payoutBalance <= 0) {
         heroPayoutStatus.className = 'earnings-status-badge badge-paid';
         heroPayoutStatus.innerHTML = `<i class="fa-solid fa-circle-check"></i> Paid ₹${summary.paidAmount.toLocaleString('en-IN')}`;
+      } else if (summary.isPaidToday && summary.payoutBalance > 0) {
+        heroPayoutStatus.className = 'earnings-status-badge badge-unpaid';
+        heroPayoutStatus.innerHTML = `<i class="fa-regular fa-clock"></i> ₹${summary.payoutBalance.toLocaleString('en-IN')} Due (Paid ₹${summary.paidAmount.toLocaleString('en-IN')})`;
+      } else if (summary.hasUnpaidPriorShift) {
+        heroPayoutStatus.className = 'earnings-status-badge badge-unpaid';
+        heroPayoutStatus.innerHTML = `<i class="fa-regular fa-clock"></i> Unsettled (${summary.priorUnpaidCount || 1} prior)`;
       } else {
         heroPayoutStatus.className = 'earnings-status-badge badge-unpaid';
         heroPayoutStatus.innerHTML = `<i class="fa-regular fa-clock"></i> Unsettled`;
@@ -612,11 +618,13 @@ const initDeliveryApp = () => {
     if (heroPayoutKms) {
       heroPayoutKms.textContent = `${summary.totalKms.toFixed(1)} km`;
     }
+    const retCountBadge = (summary.undeliveredCount > 0) ? ` (+${summary.undeliveredCount} ret)` : '';
+    const retSubNote = (summary.undeliveredCount > 0) ? ` + ${summary.undeliveredCount} returned` : '';
     if (heroDeliveryCount) {
-      heroDeliveryCount.textContent = `${summary.deliveredCount} Deliver${summary.deliveredCount === 1 ? 'y' : 'ies'}`;
+      heroDeliveryCount.textContent = `${summary.deliveredCount} Deliver${summary.deliveredCount === 1 ? 'y' : 'ies'}${retCountBadge}`;
     }
     if (heroPayoutSub) {
-      heroPayoutSub.textContent = `From ${summary.deliveredCount} completed deliver${summary.deliveredCount === 1 ? 'y' : 'ies'}`;
+      heroPayoutSub.textContent = `From ${summary.deliveredCount} completed deliver${summary.deliveredCount === 1 ? 'y' : 'ies'}${retSubNote}`;
     }
 
     // Hero Compensation Model
@@ -624,7 +632,8 @@ const initDeliveryApp = () => {
       const cfg = summary.config.tieredMilestone;
       if (heroModelPill) heroModelPill.textContent = 'Milestone';
       if (heroModelTitle) heroModelTitle.textContent = 'Tiered + Milestone Incentive';
-      const isSurgeNow = summary.deliveredCount >= cfg.milestoneOrders;
+      const todayShiftDelivered = summary.todayDeliveredCount !== undefined ? summary.todayDeliveredCount : summary.deliveredCount;
+      const isSurgeNow = todayShiftDelivered >= cfg.milestoneOrders;
       if (heroModelFormula) {
         heroModelFormula.innerHTML = `₹${cfg.basePay} base + ₹${cfg.extraKmRate}/km (Orders 1–${cfg.milestoneOrders})<br>${isSurgeNow ? '<strong style="color:#DC2626;">🔥 Surge Active (+₹' + cfg.surgeExtraKmRate + '/km)</strong>' : '🔥 ₹' + cfg.surgeExtraKmRate + '/km from order ' + (cfg.milestoneOrders + 1) + '+'}`;
       }
@@ -720,9 +729,19 @@ const initDeliveryApp = () => {
         : '';
       const rawDropAddr = matchedOrder.deliveryAddress || `${matchedOrder.addressDetails?.flatNo || 'House'}, ${matchedOrder.addressDetails?.area || 'Ramanagara'}`;
       const safeDropAddr = escapeHtml(cleanDeliveryAddress(rawDropAddr));
-      const timeStr = matchedOrder.deliveredAt || matchedOrder.updatedAt
-        ? new Date(matchedOrder.deliveredAt || matchedOrder.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : 'Delivered';
+      const rawOrderTs = matchedOrder.deliveredAt || matchedOrder.undeliveredAt || matchedOrder.updatedAt || matchedOrder.claimedAt || matchedOrder.createdAt;
+      let timeStr = 'Delivered';
+      if (rawOrderTs) {
+        const orderDt = new Date(Number(rawOrderTs) || rawOrderTs);
+        if (!isNaN(orderDt.getTime())) {
+          const tPart = orderDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const nowDt = new Date();
+          const sameDay = orderDt.getFullYear() === nowDt.getFullYear() &&
+            orderDt.getMonth() === nowDt.getMonth() &&
+            orderDt.getDate() === nowDt.getDate();
+          timeStr = sameDay ? tPart : `${orderDt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${tPart}`;
+        }
+      }
 
       return `
         <div class="earnings-trip-card">
@@ -3827,16 +3846,19 @@ const initDeliveryApp = () => {
       modalPayoutLargeTotal.textContent = `₹${summary.payoutBalance.toFixed(2)}`;
     }
     if (modalPayoutOrdersCount) {
-      modalPayoutOrdersCount.textContent = `From ${summary.deliveredCount} delivered order${summary.deliveredCount === 1 ? '' : 's'} • ${summary.totalKms.toFixed(1)} km total`;
+      const retModalNote = summary.undeliveredCount > 0 ? ` (+${summary.undeliveredCount} returned)` : '';
+      modalPayoutOrdersCount.textContent = `From ${summary.deliveredCount} delivered order${summary.deliveredCount === 1 ? '' : 's'}${retModalNote} • ${summary.totalKms.toFixed(1)} km total`;
     }
     if (modalPayoutRiderSub) {
       modalPayoutRiderSub.textContent = `Rider: ${currentRider.name} (PIN: ${currentRider.pin})`;
     }
 
     if (modalPayoutStatusText) {
-      modalPayoutStatusText.textContent = summary.isPaidToday
+      modalPayoutStatusText.textContent = summary.isPaidToday && summary.payoutBalance <= 0
         ? `Paid by Owner: ₹${summary.paidAmount.toLocaleString('en-IN')} (${summary.paidTime})`
-        : 'Unsettled Balance (Owed to You)';
+        : (summary.hasUnpaidPriorShift
+          ? `Unsettled Balance (Includes ${summary.priorUnpaidCount} prior trip${summary.priorUnpaidCount === 1 ? '' : 's'})`
+          : 'Unsettled Balance (Owed to You)');
     }
 
     // Scheme Info
