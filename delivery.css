@@ -1969,8 +1969,9 @@ input:checked + .slider:before {
     flex: 1;
     min-height: 44px;
     justify-content: center;
-    font-size: 0.88rem;
-    padding: 10px 12px;
+    font-size: clamp(0.75rem, 2.9vw, 0.88rem);
+    white-space: nowrap;
+    padding: 10px 10px;
     box-sizing: border-box;
   }
 

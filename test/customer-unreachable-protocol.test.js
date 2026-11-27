@@ -302,8 +302,15 @@ test('CUSTOMER UNREACHABLE AT DOORSTEP (CNR) PROTOCOL SUITE', async (t) => {
     assert.match(deliveryJs, /if\s*\(!isRefusalBypass\)\s*\{\s*if\s*\(startTime\s*>\s*0\s*&&\s*elapsedSeconds\s*<\s*600\)/);
     assert.match(deliveryJs, /cnrCodReason\.addEventListener\('change'/);
     assert.match(deliveryJs, /cnrPrepaidReason\.addEventListener\('change'/);
+    assert.match(deliveryJs, /if\s*\(isCustomerRefusalSelected\(activeCnrOrder\)\)\s*\{\s*showToast\(/);
 
     // dataService forwards undeliveredAt timestamp as deliveredAt when persisting undelivered status
     assert.match(dataServiceJs, /deliveredAt:\s*order\.deliveredAt\s*\|\|\s*order\.undeliveredAt/);
+
+    // Customer & Kitchen portals distinguish doorstep refusal from 10-min non-answer
+    const mainJs = fs.readFileSync(path.resolve('./main.js'), 'utf8');
+    const adminJs = fs.readFileSync(path.resolve('./admin.js'), 'utf8');
+    assert.match(mainJs, /Delivery was declined at the doorstep/);
+    assert.match(adminJs, /Customer refused parcel/);
   });
 });

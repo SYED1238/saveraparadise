@@ -5009,8 +5009,12 @@ function initStorefrontApp() {
         }
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was cancelled by ${cancelActor}.${reasonHtml}${refundBannerHtml}`;
       } else if (order.status === 'undelivered') {
-        const reasonHtml = order.undeliveredReason || order.cancellationReason ? `<br><span style="color:#B91C1C; font-size:0.86rem; display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Reason: ${escapeHtml(order.undeliveredReason || order.cancellationReason)}</span>` : '';
-        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was marked undelivered. Our rider waited at your doorstep for 10 minutes but could not reach you. Parcel returned to Savera Paradise kitchen.${reasonHtml}`;
+        const rawUndelivReason = String(order.undeliveredReason || order.cancellationReason || '').trim();
+        const reasonHtml = rawUndelivReason ? `<br><span style="color:#B91C1C; font-size:0.86rem; display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Reason: ${escapeHtml(rawUndelivReason)}</span>` : '';
+        const undelivDetail = rawUndelivReason.toLowerCase().includes('refused')
+          ? 'Delivery was declined at the doorstep. Parcel returned to Savera Paradise kitchen.'
+          : 'Our rider waited at your doorstep for 10 minutes but could not reach you. Parcel returned to Savera Paradise kitchen.';
+        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> was marked undelivered. ${undelivDetail}${reasonHtml}`;
       } else if (order.status === 'accepted' || order.status === 'pending') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> has been accepted by our kitchen.`;
       } else if (order.status === 'cooking') {

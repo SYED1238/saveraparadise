@@ -5358,10 +5358,12 @@ const initAdminApp = () => {
       flashTabTitle(`🎉 DELIVERED: ${dispId}`);
     } else if (status === 'undelivered') {
       playNotificationSound('cancelled');
-      showToast(`⚠️ Order ${dispId} marked UNDELIVERED by Rider: Customer unreachable. Returning to kitchen.`, 'error');
+      const undelivReason = String(payload.order?.undeliveredReason || payload.order?.cancellationReason || payload.undeliveredReason || payload.cancellationReason || '').trim();
+      const shortCause = undelivReason.toLowerCase().includes('refused') ? 'Customer refused parcel' : 'Customer unreachable';
+      showToast(`⚠️ Order ${dispId} marked UNDELIVERED by Rider: ${shortCause}. Returning to kitchen.`, 'error');
       sendSystemNotification({
         title: `⚠️ Order ${dispId} Returning to Kitchen!`,
-        body: `Customer unreachable at doorstep. Rider returning parcel to counter.`,
+        body: `${shortCause} at doorstep. Rider returning parcel to counter.`,
         tag: `admin-undelivered-${orderId}`
       });
       flashTabTitle(`⚠️ UNDELIVERED: ${dispId}`);

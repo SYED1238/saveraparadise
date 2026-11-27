@@ -3551,7 +3551,11 @@ const initDeliveryApp = () => {
         renderPortal();
       } finally {
         isSubmittingCnr = false;
-        if (btnCnrReturnCod) btnCnrReturnCod.disabled = false;
+        if (activeCnrOrder) {
+          updateCnrCountdown();
+        } else if (btnCnrReturnCod) {
+          btnCnrReturnCod.disabled = false;
+        }
       }
     });
   }
@@ -3560,6 +3564,10 @@ const initDeliveryApp = () => {
   if (btnCnrSafedrop) {
     btnCnrSafedrop.addEventListener('click', async () => {
       if (!activeCnrOrder) return;
+      if (isCustomerRefusalSelected(activeCnrOrder)) {
+        showToast('⚠️ Safe Drop is disabled when customer refused the order. Use "Return Parcel to Kitchen" below.', 'warning');
+        return;
+      }
       const orderId = activeCnrOrder.id;
 
       // Live GPS signal verification
@@ -3691,7 +3699,11 @@ const initDeliveryApp = () => {
         renderPortal();
       } finally {
         isSubmittingCnr = false;
-        if (btnCnrReturnPrepaid) btnCnrReturnPrepaid.disabled = false;
+        if (activeCnrOrder) {
+          updateCnrCountdown();
+        } else if (btnCnrReturnPrepaid) {
+          btnCnrReturnPrepaid.disabled = false;
+        }
       }
     });
   }
