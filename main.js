@@ -296,6 +296,7 @@ function initStorefrontApp() {
   let lastAutoPrefilledPromoCode = null;
   const FREE_SHIPPING_THRESHOLD = 25.00;
   let currentUser = null;
+  let selectedAddressId = null; // Declared before getCurrentUserPhone() to avoid TDZ ReferenceError during initStorefrontApp()
 
   function getCurrentAddresses() {
     return dataService.getUserAddresses(currentUser?.id, currentUser?.email);
@@ -303,7 +304,7 @@ function initStorefrontApp() {
 
   function getCurrentUserPhone() {
     const addrs = getCurrentAddresses();
-    const sel = (typeof selectedAddressId !== 'undefined' && selectedAddressId)
+    const sel = selectedAddressId
       ? addrs.find(a => a.id === selectedAddressId)
       : null;
     const def = addrs.find(a => a.isDefault) || addrs[0];
@@ -7879,7 +7880,7 @@ function initStorefrontApp() {
   let addressMap = null;
   let addressMarker = null;
   let currentAddressCoords = { lat: RESTAURANT_COORDINATES.lat, lng: RESTAURANT_COORDINATES.lng };
-  let selectedAddressId = null;
+  // selectedAddressId is initialized in top-level state above so getCurrentUserPhone() never hits TDZ
   let pendingCheckoutAfterAuth = false;
   let pendingCheckoutAfterAddress = false;
   let activeEditingAddressId = null;

@@ -297,4 +297,19 @@ describe('Menu Display Ordering & Customer Recently Ordered (Zero DB Log Ingesti
     assert.ok(dsFnMatch, 'getRecentlyOrderedDishes method body found');
     assert.doesNotMatch(dsFnMatch[0], /supabase|fetch\(/);
   });
+
+  it('9. main.js declares selectedAddressId before getCurrentUserPhone() and filterDishes("all") to prevent startup TDZ freeze', () => {
+    const mainJs = readProjectFile('main.js');
+    const declMatches = [...mainJs.matchAll(/\b(?:let|const)\s+selectedAddressId\b/g)];
+    assert.equal(declMatches.length, 1, 'main.js must declare selectedAddressId exactly once inside initStorefrontApp');
+
+    const declIdx = declMatches[0].index;
+    const phoneFnIdx = mainJs.indexOf('function getCurrentUserPhone(');
+    const filterAllIdx = mainJs.indexOf("filterDishes('all');");
+    const recentFnIdx = mainJs.indexOf('function renderRecentlyOrderedSection(');
+
+    assert.ok(declIdx !== -1 && phoneFnIdx !== -1 && filterAllIdx !== -1 && recentFnIdx !== -1);
+    assert.ok(declIdx < phoneFnIdx, 'selectedAddressId must be initialized before getCurrentUserPhone()');
+    assert.ok(declIdx < filterAllIdx, 'selectedAddressId must be initialized before synchronous filterDishes("all") startup call');
+  });
 });
