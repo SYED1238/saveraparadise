@@ -739,8 +739,8 @@
       <div class="confirm-modal-header unreachable-header">
         <div class="confirm-icon-bubble unreachable-bubble">⚠️</div>
         <div class="unreachable-badge-pill" id="unreachable-order-badge">ORDER #QB-0000</div>
-        <h3 id="unreachable-modal-title">Customer Not Answering</h3>
-        <p>Savera Paradise doorstep waiting & return protocol</p>
+        <h3 id="unreachable-modal-title">Doorstep Return / Not Answering</h3>
+        <p>Customer refused at door, or unreachable (10-min wait rule)</p>
       </div>
 
       <div class="unreachable-body">
@@ -753,7 +753,7 @@
           
           <div class="cnr-countdown-display">
             <div class="cnr-clock" id="cnr-clock-display">10:00</div>
-            <div class="cnr-clock-sub" id="cnr-clock-sub">Please wait 10 minutes at doorstep before returning parcel</div>
+            <div class="cnr-clock-sub" id="cnr-clock-sub">Wait 10 mins if customer is not answering, or pick "Customer refused" below for instant return</div>
           </div>
 
           <div class="cnr-progress-bar-bg">
@@ -798,7 +798,7 @@
             </div>
             <div class="cnr-warning-notice">
               <i class="fa-solid fa-triangle-exclamation"></i>
-              <span><strong>Strict Cash Policy:</strong> Food parcel must <strong>NEVER</strong> be handed over without collecting cash. If customer does not answer after 10 minutes, return parcel to kitchen. Rider cash liability remains <strong>₹0</strong>.</span>
+              <span><strong>Strict Cash Policy:</strong> Food parcel must <strong>NEVER</strong> be handed over without collecting cash. If customer refused face-to-face at the door, select <strong>"Customer refused to accept order"</strong> below to return immediately. Otherwise wait 10 minutes. Rider cash liability remains <strong>₹0</strong>.</span>
             </div>
 
             <div class="cnr-reason-select-wrap">
@@ -808,7 +808,7 @@
                 <option value="Customer phone switched off / unreachable">Customer phone switched off / unreachable</option>
                 <option value="House/flat locked, nobody at premises">House/flat locked, nobody at premises</option>
                 <option value="Incorrect address provided and customer unreachable">Incorrect address provided and customer unreachable</option>
-                <option value="Customer refused to accept order">Customer refused to accept order</option>
+                <option value="Customer refused to accept order">Customer refused to accept order (Instant Return)</option>
               </select>
             </div>
 
@@ -838,12 +838,13 @@
 
             <!-- Option 2: Return to Kitchen -->
             <div class="cnr-prepaid-option cnr-option-return">
-              <h5><i class="fa-solid fa-box-archive"></i> Option B: Inaccessible / Return to Kitchen</h5>
-              <p class="cnr-opt-desc">If building gate is locked or security refuses parcel.</p>
+              <h5><i class="fa-solid fa-box-archive"></i> Option B: Customer Refused / Return to Kitchen</h5>
+              <p class="cnr-opt-desc">If customer refused parcel (instant return) or building gate/security is locked (10-min wait).</p>
               <select id="cnr-prepaid-reason" class="cnr-select">
                 <option value="Location completely inaccessible & customer unreachable">Location completely inaccessible & customer unreachable</option>
                 <option value="Gate security refused entry/parcel">Gate security refused entry/parcel</option>
                 <option value="Wrong address / premise locked">Wrong address / premise locked</option>
+                <option value="Customer refused to accept order">Customer refused to accept order (Instant Return)</option>
               </select>
               <button type="button" class="btn-cnr-return-prepaid" id="btn-cnr-return-prepaid">
                 <i class="fa-solid fa-rotate-left"></i> Return Parcel to Kitchen

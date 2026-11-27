@@ -7701,7 +7701,7 @@ class QuickBiteDataService {
             stepIndex: order.stepIndex,
             statusLabel: order.statusLabel,
             eta: order.eta,
-            deliveredAt: order.deliveredAt,
+            deliveredAt: order.deliveredAt || order.undeliveredAt,
             cancellationReason: order.cancellationReason || order.undeliveredReason,
             paymentStatus: order.paymentStatus,
             cashCollected: extraData?.cashCollected ?? order.cashCollected,

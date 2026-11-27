@@ -2161,12 +2161,12 @@ const initDeliveryApp = () => {
               </div>
 
               <div class="row-actions-resolution">
-                <!-- 4. Unreachable Button -->
-                <button type="button" class="btn-action-pill btn-action-unreachable ${isWaiting ? 'is-waiting' : ''}" data-action="open-unreachable-modal" data-id="${safeId}" title="Customer Not Answering / Unreachable at Doorstep" aria-label="Customer Unreachable">
+                <!-- 4. Unreachable / Customer Refused Button -->
+                <button type="button" class="btn-action-pill btn-action-unreachable ${isWaiting ? 'is-waiting' : ''}" data-action="open-unreachable-modal" data-id="${safeId}" title="Customer Unreachable / Refused at Doorstep" aria-label="Customer Unreachable or Refused">
                   <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" style="margin-right: 4px; flex-shrink: 0;">
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
                   </svg>
-                  <span>${isWaiting ? `⏱️ ${formattedTimer}` : 'Unreachable'}</span>
+                  <span>${isWaiting ? `⏱️ ${formattedTimer}` : 'Issue / Refused'}</span>
                 </button>
 
                 <!-- 5. Mark Delivered Button -->
@@ -2240,7 +2240,7 @@ const initDeliveryApp = () => {
             ` : ''}
             ${isUndelivered ? `
               <div style="font-size: 0.8rem; color: #DC2626; margin-top: 6px; font-weight: 600;">
-                <i class="fa-solid fa-triangle-exclamation"></i> Customer Unreachable: ${escapeHtml(order.undeliveredReason || order.cancellationReason || 'Returned to kitchen')}
+                <i class="fa-solid fa-triangle-exclamation"></i> Returned: ${escapeHtml(order.undeliveredReason || order.cancellationReason || 'Returned to kitchen')}
               </div>
             ` : (order.safeDropNote ? `
               <div style="font-size: 0.8rem; color: #047857; margin-top: 6px; font-weight: 600;">
@@ -3355,6 +3355,9 @@ const initDeliveryApp = () => {
     }
 
     // Payment-specific resolution UI
+    if (cnrCodReason) cnrCodReason.selectedIndex = 0;
+    if (cnrPrepaidReason) cnrPrepaidReason.selectedIndex = 0;
+
     const isCod = isCashOnDelivery(order);
     const cash = extractCashAmount(order.total);
     if (isCod) {
@@ -3378,6 +3381,20 @@ const initDeliveryApp = () => {
     }
   }
 
+  const INSTANT_REFUSAL_REASONS = new Set(['Customer refused to accept order']);
+  function isCustomerRefusalSelected(orderObj) {
+    const isCodOrder = orderObj ? isCashOnDelivery(orderObj) : true;
+    const selectedReason = isCodOrder ? cnrCodReason?.value : cnrPrepaidReason?.value;
+    return INSTANT_REFUSAL_REASONS.has(String(selectedReason || '').trim());
+  }
+
+  if (cnrCodReason) {
+    cnrCodReason.addEventListener('change', () => updateCnrCountdown());
+  }
+  if (cnrPrepaidReason) {
+    cnrPrepaidReason.addEventListener('change', () => updateCnrCountdown());
+  }
+
   function updateCnrCountdown() {
     if (!activeCnrOrder) return;
     const cleanId = String(activeCnrOrder.id || '').trim().replace(/^#/, '');
@@ -3387,6 +3404,7 @@ const initDeliveryApp = () => {
     const elapsedSeconds = Math.floor((Date.now() - Number(startTime)) / 1000);
     const totalDuration = 600; // 10 minutes (600 seconds)
     const remainingSeconds = Math.max(0, totalDuration - elapsedSeconds);
+    const isRefusalBypass = isCustomerRefusalSelected(activeCnrOrder);
 
     const minutes = Math.floor(remainingSeconds / 60);
     const seconds = remainingSeconds % 60;
@@ -3404,7 +3422,7 @@ const initDeliveryApp = () => {
     const pct = Math.max(0, Math.min(100, (remainingSeconds / totalDuration) * 100));
     if (cnrProgressFill) {
       cnrProgressFill.style.width = `${pct}%`;
-      if (remainingSeconds === 0) {
+      if (remainingSeconds === 0 || isRefusalBypass) {
         cnrProgressFill.style.background = '#EF4444';
       } else if (remainingSeconds < 180) {
         cnrProgressFill.style.background = 'linear-gradient(90deg, #EF4444, #F59E0B)';
@@ -3416,6 +3434,11 @@ const initDeliveryApp = () => {
     if (cnrTimerStatusBadge) {
       if (remainingSeconds === 0) {
         cnrTimerStatusBadge.textContent = '⚠️ 10 Mins Completed';
+        cnrTimerStatusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+        cnrTimerStatusBadge.style.color = '#F87171';
+        cnrTimerStatusBadge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+      } else if (isRefusalBypass) {
+        cnrTimerStatusBadge.textContent = '🚨 Customer Refused (Instant Return)';
         cnrTimerStatusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
         cnrTimerStatusBadge.style.color = '#F87171';
         cnrTimerStatusBadge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
@@ -3431,13 +3454,16 @@ const initDeliveryApp = () => {
       if (remainingSeconds === 0) {
         cnrClockSub.textContent = '10-Minute waiting protocol completed. Customer did not respond. Return parcel to kitchen counter.';
         cnrClockSub.style.color = '#FCA5A5';
+      } else if (isRefusalBypass) {
+        cnrClockSub.textContent = 'Customer refused at doorstep. Immediate Return to Kitchen unlocked (₹0 COD cash liability).';
+        cnrClockSub.style.color = '#FCA5A5';
       } else {
-        cnrClockSub.textContent = 'Please wait 10 minutes at doorstep before returning parcel';
+        cnrClockSub.textContent = 'Wait 10 mins if customer is not answering, or select "Customer refused" below for instant return';
         cnrClockSub.style.color = '#CBD5E1';
       }
     }
 
-    const isWaitComplete = remainingSeconds <= 0;
+    const isWaitComplete = remainingSeconds <= 0 || isRefusalBypass;
     if (btnCnrReturnCod) {
       btnCnrReturnCod.disabled = !isWaitComplete;
       btnCnrReturnCod.disabled = isSubmittingCnr || !isWaitComplete;
@@ -3487,13 +3513,16 @@ const initDeliveryApp = () => {
         startTime = Number(activeCnrOrder.waitingStartedAt) || Date.now();
         localStorage.setItem(timerStorageKey, String(startTime));
       }
-      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-      if (startTime > 0 && elapsedSeconds < 600) {
-        const remaining = Math.ceil((600 - elapsedSeconds) / 60);
-        showToast(`⏱️ Please wait the full 10 minutes at the customer's doorstep before returning the parcel (${remaining}m remaining).`, 'warning');
-        return;
-      }
       const reason = cnrCodReason ? cnrCodReason.value : 'Customer did not answer calls/doorbell after 10 mins wait';
+      const isRefusalBypass = INSTANT_REFUSAL_REASONS.has(String(reason || '').trim());
+      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+      if (!isRefusalBypass) {
+        if (startTime > 0 && elapsedSeconds < 600) {
+          const remaining = Math.ceil((600 - elapsedSeconds) / 60);
+          showToast(`⏱️ Please wait the full 10 minutes at the customer's doorstep before returning the parcel (${remaining}m remaining).`, 'warning');
+          return;
+        }
+      }
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 
       btnCnrReturnCod.disabled = true;
@@ -3614,22 +3643,26 @@ const initDeliveryApp = () => {
       const orderId = activeCnrOrder.id;
       const cleanId = String(orderId).replace(/^#/, '');
 
-      // Enforce 10-minute wait time before prepaid order can be returned to kitchen
+      const reason = cnrPrepaidReason ? cnrPrepaidReason.value : 'Inaccessible location / customer unreachable';
+      const isRefusalBypass = INSTANT_REFUSAL_REASONS.has(String(reason || '').trim());
+
+      // Enforce 10-minute wait time unless customer explicitly refused parcel at doorstep
       let startTime = parseInt(localStorage.getItem(`quickbite_cnr_start_${cleanId}`) || '0', 10);
       if (!startTime) {
         startTime = Number(activeCnrOrder.waitingStartedAt) || Date.now();
         localStorage.setItem(`quickbite_cnr_start_${cleanId}`, String(startTime));
       }
       const elapsedSeconds = startTime > 0 ? Math.floor((Date.now() - startTime) / 1000) : 0;
-      if (startTime > 0 && elapsedSeconds < 600) {
-        const remaining = 600 - elapsedSeconds;
-        const mins = Math.floor(remaining / 60);
-        const secs = remaining % 60;
-        showToast(`⏳ Return to Kitchen locked: Please wait ${mins}m ${secs}s more before returning parcel to counter.`, 'warning');
-        return;
+      if (!isRefusalBypass) {
+        if (startTime > 0 && elapsedSeconds < 600) {
+          const remaining = 600 - elapsedSeconds;
+          const mins = Math.floor(remaining / 60);
+          const secs = remaining % 60;
+          showToast(`⏳ Return to Kitchen locked: Please wait ${mins}m ${secs}s more before returning parcel to counter.`, 'warning');
+          return;
+        }
       }
 
-      const reason = cnrPrepaidReason ? cnrPrepaidReason.value : 'Inaccessible location / customer unreachable';
       const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner' };
 
       btnCnrReturnPrepaid.disabled = true;

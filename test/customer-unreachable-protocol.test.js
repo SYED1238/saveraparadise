@@ -282,4 +282,28 @@ test('CUSTOMER UNREACHABLE AT DOORSTEP (CNR) PROTOCOL SUITE', async (t) => {
     assert.strictEqual(deliveryContent.includes('renderOrders()'), false, 'delivery.js must never call undefined renderOrders()');
     assert.ok(deliveryContent.includes('renderPortal()'), 'delivery.js must call renderPortal()');
   });
+
+  await t.test('10. Selecting "Customer refused to accept order" unlocks immediate Return to Kitchen on COD and Prepaid while keeping 10-min lock for unreachable reasons', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const deliveryHtml = fs.readFileSync(path.resolve('./delivery.html'), 'utf8');
+    const deliveryJs = fs.readFileSync(path.resolve('./delivery.js'), 'utf8');
+    const dataServiceJs = fs.readFileSync(path.resolve('./dataService.js'), 'utf8');
+
+    // Both COD and Prepaid dropdowns expose the exact refusal option value
+    const codSelectMatch = deliveryHtml.match(/id="cnr-cod-reason"[\s\S]*?<\/select>/);
+    const prepaidSelectMatch = deliveryHtml.match(/id="cnr-prepaid-reason"[\s\S]*?<\/select>/);
+    assert.ok(codSelectMatch && codSelectMatch[0].includes('value="Customer refused to accept order"'), 'COD return reasons must include Customer refused to accept order');
+    assert.ok(prepaidSelectMatch && prepaidSelectMatch[0].includes('value="Customer refused to accept order"'), 'Prepaid return reasons must include Customer refused to accept order');
+
+    // Instant refusal bypass exists cleanly without breaking 10-minute unreachable lock
+    assert.match(deliveryJs, /const\s+INSTANT_REFUSAL_REASONS\s*=\s*new\s+Set\(\['Customer refused to accept order'\]\)/);
+    assert.match(deliveryJs, /const\s+isWaitComplete\s*=\s*remainingSeconds\s*<=\s*0\s*\|\|\s*isRefusalBypass;/);
+    assert.match(deliveryJs, /if\s*\(!isRefusalBypass\)\s*\{\s*if\s*\(startTime\s*>\s*0\s*&&\s*elapsedSeconds\s*<\s*600\)/);
+    assert.match(deliveryJs, /cnrCodReason\.addEventListener\('change'/);
+    assert.match(deliveryJs, /cnrPrepaidReason\.addEventListener\('change'/);
+
+    // dataService forwards undeliveredAt timestamp as deliveredAt when persisting undelivered status
+    assert.match(dataServiceJs, /deliveredAt:\s*order\.deliveredAt\s*\|\|\s*order\.undeliveredAt/);
+  });
 });
