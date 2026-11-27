@@ -3035,6 +3035,14 @@ function initStorefrontApp() {
     const countEl = document.getElementById('recently-ordered-count');
     if (!section || !track) return;
 
+    const isLoggedInUser = Boolean(currentUser && (currentUser.id || currentUser.email));
+    if (!isLoggedInUser) {
+      section.style.display = 'none';
+      track.innerHTML = '';
+      if (countEl) countEl.textContent = '';
+      return;
+    }
+
     const rawFilter = typeof activeFilterOverride === 'string'
       ? activeFilterOverride
       : ((typeof pillsWrap !== 'undefined' && pillsWrap)
@@ -3053,8 +3061,8 @@ function initStorefrontApp() {
 
     const recentDishes = typeof dataService.getRecentlyOrderedDishes === 'function'
       ? dataService.getRecentlyOrderedDishes(
-          currentUser?.id || null,
-          currentUser?.email || '',
+          currentUser.id || null,
+          currentUser.email || '',
           typeof getCurrentUserPhone === 'function' ? getCurrentUserPhone() : '',
           8
         )
@@ -4930,9 +4938,13 @@ function initStorefrontApp() {
       else modalCard.classList.remove('is-dispatched');
     }
 
+    const isPendingPayment = order.status === 'pending_payment';
     if (order.status === 'cancelled') {
       if (successIcon) successIcon.textContent = '❌';
       if (modalTitle) modalTitle.textContent = 'Order Cancelled';
+    } else if (isPendingPayment) {
+      if (successIcon) successIcon.textContent = '⏳';
+      if (modalTitle) modalTitle.textContent = 'Awaiting Payment Confirmation';
     } else if (order.status === 'undelivered') {
       if (successIcon) successIcon.textContent = '📦';
       if (modalTitle) modalTitle.textContent = 'Order Undelivered (Returned)';
@@ -5013,6 +5025,8 @@ function initStorefrontApp() {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is on the way to your doorstep!${waitingNotice}`;
       } else if (order.status === 'delivered') {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> has arrived at your door! 🎉 Saved to <strong>My Orders</strong>.`;
+      } else if (isPendingPayment) {
+        modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> is awaiting payment confirmation from your bank/UPI app. It has not been sent to our kitchen yet.`;
       } else {
         modalSub.innerHTML = `Order <strong id="order-id-num">${safeOrderId}</strong> has been accepted by our kitchen.`;
       }
@@ -5257,7 +5271,10 @@ function initStorefrontApp() {
         let statusBadgeLabel = '👨‍🍳 Accepted';
         let statusBadgeClass = 'accepted';
 
-        if (order.status === 'cooking') {
+        if (order.status === 'pending_payment') {
+          statusBadgeLabel = '⏳ Pending Payment';
+          statusBadgeClass = 'pending-payment';
+        } else if (order.status === 'cooking') {
           statusBadgeLabel = '🔥 Preparing';
           statusBadgeClass = 'cooking';
         } else if (order.status === 'ready_for_pickup') {
@@ -5305,6 +5322,7 @@ function initStorefrontApp() {
 
     // Update 5-step Timeline (Pending -> Accepted -> Cooking -> Dispatched -> Delivered)
     const STATUS_TO_STEP_INDEX = {
+      'pending_payment': -3,
       'pending': 0,
       'accepted': 0,
       'cooking': 1,
@@ -5360,6 +5378,14 @@ function initStorefrontApp() {
         }
       } else if (isUndelivered) {
         liveBadgeTextEl.textContent = 'Delivery Attempt Failed — Returned to Kitchen';
+      } else if (isPendingPayment) {
+        liveBadgeTextEl.textContent = 'Awaiting Online Payment Confirmation';
+        for (let idx = 0; idx <= 4; idx++) {
+          const stEl = document.getElementById(`track-step-${idx}`);
+          if (stEl) stEl.classList.remove('active', 'current', 'completed', 'cancelled-step');
+        }
+        const waveFillEl = document.getElementById('tracker-wave-fill');
+        if (waveFillEl) waveFillEl.style.strokeDashoffset = '100';
       } else if (goingToStore) {
         liveBadgeTextEl.textContent = 'Rider Going to Restaurant to Pick Up Parcel';
       } else {
@@ -5660,7 +5686,8 @@ function initStorefrontApp() {
 
     const userPhone = getCurrentUserPhone();
     const userEmail = currentUser?.email || '';
-    const allUserOrders = dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone);
+    const allUserOrders = dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone)
+      .filter(o => o && o.status !== 'pending_payment');
 
     const activeList = allUserOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'undelivered');
     const deliveredList = allUserOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled' || o.status === 'undelivered');
@@ -7243,11 +7270,61 @@ function initStorefrontApp() {
             });
 
             if (cfResult && cfResult.error) {
-              try {
-                sessionStorage.removeItem('savera_pending_online_order');
-                localStorage.removeItem('savera_pending_online_order');
-              } catch {}
-              showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed. Your basket is still saved.'}`, 'warning');
+              // Cashfree modal can close or return an error even after an async UPI QR/App payment succeeded.
+              // Always verify with Cashfree PG before discarding the pending online order or showing cancelled.
+              let recoveredPaid = false;
+              let lastVerifyData = null;
+              const maxVerifyTries = 3;
+              for (let tryIdx = 0; tryIdx < maxVerifyTries; tryIdx++) {
+                try {
+                  const vRes = await fetch('/api/cashfree-create-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'verify_payment',
+                      cfOrderId: pgData.cfOrderId,
+                      orderId: newOrder.id,
+                      trackingToken: pgData.trackingToken
+                    })
+                  });
+                  const vData = await vRes.json().catch(() => null);
+                  lastVerifyData = vData;
+                  if (vRes.ok && vData?.paid) {
+                    recoveredPaid = true;
+                    await finalizeVerifiedOnlineOrder(vData.order, newOrder, newOrder.id);
+                    break;
+                  }
+                  const txStatus = String(vData?.paymentStatus || '').toUpperCase();
+                  if (['USER_DROPPED', 'FAILED', 'CANCELLED', 'TERMINATED', 'EXPIRED'].includes(txStatus)) {
+                    break;
+                  }
+                } catch {}
+                if (tryIdx < maxVerifyTries - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+              }
+
+              if (recoveredPaid) {
+                resetSubmitState(false);
+                return;
+              }
+
+              const finalTxStatus = String(lastVerifyData?.paymentStatus || '').toUpperCase();
+              const isExplicitTerminalFail = Boolean(
+                lastVerifyData &&
+                lastVerifyData.paid === false &&
+                ['USER_DROPPED', 'FAILED', 'CANCELLED', 'TERMINATED', 'EXPIRED'].includes(finalTxStatus)
+              );
+
+              if (isExplicitTerminalFail) {
+                try {
+                  sessionStorage.removeItem('savera_pending_online_order');
+                  localStorage.removeItem('savera_pending_online_order');
+                } catch {}
+                showToast(`⚠️ ${cfResult.error.message || 'Payment was cancelled or could not be completed. Your basket is still saved.'}`, 'warning');
+              } else {
+                showToast(`⏳ ${cfResult.error.message || 'Payment window closed. If money was debited, your order will auto-confirm shortly once verified.'}`, 'info');
+              }
               resetSubmitState(true);
               return;
             }
@@ -9813,7 +9890,7 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     const userPhone = getCurrentUserPhone();
     const userEmail = currentUser?.email || '';
     const userOrders = (typeof dataService.getCustomerOrders === 'function')
-      ? dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone)
+      ? dataService.getCustomerOrders(currentUser?.id, userEmail, userPhone).filter(o => o && o.status !== 'pending_payment')
       : [];
     const favCount = typeof getFavoriteDishIds === 'function' ? getFavoriteDishIds().size : 0;
     const addrs = typeof getCurrentAddresses === 'function' ? getCurrentAddresses() : [];
@@ -11590,6 +11667,90 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
     }
   }
 
+  let isRecoveringPendingPayment = false;
+  let lastPendingRecoveryCheckAt = 0;
+
+  async function recoverPendingOnlinePaymentIfAny() {
+    if (typeof window === 'undefined' || isRecoveringPendingPayment) return;
+    const now = Date.now();
+    if (now - lastPendingRecoveryCheckAt < 5000) return;
+
+    let rawPending = null;
+    try {
+      rawPending = sessionStorage.getItem('savera_pending_online_order') || localStorage.getItem('savera_pending_online_order');
+    } catch {}
+    if (!rawPending) return;
+
+    let pendingDraft = null;
+    try {
+      pendingDraft = JSON.parse(rawPending);
+    } catch {
+      try {
+        sessionStorage.removeItem('savera_pending_online_order');
+        localStorage.removeItem('savera_pending_online_order');
+      } catch {}
+      return;
+    }
+
+    const cfOrderId = String(pendingDraft?.cfOrderId || '').trim();
+    const orderId = String(pendingDraft?.id || '').trim();
+    const createdAtMs = Number(pendingDraft?.createdAt || 0);
+    if (!cfOrderId || (createdAtMs > 0 && now - createdAtMs > 2 * 60 * 60 * 1000)) {
+      try {
+        sessionStorage.removeItem('savera_pending_online_order');
+        localStorage.removeItem('savera_pending_online_order');
+      } catch {}
+      return;
+    }
+
+    const existingLocal = (typeof dataService?.getOrders === 'function' ? dataService.getOrders() : [])
+      .find(o => o && String(o.id).replace(/^#/, '') === orderId.replace(/^#/, ''));
+    if (existingLocal && existingLocal.status && existingLocal.status !== 'pending_payment') {
+      try {
+        sessionStorage.removeItem('savera_pending_online_order');
+        localStorage.removeItem('savera_pending_online_order');
+      } catch {}
+      return;
+    }
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('payment_return') === '1' && urlParams.get('cf_order_id') === cfOrderId) {
+        return;
+      }
+    } catch {}
+
+    isRecoveringPendingPayment = true;
+    lastPendingRecoveryCheckAt = now;
+    try {
+      const res = await fetch('/api/cashfree-create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify_payment',
+          cfOrderId,
+          orderId,
+          trackingToken: pendingDraft.trackingToken
+        })
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.paid) {
+        await finalizeVerifiedOnlineOrder(data.order, pendingDraft, orderId);
+      } else if (res.ok && data && !data.paid) {
+        const txStatus = String(data.paymentStatus || '').toUpperCase();
+        const checkoutBtnBusy = Boolean(typeof btnPlaceOrderFinal !== 'undefined' && btnPlaceOrderFinal && btnPlaceOrderFinal.disabled);
+        if (!checkoutBtnBusy && ['USER_DROPPED', 'FAILED', 'CANCELLED', 'TERMINATED', 'EXPIRED'].includes(txStatus)) {
+          try {
+            sessionStorage.removeItem('savera_pending_online_order');
+            localStorage.removeItem('savera_pending_online_order');
+          } catch {}
+        }
+      }
+    } catch {} finally {
+      isRecoveringPendingPayment = false;
+    }
+  }
+
   // Auto-pause background timer when tab is hidden, resume on focus
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -11597,8 +11758,15 @@ const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAge
       if (storeClockInterval) { clearInterval(storeClockInterval); storeClockInterval = null; }
     } else {
       updateStoreStatusUI();
+      recoverPendingOnlinePaymentIfAny();
     }
   });
+
+  if (typeof window !== 'undefined') {
+    setTimeout(() => {
+      recoverPendingOnlinePaymentIfAny();
+    }, 800);
+  }
 
 
   // ==========================================

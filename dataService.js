@@ -4761,6 +4761,10 @@ class QuickBiteDataService {
 
         if (mergedMap.size > 0) {
           data = Array.from(mergedMap.values());
+        }
+        // Never allow unpaid pending_payment drafts into local quickbite_orders cache
+        if (Array.isArray(data)) {
+          data = data.filter(o => o && o.status !== 'pending_payment');
         } else if (!error && trackedOrders.length === 0 && sbOrders.length === 0) {
           data = [];
         }
@@ -6751,11 +6755,32 @@ class QuickBiteDataService {
 
   /**
    * Derives a customer's recently ordered live menu dishes strictly from cached/synced
-   * customer orders (0 extra Supabase queries or log ingestion).
+   * customer orders belonging to a logged-in account (0 extra DB queries or log ingestion).
    */
   getRecentlyOrderedDishes(userId = null, userEmail = null, userPhone = null, limit = 8) {
-    const customerOrders = this.getCustomerOrders(userId, userEmail, userPhone);
-    if (!Array.isArray(customerOrders) || customerOrders.length === 0) return [];
+    const cleanUserId = userId ? String(userId).trim() : '';
+    const cleanEmail = (userEmail || '').trim().toLowerCase();
+    const cleanPhone = (userPhone || '').replace(/\D/g, '').slice(-10);
+    if (!cleanUserId && !cleanEmail) return [];
+
+    const allOrders = this.getOrders();
+    const customerOrders = Array.isArray(allOrders)
+      ? allOrders.filter(o => {
+          if (!o) return false;
+          const orderUserId = o.userId ? String(o.userId).trim() : '';
+          const orderEmail = (o.customerEmail || '').trim().toLowerCase();
+          const orderPhone = (o.customerPhone || o.phone || o.customer_phone || '').replace(/\D/g, '').slice(-10);
+
+          if (cleanUserId && orderUserId && orderUserId !== cleanUserId) return false;
+          if (cleanEmail && orderEmail && orderEmail !== cleanEmail) return false;
+
+          if (cleanUserId && orderUserId && orderUserId === cleanUserId) return true;
+          if (cleanEmail && orderEmail && orderEmail === cleanEmail) return true;
+          if (!orderUserId && !orderEmail && cleanPhone.length === 10 && orderPhone === cleanPhone) return true;
+          return false;
+        })
+      : [];
+    if (customerOrders.length === 0) return [];
 
     const getOrderTimeMs = (o) => {
       if (!o) return 0;

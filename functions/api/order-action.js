@@ -8,7 +8,7 @@
 import { verifyAdminToken, verifySignedPayload } from './_auth.js';
 import { hydrateEnv, jsonResponse, isOriginAllowed } from './_adapter.js';
 import crypto from 'crypto';
-import { verifyPgOrderPayment, initiatePgOrderRefund } from './_cashfree.js';
+import { verifyPgOrderPayment, initiatePgOrderRefund, reconcilePendingCashfreeOrders } from './_cashfree.js';
 import { invalidateRidersListCache } from './admin-store.js';
 
 const KITCHEN_POLL_CACHE_TTL_MS = 25000;
@@ -28,6 +28,8 @@ let syncOrdersCache = null;
 let syncOrdersCachedAt = 0;
 let syncOrdersCachedLimit = 0;
 let syncOrdersVersion = '0';
+let lastPendingCashfreeSweepAt = 0;
+const PENDING_CASHFREE_SWEEP_COOLDOWN_MS = 30000;
 
 // Deterministic version calculation: generates identical string if order IDs, statuses, assignments, and timestamps match
 function computeOrdersVersion(orders) {
@@ -1219,6 +1221,24 @@ export async function onRequest(context) {
           return jsonResponse(kitchenPollCache, 200, pollHeaders);
         }
 
+        // Self-heal recent pending_payment orders settled at Cashfree even if webhook/client verification missed
+        if (now - lastPendingCashfreeSweepAt >= PENDING_CASHFREE_SWEEP_COOLDOWN_MS) {
+          lastPendingCashfreeSweepAt = now;
+          try {
+            const sweep = await reconcilePendingCashfreeOrders({
+              sb,
+              orders: null,
+              env,
+              maxChecks: 3,
+              cooldownMs: PENDING_CASHFREE_SWEEP_COOLDOWN_MS,
+              maxAgeMs: ACTIVE_ORDER_LOOKBACK_MS
+            });
+            if (sweep?.promotedIds?.length > 0) {
+              invalidateOrderActionMemoryCache();
+            }
+          } catch {}
+        }
+
         // Prioritize active orders (cooking, ready_for_pickup, accepted, pending) so active kitchen prep orders never drop off
         const { data: activeOrders, error: activeErr } = await sb
           .from('orders')
@@ -1324,6 +1344,22 @@ export async function onRequest(context) {
           }
           sourceOrders = syncOrdersCache.slice(0, limit);
         } else {
+          if (now - lastPendingCashfreeSweepAt >= PENDING_CASHFREE_SWEEP_COOLDOWN_MS) {
+            lastPendingCashfreeSweepAt = now;
+            try {
+              const sweep = await reconcilePendingCashfreeOrders({
+                sb,
+                orders: null,
+                env,
+                maxChecks: 3,
+                cooldownMs: PENDING_CASHFREE_SWEEP_COOLDOWN_MS,
+                maxAgeMs: ACTIVE_ORDER_LOOKBACK_MS
+              });
+              if (sweep?.promotedIds?.length > 0) {
+                invalidateOrderActionMemoryCache();
+              }
+            } catch {}
+          }
           const fetchLimit = limit;
           const { data, error } = await sb
             .from('orders')
@@ -1420,7 +1456,27 @@ export async function onRequest(context) {
           return Boolean(expectedToken && o.tracking_token && expectedToken === o.tracking_token);
         });
 
-        return jsonResponse({ success: true, orders: verifiedOrders }, 200, Object.fromEntries(corsHeaders.entries()));
+        let finalTrackedOrders = verifiedOrders;
+        if (verifiedOrders.some(o => o && o.status === 'pending_payment' && o.cf_order_id)) {
+          try {
+            const rec = await reconcilePendingCashfreeOrders({
+              sb,
+              orders: verifiedOrders,
+              env,
+              maxChecks: 3,
+              cooldownMs: 15000,
+              maxAgeMs: 24 * 60 * 60 * 1000
+            });
+            if (Array.isArray(rec?.orders)) {
+              finalTrackedOrders = rec.orders;
+            }
+            if (rec?.promotedIds?.length > 0) {
+              invalidateOrderActionMemoryCache();
+            }
+          } catch {}
+        }
+
+        return jsonResponse({ success: true, orders: finalTrackedOrders }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       // 3. Operational Order Status Updates (Staff / Rider)

@@ -249,11 +249,18 @@ export async function recordVerifiedCashfreePayment({
   cfOrderId,
   cfPaymentId,
   paymentAmount,
-  cleanOrderId = ''
+  cleanOrderId = '',
+  env = null,
+  sb: providedSb = null
 }) {
-  const { supabaseUrl, serviceKey } = getSupabaseServiceCreds();
-  if (!supabaseUrl || !serviceKey) {
-    return { updated: false, order: null };
+  let sb = providedSb;
+  if (!sb) {
+    const { supabaseUrl, serviceKey } = getSupabaseServiceCreds(env);
+    if (!supabaseUrl || !serviceKey) {
+      return { updated: false, order: null };
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    sb = createClient(supabaseUrl, serviceKey);
   }
 
   const safeCfOrderId = String(cfOrderId || '').replace(/[^a-zA-Z0-9_-]/g, '');
@@ -261,9 +268,6 @@ export async function recordVerifiedCashfreePayment({
   if (!safeCfOrderId && !safeOrderId) {
     return { updated: false, order: null };
   }
-
-  const { createClient } = await import('@supabase/supabase-js');
-  const sb = createClient(supabaseUrl, serviceKey);
 
   let existingOrder = null;
   if (safeCfOrderId) {
@@ -860,4 +864,116 @@ export async function recordVerifiedCashfreePayoutWebhook({
   }
 
   return { updated: false, riderPin, status: upperStatus };
+}
+
+const pendingCashfreeVerifyCooldown = new Map();
+
+export async function reconcilePendingCashfreeOrders({
+  sb,
+  orders = null,
+  env = null,
+  maxChecks = 3,
+  cooldownMs = 20000,
+  maxAgeMs = 2 * 60 * 60 * 1000,
+  allowMock = false,
+  verifyPaymentFn = null
+} = {}) {
+  const inputOrders = Array.isArray(orders) ? orders : [];
+  if (!sb) {
+    return { checked: 0, promotedIds: [], promotedOrders: [], orders: inputOrders };
+  }
+
+  const verifier = typeof verifyPaymentFn === 'function' ? verifyPaymentFn : verifyPgOrderPayment;
+  const cfg = getCashfreeConfig(env);
+  if (!cfg.isConfigured && !allowMock && typeof verifyPaymentFn !== 'function') {
+    return { checked: 0, promotedIds: [], promotedOrders: [], orders: inputOrders };
+  }
+
+  const now = Date.now();
+  let candidates = [];
+
+  if (Array.isArray(orders)) {
+    candidates = orders;
+  } else {
+    const { data, error } = await sb
+      .from('orders')
+      .select('*')
+      .eq('status', 'pending_payment')
+      .order('created_at', { ascending: false })
+      .limit(Math.max(maxChecks * 3, 10));
+    if (error) {
+      return { checked: 0, promotedIds: [], promotedOrders: [], orders: [], error: error.message };
+    }
+    candidates = Array.isArray(data) ? data : [];
+  }
+
+  if (pendingCashfreeVerifyCooldown.size > 200) {
+    for (const [k, ts] of pendingCashfreeVerifyCooldown.entries()) {
+      if (now - ts > Math.max(cooldownMs * 3, 60000)) {
+        pendingCashfreeVerifyCooldown.delete(k);
+      }
+    }
+  }
+
+  const toCheck = [];
+  for (const row of candidates) {
+    if (!row || row.status !== 'pending_payment') continue;
+    const cfOrderId = String(row.cf_order_id || '').trim();
+    if (!cfOrderId || cfOrderId.startsWith('doorstep_') || cfOrderId.startsWith('qb_doorstep_') || cfOrderId.includes('_doorstep_')) {
+      continue;
+    }
+    const createdAt = Number(row.created_at || 0);
+    if (maxAgeMs > 0 && createdAt > 0 && (now - createdAt) > maxAgeMs) {
+      continue;
+    }
+    const lastAttempt = pendingCashfreeVerifyCooldown.get(cfOrderId) || 0;
+    if (cooldownMs > 0 && (now - lastAttempt) < cooldownMs) {
+      continue;
+    }
+    toCheck.push(row);
+    if (toCheck.length >= maxChecks) break;
+  }
+
+  if (toCheck.length === 0) {
+    return { checked: 0, promotedIds: [], promotedOrders: [], orders: inputOrders };
+  }
+
+  let checked = 0;
+  const promotedIds = [];
+  const promotedOrders = [];
+  const updatedById = new Map();
+
+  for (const row of toCheck) {
+    const cfOrderId = String(row.cf_order_id || '').trim();
+    pendingCashfreeVerifyCooldown.set(cfOrderId, now);
+    checked += 1;
+    try {
+      const verification = await verifier({ cfOrderId, env });
+      if (verification && verification.paid === true && (!verification.isMock || allowMock || typeof verifyPaymentFn === 'function')) {
+        const rec = await recordVerifiedCashfreePayment({
+          cfOrderId,
+          cfPaymentId: verification.cfPaymentId || '',
+          paymentAmount: verification.paymentAmount,
+          cleanOrderId: row.id,
+          env,
+          sb
+        });
+        if (rec?.updated && rec.order) {
+          promotedIds.push(rec.order.id || row.id);
+          promotedOrders.push(rec.order);
+          updatedById.set(String(rec.order.id || row.id).replace(/^#/, ''), rec.order);
+        }
+      }
+    } catch {}
+  }
+
+  const updatedOrders = Array.isArray(orders)
+    ? orders.map(row => {
+        if (!row) return row;
+        const clean = String(row.id || '').replace(/^#/, '');
+        return updatedById.get(clean) || row;
+      })
+    : promotedOrders;
+
+  return { checked, promotedIds, promotedOrders, orders: updatedOrders };
 }
