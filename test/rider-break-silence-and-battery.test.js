@@ -284,7 +284,7 @@ test('Rider Off-Duty / On-Break Complete Silence & Battery/Log Preservation', as
 
     const buildGradle = fs.readFileSync(path.join(ROOT, 'android/app/build.gradle'), 'utf8');
     const riderColorsXml = fs.readFileSync(path.join(ROOT, 'android/app/src/rider/res/values/colors.xml'), 'utf8');
-    assert.match(buildGradle, /applicationId "com\.foodbliz\.rider"[\s\S]*versionCode 15[\s\S]*theme_color", "#E66B50"/);
+    assert.match(buildGradle, /applicationId "com\.foodbliz\.rider"[\s\S]*versionCode 16[\s\S]*theme_color", "#E66B50"/);
     assert.match(riderColorsXml, /#191817/);
     assert.match(riderColorsXml, /#E66B50/);
   });
@@ -423,5 +423,39 @@ test('Rider Off-Duty / On-Break Complete Silence & Battery/Log Preservation', as
       if (prevSecret === undefined) delete process.env.SESSION_SECRET;
       else process.env.SESSION_SECRET = prevSecret;
     }
+  });
+
+  await t.test('7. Rider Mobile auto-refresh architecture emits build version.json, disables HTML cache, and triggers safe WebView/browser reload', () => {
+    const viteConfig = fs.readFileSync(path.join(ROOT, 'vite.config.js'), 'utf8');
+    const headersFile = fs.readFileSync(path.join(ROOT, 'public/_headers'), 'utf8');
+    const routesJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/_routes.json'), 'utf8'));
+    const swJs = fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8');
+    const deliveryJs = fs.readFileSync(path.join(ROOT, 'delivery.js'), 'utf8');
+    const mainJava = fs.readFileSync(path.join(ROOT, 'android/app/src/main/java/com/sascrispy/portal/MainActivity.java'), 'utf8');
+
+    // 1. Vite plugin emits version.json & injects __APP_BUILD_ID__
+    assert.match(viteConfig, /function appVersionManifestPlugin\(/);
+    assert.match(viteConfig, /__APP_BUILD_ID__:\s*JSON\.stringify\(buildId\)/);
+    assert.match(viteConfig, /fileName:\s*['"]version\.json['"]/);
+
+    // 2. Cloudflare headers + routes + SW bypass stale HTML & version.json caching
+    assert.match(headersFile, /\/version\.json\r?\n\s+Cache-Control:\s*no-cache,\s*no-store,\s*must-revalidate,\s*max-age=0/);
+    assert.match(headersFile, /\/delivery\r?\n\s+Cache-Control:\s*no-cache,\s*no-store,\s*must-revalidate,\s*max-age=0/);
+    assert.match(headersFile, /\/delivery\.html\r?\n\s+Cache-Control:\s*no-cache,\s*no-store,\s*must-revalidate,\s*max-age=0/);
+    assert.ok(Array.isArray(routesJson.exclude) && routesJson.exclude.includes('/version.json'));
+    assert.match(swJs, /url\.pathname === '\/version\.json'/);
+
+    // 3. delivery.js performs loop-guarded, modal-safe auto-refresh
+    assert.match(deliveryJs, /const CURRENT_APP_BUILD_ID\s*=\s*typeof __APP_BUILD_ID__ !== 'undefined'/);
+    assert.match(deliveryJs, /async function checkRiderWebsiteUpdate/);
+    assert.match(deliveryJs, /fetch\(`\/version\.json\?_cb=\$\{now\}`/);
+    assert.match(deliveryJs, /function isUnsafeToAutoReload\(\)/);
+    assert.match(deliveryJs, /quickbite_auto_reloaded_build/);
+    assert.match(deliveryJs, /k !== 'savera-map-tiles-v1'/);
+    assert.match(deliveryJs, /window\.AndroidNative\.reloadApp\(\)/);
+    assert.match(deliveryJs, /window\.__checkRiderAppUpdate\s*=\s*\(\)\s*=>\s*checkRiderWebsiteUpdate/);
+
+    // 4. Android MainActivity invokes update check on Rider resume
+    assert.match(mainJava, /window\.__checkRiderAppUpdate\s*===\s*'function'.*window\.__checkRiderAppUpdate\(\)/);
   });
 });

@@ -8,6 +8,7 @@
     "/favicon.ico",
     "/manifest*.json",
     "/sw.js",
+    "/version.json",
     "/apk/*",
     "/avatars/*",
     "/images/*",

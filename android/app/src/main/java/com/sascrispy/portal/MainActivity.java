@@ -579,6 +579,12 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         if (getPackageName().toLowerCase().contains("rider")) {
+            if (webView != null) {
+                webView.post(() -> webView.evaluateJavascript(
+                    "if (typeof window.__checkRiderAppUpdate === 'function') window.__checkRiderAppUpdate();",
+                    null
+                ));
+            }
             if (!OrderMonitorService.isRiderOnDuty(this)) {
                 updateRiderScreenWakeFlag(false);
                 OrderMonitorService.cancelKeepAliveWatchdogs(this);

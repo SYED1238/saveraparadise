@@ -7,7 +7,7 @@
  * 4. Background Supabase Order Polling & Sync Channel
  */
 
-const CACHE_NAME = 'crispy-pwa-v29';
+const CACHE_NAME = 'crispy-pwa-v30';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -93,9 +93,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Avoid caching Supabase REST, live APIs, Cloudflare storage, APK binaries, or tokens
+  // Avoid caching Supabase REST, live APIs, Cloudflare storage, APK binaries, version manifest, or tokens
   if (url.origin.includes('supabase.co') || 
       url.origin.includes('cloudflarestorage.com') || 
+      url.pathname === '/version.json' ||
       url.pathname.startsWith('/api/') ||
       url.pathname.startsWith('/apk/') ||
       url.searchParams.has('tracking_token') ||

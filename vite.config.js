@@ -882,12 +882,45 @@ function r2DevMiddlewarePlugin() {
   };
 }
 
+function appVersionManifestPlugin() {
+  const buildId = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  const builtAt = new Date().toISOString();
+  return {
+    name: 'app-version-manifest',
+    config(_cfg, { command }) {
+      if (command === 'build') {
+        return {
+          define: {
+            __APP_BUILD_ID__: JSON.stringify(buildId)
+          }
+        };
+      }
+      return {};
+    },
+    configureServer(server) {
+      server.middlewares.use('/version.json', (_req, res) => {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(JSON.stringify({ buildId: 'dev', builtAt }));
+      });
+    },
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ buildId, builtAt })
+      });
+    }
+  };
+}
+
 export default defineConfig({
   server: {
     host: true,
     port: 5173
   },
-  plugins: [r2DevMiddlewarePlugin()],
+  plugins: [r2DevMiddlewarePlugin(), appVersionManifestPlugin()],
   envPrefix: ['VITE_'],
   build: {
     rollupOptions: {

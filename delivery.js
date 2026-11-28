@@ -85,6 +85,10 @@ const initDeliveryApp = () => {
   let riderAlarmInterval = null;
   const ringingParcelsQueue = [];
   const knownDeliveryIds = new Set();
+  let pendingWebsiteUpdateBuildId = null;
+  let isCheckingWebsiteUpdate = false;
+  let lastWebsiteUpdateCheckAt = 0;
+  let isReloadingForUpdate = false;
 
   // Rider Live GPS Coordinates (Default to Crispy Chicken Central Hub until phone GPS fix)
   const RIDER_GPS_STORAGE_KEY = 'quickbite_rider_gps_state';
@@ -5712,7 +5716,186 @@ const initDeliveryApp = () => {
     }
   });
 
+  // ========================================================
+  // AUTOMATIC WEBSITE UPDATE & WEBVIEW AUTO-REFRESH MONITOR
+  // ========================================================
+  const CURRENT_APP_BUILD_ID = typeof __APP_BUILD_ID__ !== 'undefined' ? String(__APP_BUILD_ID__).trim() : '';
+  let deferredUpdateTimer = null;
+
+  function isUnsafeToAutoReload() {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+    if (isSubmittingDelivery || isClaimingBag || isSubmittingCnr) return true;
+    if (typeof window !== 'undefined' && window.location && String(window.location.search || '').includes('payment_return=1')) {
+      return true;
+    }
+    if (typeof document !== 'undefined') {
+      const openModal = document.querySelector(
+        '#modal-confirm-delivery-backdrop.open, #modal-unreachable-backdrop.open, #modal-bag-preview-backdrop.open, #modal-rider-avatar-backdrop.open, #modal-rider-full-profile-backdrop.open, #modal-cash-summary-backdrop.open, #modal-payout-summary-backdrop.open, #modal-rider-drop-backdrop.open'
+      );
+      if (openModal) return true;
+    }
+    return false;
+  }
+
+  function scheduleDeferredUpdateCheck() {
+    if (deferredUpdateTimer) return;
+    deferredUpdateTimer = setTimeout(() => {
+      deferredUpdateTimer = null;
+      if (!pendingWebsiteUpdateBuildId || isReloadingForUpdate) return;
+      if (isUnsafeToAutoReload()) {
+        scheduleDeferredUpdateCheck();
+        return;
+      }
+      executeWebsiteUpdateReload(pendingWebsiteUpdateBuildId);
+    }, 3000);
+  }
+
+  function executeWebsiteUpdateReload(remoteBuildId) {
+    if (isReloadingForUpdate || !remoteBuildId) return;
+    if (isUnsafeToAutoReload()) {
+      pendingWebsiteUpdateBuildId = remoteBuildId;
+      scheduleDeferredUpdateCheck();
+      return;
+    }
+    try {
+      const lastBuild = sessionStorage.getItem('quickbite_auto_reloaded_build');
+      const lastAt = Number(sessionStorage.getItem('quickbite_auto_reloaded_at') || 0);
+      if (lastBuild === remoteBuildId && (Date.now() - lastAt) < 120000) {
+        return;
+      }
+      sessionStorage.setItem('quickbite_auto_reloaded_build', remoteBuildId);
+      sessionStorage.setItem('quickbite_auto_reloaded_at', String(Date.now()));
+    } catch {}
+
+    isReloadingForUpdate = true;
+    pendingWebsiteUpdateBuildId = null;
+    if (deferredUpdateTimer) {
+      clearTimeout(deferredUpdateTimer);
+      deferredUpdateTimer = null;
+    }
+
+    try {
+      showToast('🔄 New app update detected — refreshing...', 'info');
+    } catch {}
+
+    const cleanupTasks = [];
+    try {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistration === 'function') {
+        cleanupTasks.push(
+          navigator.serviceWorker.getRegistration().then(reg => (reg && typeof reg.update === 'function' ? reg.update() : null)).catch(() => {})
+        );
+      }
+      if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+        cleanupTasks.push(
+          caches.keys().then(keys =>
+            Promise.all(
+              keys.map(k => (k !== 'savera-map-tiles-v1' ? caches.delete(k).catch(() => {}) : Promise.resolve()))
+            )
+          ).catch(() => {})
+        );
+      }
+    } catch {}
+
+    const triggerReload = () => {
+      if (isNativeAndroidBridgeAvailable() && typeof window.AndroidNative.reloadApp === 'function') {
+        try {
+          window.AndroidNative.reloadApp();
+          return;
+        } catch (e) {
+          console.warn('[Rider AutoUpdate] Native reloadApp error:', e);
+        }
+      }
+      try {
+        if (typeof window !== 'undefined' && window.location && typeof window.location.reload === 'function') {
+          window.location.reload();
+        }
+      } catch {}
+    };
+
+    Promise.race([
+      Promise.allSettled(cleanupTasks),
+      new Promise(resolve => setTimeout(resolve, 250))
+    ]).finally(() => {
+      setTimeout(triggerReload, 250);
+    });
+  }
+
+  async function checkRiderWebsiteUpdate({ force = false } = {}) {
+    if (isReloadingForUpdate || isCheckingWebsiteUpdate) return false;
+    if (typeof window === 'undefined' || typeof fetch !== 'function') return false;
+    const host = String(window.location?.hostname || '').toLowerCase();
+    if (!CURRENT_APP_BUILD_ID || host === 'localhost' || host === '127.0.0.1' || host === '[::1]') {
+      return false;
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+
+    const now = Date.now();
+    if (!force && (now - lastWebsiteUpdateCheckAt) < 15000) {
+      return false;
+    }
+    lastWebsiteUpdateCheckAt = now;
+    isCheckingWebsiteUpdate = true;
+
+    try {
+      const res = await fetch(`/version.json?_cb=${now}`, { cache: 'no-store' });
+      if (!res || !res.ok) return false;
+      const data = await res.json().catch(() => null);
+      const remoteBuildId = String(data?.buildId || '').trim();
+      if (!remoteBuildId || remoteBuildId === 'dev' || remoteBuildId === CURRENT_APP_BUILD_ID) {
+        return false;
+      }
+      if (isUnsafeToAutoReload()) {
+        pendingWebsiteUpdateBuildId = remoteBuildId;
+        scheduleDeferredUpdateCheck();
+        return false;
+      }
+      executeWebsiteUpdateReload(remoteBuildId);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      isCheckingWebsiteUpdate = false;
+    }
+  }
+
+  function initRiderAutoUpdateMonitor() {
+    if (typeof window === 'undefined') return;
+    window.__checkRiderAppUpdate = () => checkRiderWebsiteUpdate({ force: false });
+
+    const host = String(window.location?.hostname || '').toLowerCase();
+    if (!CURRENT_APP_BUILD_ID || host === 'localhost' || host === '127.0.0.1' || host === '[::1]') {
+      return;
+    }
+
+    setTimeout(() => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        checkRiderWebsiteUpdate({ force: false });
+      }
+    }, 4000);
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          checkRiderWebsiteUpdate({ force: false });
+        }
+      });
+    }
+    window.addEventListener('focus', () => {
+      checkRiderWebsiteUpdate({ force: false });
+    });
+    window.addEventListener('online', () => {
+      checkRiderWebsiteUpdate({ force: true });
+    });
+
+    setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      checkRiderWebsiteUpdate({ force: false });
+    }, 60000);
+  }
+
   // Initial render & Live Geolocation tracking start
+  initRiderAutoUpdateMonitor();
   checkRiderSession();
   attachBagInputListeners();
 

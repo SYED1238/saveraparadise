@@ -1,6 +1,33 @@
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate, max-age=0
 
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/delivery
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/delivery.html
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/admin
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/admin.html
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/owner
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
+/owner.html
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
+
 /.well-known/assetlinks.json
   Content-Type: application/json
   Access-Control-Allow-Origin: *
