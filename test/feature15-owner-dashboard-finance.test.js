@@ -285,13 +285,183 @@ describe('FEATURE #15: EXECUTIVE OWNER DASHBOARD, FINANCIAL ANALYTICS & INSTANT 
       'securityUtils.js must not contain hardcoded default PIN fallback in fetch body');
   });
 
-  test('8. owner.html contains the Counter Cash Drawer Summary card in view-overview', () => {
+  test('8. owner.html contains the Shift Inflow & Payout Reconciliation card with Cash and Online inflow elements', () => {
     const ownerHtml = fs.readFileSync(path.join(rootDir, 'owner.html'), 'utf8');
     assert.ok(ownerHtml.includes('id="owner-drawer-summary-card"'), 'owner.html must contain #owner-drawer-summary-card');
+    assert.ok(ownerHtml.includes('id="drawer-inflow-total"'), 'owner.html must contain #drawer-inflow-total');
     assert.ok(ownerHtml.includes('id="drawer-cod-total"'), 'owner.html must contain #drawer-cod-total');
+    assert.ok(ownerHtml.includes('id="drawer-online-total"'), 'owner.html must contain #drawer-online-total');
     assert.ok(ownerHtml.includes('id="drawer-payout-total"'), 'owner.html must contain #drawer-payout-total');
     assert.ok(ownerHtml.includes('id="drawer-net-total"'), 'owner.html must contain #drawer-net-total');
     assert.ok(ownerHtml.includes('id="drawer-net-sub-total"'), 'owner.html must contain #drawer-net-sub-total');
+    assert.ok(ownerHtml.includes('id="drawer-net-formula-hint"'), 'owner.html must contain #drawer-net-formula-hint');
+  });
+
+  test('9. updateCounterCashDrawerSummary sums Cash + Online inflows, subtracts rider payouts, and updates DOM', async () => {
+    const { updateCounterCashDrawerSummary } = await import('../owner.js');
+    assert.strictEqual(typeof updateCounterCashDrawerSummary, 'function', 'updateCounterCashDrawerSummary should be exported from owner.js');
+
+    const riderPin = '3344';
+    dataService.saveOrUpdateRider({
+      pin: riderPin,
+      name: 'Imran Rider',
+      phone: '9845022334',
+      vehicle: '🏍️ Bike'
+    });
+
+    const orders = [
+      // Delivered COD cash order (₹500)
+      {
+        id: 'ord_inflow_cod',
+        status: 'delivered',
+        paymentMethod: 'COD',
+        total: 500,
+        cashCollected: 500,
+        assignedRiderPin: riderPin,
+        assignedRiderName: 'Imran Rider',
+        addressDetails: { distanceKm: 1.0 }
+      },
+      // Delivered Cashfree Online order (₹1,200)
+      {
+        id: 'ord_inflow_pg',
+        status: 'delivered',
+        paymentMethod: 'Cashfree PG',
+        isPaidOnline: true,
+        total: 1200,
+        assignedRiderPin: riderPin,
+        assignedRiderName: 'Imran Rider',
+        addressDetails: { distanceKm: 1.0 }
+      },
+      // Delivered Doorstep UPI order (₹300)
+      {
+        id: 'ord_inflow_upi',
+        status: 'delivered',
+        paymentMethod: 'COD',
+        doorstepUpi: true,
+        total: 300,
+        assignedRiderPin: riderPin,
+        assignedRiderName: 'Imran Rider',
+        addressDetails: { distanceKm: 1.0 }
+      },
+      // In-flight cooking order: must NOT count in inflow or payouts yet
+      {
+        id: 'ord_inflow_cooking',
+        status: 'cooking',
+        paymentMethod: 'Online UPI',
+        isPaidOnline: true,
+        total: 450,
+        assignedRiderPin: riderPin,
+        addressDetails: { distanceKm: 1.0 }
+      },
+      // Cancelled order: must NOT count in inflow or payouts
+      {
+        id: 'ord_inflow_cancelled',
+        status: 'cancelled',
+        paymentMethod: 'COD',
+        total: 900,
+        assignedRiderPin: riderPin,
+        addressDetails: { distanceKm: 1.0 }
+      }
+    ];
+
+    const payoutConfig = dataService.getPayoutConfig();
+    const expectedPayout = dataService.calculateRiderPayout(
+      orders.slice(0, 3),
+      payoutConfig
+    );
+    const expectedPayoutAmt = expectedPayout.exactPayout || expectedPayout.totalPayout || 0;
+    const expectedInflow = 500 + 1200 + 300; // ₹2,000
+    const expectedNet = Math.round((expectedInflow - expectedPayoutAmt) * 100) / 100;
+
+    const fakeEls = new Map([
+      ['drawer-inflow-total', { textContent: '', className: '' }],
+      ['drawer-cod-total', { textContent: '', className: '' }],
+      ['drawer-online-total', { textContent: '', className: '' }],
+      ['drawer-payout-total', { textContent: '', className: '' }],
+      ['drawer-net-total', { textContent: '', className: '' }],
+      ['drawer-net-sub-total', { textContent: '', className: '' }],
+      ['drawer-net-formula-hint', { textContent: '', className: '' }]
+    ]);
+
+    const prevDocument = globalThis.document;
+    globalThis.document = {
+      getElementById: (id) => fakeEls.get(id) || null
+    };
+
+    try {
+      const result = updateCounterCashDrawerSummary(orders);
+      assert.strictEqual(result.periodCodTotal, 500);
+      assert.strictEqual(result.periodOnlineTotal, 1500);
+      assert.strictEqual(result.periodInflowTotal, 2000);
+      assert.strictEqual(result.periodPayoutTotal, expectedPayoutAmt);
+      assert.strictEqual(result.periodNetTotal, expectedNet);
+
+      assert.strictEqual(fakeEls.get('drawer-inflow-total').textContent, '₹2,000');
+      assert.strictEqual(fakeEls.get('drawer-cod-total').textContent, '₹500');
+      assert.strictEqual(fakeEls.get('drawer-online-total').textContent, '₹1,500');
+      assert.strictEqual(fakeEls.get('drawer-payout-total').textContent, `₹${expectedPayoutAmt.toLocaleString('en-IN')}`);
+      assert.strictEqual(fakeEls.get('drawer-net-total').textContent, `₹${expectedNet.toLocaleString('en-IN')}`);
+      assert.strictEqual(fakeEls.get('drawer-net-total').className, 'drawer-headline-amount num-emerald');
+      assert.strictEqual(fakeEls.get('drawer-net-sub-total').textContent, `₹${expectedNet.toLocaleString('en-IN')}`);
+      assert.strictEqual(fakeEls.get('drawer-net-sub-total').className, 'math-val num-emerald');
+      assert.strictEqual(
+        fakeEls.get('drawer-net-formula-hint').textContent,
+        `(₹500 Cash + ₹1,500 Online) − ₹${expectedPayoutAmt.toLocaleString('en-IN')} Payouts`
+      );
+
+      // Verify Online-only inflow still produces positive inflow and net result (regression for Cash-only bug)
+      const onlineOnlyResult = updateCounterCashDrawerSummary([
+        {
+          id: 'ord_online_only',
+          status: 'delivered',
+          paymentMethod: 'Cashfree PG',
+          isPaidOnline: true,
+          total: 1000,
+          assignedRiderPin: riderPin,
+          assignedRiderName: 'Imran Rider',
+          addressDetails: { distanceKm: 1.0 }
+        }
+      ]);
+      assert.strictEqual(onlineOnlyResult.periodCodTotal, 0);
+      assert.strictEqual(onlineOnlyResult.periodOnlineTotal, 1000);
+      assert.strictEqual(onlineOnlyResult.periodInflowTotal, 1000);
+      assert.ok(onlineOnlyResult.periodPayoutTotal > 0);
+      assert.strictEqual(
+        onlineOnlyResult.periodNetTotal,
+        Math.round((1000 - onlineOnlyResult.periodPayoutTotal) * 100) / 100
+      );
+      assert.ok(onlineOnlyResult.periodNetTotal > 0);
+      assert.strictEqual(fakeEls.get('drawer-inflow-total').textContent, '₹1,000');
+      assert.strictEqual(fakeEls.get('drawer-cod-total').textContent, '₹0');
+      assert.strictEqual(fakeEls.get('drawer-online-total').textContent, '₹1,000');
+
+      // Verify negative net balance formatting when payouts exceed total inflow
+      const negResult = updateCounterCashDrawerSummary([
+        {
+          id: 'ord_low_total_long_dist',
+          status: 'delivered',
+          paymentMethod: 'Online UPI',
+          isPaidOnline: true,
+          total: 20,
+          assignedRiderPin: riderPin,
+          assignedRiderName: 'Imran Rider',
+          addressDetails: { distanceKm: 5.0 }
+        }
+      ]);
+      assert.strictEqual(negResult.periodInflowTotal, 20);
+      assert.ok(negResult.periodPayoutTotal > 20);
+      assert.ok(negResult.periodNetTotal < 0);
+      assert.strictEqual(fakeEls.get('drawer-net-total').textContent, `−₹${Math.abs(negResult.periodNetTotal).toLocaleString('en-IN')}`);
+      assert.strictEqual(fakeEls.get('drawer-net-total').className, 'drawer-headline-amount num-amber');
+      assert.strictEqual(fakeEls.get('drawer-net-sub-total').textContent, `−₹${Math.abs(negResult.periodNetTotal).toLocaleString('en-IN')}`);
+      assert.strictEqual(fakeEls.get('drawer-net-sub-total').className, 'math-val num-amber');
+    } finally {
+      if (prevDocument === undefined) {
+        delete globalThis.document;
+      } else {
+        globalThis.document = prevDocument;
+      }
+    }
   });
 
 });

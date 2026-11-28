@@ -312,4 +312,55 @@ describe('Menu Display Ordering & Customer Recently Ordered (Zero DB Log Ingesti
     assert.ok(declIdx < phoneFnIdx, 'selectedAddressId must be initialized before getCurrentUserPhone()');
     assert.ok(declIdx < filterAllIdx, 'selectedAddressId must be initialized before synchronous filterDishes("all") startup call');
   });
+
+  it('10. Recently Ordered stays strictly hidden for guests/logged-out devices even with cached my_order_ids, tracking tokens, or staff orders', async () => {
+    const d1 = await dataService.addDish({ name: 'Guest Leak Guard Biryani', price: 220, category: 'biryani', inStock: true });
+    const d2 = await dataService.addDish({ name: 'Account Isolated Kebab', price: 180, category: 'kebab', inStock: true });
+    assert.ok(d1?.id && d2?.id);
+
+    const orders = [
+      {
+        id: 'ORD-CUST1',
+        userId: 'cust-1',
+        customerEmail: 'a@example.com',
+        customerPhone: '9876543210',
+        status: 'delivered',
+        createdAt: '2026-11-26T10:00:00Z',
+        items: [{ id: d1.id, name: d1.name, price: 220, qty: 2 }]
+      },
+      {
+        id: 'ORD-DEVICE-LEFTOVER',
+        userId: null,
+        customerEmail: '',
+        customerPhone: '8888888888',
+        status: 'delivered',
+        createdAt: '2026-11-26T11:00:00Z',
+        items: [{ id: d2.id, name: d2.name, price: 180, qty: 1 }]
+      }
+    ];
+    localStorage.setItem('quickbite_orders', JSON.stringify(orders));
+    localStorage.setItem('quickbite_my_order_ids', JSON.stringify(['ORD-CUST1', 'ORD-DEVICE-LEFTOVER']));
+    localStorage.setItem('quickbite_tracking_tokens', JSON.stringify({ 'ORD-CUST1': 'tok-1', 'ORD-DEVICE-LEFTOVER': 'tok-2' }));
+    dataService.ordersCache = null;
+
+    // 1. Logged-out / Guest visitor gets 0 items even when my_order_ids, tracking tokens, and a phone number exist
+    assert.deepEqual(dataService.getRecentlyOrderedDishes(null, '', '', 8), []);
+    assert.deepEqual(dataService.getRecentlyOrderedDishes(null, '', '9876543210', 8), []);
+    assert.deepEqual(dataService.getRecentlyOrderedDishes(null, '', '8888888888', 8), []);
+
+    // 2. Different logged-in account (cust-2) never inherits cust-1 or unowned device-leftover orders from my_order_ids
+    assert.deepEqual(dataService.getRecentlyOrderedDishes('cust-2', 'other@example.com', '9876543210', 8), []);
+
+    // 3. Logged-in cust-1 sees ONLY cust-1 orders (never unowned device-leftover order with a different phone)
+    const cust1Dishes = dataService.getRecentlyOrderedDishes('cust-1', 'a@example.com', '9876543210', 8);
+    assert.deepEqual(cust1Dishes.map(d => d.id), [d1.id]);
+
+    // 4. main.js renderRecentlyOrderedSection explicitly gates on logged-in currentUser before calling getRecentlyOrderedDishes
+    const mainJs = readProjectFile('main.js');
+    const fnMatch = mainJs.match(/function renderRecentlyOrderedSection\([^)]*\)\s*\{[\s\S]*?\n  \}/);
+    assert.ok(fnMatch, 'renderRecentlyOrderedSection function body found');
+    const loginGuardIdx = fnMatch[0].indexOf('if (!isLoggedInUser)');
+    const fetchDishesIdx = fnMatch[0].indexOf('getRecentlyOrderedDishes(');
+    assert.ok(loginGuardIdx !== -1 && fetchDishesIdx !== -1 && loginGuardIdx < fetchDishesIdx, 'renderRecentlyOrderedSection must hide & exit when user is not logged in');
+  });
 });

@@ -2388,7 +2388,7 @@ tr.rider-row-off-duty td {
 
 .drawer-math-breakdown {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   gap: 12px;
   background: #F8FAFC;
@@ -2420,12 +2420,46 @@ tr.rider-row-off-duty td {
   color: var(--owner-text);
 }
 
+.math-inflow-split {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 4px 0 2px;
+  padding: 8px 10px;
+  background: #FFFFFF;
+  border: 1px solid var(--owner-border);
+  border-radius: 8px;
+}
+
+.inflow-split-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.76rem;
+}
+
+.inflow-split-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--owner-text-muted);
+  font-weight: 600;
+}
+
+.inflow-split-val {
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
 .math-operator {
   font-size: 1.4rem;
   font-weight: 800;
   color: #94A3B8;
   padding: 0 4px;
   user-select: none;
+  align-self: center;
 }
 
 .math-col.highlight {
@@ -2433,6 +2467,7 @@ tr.rider-row-off-duty td {
   border: 1px solid #86EFAC;
   border-radius: 8px;
   padding: 8px 14px;
+  justify-content: center;
 }
 
 .drawer-plain-english-note {
@@ -3466,6 +3501,15 @@ tr.rider-row-off-duty td {
 
   .math-val {
     font-size: 1.25rem;
+  }
+
+  .math-inflow-split {
+    background: #F8FAFC;
+    padding: 8px 10px;
+  }
+
+  .inflow-split-val {
+    font-size: 0.96rem;
   }
 
   .drawer-footer-row {

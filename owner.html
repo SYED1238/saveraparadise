@@ -531,49 +531,59 @@
         </article>
       </section>
 
-      <!-- 3. CASH DRAWER RECONCILIATION SUMMARY CARD (High Visibility, Real-World Till Math) -->
+      <!-- 3. SHIFT INFLOW & PAYOUT RECONCILIATION SUMMARY CARD (High Visibility, Real-World Till Math) -->
       <section class="owner-drawer-summary-card" id="owner-drawer-summary-card">
         <div class="drawer-summary-header">
           <div class="drawer-summary-title-box">
             <span class="drawer-icon-bubble"><i class="fa-solid fa-vault"></i></span>
             <div>
-              <span class="drawer-tag">COUNTER CASH RECONCILIATION</span>
-              <h3 class="drawer-title">Counter Till Balance: Food Cash vs Night Rider Payouts</h3>
+              <span class="drawer-tag">REVENUE &amp; PAYOUT RECONCILIATION</span>
+              <h3 class="drawer-title">Shift Balance: Cash &amp; Online Inflow vs Rider Payouts</h3>
             </div>
           </div>
           <div class="drawer-headline-box">
-            <span class="drawer-headline-label">NET CASH TO RETAIN:</span>
+            <span class="drawer-headline-label">NET BALANCE RETAINED:</span>
             <div class="drawer-headline-amount num-emerald" id="drawer-net-total">₹0</div>
           </div>
         </div>
 
         <div class="drawer-math-breakdown">
-          <div class="math-col math-cod">
+          <div class="math-col math-cod math-inflow">
             <span class="math-step-indicator plus"><i class="fa-solid fa-plus"></i> Inflow</span>
-            <span class="math-label"><i class="fa-solid fa-hand-holding-dollar"></i> Total COD Cash Collected</span>
-            <span class="math-val num-amber" id="drawer-cod-total">₹0</span>
-            <span class="math-hint">Customer cash received</span>
+            <span class="math-label"><i class="fa-solid fa-coins"></i> Total Inflow (Cash + Online)</span>
+            <span class="math-val num-emerald" id="drawer-inflow-total">₹0</span>
+            <div class="math-inflow-split">
+              <div class="inflow-split-item">
+                <span class="inflow-split-label"><i class="fa-solid fa-hand-holding-dollar"></i> COD Cash</span>
+                <span class="inflow-split-val num-amber" id="drawer-cod-total">₹0</span>
+              </div>
+              <div class="inflow-split-item">
+                <span class="inflow-split-label"><i class="fa-solid fa-credit-card"></i> Online &amp; UPI</span>
+                <span class="inflow-split-val num-teal" id="drawer-online-total">₹0</span>
+              </div>
+            </div>
+            <span class="math-hint">Counter cash + direct bank UPI received</span>
           </div>
           <span class="math-operator">−</span>
           <div class="math-col math-payout">
             <span class="math-step-indicator minus"><i class="fa-solid fa-minus"></i> Outflow</span>
-            <span class="math-label"><i class="fa-solid fa-motorcycle"></i> Tonight's Rider Payouts</span>
+            <span class="math-label"><i class="fa-solid fa-motorcycle"></i> Rider Delivery Payouts</span>
             <span class="math-val num-purple" id="drawer-payout-total">₹0</span>
             <span class="math-hint">Owed to delivery fleet</span>
           </div>
           <span class="math-operator">=</span>
           <div class="math-col highlight math-retained">
             <span class="math-step-indicator equal"><i class="fa-solid fa-check"></i> Net</span>
-            <span class="math-label"><i class="fa-solid fa-vault"></i> Net Cash Retained in Drawer</span>
+            <span class="math-label"><i class="fa-solid fa-vault"></i> Net Balance Retained</span>
             <span class="math-val num-emerald" id="drawer-net-sub-total">₹0</span>
-            <span class="math-hint">Pure counter cash retained</span>
+            <span class="math-hint" id="drawer-net-formula-hint">(₹0 Cash + ₹0 Online) − ₹0 Payouts</span>
           </div>
         </div>
 
         <div class="drawer-footer-row">
           <div class="drawer-plain-english-note">
             <i class="fa-solid fa-circle-info"></i>
-            <span><strong>How Cash Flow Works:</strong> Delivery boys deposit <strong>100% of the food cash</strong> into your counter drawer. Riders do NOT deduct money from food orders. At the end of the shift/night, you pay their delivery earnings separately in the <strong>Payouts</strong> tab.</span>
+            <span><strong>How Balance Flow Works:</strong> Total inflow combines <strong>100% of COD food cash</strong> deposited into your counter drawer and <strong>Online &amp; UPI payments</strong> credited to your bank. Riders do NOT deduct money from food orders — their delivery earnings are subtracted as outflow and paid separately in the <strong>Payouts</strong> tab.</span>
           </div>
           <button type="button" class="btn-drawer-settle-link" onclick="document.getElementById('owner-nav-payouts').click()">
             <i class="fa-solid fa-money-bill-transfer"></i> Settle Shift Payouts <i class="fa-solid fa-chevron-right"></i>

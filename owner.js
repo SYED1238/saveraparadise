@@ -745,27 +745,45 @@ function getFilteredOrders() {
 
 // ==============================================================
 /**
- * Unconditionally updates the Cash Drawer Summary card on the Overview Tab
- * (#owner-drawer-summary-card: #drawer-cod-total, #drawer-payout-total, #drawer-net-total, #drawer-net-sub-total)
- * based on period-matched COD food cash collected vs. period-matched rider delivery payouts.
+ * Unconditionally updates the Shift Inflow & Payout Reconciliation card on the Overview Tab
+ * (#owner-drawer-summary-card: #drawer-inflow-total, #drawer-cod-total, #drawer-online-total,
+ * #drawer-payout-total, #drawer-net-total, #drawer-net-sub-total, #drawer-net-formula-hint)
+ * based on period-matched Cash + Online food inflow vs. period-matched rider delivery payouts.
  */
-function updateCounterCashDrawerSummary(orders, codRevenue) {
-  const drawerCodEl = document.getElementById('drawer-cod-total');
-  const drawerPayoutEl = document.getElementById('drawer-payout-total');
-  const drawerNetEl = document.getElementById('drawer-net-total');
-  const drawerNetSubEl = document.getElementById('drawer-net-sub-total');
+export function updateCounterCashDrawerSummary(orders, codRevenue, onlineRevenue) {
+  const hasDom = typeof document !== 'undefined';
+  const drawerInflowEl = hasDom ? document.getElementById('drawer-inflow-total') : null;
+  const drawerCodEl = hasDom ? document.getElementById('drawer-cod-total') : null;
+  const drawerOnlineEl = hasDom ? document.getElementById('drawer-online-total') : null;
+  const drawerPayoutEl = hasDom ? document.getElementById('drawer-payout-total') : null;
+  const drawerNetEl = hasDom ? document.getElementById('drawer-net-total') : null;
+  const drawerNetSubEl = hasDom ? document.getElementById('drawer-net-sub-total') : null;
+  const drawerNetHintEl = hasDom ? document.getElementById('drawer-net-formula-hint') : null;
 
   const deliveredOrders = (orders || []).filter(o => o && String(o.status || '').toLowerCase() === 'delivered');
   const payoutOrders = (orders || []).filter(o => o && (String(o.status || '').toLowerCase() === 'delivered' || String(o.status || '').toLowerCase() === 'undelivered'));
   const codOrders = deliveredOrders.filter(o => !isOnlineOrderPayment(o));
-  const periodCodTotal = (typeof codRevenue === 'number')
-    ? codRevenue
+  const onlineOrders = deliveredOrders.filter(o => isOnlineOrderPayment(o));
+
+  const parseOrderAmount = (o) => Number(String(o?.total || '0').replace(/[^0-9.]/g, '')) || 0;
+
+  const periodCodTotal = (typeof codRevenue === 'number' && Number.isFinite(codRevenue))
+    ? Math.round(codRevenue * 100) / 100
     : codOrders.reduce((sum, o) => {
         const cash = (typeof o.cashCollected === 'number' && o.cashCollected > 0)
           ? o.cashCollected
-          : (Number(String(o.total || '0').replace(/[^0-9.]/g, '')) || 0);
+          : parseOrderAmount(o);
         return Math.round((sum + cash) * 100) / 100;
       }, 0);
+
+  const periodOnlineTotal = (typeof onlineRevenue === 'number' && Number.isFinite(onlineRevenue))
+    ? Math.round(onlineRevenue * 100) / 100
+    : onlineOrders.reduce((sum, o) => {
+        const onlineAmt = parseOrderAmount(o);
+        return Math.round((sum + onlineAmt) * 100) / 100;
+      }, 0);
+
+  const periodInflowTotal = Math.round((periodCodTotal + periodOnlineTotal) * 100) / 100;
 
   // Group delivered and undelivered orders by rider to calculate period payouts accurately
   const payoutConfig = dataService.getPayoutConfig();
@@ -791,9 +809,11 @@ function updateCounterCashDrawerSummary(orders, codRevenue) {
     periodPayoutTotal = Math.round((periodPayoutTotal + (payoutResult.exactPayout || payoutResult.totalPayout || 0)) * 100) / 100;
   });
 
-  const periodNetTotal = Math.round((periodCodTotal - periodPayoutTotal) * 100) / 100;
+  const periodNetTotal = Math.round((periodInflowTotal - periodPayoutTotal) * 100) / 100;
 
+  if (drawerInflowEl) drawerInflowEl.textContent = `₹${periodInflowTotal.toLocaleString('en-IN')}`;
   if (drawerCodEl) drawerCodEl.textContent = `₹${periodCodTotal.toLocaleString('en-IN')}`;
+  if (drawerOnlineEl) drawerOnlineEl.textContent = `₹${periodOnlineTotal.toLocaleString('en-IN')}`;
   if (drawerPayoutEl) drawerPayoutEl.textContent = `₹${periodPayoutTotal.toLocaleString('en-IN')}`;
   if (drawerNetEl) {
     if (periodNetTotal >= 0) {
@@ -810,6 +830,17 @@ function updateCounterCashDrawerSummary(orders, codRevenue) {
       : `−₹${Math.abs(periodNetTotal).toLocaleString('en-IN')}`;
     drawerNetSubEl.className = periodNetTotal >= 0 ? 'math-val num-emerald' : 'math-val num-amber';
   }
+  if (drawerNetHintEl) {
+    drawerNetHintEl.textContent = `(₹${periodCodTotal.toLocaleString('en-IN')} Cash + ₹${periodOnlineTotal.toLocaleString('en-IN')} Online) − ₹${periodPayoutTotal.toLocaleString('en-IN')} Payouts`;
+  }
+
+  return {
+    periodCodTotal,
+    periodOnlineTotal,
+    periodInflowTotal,
+    periodPayoutTotal,
+    periodNetTotal
+  };
 }
 
 // 6. DASHBOARD MASTER RENDERER
