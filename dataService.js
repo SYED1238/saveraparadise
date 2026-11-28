@@ -266,6 +266,22 @@ export const DEFAULT_SETTINGS = {
 // ========================================================
 export const DEFAULT_ORDERS = [];
 
+export const DEFAULT_RIDER_AVATAR_URL =
+  '/api/r2-image?key=profile%2Fmale%2F3D_Cowboy_Male_Avatar_Icon___Minimalist_Round_Profile_Picture-removebg-preview.png';
+
+const LEGACY_GENERIC_RIDER_SVGS = new Set([
+  '/avatars/rider-1.svg',
+  '/avatars/rider-2.svg'
+]);
+
+export function resolveRiderAvatarUrl(rawUrl) {
+  const clean = String(rawUrl || '').trim();
+  if (!clean || clean.includes('unsplash.com') || LEGACY_GENERIC_RIDER_SVGS.has(clean)) {
+    return DEFAULT_RIDER_AVATAR_URL;
+  }
+  return clean;
+}
+
 export const DEFAULT_RIDERS = [
   {
     id: 'rider-2233',
@@ -274,7 +290,7 @@ export const DEFAULT_RIDERS = [
     phone: '+91 98451 22334',
     vehicle: '🏍️ Honda Activa 6G',
     avatar: '🏍️',
-    avatarImg: '/avatars/rider-1.svg',
+    avatarImg: DEFAULT_RIDER_AVATAR_URL,
     status: 'online',
     maxActiveOrders: 1
   },
@@ -285,7 +301,7 @@ export const DEFAULT_RIDERS = [
     phone: '+91 97777 66666',
     vehicle: '🏍️ Bajaj Pulsar 150',
     avatar: '🏍️',
-    avatarImg: '/avatars/rider-2.svg',
+    avatarImg: DEFAULT_RIDER_AVATAR_URL,
     status: 'online',
     maxActiveOrders: 1
   },
@@ -296,7 +312,7 @@ export const DEFAULT_RIDERS = [
     phone: '+91 96666 55555',
     vehicle: '🛵 TVS Jupiter',
     avatar: '🛵',
-    avatarImg: '/avatars/rider-1.svg',
+    avatarImg: DEFAULT_RIDER_AVATAR_URL,
     status: 'online',
     maxActiveOrders: 1
   },
@@ -307,7 +323,7 @@ export const DEFAULT_RIDERS = [
     phone: '+91 95555 44444',
     vehicle: '⚡ Ather 450X EV',
     avatar: '⚡',
-    avatarImg: '/avatars/rider-2.svg',
+    avatarImg: DEFAULT_RIDER_AVATAR_URL,
     status: 'online',
     maxActiveOrders: 1
   }
@@ -2804,6 +2820,10 @@ class QuickBiteDataService {
           this.syncOfflinePendingOrders();
           if (this.portalType === 'delivery') {
             this.syncPendingRiderDutyStatus().catch(() => {});
+            if (this.isRiderOnBreakIdle()) {
+              this.teardownRealtime();
+              return;
+            }
           }
           const isRealtimeHealthy = this.realtimeChannel && this.realtimeChannel.state === 'joined';
           const isBroadcastHealthy = this.sharedBroadcastChannel && this.sharedBroadcastChannel.state === 'joined';
@@ -3023,8 +3043,101 @@ class QuickBiteDataService {
     } catch {}
   }
 
+  hasRiderActiveAssignedOrder() {
+    try {
+      if (this.portalType !== 'delivery') return false;
+      const activeRider = this.getActiveRider();
+      const riderPin = activeRider?.pin ? String(activeRider.pin).trim() : null;
+      if (!riderPin) return false;
+      const orders = this.getOrders();
+      return Array.isArray(orders) && orders.some(o => {
+        if (!o) return false;
+        const assigned = String(o.assigned_rider_pin || o.assignedRiderPin || '').trim();
+        return assigned === riderPin && ['accepted', 'cooking', 'ready_for_pickup', 'on_the_way'].includes(o.status);
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  isRiderOnBreakIdle() {
+    if (this.portalType !== 'delivery') return false;
+    let isDutyOff = false;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const lsDuty = localStorage.getItem('quickbite_rider_duty_on');
+        if (lsDuty === 'false') {
+          isDutyOff = true;
+        } else if (lsDuty !== 'true') {
+          const activeRider = this.getActiveRider();
+          if (activeRider && String(activeRider.status || '').trim().toLowerCase() === 'offline') {
+            isDutyOff = true;
+          }
+        }
+      } else {
+        const activeRider = this.getActiveRider();
+        if (activeRider && String(activeRider.status || '').trim().toLowerCase() === 'offline') {
+          isDutyOff = true;
+        }
+      }
+    } catch {}
+    if (!isDutyOff) return false;
+    return !this.hasRiderActiveAssignedOrder();
+  }
+
+  teardownRealtime() {
+    if (this._realtimeRetryTimer) {
+      clearTimeout(this._realtimeRetryTimer);
+      this._realtimeRetryTimer = null;
+    }
+    this.isSubscribingRealtime = false;
+    this.isSupabaseConnected = false;
+    if (this.realtimeChannel) {
+      const ch = this.realtimeChannel;
+      this.realtimeChannel = null;
+      try {
+        if (supabase && typeof supabase.removeChannel === 'function') {
+          Promise.resolve(supabase.removeChannel(ch)).catch(() => {});
+        } else if (typeof ch.unsubscribe === 'function') {
+          Promise.resolve(ch.unsubscribe()).catch(() => {});
+        }
+      } catch {}
+    }
+    if (this.sharedBroadcastChannel) {
+      const ch = this.sharedBroadcastChannel;
+      this.sharedBroadcastChannel = null;
+      try {
+        if (supabase && typeof supabase.removeChannel === 'function') {
+          Promise.resolve(supabase.removeChannel(ch)).catch(() => {});
+        } else if (typeof ch.unsubscribe === 'function') {
+          Promise.resolve(ch.unsubscribe()).catch(() => {});
+        }
+      } catch {}
+    }
+  }
+
+  resumeRiderDutySync() {
+    if (this.portalType !== 'delivery' || this.isRiderOnBreakIdle()) return;
+    try {
+      const isRealtimeHealthy = this.realtimeChannel && this.realtimeChannel.state === 'joined';
+      const isBroadcastHealthy = this.sharedBroadcastChannel && this.sharedBroadcastChannel.state === 'joined';
+      if (!isRealtimeHealthy || !isBroadcastHealthy) {
+        this.setupRealtime();
+      }
+      if (this.isStaffAuthorized()) {
+        Promise.resolve(this.syncOrdersFromSupabase(true)).catch(() => {});
+        Promise.resolve(this.syncSettingsFromSupabase(true)).catch(() => {});
+        Promise.resolve(this.syncRidersFromSupabase(true)).catch(() => {});
+      }
+    } catch {}
+  }
+
   async initSupabase() {
     try {
+      if (this.isRiderOnBreakIdle()) {
+        this.teardownRealtime();
+        return;
+      }
       // Initial Sync from Supabase tables
       await this.syncAllFromSupabase();
 
@@ -3554,6 +3667,10 @@ class QuickBiteDataService {
   }
 
   setupRealtime() {
+    if (this.isRiderOnBreakIdle()) {
+      this.teardownRealtime();
+      return;
+    }
     if (this.isSubscribingRealtime) return;
     this.isSubscribingRealtime = true;
 
@@ -3659,9 +3776,21 @@ class QuickBiteDataService {
           this.syncOfflinePendingOrders();
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[DataService] Supabase Realtime channel error:', status, err);
+          if (this.isRiderOnBreakIdle()) {
+            this.teardownRealtime();
+            return;
+          }
           const scheduleRetry = () => {
+            if (this.isRiderOnBreakIdle()) {
+              this.teardownRealtime();
+              return;
+            }
             if (this._realtimeRetryTimer) clearTimeout(this._realtimeRetryTimer);
             this._realtimeRetryTimer = setTimeout(() => {
+              if (this.isRiderOnBreakIdle()) {
+                this.teardownRealtime();
+                return;
+              }
               if (typeof document !== 'undefined' && document.hidden) {
                 scheduleRetry();
                 return;
@@ -4567,6 +4696,12 @@ class QuickBiteDataService {
 
     this.heartbeatTimer = setInterval(async () => {
       if (typeof document !== 'undefined' && document.hidden) return;
+      if (this.isRiderOnBreakIdle()) {
+        if (this.realtimeChannel || this.sharedBroadcastChannel || this._realtimeRetryTimer) {
+          this.teardownRealtime();
+        }
+        return;
+      }
 
       try {
         if (this.portalType === 'admin' || this.portalType === 'delivery' || this.portalType === 'owner') {
@@ -4633,6 +4768,12 @@ class QuickBiteDataService {
     if (typeof document !== 'undefined') {
       const handleTabResume = () => {
         if (document.hidden) return;
+        if (this.isRiderOnBreakIdle()) {
+          if (this.realtimeChannel || this.sharedBroadcastChannel || this._realtimeRetryTimer) {
+            this.teardownRealtime();
+          }
+          return;
+        }
         const isOpen = typeof this.isStoreOpen === 'function' ? this.isStoreOpen() : true;
         const orders = this.getOrders();
         const hasActiveOrders = Array.isArray(orders) && orders.some(
@@ -8960,9 +9101,8 @@ class QuickBiteDataService {
           avatar = (r.vehicle && r.vehicle.includes('Scooter')) ? '🛵' : '🏍️';
           needsResave = true;
         }
-        let avatarImg = r.avatarImg || '/avatars/rider-1.svg';
-        if (avatarImg.includes('unsplash.com')) {
-          avatarImg = '/avatars/rider-1.svg';
+        const avatarImg = resolveRiderAvatarUrl(r.avatarImg);
+        if (avatarImg !== r.avatarImg) {
           needsResave = true;
         }
         let name = String(r.name || `Rider ${r.pin}`).replace(/^https?:\/\/[^\s]+/, '').trim();
@@ -9045,11 +9185,19 @@ class QuickBiteDataService {
             (Date.now() - remoteBroadcast.ts < 8000) &&
             remoteBroadcast.ts >= (syncStartedAt - 5000)
           );
+          const hasNewerLocalAvatar = Boolean(
+            this._lastLocalAvatarMutation &&
+            this._lastLocalAvatarMutation.ts >= (syncStartedAt - 3000) &&
+            ((pin && this._lastLocalAvatarMutation.pin === pin) || (riderId && `rider-${this._lastLocalAvatarMutation.pin}` === riderId))
+          );
           const resolvedStatus = (hasNewerLocalDuty && r.status !== 'inactive')
             ? this._lastLocalDutyMutation.status
             : ((hasRecentRemoteBroadcast && r.status !== 'inactive')
               ? remoteBroadcast.status
               : (r.status || existing?.status || 'online'));
+          const resolvedAvatarImg = (hasNewerLocalAvatar && this._lastLocalAvatarMutation.avatarImg)
+            ? resolveRiderAvatarUrl(this._lastLocalAvatarMutation.avatarImg)
+            : resolveRiderAvatarUrl(r.avatar_img || existing?.avatarImg);
           const nextHandoverStatus = r.cash_handover_status || r.cashHandoverStatus || existing?.cashHandoverStatus || null;
           const nextHandoverAmount = Number(r.cash_handover_amount ?? r.cashHandoverAmount ?? existing?.cashHandoverAmount ?? 0);
           const nextHandoverRequestedAt = r.cash_handover_requested_at || r.cashHandoverRequestedAt || existing?.cashHandoverRequestedAt || null;
@@ -9063,7 +9211,7 @@ class QuickBiteDataService {
             vehicle: r.vehicle || existing?.vehicle || '🏍️ Bike',
             status: resolvedStatus,
             avatar: r.avatar || existing?.avatar || (r.vehicle?.includes('Scooter') ? '🛵' : (r.vehicle?.includes('EV') ? '⚡' : '🏍️')),
-            avatarImg: r.avatar_img || existing?.avatarImg || '/avatars/rider-1.svg',
+            avatarImg: resolvedAvatarImg,
             earnings: Number(r.earnings ?? existing?.earnings ?? 0),
             trips: Number(r.trips ?? existing?.trips ?? 0),
             upiVpa: r.upi_vpa || r.upiVpa || existing?.upiVpa || null,
@@ -9156,9 +9304,14 @@ class QuickBiteDataService {
   }
 
   saveRiders(riders) {
-    this.ridersCache = Array.isArray(riders) ? riders : null;
+    const normalized = Array.isArray(riders)
+      ? riders.map(r => (r && typeof r === 'object'
+        ? { ...r, avatarImg: resolveRiderAvatarUrl(r.avatarImg ?? r.avatar_img) }
+        : r))
+      : null;
+    this.ridersCache = normalized;
     try {
-      localStorage.setItem('quickbite_riders', JSON.stringify(riders));
+      localStorage.setItem('quickbite_riders', JSON.stringify(normalized));
       this.notifyChange('riders', { action: 'update_riders', timestamp: Date.now() });
 
       // SECURITY HARDENING: Never write plaintext rider PINs or personal phone numbers
@@ -9222,7 +9375,7 @@ class QuickBiteDataService {
       vehicleName: riderData.vehicleName || existing?.vehicleName || '',
       status: riderData.status || existing?.status || 'online',
       avatar: riderData.avatar && !riderData.avatar.startsWith('http') ? riderData.avatar : avatarEmoji,
-      avatarImg: riderData.avatarImg || existing?.avatarImg || '/avatars/rider-1.svg',
+      avatarImg: resolveRiderAvatarUrl(riderData.avatarImg || existing?.avatarImg),
       cashSettledAt: riderData.cashSettledAt !== undefined ? riderData.cashSettledAt : (riderData.cash_settled_at !== undefined ? riderData.cash_settled_at : (existing?.cashSettledAt || null)),
       payoutPaidAt: riderData.payoutPaidAt !== undefined ? riderData.payoutPaidAt : (riderData.payout_paid_at !== undefined ? riderData.payout_paid_at : (existing?.payoutPaidAt || null)),
       payoutAmountPaid: riderData.payoutAmountPaid !== undefined ? Number(riderData.payoutAmountPaid) : (riderData.payout_amount_paid !== undefined ? Number(riderData.payout_amount_paid) : (existing?.payoutAmountPaid || 0)),
@@ -10239,6 +10392,9 @@ class QuickBiteDataService {
     });
 
     if (!syncRemote) {
+      if (!isOnline && this.isRiderOnBreakIdle()) {
+        this.teardownRealtime();
+      }
       return { success: true, status: nextStatus, rider: targetRider };
     }
 
@@ -10279,6 +10435,11 @@ class QuickBiteDataService {
         onDuty: prevIsOnline,
         timestamp: Date.now()
       });
+      if (!prevIsOnline && this.isRiderOnBreakIdle()) {
+        this.teardownRealtime();
+      } else if (prevIsOnline && !this.isRiderOnBreakIdle()) {
+        this.resumeRiderDutySync();
+      }
     };
 
     const executeDutySync = async () => {
@@ -10310,14 +10471,30 @@ class QuickBiteDataService {
             } catch {}
           }
           try {
-            this._ensureBroadcastSubscribedAndSend('rider_duty_updated', {
+            const broadcastPromise = this._ensureBroadcastSubscribedAndSend('rider_duty_updated', {
               riderId: res.rider?.id || targetRider.id || `rider-${cleanPin}`,
               riderName: res.rider?.name || targetRider.name || '',
               status: nextStatus,
               onDuty: isOnline,
               timestamp: Date.now()
             }).catch(() => {});
+            if (!isOnline && this.isRiderOnBreakIdle()) {
+              let raceTimer = null;
+              await Promise.race([
+                broadcastPromise,
+                new Promise(resolve => {
+                  raceTimer = setTimeout(resolve, 600);
+                  if (raceTimer && typeof raceTimer.unref === 'function') raceTimer.unref();
+                })
+              ]);
+              if (raceTimer) clearTimeout(raceTimer);
+            }
           } catch {}
+          if (!isOnline && this.isRiderOnBreakIdle()) {
+            this.teardownRealtime();
+          } else if (isOnline && !isSuperseded()) {
+            this.resumeRiderDutySync();
+          }
           return { success: true, status: nextStatus, rider: res.rider || targetRider };
         }
         rollbackDutyState();
@@ -10338,6 +10515,9 @@ class QuickBiteDataService {
               }));
             }
           } catch {}
+          if (!isOnline && this.isRiderOnBreakIdle()) {
+            this.teardownRealtime();
+          }
         }
         return {
           success: false,
@@ -10377,6 +10557,105 @@ class QuickBiteDataService {
         return;
       }
       await this.setRiderDutyStatus(pending.pin, pending.onDuty !== false, { syncRemote: true });
+    } catch {}
+  }
+
+  async setRiderAvatar(riderPin, avatarImg, options = {}) {
+    const cleanPin = String(riderPin || '').trim();
+    if (!cleanPin) return { success: false, error: 'Rider PIN required' };
+
+    const nextAvatar = resolveRiderAvatarUrl(avatarImg);
+    const pendingKey = 'quickbite_rider_avatar_pending_sync';
+    const riders = this.getRiders();
+    const idx = riders.findIndex(r => String(r.pin || '').trim() === cleanPin);
+    if (idx < 0) return { success: false, error: 'Rider not found' };
+
+    const prevAvatar = riders[idx].avatarImg || DEFAULT_RIDER_AVATAR_URL;
+    const mutationTs = Date.now();
+    this._lastLocalAvatarMutation = { pin: cleanPin, avatarImg: nextAvatar, ts: mutationTs };
+
+    riders[idx] = { ...riders[idx], avatarImg: nextAvatar };
+    this.saveRiders(riders);
+    this.notifyChange('rider_session', { pin: cleanPin, rider: riders[idx], timestamp: mutationTs });
+
+    const targetRider = riders[idx];
+    const hasRiderOrOwnerToken =
+      (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('quickbite_rider_token') || sessionStorage.getItem('quickbite_owner_token'))) ||
+      (typeof localStorage !== 'undefined' && (localStorage.getItem('quickbite_rider_token') || localStorage.getItem('quickbite_owner_token')));
+
+    if (options.syncRemote === false || !hasRiderOrOwnerToken) {
+      return { success: true, localOnly: true, avatarImg: nextAvatar, rider: targetRider };
+    }
+
+    const rollbackAvatarState = () => {
+      if (this._lastLocalAvatarMutation && this._lastLocalAvatarMutation.ts > mutationTs) return;
+      const curList = this.getRiders();
+      const curIdx = curList.findIndex(r => String(r.pin || '').trim() === cleanPin);
+      if (curIdx >= 0) {
+        curList[curIdx] = { ...curList[curIdx], avatarImg: prevAvatar };
+        this.saveRiders(curList);
+        this.notifyChange('rider_session', { pin: cleanPin, rider: curList[curIdx], timestamp: Date.now() });
+      }
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(pendingKey);
+      } catch {}
+    };
+
+    try {
+      const res = await this._orderAction('set_rider_avatar', {
+        riderPin: cleanPin,
+        avatarImg: nextAvatar
+      });
+      if (res && res.success) {
+        try {
+          if (typeof localStorage !== 'undefined') localStorage.removeItem(pendingKey);
+        } catch {}
+        return { success: true, avatarImg: nextAvatar, rider: res.rider || targetRider };
+      }
+      rollbackAvatarState();
+      return { success: false, revertedAvatar: prevAvatar, error: res?.error || 'Failed to update rider avatar' };
+    } catch (err) {
+      const status = Number(err?.status || 0);
+      const isHardReject = [400, 401, 403, 404].includes(status);
+      if (isHardReject) {
+        rollbackAvatarState();
+      } else {
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(pendingKey, JSON.stringify({
+              pin: cleanPin,
+              avatarImg: nextAvatar,
+              timestamp: mutationTs
+            }));
+          }
+        } catch {}
+      }
+      return {
+        success: false,
+        statusCode: status,
+        ...(isHardReject ? { revertedAvatar: prevAvatar } : {}),
+        error: err?.message || 'Network error updating avatar',
+        queued: !isHardReject
+      };
+    }
+  }
+
+  async syncPendingRiderAvatar() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const raw = localStorage.getItem('quickbite_rider_avatar_pending_sync');
+      if (!raw) return;
+      const pending = JSON.parse(raw);
+      if (!pending || !pending.pin || !pending.avatarImg) {
+        localStorage.removeItem('quickbite_rider_avatar_pending_sync');
+        return;
+      }
+      const activeRider = this.getActiveRider();
+      if (this.portalType === 'delivery' && activeRider && String(activeRider.pin || '').trim() !== String(pending.pin).trim()) {
+        localStorage.removeItem('quickbite_rider_avatar_pending_sync');
+        return;
+      }
+      await this.setRiderAvatar(pending.pin, pending.avatarImg, { syncRemote: true });
     } catch {}
   }
 

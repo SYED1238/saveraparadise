@@ -28,6 +28,12 @@ public class OrderMonitorReceiver extends BroadcastReceiver {
         boolean shouldRun = pkg.contains("kitchen") || pkg.contains("rider");
         if (!shouldRun) return;
 
+        if (pkg.contains("rider") && !OrderMonitorService.isRiderOnDuty(context)) {
+            Log.i(TAG, "Skipping OrderMonitorService start from receiver: Rider is Off Duty / On Break");
+            OrderMonitorService.cancelKeepAliveWatchdogs(context);
+            return;
+        }
+
         if (pkg.startsWith("com.foodbliz.")) {
             try {
                 android.content.SharedPreferences prefs = context.getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);

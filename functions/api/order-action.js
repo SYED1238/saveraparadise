@@ -31,6 +31,67 @@ let syncOrdersVersion = '0';
 let lastPendingCashfreeSweepAt = 0;
 const PENDING_CASHFREE_SWEEP_COOLDOWN_MS = 30000;
 
+const DEFAULT_RIDER_AVATAR_KEY = 'profile/male/3D_Cowboy_Male_Avatar_Icon___Minimalist_Round_Profile_Picture-removebg-preview.png';
+const DEFAULT_RIDER_AVATAR_URL = `/api/r2-image?key=${encodeURIComponent(DEFAULT_RIDER_AVATAR_KEY)}`;
+const ALLOWED_RIDER_AVATAR_KEYS = new Set([
+  'profile/female/3D_Female_Avatar_Icon_with_Headphones___Minimalist_Round_Profile_Picture-removebg-preview.png',
+  'profile/female/3D_Female_Avatar_Icon_with_Blonde_Hair___Minimalist_Round_Profile_Picture-removebg-preview.png',
+  'profile/female/3D_Female_Avatar_Icon_with_Hat___Minimalist_Round_Profile_Picture-removebg-preview.png',
+  'profile/female/3D_Female_Avatar_Icon_with_Curly_Puff_Hair_and_Glasses___Minimalist_Round_Profile_Picture-removebg-preview.png',
+  'profile/male/3D_Male_Avatar_Icon_with_Headphones___Minimalist_Round_Profile_Picture-removebg-preview.png',
+  'profile/male/3D_Male_Avatar_Icon_with_Black_Cap___Minimalist_Round_Profile_Picture-removebg-preview.png',
+  'profile/male/3D_Cowboy_Male_Avatar_Icon___Minimalist_Round_Profile_Picture-removebg-preview.png',
+  'profile/male/3D_Male_Avatar_Icon_with_Orange_Hair___Minimalist_Round_Profile_Picture-removebg-preview.png'
+]);
+const ALLOWED_RIDER_SVG_AVATARS = new Set([
+  '/avatars/rider-1.svg',
+  '/avatars/rider-2.svg',
+  '/avatars/rider-3.svg',
+  '/avatars/rider-4.svg',
+  '/avatars/rider-5.svg'
+]);
+
+function normalizeAllowedRiderAvatar(rawVal) {
+  const val = String(rawVal || '').trim();
+  if (!val) return null;
+  if (ALLOWED_RIDER_SVG_AVATARS.has(val)) return val;
+  if (val.startsWith('/api/r2-image')) {
+    try {
+      const parsed = new URL(val, 'https://saveraparadise.com');
+      const key = String(parsed.searchParams.get('key') || '').replace(/^\/+/, '');
+      if (ALLOWED_RIDER_AVATAR_KEYS.has(key)) {
+        return `/api/r2-image?key=${encodeURIComponent(key)}`;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function validateSetRiderAvatarRequest(auth, body) {
+  if (auth.payload?.role !== 'rider' && auth.payload?.role !== 'owner') {
+    return { errorStatus: 403, error: 'Forbidden: Rider or Owner session required for set_rider_avatar' };
+  }
+  const requestedPin = String(body.riderPin || body.pin || '').trim();
+  let targetPin = requestedPin;
+  if (auth.payload?.role === 'rider') {
+    const tokenPin = String(auth.payload?.riderPin || '').trim();
+    if (!tokenPin) {
+      return { errorStatus: 403, error: 'Forbidden: Rider PIN missing from token' };
+    }
+    if (requestedPin && requestedPin !== tokenPin) {
+      return { errorStatus: 403, error: 'Forbidden: Riders can only update their own avatar' };
+    }
+    targetPin = tokenPin;
+  } else if (!targetPin) {
+    return { errorStatus: 400, error: 'riderPin is required' };
+  }
+  const normalizedAvatar = normalizeAllowedRiderAvatar(body.avatarImg ?? body.avatar_img);
+  if (!normalizedAvatar) {
+    return { errorStatus: 400, error: 'Valid approved avatar selection is required' };
+  }
+  return { targetPin, avatarImg: normalizedAvatar };
+}
+
 // Deterministic version calculation: generates identical string if order IDs, statuses, assignments, and timestamps match
 function computeOrdersVersion(orders) {
   if (!Array.isArray(orders) || orders.length === 0) return '0';
@@ -309,7 +370,7 @@ export async function onRequest(context) {
   const isTestEnv = Boolean(typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || (Array.isArray(process.argv) && process.argv.some(a => a.includes('test')))));
 
   // 1. Role Gate: Enforce authentication for staff-restricted actions
-  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover', 'set_rider_duty'].includes(action)) {
+  if (['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover', 'set_rider_duty', 'set_rider_avatar'].includes(action)) {
     const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
     if (!auth || !auth.valid) {
       return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -580,7 +641,7 @@ export async function onRequest(context) {
       return jsonResponse(sample, 200, pollHeaders);
     }
 
-    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover', 'set_rider_duty'].includes(action)) {
+    if (isTestEnv && ['sync_orders', 'sync_rider_profile', 'update_status', 'assign_order', 'claim_order', 'release_rider', 'rider_drop_order', 'request_cash_handover', 'set_rider_duty', 'set_rider_avatar'].includes(action)) {
       const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
       if (!auth || !auth.valid) {
         return jsonResponse({ error: auth?.error || 'Unauthorized: Staff session required' }, 401, Object.fromEntries(corsHeaders.entries()));
@@ -602,8 +663,8 @@ export async function onRequest(context) {
           }
         }
         const testRiders = body.simulateRiders || [
-          { pin: '2233', name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-1.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0, upi_vpa: '9845122334@upi', bank_account_no: '1234567890', bank_ifsc: 'HDFC0001234', payout_method_pref: 'upi' },
-          { pin: '4422', name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', status: 'online', avatar: '🏍️', avatar_img: '/avatars/rider-2.svg', max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0, upi_vpa: '9777766666@upi', bank_account_no: '0987654321', bank_ifsc: 'SBIN0005678', payout_method_pref: 'bank' }
+          { pin: '2233', name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', status: 'online', avatar: '🏍️', avatar_img: DEFAULT_RIDER_AVATAR_URL, max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0, upi_vpa: '9845122334@upi', bank_account_no: '1234567890', bank_ifsc: 'HDFC0001234', payout_method_pref: 'upi' },
+          { pin: '4422', name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', status: 'online', avatar: '🏍️', avatar_img: DEFAULT_RIDER_AVATAR_URL, max_active_orders: 1, cash_settled_at: 0, payout_paid_at: 0, payout_amount_paid: 0, trips: 0, earnings: 0, upi_vpa: '9777766666@upi', bank_account_no: '0987654321', bank_ifsc: 'SBIN0005678', payout_method_pref: 'bank' }
         ];
         const matched = riderPin ? testRiders.filter(r => String(r.pin).trim() === riderPin) : testRiders;
         const safeRiders = matched.map(r => {
@@ -1077,6 +1138,28 @@ export async function onRequest(context) {
             pin: targetPin,
             id: simExisting?.id || `rider-${targetPin}`,
             status: nextStatus
+          }
+        }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      if (action === 'set_rider_avatar') {
+        const parsed = validateSetRiderAvatarRequest(auth, body);
+        if (parsed.error) {
+          return jsonResponse({ error: parsed.error }, parsed.errorStatus, Object.fromEntries(corsHeaders.entries()));
+        }
+        const simExisting = body.simulateExistingRider || (Array.isArray(body.simulateRiders) ? body.simulateRiders.find(r => String(r.pin).trim() === parsed.targetPin) : null);
+        if (simExisting && simExisting.status === 'inactive') {
+          return jsonResponse({ error: 'Forbidden: Rider account is deactivated' }, 403, Object.fromEntries(corsHeaders.entries()));
+        }
+        return jsonResponse({
+          success: true,
+          avatarImg: parsed.avatarImg,
+          rider: {
+            ...(simExisting || {}),
+            pin: parsed.targetPin,
+            id: simExisting?.id || `rider-${parsed.targetPin}`,
+            avatarImg: parsed.avatarImg,
+            avatar_img: parsed.avatarImg
           }
         }, 200, Object.fromEntries(corsHeaders.entries()));
       }
@@ -2551,6 +2634,43 @@ export async function onRequest(context) {
         invalidateRidersListCache();
         const updatedRider = data && data.length > 0 ? data[0] : { ...existingRider, status: nextStatus };
         return jsonResponse({ success: true, status: nextStatus, rider: updatedRider }, 200, Object.fromEntries(corsHeaders.entries()));
+      }
+
+      // 5d. Rider Character Avatar Update
+      case 'set_rider_avatar': {
+        const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+        if (!auth || !auth.valid) {
+          return jsonResponse({ error: auth?.error || 'Unauthorized: Staff or Rider session required' }, 401, Object.fromEntries(corsHeaders.entries()));
+        }
+        const parsed = validateSetRiderAvatarRequest(auth, body);
+        if (parsed.error) {
+          return jsonResponse({ error: parsed.error }, parsed.errorStatus, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { data: existingRider, error: lookupError } = await sb
+          .from('riders')
+          .select('pin, id, name, phone, vehicle, status, avatar, avatar_img, max_active_orders')
+          .eq('pin', parsed.targetPin)
+          .maybeSingle();
+        if (lookupError) throw lookupError;
+        if (!existingRider) {
+          return jsonResponse({ error: 'Rider not found' }, 404, Object.fromEntries(corsHeaders.entries()));
+        }
+        if (existingRider.status === 'inactive') {
+          return jsonResponse({ error: 'Forbidden: Rider account is deactivated' }, 403, Object.fromEntries(corsHeaders.entries()));
+        }
+
+        const { data, error } = await sb
+          .from('riders')
+          .update({ avatar_img: parsed.avatarImg })
+          .eq('pin', parsed.targetPin)
+          .select();
+        if (error) throw error;
+
+        riderProfileCache.clear();
+        invalidateRidersListCache();
+        const updatedRider = data && data.length > 0 ? data[0] : { ...existingRider, avatar_img: parsed.avatarImg };
+        return jsonResponse({ success: true, avatarImg: parsed.avatarImg, rider: updatedRider }, 200, Object.fromEntries(corsHeaders.entries()));
       }
 
       // 6. Authoritative Order Creation (Prevents Client-Side Price Tampering)

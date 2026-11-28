@@ -314,7 +314,7 @@ public class WebAppInterface {
     public void setDutyStatus(boolean onDuty) {
         try {
             if (!isCurrentOriginTrusted()) return;
-            OrderMonitorService.setRiderDutyStatus(context, onDuty);
+            OrderMonitorService.syncDutyServiceLifecycle(context, onDuty);
         } catch (Exception ignored) {}
     }
 
@@ -379,6 +379,11 @@ public class WebAppInterface {
             if (prefs != null) {
                 prefs.edit().putString("saved_restaurant_base_url", clean).apply();
             }
+            String pkg = context.getPackageName() != null ? context.getPackageName().toLowerCase() : "";
+            if (pkg.contains("rider") && !OrderMonitorService.isRiderOnDuty(context)) {
+                OrderMonitorService.cancelKeepAliveWatchdogs(context);
+                return;
+            }
             Intent serviceIntent = new Intent(context, OrderMonitorService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ContextCompat.startForegroundService(context, serviceIntent);
@@ -399,6 +404,7 @@ public class WebAppInterface {
                     .remove("active_staff_token")
                     .apply();
             }
+            OrderMonitorService.cancelKeepAliveWatchdogs(context);
             OrderMonitorService.stopNativeAlarm();
             context.stopService(new Intent(context, OrderMonitorService.class));
         } catch (Exception ignored) {}

@@ -33,6 +33,7 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -263,6 +264,94 @@ public class OrderMonitorService extends Service {
         }
     }
 
+    public static void cancelKeepAliveWatchdogs(Context ctx) {
+        if (ctx == null) return;
+        try {
+            Context appCtx = ctx.getApplicationContext();
+            AlarmManager am = (AlarmManager) appCtx.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+            int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            int[] requestCodes = new int[] { 1002, 1003 };
+            for (int reqCode : requestCodes) {
+                Intent intent = new Intent(appCtx, OrderMonitorReceiver.class);
+                intent.setAction(OrderMonitorReceiver.ACTION_RESTART_MONITOR);
+                PendingIntent pi = PendingIntent.getBroadcast(appCtx, reqCode, intent, pendingFlags);
+                if (pi != null) {
+                    am.cancel(pi);
+                    pi.cancel();
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "cancelKeepAliveWatchdogs failed: " + e.getMessage());
+        }
+    }
+
+    public static void syncDutyServiceLifecycle(Context ctx, boolean onDuty) {
+        if (ctx == null) return;
+        Context appCtx = ctx.getApplicationContext();
+        setRiderDutyStatus(appCtx, onDuty);
+
+        String pkg = appCtx.getPackageName() != null ? appCtx.getPackageName().toLowerCase() : "";
+        if (!pkg.contains("rider")) {
+            return;
+        }
+
+        MainActivity.updateRiderScreenWakeFlag(onDuty);
+
+        if (!onDuty) {
+            Log.i(TAG, "syncDutyServiceLifecycle: Rider On Break -> stopping OrderMonitorService & cancelling watchdogs");
+            cancelKeepAliveWatchdogs(appCtx);
+            OrderMonitorService instance = activeInstance;
+            if (instance != null) {
+                instance.isRunning = false;
+                try {
+                    if (instance.pollingThread != null) {
+                        instance.pollingThread.interrupt();
+                    }
+                } catch (Exception ignored) {}
+                instance.stopServiceAndDismissForeground();
+            } else {
+                stopNativeAlarm(false);
+                try {
+                    NotificationManager nm = (NotificationManager) appCtx.getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm != null) {
+                        nm.cancel(SERVICE_NOTIFICATION_ID);
+                    }
+                } catch (Exception ignored) {}
+            }
+            try {
+                appCtx.stopService(new Intent(appCtx, OrderMonitorService.class));
+            } catch (Exception e) {
+                Log.w(TAG, "stopService failed when Rider went On Break: " + e.getMessage());
+            }
+            return;
+        }
+
+        if (pkg.startsWith("com.foodbliz.")) {
+            try {
+                SharedPreferences prefs = appCtx.getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
+                String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
+                if (savedBase == null || savedBase.trim().isEmpty() || !savedBase.startsWith("https://")) {
+                    Log.i(TAG, "syncDutyServiceLifecycle: Rider On Duty but multi-tenant base URL missing; skipping service start");
+                    return;
+                }
+            } catch (Exception ignored) {
+                return;
+            }
+        }
+
+        try {
+            Log.i(TAG, "syncDutyServiceLifecycle: Rider On Duty -> starting OrderMonitorService");
+            Intent serviceIntent = new Intent(appCtx, OrderMonitorService.class);
+            ContextCompat.startForegroundService(appCtx, serviceIntent);
+        } catch (Exception e) {
+            Log.w(TAG, "startForegroundService failed when Rider resumed On Duty: " + e.getMessage());
+        }
+    }
+
     public static void setKitchenAlarmSoundMode(Context ctx, String mode) {
         if (ctx == null) return;
         try {
@@ -338,6 +427,27 @@ public class OrderMonitorService extends Service {
         }
     }
 
+    private void stopServiceAndDismissForeground() {
+        isRunning = false;
+        stopNativeAlarm(false);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+        } catch (Exception ignored) {}
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.cancel(SERVICE_NOTIFICATION_ID);
+            }
+        } catch (Exception ignored) {}
+        try {
+            stopSelf();
+        } catch (Exception ignored) {}
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -350,13 +460,19 @@ public class OrderMonitorService extends Service {
 
         startForegroundNotification();
 
+        if (isRiderApp && !isRiderOnDuty(this)) {
+            Log.i(TAG, "onCreate: Rider is Off Duty / On Break; cancelling watchdogs and stopping service");
+            cancelKeepAliveWatchdogs(this);
+            stopServiceAndDismissForeground();
+            return;
+        }
+
         if (isMultiTenantFoodBlizApp()) {
             android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
             String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
             if (savedBase == null || savedBase.trim().isEmpty() || !savedBase.startsWith("https://")) {
                 Log.i(TAG, "onCreate: Multi-tenant FoodBliz app without valid restaurant base URL; stopping service");
-                stopNativeAlarm();
-                stopSelf();
+                stopServiceAndDismissForeground();
                 return;
             }
         }
@@ -578,6 +694,12 @@ public class OrderMonitorService extends Service {
     }
 
     private void startPolling() {
+        if (isRiderApp && !isRiderOnDuty(this)) {
+            Log.i(TAG, "startPolling: Rider is Off Duty / On Break; cancelling polling and stopping service");
+            cancelKeepAliveWatchdogs(this);
+            stopServiceAndDismissForeground();
+            return;
+        }
         if (isMultiTenantFoodBlizApp()) {
             android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
             String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
@@ -593,6 +715,9 @@ public class OrderMonitorService extends Service {
         isRunning = true;
 
         pollingThread = new Thread(() -> {
+            if (!isRunning || (isRiderApp && !isRiderOnDuty(this))) {
+                return;
+            }
             // Immediately seed known order IDs on service start (even if foreground)
             // so isInitialCheck is cleared before any real customer order arrives,
             // except during night quiet hours (1:00 AM - 9:00 AM IST).
@@ -606,6 +731,12 @@ public class OrderMonitorService extends Service {
             }
 
             while (isRunning) {
+                if (isRiderApp && !isRiderOnDuty(this)) {
+                    Log.i(TAG, "Polling loop: Rider switched Off Duty / On Break; stopping monitor service");
+                    cancelKeepAliveWatchdogs(this);
+                    stopServiceAndDismissForeground();
+                    break;
+                }
                 // 1. If currently in night quiet hours (1:00 AM to 9:00 AM IST), sleep 60 seconds
                 if (isNightQuietHoursIST()) {
                     updateForegroundNotificationIfNeeded("quiet");
@@ -650,6 +781,10 @@ public class OrderMonitorService extends Service {
     }
 
     private void pollKitchenOrders() {
+        if (isRiderApp && !isRiderOnDuty(this)) {
+            Log.i(TAG, "pollKitchenOrders: Rider is Off Duty / On Break; skipping poll");
+            return;
+        }
         HttpURLConnection conn = null;
         try {
             android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
@@ -1485,14 +1620,24 @@ public class OrderMonitorService extends Service {
                 } catch (Exception ignored) {}
             }
             MainActivity.triggerWebAlarmStop();
+            if (isRiderApp && !isRiderOnDuty(this)) {
+                cancelKeepAliveWatchdogs(this);
+                stopServiceAndDismissForeground();
+                return START_NOT_STICKY;
+            }
             return START_STICKY;
+        }
+        if (isRiderApp && !isRiderOnDuty(this)) {
+            Log.i(TAG, "onStartCommand: Rider is Off Duty / On Break; stopping service and clearing watchdogs");
+            cancelKeepAliveWatchdogs(this);
+            stopServiceAndDismissForeground();
+            return START_NOT_STICKY;
         }
         if (isMultiTenantFoodBlizApp()) {
             android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", Context.MODE_PRIVATE);
             String savedBase = prefs != null ? prefs.getString("saved_restaurant_base_url", null) : null;
             if (savedBase == null || savedBase.trim().isEmpty() || !savedBase.startsWith("https://")) {
-                stopNativeAlarm();
-                stopSelf();
+                stopServiceAndDismissForeground();
                 return START_NOT_STICKY;
             }
         }
@@ -1501,6 +1646,10 @@ public class OrderMonitorService extends Service {
     }
 
     private void scheduleKeepAliveWatchdog() {
+        if (isRiderApp && !isRiderOnDuty(this)) {
+            cancelKeepAliveWatchdogs(this);
+            return;
+        }
         try {
             Intent watchdogIntent = new Intent(getApplicationContext(), OrderMonitorReceiver.class);
             watchdogIntent.setAction(OrderMonitorReceiver.ACTION_RESTART_MONITOR);
@@ -1530,6 +1679,11 @@ public class OrderMonitorService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
+        if (isRiderApp && !isRiderOnDuty(this)) {
+            cancelKeepAliveWatchdogs(this);
+            super.onTaskRemoved(rootIntent);
+            return;
+        }
         // Re-schedule service restart via OrderMonitorReceiver when user swipes away app from recents
         try {
             Intent restartBroadcast = new Intent(getApplicationContext(), OrderMonitorReceiver.class);
@@ -1587,6 +1741,12 @@ public class OrderMonitorService extends Service {
         if (pollingThread != null) {
             pollingThread.interrupt();
         }
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.cancel(SERVICE_NOTIFICATION_ID);
+            }
+        } catch (Exception ignored) {}
         if (activeInstance == this) {
             activeInstance = null;
         }

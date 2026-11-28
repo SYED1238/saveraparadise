@@ -185,11 +185,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Passcode is required' });
   }
 
+  const DEFAULT_RIDER_AVATAR_URL = '/api/r2-image?key=profile%2Fmale%2F3D_Cowboy_Male_Avatar_Icon___Minimalist_Round_Profile_Picture-removebg-preview.png';
   const DEFAULT_RIDER_PROFILES = {
-    '2233': { name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', avatar: '🏍️', avatarImg: '/avatars/rider-1.svg', maxActiveOrders: 1 },
-    '4422': { name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', avatar: '🏍️', avatarImg: '/avatars/rider-2.svg', maxActiveOrders: 1 },
-    '4455': { name: 'Salman Ahmed', phone: '+91 96666 55555', vehicle: '🛵 TVS Jupiter', avatar: '🛵', avatarImg: '/avatars/rider-1.svg', maxActiveOrders: 1 },
-    '8811': { name: 'Arif Khan', phone: '+91 95555 44444', vehicle: '⚡ Ather 450X EV', avatar: '⚡', avatarImg: '/avatars/rider-2.svg', maxActiveOrders: 1 }
+    '2233': { name: 'Zaid Khan', phone: '+91 98451 22334', vehicle: '🏍️ Honda Activa 6G', avatar: '🏍️', avatarImg: DEFAULT_RIDER_AVATAR_URL, maxActiveOrders: 1 },
+    '4422': { name: 'Tanveer Ahmed', phone: '+91 97777 66666', vehicle: '🏍️ Bajaj Pulsar 150', avatar: '🏍️', avatarImg: DEFAULT_RIDER_AVATAR_URL, maxActiveOrders: 1 },
+    '4455': { name: 'Salman Ahmed', phone: '+91 96666 55555', vehicle: '🛵 TVS Jupiter', avatar: '🛵', avatarImg: DEFAULT_RIDER_AVATAR_URL, maxActiveOrders: 1 },
+    '8811': { name: 'Arif Khan', phone: '+91 95555 44444', vehicle: '⚡ Ather 450X EV', avatar: '⚡', avatarImg: DEFAULT_RIDER_AVATAR_URL, maxActiveOrders: 1 }
   };
 
   let role = getPinRole(pin);

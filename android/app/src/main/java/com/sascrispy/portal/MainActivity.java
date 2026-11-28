@@ -116,6 +116,21 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public static void updateRiderScreenWakeFlag(boolean onDuty) {
+        MainActivity act = activeActivityRef != null ? activeActivityRef.get() : null;
+        if (act != null && act.getPackageName().toLowerCase().contains("rider")) {
+            act.runOnUiThread(() -> {
+                try {
+                    if (onDuty) {
+                        act.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    } else {
+                        act.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    }
+                } catch (Exception ignored) {}
+            });
+        }
+    }
+
     public void reloadPortalWebView() {
         if (webView != null) {
             webView.reload();
@@ -129,8 +144,11 @@ public class MainActivity extends AppCompatActivity {
         activeActivityRef = new java.lang.ref.WeakReference<>(this);
         setContentView(R.layout.activity_main);
 
-        // Keep screen on for Kitchen Admin and Rider Navigation
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // Keep screen on for Kitchen Admin and active Rider Navigation (allow Rider phone screen sleep on Break)
+        boolean isRiderPkg = getPackageName().toLowerCase().contains("rider");
+        if (!isRiderPkg || OrderMonitorService.isRiderOnDuty(this)) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
 
         // Turn screen on and show over lock screen ONLY for dedicated Kitchen Admin tablet.
         // For Rider smartphones, do NOT permanently show over lock screen to prevent double phone-unlock.
@@ -378,6 +396,10 @@ public class MainActivity extends AppCompatActivity {
         if (!isTargetApp) {
             return false;
         }
+        if (pkg.contains("rider") && !OrderMonitorService.isRiderOnDuty(this)) {
+            OrderMonitorService.cancelKeepAliveWatchdogs(this);
+            return false;
+        }
         if (pkg.startsWith("com.foodbliz.")) {
             try {
                 android.content.SharedPreferences prefs = getSharedPreferences("savera_kitchen_prefs", MODE_PRIVATE);
@@ -508,7 +530,7 @@ public class MainActivity extends AppCompatActivity {
             if (shouldRunOrderMonitorService()) {
                 startOrderMonitorService();
             }
-            if (getPackageName().toLowerCase().contains("rider")) {
+            if (getPackageName().toLowerCase().contains("rider") && OrderMonitorService.isRiderOnDuty(this)) {
                 if (!isDeviceLocationEnabled()) {
                     promptToEnableDeviceGps();
                 } else {
@@ -556,7 +578,7 @@ public class MainActivity extends AppCompatActivity {
                 triggerWebAlarmStop();
             }
         }
-        if (getPackageName().toLowerCase().contains("rider") && isDeviceLocationEnabled()) {
+        if (getPackageName().toLowerCase().contains("rider") && OrderMonitorService.isRiderOnDuty(this) && isDeviceLocationEnabled()) {
             notifyWebViewGpsEnabled();
         }
     }

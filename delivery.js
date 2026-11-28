@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
  */
 
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, DEFAULT_RIDERS, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId, getShiftStartTimeMs, normalizeComboItems } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, DEFAULT_RIDERS, DEFAULT_RIDER_AVATAR_URL, resolveRiderAvatarUrl, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId, getShiftStartTimeMs, normalizeComboItems } from './dataService.js';
 import {
   playNotificationSound,
   sendSystemNotification,
@@ -155,6 +155,26 @@ const initDeliveryApp = () => {
   const riderVehicleTag = document.getElementById('rider-vehicle-tag');
   const riderIdDisplay = document.getElementById('rider-id-display');
   const riderAvatarImg = document.getElementById('rider-avatar-img');
+  const riderAvatarBadge = document.getElementById('rider-avatar-badge');
+  const modalRiderAvatarBackdrop = document.getElementById('modal-rider-avatar-backdrop');
+  const btnCloseRiderAvatar = document.getElementById('btn-close-rider-avatar');
+  const riderAvatarTabFemale = document.getElementById('rider-avatar-tab-female');
+  const riderAvatarTabMale = document.getElementById('rider-avatar-tab-male');
+  const riderAvatarGridFemale = document.getElementById('rider-avatar-grid-female');
+  const riderAvatarGridMale = document.getElementById('rider-avatar-grid-male');
+  const btnSaveRiderAvatar = document.getElementById('btn-save-rider-avatar');
+  const btnResetRiderAvatar = document.getElementById('btn-reset-rider-avatar');
+  const btnOpenRiderProfile = document.getElementById('btn-open-rider-profile');
+  const modalRiderFullProfileBackdrop = document.getElementById('modal-rider-full-profile-backdrop');
+  const btnCloseRiderFullProfile = document.getElementById('btn-close-rider-full-profile');
+  const btnCloseRiderFullProfileDone = document.getElementById('btn-close-rider-full-profile-done');
+  const btnProfileToAvatar = document.getElementById('btn-profile-to-avatar');
+  const fullProfileAvatarImg = document.getElementById('full-profile-avatar-img');
+  const fullProfileNameDisplay = document.getElementById('full-profile-name-display');
+  const fullProfileDutyPill = document.getElementById('full-profile-duty-pill');
+  const fullProfileDutyText = document.getElementById('full-profile-duty-text');
+  const fullProfileLimit = document.getElementById('full-profile-limit');
+  const fullProfileGps = document.getElementById('full-profile-gps');
 
   // Duty & GPS
   const riderDutyToggle = document.getElementById('rider-duty-toggle');
@@ -375,23 +395,36 @@ const initDeliveryApp = () => {
       dataService.setActiveRiderPin(cleanPin, rider);
       syncDutyStateFromRiderProfile(rider);
       updateRiderProfileHeader();
-      requestWakeLock();
-      restoreRiderGpsState();
-      initRiderLiveGeolocation(true);
-      if (getSystemNotificationPermission() === 'default') {
-        requestSystemNotificationPermission().catch(() => {});
+      if (isRiderBreakSilenceActive()) {
+        pauseRiderBreakActivity();
+      } else {
+        requestWakeLock();
+        restoreRiderGpsState();
+        initRiderLiveGeolocation(true);
+        if (getSystemNotificationPermission() === 'default') {
+          requestSystemNotificationPermission().catch(() => {});
+        }
+        checkAndHandlePendingGpsResync();
       }
       showToast(`🛵 Welcome back, ${rider.name}!`, 'success');
-      checkAndHandlePendingGpsResync();
       (async () => {
-        await dataService.syncPendingRiderDutyStatus().catch(() => {});
         await Promise.allSettled([
-          dataService.syncOrdersFromSupabase(true),
-          dataService.syncSettingsFromSupabase(true),
-          dataService.syncRidersFromSupabase(true)
+          dataService.syncPendingRiderDutyStatus(),
+          dataService.syncPendingRiderAvatar()
         ]);
+        if (!dataService.isRiderOnBreakIdle()) {
+          await Promise.allSettled([
+            dataService.syncOrdersFromSupabase(true),
+            dataService.syncSettingsFromSupabase(true),
+            dataService.syncRidersFromSupabase(true)
+          ]);
+        }
       })().finally(() => {
         syncDutyStateFromRiderProfile(dataService.getActiveRider());
+        updateRiderProfileHeader();
+        if (isRiderBreakSilenceActive()) {
+          pauseRiderBreakActivity();
+        }
         renderPortal();
       });
     }
@@ -443,22 +476,35 @@ const initDeliveryApp = () => {
       }
       syncDutyStateFromRiderProfile(activeRider);
       updateRiderProfileHeader();
-      requestWakeLock();
-      if (restoreRiderGpsState()) {
-        updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
+      if (isRiderBreakSilenceActive()) {
+        pauseRiderBreakActivity();
+      } else {
+        requestWakeLock();
+        if (restoreRiderGpsState()) {
+          updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
+        }
+        initRiderLiveGeolocation(true);
+        checkAndHandlePendingGpsResync();
       }
-      initRiderLiveGeolocation(true);
       renderPortal();
-      checkAndHandlePendingGpsResync();
       (async () => {
-        await dataService.syncPendingRiderDutyStatus().catch(() => {});
         await Promise.allSettled([
-          dataService.syncOrdersFromSupabase(true),
-          dataService.syncSettingsFromSupabase(true),
-          dataService.syncRidersFromSupabase(true)
+          dataService.syncPendingRiderDutyStatus(),
+          dataService.syncPendingRiderAvatar()
         ]);
+        if (!dataService.isRiderOnBreakIdle()) {
+          await Promise.allSettled([
+            dataService.syncOrdersFromSupabase(true),
+            dataService.syncSettingsFromSupabase(true),
+            dataService.syncRidersFromSupabase(true)
+          ]);
+        }
       })().finally(() => {
         syncDutyStateFromRiderProfile(dataService.getActiveRider());
+        updateRiderProfileHeader();
+        if (isRiderBreakSilenceActive()) {
+          pauseRiderBreakActivity();
+        }
         renderPortal();
       });
     } else {
@@ -502,6 +548,9 @@ const initDeliveryApp = () => {
     clearPersistedRiderGpsState();
     clearStaffSession('rider');
     releaseWakeLock();
+    if (typeof dataService.teardownRealtime === 'function' && dataService.isRiderOnBreakIdle()) {
+      dataService.teardownRealtime();
+    }
     if (riderLockOverlay) {
       riderLockOverlay.classList.remove('unlocked');
       riderLockOverlay.style.display = 'flex';
@@ -566,17 +615,30 @@ const initDeliveryApp = () => {
     if (riderPhoneDisplay) riderPhoneDisplay.textContent = currentRider.phone || 'No phone set';
     if (riderVehicleTag) riderVehicleTag.textContent = currentRider.vehicle || '🏍️ Bike';
     if (riderIdDisplay) riderIdDisplay.textContent = `ID: #RD-${currentRider.pin}`;
+    const resolvedAvatar = resolveRiderAvatarUrl(currentRider.avatarImg);
     if (riderAvatarImg) {
-      let avatarSrc = currentRider.avatarImg || '/avatars/rider-1.svg';
-      if (avatarSrc.includes('unsplash.com')) {
-        avatarSrc = '/avatars/rider-1.svg';
-      }
-      riderAvatarImg.src = avatarSrc;
+      riderAvatarImg.src = resolvedAvatar;
       riderAvatarImg.onerror = function() {
         this.onerror = null;
         this.src = '/avatars/rider-1.svg';
       };
     }
+    if (fullProfileAvatarImg) {
+      fullProfileAvatarImg.src = resolvedAvatar;
+      fullProfileAvatarImg.onerror = function() {
+        this.onerror = null;
+        this.src = '/avatars/rider-1.svg';
+      };
+    }
+    if (fullProfileNameDisplay) fullProfileNameDisplay.textContent = currentRider.name;
+    const maxOrdersCount = dataService.getRiderMaxActiveOrders(currentRider.pin);
+    if (fullProfileLimit) fullProfileLimit.textContent = `Max ${maxOrdersCount} active order${maxOrdersCount === 1 ? '' : 's'} • 3 km Zone`;
+    const isDutyOn = String(currentRider.status || 'online').toLowerCase() === 'online';
+    if (fullProfileDutyPill) {
+      fullProfileDutyPill.classList.toggle('online', isDutyOn);
+      fullProfileDutyPill.classList.toggle('offline', !isDutyOn);
+    }
+    if (fullProfileDutyText) fullProfileDutyText.textContent = isDutyOn ? 'On Duty' : 'On Break';
 
     // Immediately calculate and display payout balance upon login
     syncDutyStateFromRiderProfile(currentRider);
@@ -793,8 +855,16 @@ const initDeliveryApp = () => {
   }
 
   function startGpsAutoRetryLoop() {
+    if (isRiderBreakSilenceActive()) {
+      stopGpsAutoRetryLoop();
+      return;
+    }
     if (gpsAutoRetryTimer !== null) return;
     gpsAutoRetryTimer = setInterval(() => {
+      if (isRiderBreakSilenceActive()) {
+        stopGpsAutoRetryLoop();
+        return;
+      }
       if (riderLiveLocation.hasGps && isRiderGpsSyncedAndFresh()) {
         stopGpsAutoRetryLoop();
         return;
@@ -871,6 +941,10 @@ const initDeliveryApp = () => {
   // Global callback invoked by MainActivity.java when rider taps "OK" on Android system Turn-On-GPS dialog
   if (typeof window !== 'undefined') {
     window.__onNativeGpsEnabled = () => {
+      if (isRiderBreakSilenceActive()) {
+        pendingGpsSyncCallback = null;
+        return;
+      }
       gpsLastFailureReason = 'none';
       updateGpsStatusBadge('inactive', '📍 Acquiring GPS lock...');
       if (pendingGpsSyncCallback) {
@@ -982,6 +1056,10 @@ const initDeliveryApp = () => {
   let gpsFallbackTimeout = null;
 
   function applyGpsFailureState(reason) {
+    if (isRiderBreakSilenceActive()) {
+      pauseRiderBreakActivity();
+      return;
+    }
     gpsLastFailureReason = reason;
     if (reason === 'permission_denied') {
       riderLiveLocation.hasGps = false;
@@ -999,6 +1077,10 @@ const initDeliveryApp = () => {
   }
 
   function initRiderLiveGeolocation(forceRetry = false) {
+    if (isRiderBreakSilenceActive()) {
+      pauseRiderBreakActivity();
+      return;
+    }
     if (!('geolocation' in navigator)) {
       updateGpsStatusBadge('error', '⚠️ GPS Not Supported');
       return;
@@ -1078,6 +1160,7 @@ const initDeliveryApp = () => {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && isStaffSessionActive('rider')) {
       initRiderLiveGeolocation(true);
+      if (isRiderBreakSilenceActive()) return;
       syncNativeAcknowledgedRiderAlarms();
       try { dataService.syncOrdersFromSupabase(false); } catch {}
     }
@@ -1085,6 +1168,7 @@ const initDeliveryApp = () => {
   window.addEventListener('focus', () => {
     if (isStaffSessionActive('rider')) {
       initRiderLiveGeolocation(true);
+      if (isRiderBreakSilenceActive()) return;
       syncNativeAcknowledgedRiderAlarms();
       try { dataService.syncOrdersFromSupabase(false); } catch {}
     }
@@ -1096,9 +1180,17 @@ const initDeliveryApp = () => {
     riderGpsPill.title = 'Click to refresh GPS location fix';
     riderGpsPill.onclick = () => {
       if (riderLiveLocation.hasGps && isRiderGpsSyncedAndFresh()) {
+        if (isRiderBreakSilenceActive()) {
+          showToast('⏸️ GPS paused while On Break — toggle On Duty to resume live tracking.', 'info');
+          return;
+        }
         showToast(`📍 Location: ${riderLiveLocation.lat.toFixed(4)}, ${riderLiveLocation.lng.toFixed(4)} (Accuracy ±${riderLiveLocation.accuracy || 10}m)`, 'info');
         triggerRiderApkRefreshAndGpsSync();
       } else {
+        if (isRiderBreakSilenceActive()) {
+          showToast('⏸️ GPS paused while On Break — toggle On Duty to resume live tracking.', 'info');
+          return;
+        }
         triggerRiderApkRefreshAndGpsSync();
       }
     };
@@ -1165,8 +1257,67 @@ const initDeliveryApp = () => {
   window.showToast = showToast;
 
   // ========================================================
-  // DUTY TOGGLE
+  // DUTY TOGGLE & OFF-DUTY / ON-BREAK SILENCE
   // ========================================================
+  function isRiderBreakSilenceActive() {
+    if (isDutyOn) return false;
+    try {
+      return !(typeof dataService.hasRiderActiveAssignedOrder === 'function' && dataService.hasRiderActiveAssignedOrder());
+    } catch {
+      return true;
+    }
+  }
+
+  function pauseRiderBreakActivity() {
+    stopRiderAlarm();
+    stopGpsAutoRetryLoop();
+    if (gpsFallbackTimeout !== null) {
+      clearTimeout(gpsFallbackTimeout);
+      gpsFallbackTimeout = null;
+    }
+    if (activeGpsWatchId !== null && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      try { navigator.geolocation.clearWatch(activeGpsWatchId); } catch {}
+      activeGpsWatchId = null;
+    }
+    pendingGpsSyncCallback = null;
+    gpsLastFailureReason = 'none';
+    releaseWakeLock();
+    if (riderGpsPill && gpsStatusText) {
+      riderGpsPill.className = 'gps-status-pill inactive';
+      gpsStatusText.textContent = 'GPS Paused (On Break)';
+    }
+    if (typeof document !== 'undefined') {
+      const gateBar = document.getElementById('rider-pickup-gps-gate');
+      const gateText = document.getElementById('pickup-gps-gate-text');
+      const gateBtnLabel = document.getElementById('btn-sync-live-gps-label');
+      const btnSync = document.getElementById('btn-sync-live-gps');
+      if (gateBar && gateText) {
+        gateBar.className = 'pickup-gps-gate-bar gps-inactive';
+        gateText.textContent = 'Paused (On Break) — Toggle On Duty';
+        if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
+        if (btnSync) btnSync.classList.remove('needs-gps');
+      }
+    }
+    if (fullProfileGps) {
+      fullProfileGps.textContent = 'GPS paused while On Break';
+    }
+    if (typeof dataService.teardownRealtime === 'function') {
+      dataService.teardownRealtime();
+    }
+  }
+
+  function resumeRiderDutyActivity() {
+    if (!isStaffSessionActive('rider')) return;
+    requestWakeLock();
+    if (restoreRiderGpsState()) {
+      updateGpsStatusBadge('active', `Live GPS (±${riderLiveLocation.accuracy}m)`);
+    }
+    initRiderLiveGeolocation(true);
+    if (typeof dataService.resumeRiderDutySync === 'function') {
+      dataService.resumeRiderDutySync();
+    }
+  }
+
   function applyRiderDutyUI(onDuty) {
     isDutyOn = Boolean(onDuty);
     try { localStorage.setItem('quickbite_rider_duty_on', String(isDutyOn)); } catch {}
@@ -1180,6 +1331,9 @@ const initDeliveryApp = () => {
       stopRiderAlarm();
       if (riderStatusPill) riderStatusPill.className = 'rider-badge-status offline';
       if (riderStatusText) riderStatusText.textContent = 'Offline • On Break';
+      if (isRiderBreakSilenceActive()) {
+        pauseRiderBreakActivity();
+      }
     }
     if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
       try { window.AndroidNative.setDutyStatus(isDutyOn); } catch {}
@@ -1200,9 +1354,13 @@ const initDeliveryApp = () => {
     } catch {}
     if (rider.status === 'online' || rider.status === 'offline') {
       const serverDutyOn = rider.status !== 'offline';
+      const wasDutyOn = isDutyOn;
       const missingLsDuty = typeof localStorage !== 'undefined' && localStorage.getItem('quickbite_rider_duty_on') === null;
       if (serverDutyOn !== isDutyOn || missingLsDuty) {
         applyRiderDutyUI(serverDutyOn);
+        if (!wasDutyOn && serverDutyOn && isStaffSessionActive('rider')) {
+          resumeRiderDutyActivity();
+        }
       }
     }
   }
@@ -1227,9 +1385,10 @@ const initDeliveryApp = () => {
         if (getSystemNotificationPermission() === 'default') {
           requestSystemNotificationPermission().catch(() => {});
         }
+        resumeRiderDutyActivity();
         showToast('🟢 You are now Online and receiving delivery tasks!', 'success');
       } else {
-        showToast('⏸️ You are now Offline. No new tasks will be assigned.', 'info');
+        showToast('⏸️ You are now Offline. Orders, GPS & alarms paused.', 'info');
       }
 
       dataService.setRiderDutyStatus(activeRider.pin, nextDutyOn).then((res) => {
@@ -1237,6 +1396,7 @@ const initDeliveryApp = () => {
         if (res && !res.success) {
           if (!res.queued) {
             applyRiderDutyUI(!nextDutyOn);
+            if (!nextDutyOn) resumeRiderDutyActivity();
             showToast(`⚠️ ${res.error || 'Unable to update duty status on server'}`, 'warning');
           } else {
             showToast('⏳ Offline: Duty status saved locally and will sync when connected.', 'info');
@@ -1367,23 +1527,40 @@ const initDeliveryApp = () => {
     const gateBar = document.getElementById('rider-pickup-gps-gate');
     const gateText = document.getElementById('pickup-gps-gate-text');
     const gateBtnLabel = document.getElementById('btn-sync-live-gps-label');
+    const btnSync = document.getElementById('btn-sync-live-gps');
     if (!gateBar || !gateText) return;
+
+    if (isRiderBreakSilenceActive()) {
+      gateBar.className = 'pickup-gps-gate-bar gps-inactive';
+      gateText.textContent = 'Paused (On Break) — Toggle On Duty';
+      if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
+      if (btnSync) btnSync.classList.remove('needs-gps');
+      if (fullProfileGps) fullProfileGps.textContent = 'GPS paused while On Break';
+      return;
+    }
 
     const currentRider = dataService.getActiveRider();
     const maxOrders = dataService.getRiderMaxActiveOrders(currentRider?.pin);
 
     const gpsReady = isRiderGpsSyncedAndFresh();
+    if (btnSync) {
+      btnSync.classList.toggle('needs-gps', !gpsReady);
+    }
+
     if (!gpsReady) {
       gateBar.className = 'pickup-gps-gate-bar gps-required';
       if (gpsLastFailureReason === 'gps_off') {
-        gateText.textContent = '📍 Device GPS is OFF — Tap button to turn on device Location (retrying automatically...).';
+        gateText.textContent = 'GPS OFF — Tap Sync above';
         if (gateBtnLabel) gateBtnLabel.textContent = 'Turn On Device GPS';
+        if (fullProfileGps) fullProfileGps.textContent = 'Device GPS turned off — tap Sync GPS';
       } else if (gpsLastFailureReason === 'permission_denied') {
-        gateText.textContent = '⚠️ Location permission is blocked. Tap button to allow Location access.';
-        if (gateBtnLabel) gateBtnLabel.textContent = 'Allow Location Access';
+        gateText.textContent = 'Location blocked — Allow GPS';
+        if (gateBtnLabel) gateBtnLabel.textContent = 'Allow Location';
+        if (fullProfileGps) fullProfileGps.textContent = 'Location permission blocked in browser/app';
       } else {
-        gateText.textContent = '📍 Turn on Live GPS within 3 km of restaurant to accept orders.';
-        if (gateBtnLabel) gateBtnLabel.textContent = 'Turn On & Sync GPS';
+        gateText.textContent = 'Turn on GPS within 3 km';
+        if (gateBtnLabel) gateBtnLabel.textContent = 'Sync Live GPS';
+        if (fullProfileGps) fullProfileGps.textContent = 'Acquiring live GPS fix...';
       }
       return;
     }
@@ -1393,10 +1570,16 @@ const initDeliveryApp = () => {
       ? (distMeters >= 1000 ? `${(distMeters / 1000).toFixed(2)} km` : `${distMeters}m`)
       : 'synced';
     const withinZone = Number.isFinite(distMeters) && distMeters <= MAX_RESTAURANT_PICKUP_RADIUS_METERS;
-    gateBar.className = 'pickup-gps-gate-bar gps-synced';
+    gateBar.className = withinZone ? 'pickup-gps-gate-bar gps-synced' : 'pickup-gps-gate-bar gps-out-of-zone';
     gateText.textContent = withinZone
-      ? `✅ Live GPS Synced (${distLabel} away • Limit: ${maxOrders} active) — Ready to pick up`
-      : `GPS active (${distLabel} from restaurant — you can accept orders now; move within 3 km for counter pickup)`;
+      ? `${distLabel} • Max ${maxOrders} active`
+      : `${distLabel} away (>3 km)`;
+    if (fullProfileGps) {
+      const acc = Number.isFinite(Number(riderLiveLocation?.accuracy)) ? ` (±${Math.round(riderLiveLocation.accuracy)}m)` : '';
+      fullProfileGps.textContent = withinZone
+        ? `${distLabel} from hub${acc} • Within 3 km pickup zone`
+        : `${distLabel} from hub${acc} • Move within 3 km for pickup`;
+    }
     if (gateBtnLabel) gateBtnLabel.textContent = 'Re-Sync GPS';
   }
 
@@ -1417,12 +1600,12 @@ const initDeliveryApp = () => {
       const icon = btnSyncLiveGps.querySelector('i');
       if (icon) icon.className = 'fa-solid fa-arrows-rotate fa-spin';
       const label = document.getElementById('btn-sync-live-gps-label');
-      if (label) label.textContent = 'Refreshing APK...';
+      if (label) label.textContent = 'Syncing...';
     }
 
     if (riderGpsPill && gpsStatusText) {
       riderGpsPill.className = 'gps-status-pill inactive';
-      gpsStatusText.textContent = '🔄 Refreshing APK...';
+      gpsStatusText.textContent = '🔄 Refreshing App...';
     }
 
     if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.triggerVibration === 'function') {
@@ -1431,7 +1614,7 @@ const initDeliveryApp = () => {
       try { navigator.vibrate([30, 40, 30]); } catch {}
     }
 
-    showToast('🔄 Refreshing APK & syncing GPS...', 'info');
+    showToast('🔄 Refreshing App & syncing GPS...', 'info');
 
     // Trigger full APK / WebView refresh first
     setTimeout(() => {
@@ -1472,7 +1655,7 @@ const initDeliveryApp = () => {
     } catch {}
 
     if (hasPending) {
-      showToast('📍 APK refreshed! Acquiring live GPS...', 'info');
+      showToast('📍 App refreshed! Acquiring live GPS...', 'info');
       updateGpsStatusBadge('inactive', '📍 Syncing GPS...');
       setTimeout(() => {
         requestLiveGpsSyncForPickup();
@@ -1632,6 +1815,9 @@ const initDeliveryApp = () => {
       if (riderOrdersList) riderOrdersList.innerHTML = '';
       return;
     }
+    if (isRiderBreakSilenceActive()) {
+      pauseRiderBreakActivity();
+    }
     // Clean up previous Leaflet map instances to avoid leaks
     miniMapInstances.forEach(map => {
       try {
@@ -1703,9 +1889,15 @@ const initDeliveryApp = () => {
     const capsuleReadyBadge = document.getElementById('capsule-ready-badge');
     const capsuleActiveBadge = document.getElementById('capsule-active-badge');
     const capsuleDeliveredBadge = document.getElementById('capsule-delivered-badge');
-    if (capsuleReadyBadge) capsuleReadyBadge.textContent = readyOrders.length;
-    if (capsuleActiveBadge) capsuleActiveBadge.textContent = activeOrders.length;
-    if (capsuleDeliveredBadge) capsuleDeliveredBadge.textContent = deliveredOrders.length;
+    const setCapsuleBadgeCount = (el, count) => {
+      if (!el) return;
+      const n = Number(count) || 0;
+      el.textContent = n;
+      el.classList.toggle('is-zero', n <= 0);
+    };
+    setCapsuleBadgeCount(capsuleReadyBadge, readyOrders.length);
+    setCapsuleBadgeCount(capsuleActiveBadge, activeOrders.length);
+    setCapsuleBadgeCount(capsuleDeliveredBadge, deliveredOrders.length);
 
     // Update native PWA icon badge counter for rider
     updateAppBadge(readyOrders.length + activeOrders.length);
@@ -1858,9 +2050,9 @@ const initDeliveryApp = () => {
         } else {
           actionHtml = `
             <div class="row-kitchen-action">
-              <button type="button" class="btn-row-pickup ${!gpsReady ? 'needs-gps-sync' : ''}" data-action="start-delivery" data-id="${safeId}" title="${gpsReady ? 'Preview Route & Accept Order to Go to Restaurant' : 'Tap to Sync Live GPS & Accept Order'}">
-                <i class="fa-solid ${gpsReady ? 'fa-motorcycle' : 'fa-location-crosshairs'}"></i>
-                <span>${gpsReady ? 'Accept & Go to Restaurant' : 'Sync GPS & Accept Order'}</span>
+              <button type="button" class="btn-row-pickup ${!gpsReady ? 'needs-gps-sync' : ''}" data-action="start-delivery" data-id="${safeId}" title="${gpsReady ? 'One-tap to take order and head to restaurant' : 'Tap to Sync Live GPS & Take Order'}">
+                <i class="fa-solid ${gpsReady ? 'fa-bolt' : 'fa-location-crosshairs'}"></i>
+                <span>${gpsReady ? 'Take Order' : 'Sync GPS & Take Order'}</span>
               </button>
             </div>
           `;
@@ -1899,10 +2091,6 @@ const initDeliveryApp = () => {
               <div class="row-items-preview">
                 <i class="fa-solid fa-utensils"></i>
                 <span>${safeItemsSummary}</span>
-              </div>
-              <div class="row-payout-calc-strip">
-                <span class="payout-calc-icon">🏍️</span>
-                <span class="payout-calc-text"><strong>Payoff: +₹${orderPayout.amount.toFixed(2)}</strong> (${orderPayout.distanceKm.toFixed(2)} km road • ${escapeHtml(orderPayout.formula)})</span>
               </div>
             </div>
 
@@ -2035,10 +2223,10 @@ const initDeliveryApp = () => {
                 </div>
               </div>
 
-              <div class="row-going-store-banner" style="background:#FFF7ED; border:1px solid #FDBA74; border-radius:10px; padding:10px 12px; margin:8px 0; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+              <div class="row-going-store-banner">
                 <div>
-                  <div style="font-weight:700; color:#9A3412; font-size:0.92rem;">🏪 Heading to Restaurant to Pick Up Parcel</div>
-                  <div style="font-size:0.8rem; color:#7C2D12; margin-top:2px;">Savera Paradise Restaurant • ~${restEtaMins} mins ride to counter • Live GPS shared with customer</div>
+                  <div class="going-store-title">🏪 Heading to Restaurant to Pick Up Parcel</div>
+                  <div class="going-store-sub">Savera Paradise Restaurant • ~${restEtaMins} mins ride to counter • Live GPS shared with customer</div>
                 </div>
               </div>
 
@@ -2049,10 +2237,6 @@ const initDeliveryApp = () => {
                 <div class="row-addr-text" style="display:flex; align-items:flex-start; gap:8px;">
                   <i class="fa-solid fa-location-dot" style="color: var(--brand-primary, #FF5A26); margin-top: 3px;"></i>
                   <span>${safeDropAddress}</span>
-                </div>
-                <div class="row-payout-calc-strip">
-                  <span class="payout-calc-icon">🏍️</span>
-                  <span class="payout-calc-text"><strong>Payout: ₹${orderPayout.amount.toFixed(2)}</strong> (Trip: ${orderPayout.distanceKm.toFixed(2)} km • ${escapeHtml(orderPayout.formula)})</span>
                 </div>
               </div>
 
@@ -2135,10 +2319,6 @@ const initDeliveryApp = () => {
                 <i class="fa-solid fa-location-dot" style="color: var(--brand-primary, #FF5A26); margin-top: 3px;"></i>
                 <span>${safeDropAddress}</span>
               </a>
-              <div class="row-payout-calc-strip">
-                <span class="payout-calc-icon">🏍️</span>
-                <span class="payout-calc-text"><strong>Payout: ₹${orderPayout.amount.toFixed(2)}</strong> (Trip: ${orderPayout.distanceKm.toFixed(2)} km • ${escapeHtml(orderPayout.formula)})</span>
-              </div>
             </div>
 
             <!-- Action Buttons Group -->
@@ -2212,7 +2392,7 @@ const initDeliveryApp = () => {
               ${isUndelivered ? `
                 <span class="row-returned-badge"><i class="fa-solid fa-box-archive"></i> Returned to Kitchen</span>
               ` : (order.safeDrop ? `
-                <span class="row-returned-badge" style="background:#ECFDF5; color:#065F46; border-color:#A7F3D0;"><i class="fa-solid fa-door-open"></i> Safe Drop</span>
+                <span class="row-returned-badge safe-drop"><i class="fa-solid fa-door-open"></i> Safe Drop</span>
               ` : '')}
               <span class="row-delivered-time"><i class="fa-regular fa-clock"></i> ${timeStr}</span>
             </div>
@@ -2245,18 +2425,18 @@ const initDeliveryApp = () => {
               </div>
             ` : ''}
             ${isUndelivered ? `
-              <div style="font-size: 0.8rem; color: #DC2626; margin-top: 6px; font-weight: 600;">
+              <div class="row-delivered-note returned">
                 <i class="fa-solid fa-triangle-exclamation"></i> Returned: ${escapeHtml(order.undeliveredReason || order.cancellationReason || 'Returned to kitchen')}
               </div>
             ` : (order.safeDropNote ? `
-              <div style="font-size: 0.8rem; color: #047857; margin-top: 6px; font-weight: 600;">
+              <div class="row-delivered-note safe-drop">
                 <i class="fa-solid fa-circle-info"></i> Safe Drop Note: ${escapeHtml(order.safeDropNote)}
               </div>
             ` : '')}
           </div>
 
           <div class="row-delivered-action">
-            <span class="badge-delivered-done" style="${isUndelivered ? 'background:#FEE2E2; color:#B91C1C; border-color:#FECACA;' : ''}">
+            <span class="badge-delivered-done ${isUndelivered ? 'is-undelivered' : ''}">
               <i class="fa-solid ${isUndelivered ? 'fa-box-archive' : 'fa-circle-check'}"></i> ${isUndelivered ? 'Returned to Kitchen Counter' : 'Delivered & Settled'}
             </span>
           </div>
@@ -2318,9 +2498,126 @@ const initDeliveryApp = () => {
   // ========================================================
   // STATUS TRANSITION ACTIONS
   // ========================================================
+  let isAcceptingOrder = false;
 
-  // Stage 1: Rider accepts order (from any location) & heads to Savera Paradise
-  function handleStartDelivery(orderId) {
+  async function executeOneTapOrderAccept(order, code, triggerBtn = null) {
+    if (!order || !order.id) return;
+    if (isAcceptingOrder) return;
+    if (triggerBtn && triggerBtn.disabled) return;
+
+    const latestOrder = dataService.getOrderById(order.id) || order;
+    const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
+
+    if (latestOrder.status !== 'ready_for_pickup') {
+      showToast(`⏳ Order ${latestOrder.id} is no longer awaiting pickup.`, 'warning');
+      renderPortal();
+      return;
+    }
+
+    const orderRiderPin = String(latestOrder.assignedRiderPin || latestOrder.assigned_rider_pin || '').trim();
+    if (orderRiderPin && orderRiderPin !== String(currentRider.pin || '').trim()) {
+      showToast(`⚠️ Order ${latestOrder.id} was already accepted by ${latestOrder.assignedRiderName || 'another rider'}.`, 'warning');
+      renderPortal();
+      return;
+    }
+
+    const existingActive = getRiderCurrentActiveOrder(latestOrder.id);
+    if (existingActive) {
+      const maxOrders = dataService.getRiderMaxActiveOrders(currentRider.pin);
+      showToast(`⚠️ Active Order Limit (${maxOrders}): Complete or deliver ${existingActive.id} before accepting another order.`, 'warning');
+      renderPortal();
+      return;
+    }
+
+    if (!isRiderGpsSyncedAndFresh()) {
+      showToast('⚠️ Location Required: Please turn on and sync your Live GPS Location to accept an order.', 'error');
+      requestLiveGpsSyncForPickup(() => executeOneTapOrderAccept(latestOrder, code, triggerBtn));
+      return;
+    }
+
+    isAcceptingOrder = true;
+    let activeBtn = triggerBtn;
+    if (activeBtn && !activeBtn.isConnected && riderOrdersList) {
+      try {
+        const cleanEsc = String(latestOrder.id).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        activeBtn = riderOrdersList.querySelector(`[data-action="start-delivery"][data-id="${cleanEsc}"]`) || triggerBtn;
+      } catch {}
+    }
+    const origBtnHtml = activeBtn ? activeBtn.innerHTML : '';
+    if (activeBtn) {
+      activeBtn.disabled = true;
+      activeBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Accepting Order...</span>';
+    }
+
+    let finalResult = null;
+    try {
+      const res = dataService.assignOrderToRider(latestOrder.id, currentRider.pin, {
+        code,
+        riderLat: riderLiveLocation.lat,
+        riderLng: riderLiveLocation.lng
+      });
+      if (!res.success) {
+        finalResult = res;
+      } else {
+        finalResult = res.serverPromise ? await res.serverPromise : res;
+      }
+    } finally {
+      isAcceptingOrder = false;
+      if (activeBtn) {
+        activeBtn.disabled = false;
+        activeBtn.innerHTML = origBtnHtml;
+      }
+    }
+
+    if (finalResult && finalResult.success) {
+      const inputBagCode = document.getElementById('input-bag-code');
+      if (inputBagCode) inputBagCode.value = '';
+
+      const maxOrders = dataService.getRiderMaxActiveOrders(currentRider.pin);
+      const curOrders = dataService.getOrders();
+      const activeCount = curOrders.filter(o => {
+        if (!o) return false;
+        const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
+        if (oPin !== String(currentRider.pin).trim()) return false;
+        return o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o);
+      }).length;
+
+      if (maxOrders > 1 && activeCount < maxOrders) {
+        activeTab = 'ready';
+      } else {
+        activeTab = 'active';
+      }
+      persistRiderTab(activeTab);
+      updateActiveTabUI();
+      renderPortal();
+
+      showToast(`🏪 Order ${latestOrder.id} (Bag #${code}) accepted! Head to Savera Paradise to pick up your parcel.`, 'success');
+      playNotificationSound('rider_new_task');
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([100, 50, 100]); } catch {}
+      }
+
+      try {
+        dataService.broadcastRiderLocation({
+          orderId: latestOrder.id,
+          riderPin: currentRider.pin,
+          riderName: currentRider.name,
+          lat: riderLiveLocation.lat,
+          lng: riderLiveLocation.lng,
+          accuracy: riderLiveLocation.accuracy,
+          timestamp: Date.now()
+        });
+      } catch {}
+    } else {
+      if (!finalResult?.status) {
+        showToast(`❌ ${finalResult?.message || 'Cannot accept order ' + latestOrder.id}`, 'error');
+      }
+      renderPortal();
+    }
+  }
+
+  // Stage 1: One-Tap Take Order (from any location) & head to Savera Paradise
+  function handleStartDelivery(orderId, triggerBtn = null) {
     if (!orderId) return;
     stopRiderAlarm();
     const cleanId = String(orderId).trim().replace(/^#/, '');
@@ -2357,11 +2654,11 @@ const initDeliveryApp = () => {
 
     // Gate 3: Mandatory Live GPS Location Turn-On & Sync before accepting (works from any distance)
     if (!isRiderGpsSyncedAndFresh()) {
-      requestLiveGpsSyncForPickup(() => openBagPreviewModal(order, code));
+      requestLiveGpsSyncForPickup(() => executeOneTapOrderAccept(order, code, triggerBtn));
       return;
     }
 
-    openBagPreviewModal(order, code);
+    executeOneTapOrderAccept(order, code, triggerBtn);
   }
 
   // Stage 2: Rider arrives at Savera Paradise counter and picks up the parcel
@@ -2608,7 +2905,7 @@ const initDeliveryApp = () => {
       btnCashfreeText.textContent = 'Check Payment Status';
     }
     if (btnOpenCashfreeCheckout) {
-      btnOpenCashfreeCheckout.style.background = '#0F172A';
+      btnOpenCashfreeCheckout.style.background = '#191817';
     }
     const btnSubmitDelivered = document.getElementById('btn-submit-delivered');
     if (btnSubmitDelivered) {
@@ -2955,7 +3252,7 @@ const initDeliveryApp = () => {
       if (startBtn) {
         e.preventDefault();
         const id = startBtn.getAttribute('data-id');
-        handleStartDelivery(id);
+        handleStartDelivery(id, startBtn);
         return;
       }
     });
@@ -4052,7 +4349,10 @@ const initDeliveryApp = () => {
     btnManualRefresh.addEventListener('click', async () => {
       btnManualRefresh.classList.add('spinning');
       try {
-        await dataService.syncPendingRiderDutyStatus().catch(() => {});
+        await Promise.allSettled([
+          dataService.syncPendingRiderDutyStatus(),
+          dataService.syncPendingRiderAvatar()
+        ]);
         await Promise.allSettled([
           dataService.syncOrdersFromSupabase(true),
           dataService.syncSettingsFromSupabase(true),
@@ -4913,92 +5213,10 @@ const initDeliveryApp = () => {
       }
       const code = pendingClaimCode;
       const order = dataService.getOrderById(pendingClaimOrder.id) || pendingClaimOrder;
-      const currentRider = dataService.getActiveRider() || { pin: '0000', name: 'Delivery Partner', vehicle: '🏍️ Bike' };
-
-      // Re-verify Per-Rider Active Order Limit and Live GPS Sync before accepting (Stage 1)
-      const existingActive = getRiderCurrentActiveOrder(order.id);
-      if (existingActive) {
-        const maxOrders = dataService.getRiderMaxActiveOrders(currentRider.pin);
-        closeBagPreviewModal();
-        showToast(`⚠️ Active Order Limit (${maxOrders}): Complete or deliver ${existingActive.id} before accepting another order.`, 'warning');
-        renderPortal();
-        return;
-      }
-
-      if (!isRiderGpsSyncedAndFresh()) {
-        closeBagPreviewModal();
-        showToast('⚠️ Location Required: Please turn on and sync your Live GPS Location to accept an order.', 'error');
-        requestLiveGpsSyncForPickup();
-        return;
-      }
-
-      const origBtnHtml = btnConfirmBagClaim.innerHTML;
-      btnConfirmBagClaim.disabled = true;
-      btnConfirmBagClaim.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Accepting Order...';
-
-      let finalResult = null;
       try {
-        // Execute Stage 1 atomic assignment (Going to Restaurant — allowed from any location)
-        const res = dataService.assignOrderToRider(order.id, currentRider.pin, {
-          code,
-          riderLat: riderLiveLocation.lat,
-          riderLng: riderLiveLocation.lng
-        });
-        if (!res.success) {
-          finalResult = res;
-        } else {
-          finalResult = res.serverPromise ? await res.serverPromise : res;
-        }
+        await executeOneTapOrderAccept(order, code, btnConfirmBagClaim);
       } finally {
-        btnConfirmBagClaim.disabled = false;
-        btnConfirmBagClaim.innerHTML = origBtnHtml;
         closeBagPreviewModal();
-      }
-
-      if (finalResult && finalResult.success) {
-        const inputBagCode = document.getElementById('input-bag-code');
-        if (inputBagCode) inputBagCode.value = '';
-
-        const maxOrders = dataService.getRiderMaxActiveOrders(currentRider.pin);
-        const curOrders = dataService.getOrders();
-        const activeCount = curOrders.filter(o => {
-          if (!o) return false;
-          const oPin = String(o.assignedRiderPin || o.assigned_rider_pin || '').trim();
-          if (oPin !== String(currentRider.pin).trim()) return false;
-          return o.status === 'on_the_way' || dataService.isOrderGoingToRestaurant(o);
-        }).length;
-
-        // If rider has capacity for batched orders (>1 limit and below cap), remain on ready tab to allow picking another order
-        if (maxOrders > 1 && activeCount < maxOrders) {
-          activeTab = 'ready';
-        } else {
-          activeTab = 'active';
-        }
-        persistRiderTab(activeTab);
-        updateActiveTabUI();
-        renderPortal();
-
-        showToast(`🏪 Order ${order.id} (Bag #${code}) accepted! Head to Savera Paradise to pick up your parcel.`, 'success');
-        playNotificationSound('rider_new_task');
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-
-        // Immediately broadcast synced live rider location so customer sees rider heading to restaurant
-        try {
-          dataService.broadcastRiderLocation({
-            orderId: order.id,
-            riderPin: currentRider.pin,
-            riderName: currentRider.name,
-            lat: riderLiveLocation.lat,
-            lng: riderLiveLocation.lng,
-            accuracy: riderLiveLocation.accuracy,
-            timestamp: Date.now()
-          });
-        } catch {}
-      } else {
-        if (!finalResult?.status) {
-          showToast(`❌ ${finalResult?.message || 'Cannot accept order ' + order.id}`, 'error');
-        }
-        renderPortal();
       }
     });
   }
@@ -5013,20 +5231,9 @@ const initDeliveryApp = () => {
     const existingActive = getRiderCurrentActiveOrder();
     if (existingActive) {
       container.innerHTML = `
-        <div class="kitchen-waiting-notice active">
-          <div class="kitchen-waiting-badge">
-            <i class="fa-solid fa-lock"></i>
-            <span>${activeCount}/${maxOrders}</span>
-          </div>
-          <div class="kitchen-waiting-content">
-            <div class="kitchen-waiting-title">
-              <strong>Active Order Limit Reached (${escapeHtml(existingActive.id)})</strong>
-            </div>
-            <div class="kitchen-waiting-sub">
-              Your limit is ${maxOrders} active order${maxOrders > 1 ? 's' : ''} at a time. Complete ${escapeHtml(existingActive.id)} in the Active tab to unlock accepting more.
-            </div>
-          </div>
-        </div>
+        <span class="dispatch-status-chip locked" title="Active limit reached (${escapeHtml(existingActive.id)})">
+          <i class="fa-solid fa-lock"></i> ${activeCount}/${maxOrders} Active
+        </span>
       `;
       return;
     }
@@ -5034,36 +5241,15 @@ const initDeliveryApp = () => {
     if (readyOrders.length > 0) {
       const count = readyOrders.length;
       container.innerHTML = `
-        <div class="kitchen-waiting-notice active">
-          <div class="kitchen-waiting-badge">
-            <i class="fa-solid fa-bell fa-shake"></i>
-            <span>${count}</span>
-          </div>
-          <div class="kitchen-waiting-content">
-            <div class="kitchen-waiting-title">
-              <strong>${count} Order${count === 1 ? '' : 's'} Ready to Pick Up</strong>
-            </div>
-            <div class="kitchen-waiting-sub">
-              Packed &amp; waiting on counter. Tap "Accept &amp; Go to Restaurant" on any order below.
-            </div>
-          </div>
-        </div>
+        <span class="dispatch-status-chip active">
+          <i class="fa-solid fa-bell fa-shake"></i> ${count} Ready
+        </span>
       `;
     } else {
       container.innerHTML = `
-        <div class="kitchen-waiting-notice clear">
-          <div class="kitchen-waiting-badge clear">
-            <i class="fa-solid fa-circle-check"></i>
-          </div>
-          <div class="kitchen-waiting-content">
-            <div class="kitchen-waiting-title">
-              <strong>Kitchen Counter is Clear (0 orders ready)</strong>
-            </div>
-            <div class="kitchen-waiting-sub">
-              Food parcels being prepared appear below with live distance and payout once placed.
-            </div>
-          </div>
-        </div>
+        <span class="dispatch-status-chip clear">
+          <i class="fa-solid fa-circle-check"></i> Clear
+        </span>
       `;
     }
   }
@@ -5156,7 +5342,299 @@ const initDeliveryApp = () => {
     }
   }
 
+  // ========================================================
+  // RIDER 3D CHARACTER AVATAR PICKER (Default: Cowboy Hat)
+  // ========================================================
+  const RIDER_PROFILE_AVATARS = {
+    female: [
+      {
+        id: 'female_headphones',
+        name: 'Music Lover',
+        key: 'profile/female/3D_Female_Avatar_Icon_with_Headphones___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'female_blonde',
+        name: 'Blonde Style',
+        key: 'profile/female/3D_Female_Avatar_Icon_with_Blonde_Hair___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'female_hat',
+        name: 'Summer Hat',
+        key: 'profile/female/3D_Female_Avatar_Icon_with_Hat___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'female_curly',
+        name: 'Curly & Glasses',
+        key: 'profile/female/3D_Female_Avatar_Icon_with_Curly_Puff_Hair_and_Glasses___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      }
+    ],
+    male: [
+      {
+        id: 'male_headphones',
+        name: 'Audio Chill',
+        key: 'profile/male/3D_Male_Avatar_Icon_with_Headphones___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'male_cap',
+        name: 'Urban Cap',
+        key: 'profile/male/3D_Male_Avatar_Icon_with_Black_Cap___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      },
+      {
+        id: 'male_cowboy',
+        name: 'Cowboy Hat',
+        key: 'profile/male/3D_Cowboy_Male_Avatar_Icon___Minimalist_Round_Profile_Picture-removebg-preview.png',
+        isDefault: true
+      },
+      {
+        id: 'male_orange',
+        name: 'Orange Vibe',
+        key: 'profile/male/3D_Male_Avatar_Icon_with_Orange_Hair___Minimalist_Round_Profile_Picture-removebg-preview.png'
+      }
+    ]
+  };
+
+  function getRiderR2AvatarUrl(key) {
+    return key ? `/api/r2-image?key=${encodeURIComponent(key)}` : DEFAULT_RIDER_AVATAR_URL;
+  }
+
+  function findRiderAvatarMeta(rawUrl) {
+    const resolvedUrl = resolveRiderAvatarUrl(rawUrl);
+    for (const gender of ['male', 'female']) {
+      for (const item of RIDER_PROFILE_AVATARS[gender]) {
+        if (getRiderR2AvatarUrl(item.key) === resolvedUrl) {
+          return { gender, item, url: resolvedUrl };
+        }
+      }
+    }
+    const cowboy = RIDER_PROFILE_AVATARS.male.find(item => item.isDefault) || RIDER_PROFILE_AVATARS.male[0];
+    return { gender: 'male', item: cowboy, url: DEFAULT_RIDER_AVATAR_URL };
+  }
+
+  let pickerGender = 'male';
+  let pickerAvatarUrl = DEFAULT_RIDER_AVATAR_URL;
+  let pickerAvatarName = 'Cowboy Hat';
+
+  function updateAvatarResetVisibility() {
+    if (!btnResetRiderAvatar) return;
+    btnResetRiderAvatar.style.display = pickerAvatarUrl === DEFAULT_RIDER_AVATAR_URL ? 'none' : 'block';
+  }
+
+  function renderRiderAvatarGrids() {
+    if (!riderAvatarGridFemale || !riderAvatarGridMale) return;
+
+    function buildGrid(list, gender) {
+      return list.map(item => {
+        const url = getRiderR2AvatarUrl(item.key);
+        const isSelected = pickerAvatarUrl === url;
+        return `
+          <div class="avatar-option-card ${isSelected ? 'selected' : ''}" data-url="${escapeHtml(url)}" data-gender="${gender}" data-name="${escapeHtml(item.name)}" role="button" tabindex="0">
+            <div class="avatar-thumb-wrap">
+              <img src="${url}" alt="${escapeHtml(item.name)}" class="avatar-thumb-img" loading="eager" decoding="async" onerror="this.onerror=null; this.src='/avatars/rider-1.svg';" />
+            </div>
+            <span class="avatar-option-name">${escapeHtml(item.name)}</span>
+            ${item.isDefault ? '<span class="avatar-default-tag">Default</span>' : ''}
+            <div class="avatar-check-badge"><i class="fa-solid fa-check"></i></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    riderAvatarGridFemale.innerHTML = buildGrid(RIDER_PROFILE_AVATARS.female, 'female');
+    riderAvatarGridMale.innerHTML = buildGrid(RIDER_PROFILE_AVATARS.male, 'male');
+
+    const allCards = [
+      ...riderAvatarGridFemale.querySelectorAll('.avatar-option-card'),
+      ...riderAvatarGridMale.querySelectorAll('.avatar-option-card')
+    ];
+    allCards.forEach(card => {
+      const handleSelect = () => {
+        allCards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        pickerAvatarUrl = card.getAttribute('data-url') || DEFAULT_RIDER_AVATAR_URL;
+        pickerGender = card.getAttribute('data-gender') || 'male';
+        pickerAvatarName = card.getAttribute('data-name') || 'Cowboy Hat';
+        updateAvatarResetVisibility();
+      };
+      card.addEventListener('click', handleSelect);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleSelect();
+        }
+      });
+    });
+  }
+
+  function switchRiderAvatarGenderTab(gender) {
+    pickerGender = gender === 'female' ? 'female' : 'male';
+    if (riderAvatarTabFemale) {
+      riderAvatarTabFemale.classList.toggle('active', pickerGender === 'female');
+      riderAvatarTabFemale.setAttribute('aria-selected', pickerGender === 'female' ? 'true' : 'false');
+    }
+    if (riderAvatarTabMale) {
+      riderAvatarTabMale.classList.toggle('active', pickerGender === 'male');
+      riderAvatarTabMale.setAttribute('aria-selected', pickerGender === 'male' ? 'true' : 'false');
+    }
+    if (riderAvatarGridFemale) riderAvatarGridFemale.style.display = pickerGender === 'female' ? 'grid' : 'none';
+    if (riderAvatarGridMale) riderAvatarGridMale.style.display = pickerGender === 'male' ? 'grid' : 'none';
+
+    const list = RIDER_PROFILE_AVATARS[pickerGender] || RIDER_PROFILE_AVATARS.male;
+    const belongsToTab = list.some(item => getRiderR2AvatarUrl(item.key) === pickerAvatarUrl);
+    if (!belongsToTab && list.length > 0) {
+      const preferred = list.find(item => item.isDefault) || list[0];
+      pickerAvatarUrl = getRiderR2AvatarUrl(preferred.key);
+      pickerAvatarName = preferred.name;
+    }
+
+    const allCards = [
+      ...(riderAvatarGridFemale ? riderAvatarGridFemale.querySelectorAll('.avatar-option-card') : []),
+      ...(riderAvatarGridMale ? riderAvatarGridMale.querySelectorAll('.avatar-option-card') : [])
+    ];
+    allCards.forEach(c => {
+      c.classList.toggle('selected', c.getAttribute('data-url') === pickerAvatarUrl);
+    });
+    updateAvatarResetVisibility();
+  }
+
+  function openRiderAvatarModalInternal() {
+    if (!modalRiderAvatarBackdrop) return;
+    const activeRider = dataService.getActiveRider();
+    const meta = findRiderAvatarMeta(activeRider?.avatarImg);
+    pickerGender = meta.gender;
+    pickerAvatarUrl = meta.url;
+    pickerAvatarName = meta.item.name;
+    renderRiderAvatarGrids();
+    switchRiderAvatarGenderTab(pickerGender);
+    modalRiderAvatarBackdrop.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeRiderAvatarModalInternal() {
+    if (!modalRiderAvatarBackdrop) return;
+    modalRiderAvatarBackdrop.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  function openRiderAvatarModal() {
+    if (!isStaffSessionActive('rider')) return;
+    openRiderAvatarModalInternal();
+    backNav.pushStep('modal-rider-avatar', () => closeRiderAvatarModalInternal(), () => openRiderAvatarModalInternal());
+  }
+
+  function closeRiderAvatarModal() {
+    closeRiderAvatarModalInternal();
+    backNav.removeStep('modal-rider-avatar');
+  }
+
+  async function applyRiderAvatarSelection(targetUrl, targetName) {
+    const activeRider = dataService.getActiveRider();
+    if (!activeRider || !activeRider.pin) return;
+
+    const prevDisabled = btnSaveRiderAvatar ? btnSaveRiderAvatar.disabled : false;
+    if (btnSaveRiderAvatar) btnSaveRiderAvatar.disabled = true;
+    try {
+      const res = await dataService.setRiderAvatar(activeRider.pin, targetUrl);
+      updateRiderProfileHeader();
+      if (res && res.success) {
+        closeRiderAvatarModal();
+        showToast(`✨ Character avatar updated: ${targetName}!`, 'success');
+      } else if (res && res.queued) {
+        closeRiderAvatarModal();
+        showToast(`✨ Avatar set to ${targetName} (will sync when online).`, 'info');
+      } else {
+        showToast(res?.error || 'Could not save avatar right now.', 'error');
+      }
+    } finally {
+      if (btnSaveRiderAvatar) btnSaveRiderAvatar.disabled = prevDisabled;
+    }
+  }
+
+  if (riderAvatarBadge) {
+    riderAvatarBadge.addEventListener('click', () => openRiderAvatarModal());
+  }
+  if (btnCloseRiderAvatar) {
+    btnCloseRiderAvatar.addEventListener('click', () => closeRiderAvatarModal());
+  }
+  if (modalRiderAvatarBackdrop) {
+    modalRiderAvatarBackdrop.addEventListener('click', (e) => {
+      if (e.target === modalRiderAvatarBackdrop) closeRiderAvatarModal();
+    });
+  }
+  if (riderAvatarTabFemale) {
+    riderAvatarTabFemale.addEventListener('click', () => switchRiderAvatarGenderTab('female'));
+  }
+  if (riderAvatarTabMale) {
+    riderAvatarTabMale.addEventListener('click', () => switchRiderAvatarGenderTab('male'));
+  }
+  if (btnSaveRiderAvatar) {
+    btnSaveRiderAvatar.addEventListener('click', () => {
+      applyRiderAvatarSelection(pickerAvatarUrl || DEFAULT_RIDER_AVATAR_URL, pickerAvatarName || 'Cowboy Hat');
+    });
+  }
+  if (btnResetRiderAvatar) {
+    btnResetRiderAvatar.addEventListener('click', () => {
+      applyRiderAvatarSelection(DEFAULT_RIDER_AVATAR_URL, 'Cowboy Hat');
+    });
+  }
+
+  // ========================================================
+  // FULL RIDER PROFILE DETAILS MODAL (Click Profile to View All)
+  // ========================================================
+  function openRiderFullProfileInternal() {
+    if (!modalRiderFullProfileBackdrop) return;
+    updateRiderProfileHeader();
+    updatePickupGpsGateUI();
+    modalRiderFullProfileBackdrop.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeRiderFullProfileInternal() {
+    if (!modalRiderFullProfileBackdrop) return;
+    modalRiderFullProfileBackdrop.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  function openRiderFullProfileModal() {
+    if (!isStaffSessionActive('rider')) return;
+    openRiderFullProfileInternal();
+    backNav.pushStep('modal-rider-full-profile', () => closeRiderFullProfileInternal(), () => openRiderFullProfileInternal());
+  }
+
+  function closeRiderFullProfileModal() {
+    closeRiderFullProfileInternal();
+    backNav.removeStep('modal-rider-full-profile');
+  }
+
+  if (btnOpenRiderProfile) {
+    btnOpenRiderProfile.addEventListener('click', () => openRiderFullProfileModal());
+  }
+  if (btnCloseRiderFullProfile) {
+    btnCloseRiderFullProfile.addEventListener('click', () => closeRiderFullProfileModal());
+  }
+  if (btnCloseRiderFullProfileDone) {
+    btnCloseRiderFullProfileDone.addEventListener('click', () => closeRiderFullProfileModal());
+  }
+  if (modalRiderFullProfileBackdrop) {
+    modalRiderFullProfileBackdrop.addEventListener('click', (e) => {
+      if (e.target === modalRiderFullProfileBackdrop) closeRiderFullProfileModal();
+    });
+  }
+  if (btnProfileToAvatar) {
+    btnProfileToAvatar.addEventListener('click', () => {
+      closeRiderFullProfileModal();
+      openRiderAvatarModal();
+    });
+  }
+
   // Register DOM fallback checkers for bulletproof single-step back navigation (modals only)
+  backNav.registerFallbackChecker({
+    isOpen: () => modalRiderFullProfileBackdrop && modalRiderFullProfileBackdrop.classList.contains('open'),
+    close: () => closeRiderFullProfileModal()
+  });
+  backNav.registerFallbackChecker({
+    isOpen: () => modalRiderAvatarBackdrop && modalRiderAvatarBackdrop.classList.contains('open'),
+    close: () => closeRiderAvatarModal()
+  });
   backNav.registerFallbackChecker({
     isOpen: () => modalBagPreviewBackdrop && modalBagPreviewBackdrop.classList.contains('open'),
     close: () => closeBagPreviewModal()
