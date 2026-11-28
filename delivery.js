@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
  */
 
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, DEFAULT_RIDERS, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId, getShiftStartTimeMs } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, DEFAULT_RIDERS, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId, getShiftStartTimeMs, normalizeComboItems } from './dataService.js';
 import {
   playNotificationSound,
   sendSystemNotification,
@@ -1813,7 +1813,13 @@ const initDeliveryApp = () => {
 
         let itemsSummary = 'Food Items';
         if (Array.isArray(order.items) && order.items.length > 0) {
-          itemsSummary = order.items.map(it => `${it.quantity || 1}x ${it.name || 'Item'}`).join(', ');
+          itemsSummary = order.items.map(it => {
+            const snapCombo = normalizeComboItems(it.comboItems ?? it.combo_items);
+            const catDish = snapCombo.length === 0 && it.id && typeof dataService.getDishById === 'function' ? dataService.getDishById(it.id) : null;
+            const comboParts = snapCombo.length > 0 ? snapCombo : normalizeComboItems(catDish?.comboItems ?? catDish?.combo_items);
+            const base = `${it.quantity || 1}x ${it.name || 'Item'}`;
+            return comboParts.length > 0 ? `${base} [${comboParts.join(', ')}]` : base;
+          }).join(', ');
         } else if (order.itemsSummary) {
           itemsSummary = String(order.itemsSummary);
         } else if (order.itemCount) {
@@ -4830,7 +4836,13 @@ const initDeliveryApp = () => {
 
     let itemsSummary = 'Food Items';
     if (Array.isArray(order.items) && order.items.length > 0) {
-      itemsSummary = order.items.map(it => `${it.quantity || 1}x ${it.name || 'Item'}`).join(', ');
+      itemsSummary = order.items.map(it => {
+        const snapCombo = normalizeComboItems(it.comboItems ?? it.combo_items);
+        const catDish = snapCombo.length === 0 && it.id && typeof dataService.getDishById === 'function' ? dataService.getDishById(it.id) : null;
+        const comboParts = snapCombo.length > 0 ? snapCombo : normalizeComboItems(catDish?.comboItems ?? catDish?.combo_items);
+        const base = `${it.quantity || 1}x ${it.name || 'Item'}`;
+        return comboParts.length > 0 ? `${base} [${comboParts.join(', ')}]` : base;
+      }).join(', ');
     } else if (order.itemCount) {
       itemsSummary = `${order.itemCount} items`;
     }

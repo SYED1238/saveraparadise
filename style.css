@@ -14654,3 +14654,59 @@ body.gender-prompt-open {
     font-size: 0.98rem;
   }
 }
+
+/* Combo Included Items Pill Boxes (Storefront Food Detail & Cart) */
+.food-combo-items-box {
+  background: linear-gradient(145deg, #FFFBF5, #FFF7ED);
+  border: 1.5px solid rgba(255, 90, 38, 0.25);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+
+.food-combo-items-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #C2410C;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 9px;
+}
+
+.food-combo-items-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.food-combo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #FFFFFF;
+  border: 1px solid #FDBA74;
+  color: #1F2937;
+  border-radius: 9px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.food-combo-chip-check {
+  color: #EA580C;
+  font-weight: 900;
+}
+
+.cart-item-combo-note {
+  font-size: 0.72rem;
+  color: #9A3412;
+  background: #FFF7ED;
+  border: 1px solid #FED7AA;
+  border-radius: 6px;
+  padding: 3px 7px;
+  margin-top: 3px;
+  line-height: 1.3;
+  font-weight: 600;
+}

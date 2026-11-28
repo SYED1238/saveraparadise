@@ -4,7 +4,7 @@
 import './performanceGovernor.js';
 import './performanceTier.css';
 import confetti from 'canvas-confetti';
-import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h, formatDisplayOrderId, getNowInIST, isComboCategory, isComboDish } from './dataService.js';
+import { dataService, RESTAURANT_COORDINATES, sanitizeDishImageUrl, getDishScheduleStatus, formatTime12h, formatDisplayOrderId, getNowInIST, isComboCategory, isComboDish, normalizeComboItems, parseComboItemsFromText } from './dataService.js';
 import { supabase } from './supabaseClient.js';
 import {
   playNotificationSound,
@@ -1312,14 +1312,16 @@ function initStorefrontApp() {
           const cat = (card.getAttribute('data-category') || dish?.category || '').toLowerCase();
           const tags = (card.getAttribute('data-tags') || (Array.isArray(dish?.tags) ? dish.tags.join(' ') : (dish?.tags || ''))).toLowerCase();
           const badge = (card.querySelector('.recipe-card-badge-pill')?.textContent || dish?.badge || '').toLowerCase();
-          const desc = (card.getAttribute('data-description') || card.querySelector('.recipe-desc')?.textContent || dish?.description || '').toLowerCase();
+          const comboHaystack = Array.isArray(dish?.comboItems) ? dish.comboItems.join(' ').toLowerCase() : '';
+          const desc = (card.getAttribute('data-description') || card.querySelector('.recipe-desc')?.textContent || dish?.description || dish?.desc || comboHaystack || '').toLowerCase();
 
           const match = queryTokens.every(token =>
             title.includes(token) ||
             cat.includes(token) ||
             tags.includes(token) ||
             badge.includes(token) ||
-            desc.includes(token)
+            desc.includes(token) ||
+            comboHaystack.includes(token)
           );
 
           if (match) {
@@ -1482,6 +1484,10 @@ function initStorefrontApp() {
       }
     }
 
+    const liveComboItems = normalizeComboItems(liveDish?.comboItems ?? liveDish?.combo_items);
+    const itemComboItems = normalizeComboItems(item.comboItems ?? item.combo_items);
+    const resolvedComboItems = liveComboItems.length > 0 ? liveComboItems : itemComboItems;
+
     const existing = cart.find(i => i.id === item.id);
     if (existing) {
       if (existing.quantity >= 50) {
@@ -1491,12 +1497,17 @@ function initStorefrontApp() {
       existing.quantity = Math.min(50, existing.quantity + qty);
       if (item.spice) existing.spice = item.spice;
       if (item.sauce) existing.sauce = item.sauce;
+      if (resolvedComboItems.length > 0) existing.comboItems = resolvedComboItems;
       if (Number.isFinite(Number(item.price)) && Number(item.price) > 0) {
         existing.price = Number(item.price);
       }
       if (item.name) existing.name = item.name;
     } else {
-      cart.push({ ...item, quantity: Math.min(50, qty) });
+      cart.push({
+        ...item,
+        ...(resolvedComboItems.length > 0 ? { comboItems: resolvedComboItems } : {}),
+        quantity: Math.min(50, qty)
+      });
     }
 
     saveCart();
@@ -2009,6 +2020,10 @@ function initStorefrontApp() {
       const customHtml = customParts.length > 0
         ? `<div class="cart-item-custom" style="font-size: 0.74rem; color: #64748B; margin-top: 2px;">${customParts.join(' • ')}</div>`
         : '';
+      const cartComboItems = normalizeComboItems(liveDish?.comboItems ?? liveDish?.combo_items ?? item.comboItems ?? item.combo_items);
+      const cartComboHtml = cartComboItems.length > 0
+        ? `<div class="cart-item-combo-note">🍱 ${cartComboItems.map(c => escapeHtml(c)).join(' · ')}</div>`
+        : '';
 
       el.innerHTML = `
         <div class="cart-item-img-wrap is-img-loading">
@@ -2017,6 +2032,7 @@ function initStorefrontApp() {
         <div class="cart-item-info">
           <div class="cart-item-title">${safeName}${statusBadge}</div>
           ${customHtml}
+          ${cartComboHtml}
           <div class="cart-item-price">${priceHTML}</div>
         </div>
         <div class="cart-qty-ctrl">
@@ -2329,6 +2345,9 @@ function initStorefrontApp() {
   const foodDetailTitle = document.getElementById('food-detail-title');
   const foodDetailPrice = document.getElementById('food-detail-price');
   const foodDetailDesc = document.getElementById('food-detail-desc');
+  const foodDetailComboBox = document.getElementById('food-detail-combo-box');
+  const foodDetailComboTitle = document.getElementById('food-detail-combo-title');
+  const foodDetailComboChips = document.getElementById('food-detail-combo-chips');
   const foodDetailTime = document.getElementById('food-detail-time');
   const foodDetailCals = document.getElementById('food-detail-cals');
   const foodDetailDiet = document.getElementById('food-detail-diet');
@@ -2431,7 +2450,28 @@ function initStorefrontApp() {
       }
     }
     if (foodDetailCat) foodDetailCat.textContent = dish.category;
-    if (foodDetailDesc) foodDetailDesc.textContent = dish.desc;
+    const rawComboItems = normalizeComboItems(dish.comboItems ?? dish.combo_items);
+    const detailComboItems = rawComboItems.length > 0
+      ? rawComboItems
+      : ((isComboDish(dish) || isComboCategory({ slug: dish.category, name: dish.categoryName })) && dish.desc && (dish.desc.includes('+') || dish.desc.includes('\n'))
+          ? parseComboItemsFromText(dish.desc)
+          : []);
+    if (foodDetailComboBox && foodDetailComboChips && detailComboItems.length > 0) {
+      if (foodDetailDesc) foodDetailDesc.style.display = 'none';
+      foodDetailComboBox.style.display = 'block';
+      if (foodDetailComboTitle) {
+        foodDetailComboTitle.textContent = `🍱 What's Included in This Combo (${detailComboItems.length} items)`;
+      }
+      foodDetailComboChips.innerHTML = detailComboItems
+        .map(ci => `<span class="food-combo-chip"><span class="food-combo-chip-check">✓</span><span>${escapeHtml(ci)}</span></span>`)
+        .join('');
+    } else {
+      if (foodDetailComboBox) foodDetailComboBox.style.display = 'none';
+      if (foodDetailDesc) {
+        foodDetailDesc.style.display = '';
+        foodDetailDesc.textContent = dish.desc;
+      }
+    }
     if (foodDetailBadge) {
       if (dish.inStock === false) {
         foodDetailBadge.textContent = 'Back Soon';
@@ -2660,13 +2700,15 @@ function initStorefrontApp() {
       }
       const selectedSpice = spicePillsGroup?.querySelector('.custom-choice-pill.active')?.textContent?.trim() || 'Medium';
       const selectedSauce = saucePillsGroup?.querySelector('.custom-choice-pill.active')?.textContent?.trim() || 'Mint Chutney';
+      const activeComboItems = normalizeComboItems(activeDetailItem.comboItems ?? activeDetailItem.combo_items);
       addToCart({
         id: activeDetailItem.id,
         name: activeDetailItem.name,
         price: activeDetailItem.price,
         image: activeDetailItem.image,
         spice: selectedSpice,
-        sauce: selectedSauce
+        sauce: selectedSauce,
+        ...(activeComboItems.length > 0 ? { comboItems: activeComboItems } : {})
       }, btnModalAddCart, activeDetailQty);
 
       closeFoodDetail();
@@ -4907,7 +4949,16 @@ function initStorefrontApp() {
     const itemsTextEl = document.getElementById('items-preview-text');
     const itemsPriceEl = document.getElementById('items-preview-price');
     const itemsMetaEl = document.getElementById('items-preview-meta');
-    if (itemsTextEl) itemsTextEl.textContent = order.itemsSummary || (Array.isArray(order.items) ? order.items.map(i => `${i.quantity}x ${i.name}`).join(', ') : 'Delicious meal');
+    if (itemsTextEl) {
+      const formattedItemsList = Array.isArray(order.items) && order.items.length > 0
+        ? order.items.map(i => {
+            const cItems = normalizeComboItems(i.comboItems ?? i.combo_items);
+            const base = `${i.quantity || 1}x ${i.name}`;
+            return cItems.length > 0 ? `${base} (${cItems.join(', ')})` : base;
+          }).join(', ')
+        : '';
+      itemsTextEl.textContent = formattedItemsList || order.itemsSummary || 'Delicious meal';
+    }
     if (itemsPriceEl) itemsPriceEl.textContent = order.total || '₹0';
     if (itemsMetaEl) {
       const metaParts = [];
@@ -5880,12 +5931,14 @@ function initStorefrontApp() {
             }
             const cleanPrice = Number(matchedCatalog.price);
             const addQty = Math.max(1, Math.min(50, Number(item.quantity) || 1));
+            const matchedComboItems = normalizeComboItems(matchedCatalog.comboItems ?? matchedCatalog.combo_items);
             const foundInCart = cart.find(c => c.id === matchedCatalog.id || (c.name && matchedCatalog.name && c.name.toLowerCase() === matchedCatalog.name.toLowerCase()));
             if (foundInCart) {
               foundInCart.price = cleanPrice;
               foundInCart.quantity = Math.min(50, foundInCart.quantity + addQty);
               if (item.spice) foundInCart.spice = item.spice;
               if (item.sauce) foundInCart.sauce = item.sauce;
+              if (matchedComboItems.length > 0) foundInCart.comboItems = matchedComboItems;
             } else {
               cart.push({
                 id: matchedCatalog.id,
@@ -5894,7 +5947,8 @@ function initStorefrontApp() {
                 image: matchedCatalog.image || item.image || '/images/crispy-chicken.jpg',
                 quantity: addQty,
                 ...(item.spice ? { spice: item.spice } : {}),
-                ...(item.sauce ? { sauce: item.sauce } : {})
+                ...(item.sauce ? { sauce: item.sauce } : {}),
+                ...(matchedComboItems.length > 0 ? { comboItems: matchedComboItems } : {})
               });
             }
             addedCount += addQty;
@@ -7053,14 +7107,18 @@ function initStorefrontApp() {
           statusLabel: 'Accepted',
           eta: '25 - 35 Minutes',
           itemsSummary: itemsSummary,
-          items: cart.map(i => ({
-            id: i.id,
-            name: i.name,
-            quantity: i.quantity,
-            price: i.price,
-            ...(i.spice ? { spice: i.spice } : {}),
-            ...(i.sauce ? { sauce: i.sauce } : {})
-          })),
+          items: cart.map(i => {
+            const cItems = normalizeComboItems(i.comboItems ?? i.combo_items);
+            return {
+              id: i.id,
+              name: i.name,
+              quantity: i.quantity,
+              price: i.price,
+              ...(i.spice ? { spice: i.spice } : {}),
+              ...(i.sauce ? { sauce: i.sauce } : {}),
+              ...(cItems.length > 0 ? { comboItems: cItems } : {})
+            };
+          }),
           total: totalAmount
         };
 
@@ -7096,15 +7154,26 @@ function initStorefrontApp() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              items: cart.map(i => ({
-                id: i.id,
-                name: i.name,
-                quantity: i.quantity,
-                price: i.price,
-                ...(i.spice ? { spice: i.spice } : {}),
-                ...(i.sauce ? { sauce: i.sauce } : {})
-              })),
-              catalogDishes: (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function') ? dataService.getDishes().map(d => ({ id: d.id, name: d.name, price: d.price })) : [],
+              items: cart.map(i => {
+                const cItems = normalizeComboItems(i.comboItems ?? i.combo_items);
+                return {
+                  id: i.id,
+                  name: i.name,
+                  quantity: i.quantity,
+                  price: i.price,
+                  ...(i.spice ? { spice: i.spice } : {}),
+                  ...(i.sauce ? { sauce: i.sauce } : {}),
+                  ...(cItems.length > 0 ? { comboItems: cItems } : {})
+                };
+              }),
+              catalogDishes: (typeof dataService !== 'undefined' && typeof dataService.getDishes === 'function')
+                ? dataService.getDishes().map(d => ({
+                    id: d.id,
+                    name: d.name,
+                    price: d.price,
+                    ...(Array.isArray(d.comboItems) && d.comboItems.length > 0 ? { comboItems: d.comboItems } : {})
+                  }))
+                : [],
               promoCode: appliedPromo || null,
               appliedPromo: appliedPromo || null,
               storeSettings: settings,

@@ -4,7 +4,7 @@
  * and data synchronization with dataService.
  */
 
-import { dataService, CANONICAL_CATEGORY_IMAGES, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs, isComboCategory, isComboDish, normalizeSortOrder } from './dataService.js';
+import { dataService, CANONICAL_CATEGORY_IMAGES, PRESET_FOOD_IMAGES, extractPhoneFromOrder, cleanDeliveryAddress, formatTime12h, getDishScheduleStatus, formatDisplayOrderId, getShiftStartTimeMs, isComboCategory, isComboDish, normalizeSortOrder, normalizeComboItems, parseComboItemsFromText } from './dataService.js';
 import { cloudflareR2Service } from './cloudflareR2Service.js';
 import {
   playNotificationSound,
@@ -601,7 +601,17 @@ const initAdminApp = () => {
   const dishTimeInput = document.getElementById('dish-time-input');
   const dishCaloriesInput = document.getElementById('dish-calories-input');
   const dishDietInput = document.getElementById('dish-diet-input');
+  const dishDescGroup = document.getElementById('dish-desc-group');
   const dishDescInput = document.getElementById('dish-desc-input');
+  const dishComboItemsGroup = document.getElementById('dish-combo-items-group');
+  const dishComboItemInput = document.getElementById('dish-combo-item-input');
+  const btnAddComboItem = document.getElementById('btn-add-combo-item');
+  const dishComboChipsList = document.getElementById('dish-combo-chips-list');
+  const comboItemsCountPill = document.getElementById('combo-items-count-pill');
+  const comboLegacyConvertBar = document.getElementById('combo-legacy-convert-bar');
+  const btnSplitComboDesc = document.getElementById('btn-split-combo-desc');
+  let currentComboItems = [];
+  let editingComboChipIndex = -1;
   const dishPreviewImg = document.getElementById('dish-preview-img');
   const dishImageUrl = document.getElementById('dish-image-url');
   const dishFileUpload = document.getElementById('dish-file-upload');
@@ -1388,7 +1398,8 @@ const initAdminApp = () => {
     if (catDishSearchQuery) {
       const tokens = catDishSearchQuery.toLowerCase().split(/\s+/).filter(Boolean);
       filteredDishes = filteredDishes.filter(d => {
-        const fullText = `${d.name || ''} ${d.desc || ''} ${d.badge || ''} ${d.diet || ''}`.toLowerCase();
+        const comboStr = Array.isArray(d.comboItems) ? d.comboItems.join(' ') : '';
+        const fullText = `${d.name || ''} ${d.desc || ''} ${comboStr} ${d.badge || ''} ${d.diet || ''}`.toLowerCase();
         return tokens.every(token => fullText.includes(token));
       });
     }
@@ -1418,6 +1429,7 @@ const initAdminApp = () => {
       const safeImage = sanitizeUrl(dish.image, '/images/crispy-chicken.jpg');
       const safeBadge = dish.badge ? escapeHtml(dish.badge) : '';
       const dishOrderNum = normalizeSortOrder(dish.sortOrder ?? dish.sort_order);
+      const comboItemsArr = normalizeComboItems(dish.comboItems ?? dish.combo_items);
       const safePrice = Math.round(parseFloat(dish.price) || 0);
       const safeOrigPrice = (dish.originalPrice && parseFloat(dish.originalPrice) > safePrice) ? Math.round(parseFloat(dish.originalPrice)) : 0;
 
@@ -1462,6 +1474,7 @@ const initAdminApp = () => {
               ${(dish.timeRestricted && dish.availableFrom && dish.availableTo) ? `<div class="dish-schedule-badge time-badge"><i class="fa-regular fa-clock"></i> ${formatTime12h(dish.availableFrom)} - ${formatTime12h(dish.availableTo)}</div>` : ''}
               ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
               <h3 class="dish-title" title="${safeName}">${safeName}</h3>
+              ${comboItemsArr.length > 0 ? `<div class="dish-combo-items-count-badge">🍱 ${comboItemsArr.length} combo item${comboItemsArr.length === 1 ? '' : 's'}</div>` : ''}
               <div class="dish-meta-sub">
                 <span class="meta-price">₹${safePrice}${safeOrigPrice ? ` <span style="text-decoration:line-through; opacity:0.65; font-size:0.82em; margin-left:4px;">₹${safeOrigPrice}</span>` : ''}</span>
                 ${!isStock ? '<span class="meta-dot">•</span><span class="meta-sold-tag">Sold Out</span>' : ''}
@@ -1800,6 +1813,213 @@ const initAdminApp = () => {
     });
   });
 
+  function isComboEditorModeActive() {
+    const toggleOn = Boolean(dishIsComboInput?.checked);
+    const catCombo = isComboCategory(dishCategorySelect?.value || '');
+    return toggleOn || catCombo;
+  }
+
+  function renderComboChipsBuilder() {
+    if (!dishComboChipsList) return;
+    const count = currentComboItems.length;
+    if (comboItemsCountPill) {
+      comboItemsCountPill.textContent = `${count} item${count === 1 ? '' : 's'}`;
+    }
+
+    const legacyRaw = (dishDescInput?.value || '').trim();
+    if (comboLegacyConvertBar) {
+      const showLegacyBar = count === 0 && isComboEditorModeActive() && (legacyRaw.includes('+') || legacyRaw.includes('\n'));
+      comboLegacyConvertBar.style.display = showLegacyBar ? 'flex' : 'none';
+    }
+
+    if (count === 0) {
+      dishComboChipsList.innerHTML = '<div class="combo-chips-empty">No combo items added yet — type 1 item above and press <strong>Enter</strong>.</div>';
+      return;
+    }
+
+    dishComboChipsList.innerHTML = currentComboItems.map((itemText, idx) => {
+      const safeText = escapeHtml(itemText);
+      if (editingComboChipIndex === idx) {
+        return `
+          <div class="combo-item-chip is-editing" data-index="${idx}">
+            <span class="combo-chip-num">${idx + 1}</span>
+            <input type="text" class="combo-chip-inline-input" data-index="${idx}" value="${safeText}" maxlength="120" aria-label="Edit combo item ${idx + 1}" />
+            <button type="button" class="combo-chip-btn combo-chip-save" data-index="${idx}" title="Save item"><i class="fa-solid fa-check"></i></button>
+          </div>
+        `;
+      }
+      return `
+        <div class="combo-item-chip" data-index="${idx}">
+          <span class="combo-chip-num">${idx + 1}</span>
+          <span class="combo-chip-text" data-index="${idx}" title="Click to edit item">${safeText}</span>
+          <div class="combo-chip-actions">
+            ${idx > 0 ? `<button type="button" class="combo-chip-btn combo-chip-up" data-index="${idx}" title="Move up" aria-label="Move item up"><i class="fa-solid fa-arrow-up"></i></button>` : ''}
+            ${idx < count - 1 ? `<button type="button" class="combo-chip-btn combo-chip-down" data-index="${idx}" title="Move down" aria-label="Move item down"><i class="fa-solid fa-arrow-down"></i></button>` : ''}
+            <button type="button" class="combo-chip-btn combo-chip-edit" data-index="${idx}" title="Edit item" aria-label="Edit item"><i class="fa-solid fa-pen"></i></button>
+            <button type="button" class="combo-chip-btn combo-chip-remove" data-index="${idx}" title="Remove item" aria-label="Remove item">✕</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    dishComboChipsList.querySelectorAll('.combo-chip-text, .combo-chip-edit').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.getAttribute('data-index'), 10);
+        if (Number.isInteger(idx)) {
+          editingComboChipIndex = idx;
+          renderComboChipsBuilder();
+          const inlineInp = dishComboChipsList.querySelector(`.combo-chip-inline-input[data-index="${idx}"]`);
+          if (inlineInp) {
+            inlineInp.focus();
+            inlineInp.select();
+          }
+        }
+      });
+    });
+
+    dishComboChipsList.querySelectorAll('.combo-chip-inline-input').forEach(inp => {
+      let isInlineSettled = false;
+      const saveInline = () => {
+        if (isInlineSettled) return;
+        const idx = parseInt(inp.getAttribute('data-index'), 10);
+        if (editingComboChipIndex !== idx || !Number.isInteger(idx) || idx < 0 || idx >= currentComboItems.length) return;
+        isInlineSettled = true;
+        const val = inp.value.replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (!val) {
+          currentComboItems.splice(idx, 1);
+        } else {
+          currentComboItems[idx] = val;
+        }
+        editingComboChipIndex = -1;
+        renderComboChipsBuilder();
+      };
+      inp.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          saveInline();
+        } else if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          isInlineSettled = true;
+          editingComboChipIndex = -1;
+          renderComboChipsBuilder();
+        }
+      });
+      inp.addEventListener('blur', saveInline);
+    });
+
+    dishComboChipsList.querySelectorAll('.combo-chip-up').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-index'), 10);
+        if (idx > 0 && idx < currentComboItems.length) {
+          [currentComboItems[idx - 1], currentComboItems[idx]] = [currentComboItems[idx], currentComboItems[idx - 1]];
+          editingComboChipIndex = -1;
+          renderComboChipsBuilder();
+        }
+      });
+    });
+
+    dishComboChipsList.querySelectorAll('.combo-chip-down').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-index'), 10);
+        if (idx >= 0 && idx < currentComboItems.length - 1) {
+          [currentComboItems[idx], currentComboItems[idx + 1]] = [currentComboItems[idx + 1], currentComboItems[idx]];
+          editingComboChipIndex = -1;
+          renderComboChipsBuilder();
+        }
+      });
+    });
+
+    dishComboChipsList.querySelectorAll('.combo-chip-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-index'), 10);
+        if (Number.isInteger(idx) && idx >= 0 && idx < currentComboItems.length) {
+          currentComboItems.splice(idx, 1);
+          editingComboChipIndex = -1;
+          renderComboChipsBuilder();
+        }
+      });
+    });
+  }
+
+  function syncDishEditorComboFieldMode() {
+    const comboActive = isComboEditorModeActive();
+    if (dishDescGroup) {
+      dishDescGroup.style.display = comboActive ? 'none' : '';
+    }
+    if (dishComboItemsGroup) {
+      dishComboItemsGroup.style.display = comboActive ? 'block' : 'none';
+    }
+    if (comboActive && currentComboItems.length === 0) {
+      const legacyDesc = (dishDescInput?.value || '').trim();
+      if (legacyDesc.includes('+') || legacyDesc.includes('\n')) {
+        const parsed = parseComboItemsFromText(legacyDesc);
+        if (parsed.length > 0) currentComboItems = parsed;
+      }
+    }
+    renderComboChipsBuilder();
+  }
+
+  function commitComboItemInput({ silent = false } = {}) {
+    if (!dishComboItemInput) return false;
+    const raw = dishComboItemInput.value;
+    if (!raw || !raw.trim()) return false;
+
+    const parts = (raw.includes('+') || raw.includes('\n'))
+      ? parseComboItemsFromText(raw)
+      : [raw.replace(/\s+/g, ' ').trim().slice(0, 120)];
+
+    let addedAny = false;
+    for (const part of parts) {
+      if (!part) continue;
+      const isDup = currentComboItems.some(x => x.toLowerCase() === part.toLowerCase());
+      if (isDup) {
+        if (!silent && parts.length === 1) {
+          showToast(`"${part}" is already in this combo list.`, 'info');
+        }
+        continue;
+      }
+      if (currentComboItems.length >= 40) {
+        if (!silent) showToast('Maximum 40 items allowed per combo.', 'warning');
+        break;
+      }
+      currentComboItems.push(part);
+      addedAny = true;
+    }
+
+    dishComboItemInput.value = '';
+    editingComboChipIndex = -1;
+    renderComboChipsBuilder();
+    return addedAny;
+  }
+
+  if (dishComboItemInput) {
+    dishComboItemInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        commitComboItemInput();
+      }
+    });
+  }
+  if (btnAddComboItem) {
+    btnAddComboItem.addEventListener('click', () => {
+      commitComboItemInput();
+      if (dishComboItemInput) dishComboItemInput.focus();
+    });
+  }
+  if (btnSplitComboDesc) {
+    btnSplitComboDesc.addEventListener('click', () => {
+      const parsed = parseComboItemsFromText(dishDescInput?.value || '');
+      if (parsed.length > 0) {
+        currentComboItems = parsed;
+        renderComboChipsBuilder();
+        showToast(`Split into ${parsed.length} combo boxes!`, 'success');
+      }
+    });
+  }
+
   function openAddDishModal(defaultCategorySlug = '', opts = {}) {
     const targetSlug = defaultCategorySlug || (currentOpenedCategorySlug && currentOpenedCategorySlug !== 'all' ? currentOpenedCategorySlug : '');
     const isComboMode = Boolean(opts.isCombo) || isComboCategory(targetSlug);
@@ -1840,6 +2060,10 @@ const initAdminApp = () => {
     dishDescInput.placeholder = isComboMode
       ? 'List everything included in this combo (e.g. 1 Chicken Biryani + 2 Kebabs + Cold Drink)...'
       : 'Describe the flavors, seasoning, and texture...';
+    currentComboItems = [];
+    editingComboChipIndex = -1;
+    if (dishComboItemInput) dishComboItemInput.value = '';
+    syncDishEditorComboFieldMode();
 
     setModalDishStock(true);
     if (btnModalDeleteDish) btnModalDeleteDish.style.display = 'none';
@@ -1932,6 +2156,18 @@ const initAdminApp = () => {
     dishCaloriesInput.value = dish.calories || '560 kcal';
     dishDietInput.value = dish.diet || 'Fresh Daily';
     dishDescInput.value = dish.desc || '';
+    const existingComboItems = normalizeComboItems(dish.comboItems ?? dish.combo_items);
+    const isCatCombo = isComboCategory({ slug: dish.category, name: dish.categoryName });
+    if (existingComboItems.length > 0) {
+      currentComboItems = existingComboItems;
+    } else if ((isComboItem || isCatCombo) && dish.desc && (dish.desc.includes('+') || dish.desc.includes('\n'))) {
+      currentComboItems = parseComboItemsFromText(dish.desc);
+    } else {
+      currentComboItems = [];
+    }
+    editingComboChipIndex = -1;
+    if (dishComboItemInput) dishComboItemInput.value = '';
+    syncDishEditorComboFieldMode();
     currentDishGdriveFileId = dish.r2Key || dish.gdriveFileId || '';
     setSelectedDishDays(dish.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
     if (dishTimeRestricted) dishTimeRestricted.checked = Boolean(dish.timeRestricted);
@@ -2064,7 +2300,8 @@ const initAdminApp = () => {
     const tokens = globalDishSearchQuery ? globalDishSearchQuery.toLowerCase().split(/\s+/).filter(Boolean) : [];
     const matched = tokens.length > 0
       ? allDishes.filter(d => {
-          const fullText = `${d.name || ''} ${d.categoryName || ''} ${d.category || ''} ${d.desc || ''} ${d.badge || ''}`.toLowerCase();
+          const comboStr = Array.isArray(d.comboItems) ? d.comboItems.join(' ') : '';
+          const fullText = `${d.name || ''} ${d.categoryName || ''} ${d.category || ''} ${d.desc || ''} ${comboStr} ${d.badge || ''}`.toLowerCase();
           return tokens.every(token => fullText.includes(token));
         })
       : allDishes;
@@ -2103,6 +2340,7 @@ const initAdminApp = () => {
       const safeImage = sanitizeUrl(dish.image, '/images/crispy-chicken.jpg');
       const safeBadge = dish.badge ? escapeHtml(dish.badge) : '';
       const dishOrderNum = normalizeSortOrder(dish.sortOrder ?? dish.sort_order);
+      const comboItemsArr = normalizeComboItems(dish.comboItems ?? dish.combo_items);
       const safeCategory = escapeHtml(dish.categoryName || dish.category || 'Menu');
       const safePrice = Math.round(parseFloat(dish.price) || 0);
       const safeOrigPrice = (dish.originalPrice && parseFloat(dish.originalPrice) > safePrice) ? Math.round(parseFloat(dish.originalPrice)) : 0;
@@ -2149,6 +2387,7 @@ const initAdminApp = () => {
               ${(dish.timeRestricted && dish.availableFrom && dish.availableTo) ? `<div class="dish-schedule-badge time-badge"><i class="fa-regular fa-clock"></i> ${formatTime12h(dish.availableFrom)} - ${formatTime12h(dish.availableTo)}</div>` : ''}
               ${(Array.isArray(dish.availableDays) && dish.availableDays.length < 7) ? `<div class="dish-schedule-badge days-badge"><i class="fa-regular fa-calendar-day"></i> ${dish.availableDays.map(d => d.slice(0,3).toUpperCase()).join(', ')}</div>` : ''}
               <h3 class="dish-title" title="${safeName}">${safeName}</h3>
+              ${comboItemsArr.length > 0 ? `<div class="dish-combo-items-count-badge">🍱 ${comboItemsArr.length} combo item${comboItemsArr.length === 1 ? '' : 's'}</div>` : ''}
               <div class="dish-meta-sub">
                 <span class="meta-price">₹${safePrice}${safeOrigPrice ? ` <span style="text-decoration:line-through; opacity:0.65; font-size:0.82em; margin-left:4px;">₹${safeOrigPrice}</span>` : ''}</span>
                 ${!isStock ? '<span class="meta-dot">•</span><span class="meta-sold-tag">Sold Out</span>' : ''}
@@ -2381,6 +2620,7 @@ const initAdminApp = () => {
         dishIsComboInput.checked = true;
         if (dishModalTitle) dishModalTitle.textContent = dishEditId?.value ? 'Edit Combo Meal' : 'Add New Combo Meal';
         if (dishModalIcon) dishModalIcon.textContent = '🍱';
+        syncDishEditorComboFieldMode();
       }
     });
   }
@@ -2402,6 +2642,7 @@ const initAdminApp = () => {
         if (dishModalTitle) dishModalTitle.textContent = isEditing ? 'Edit Food Dish' : 'Add New Food Dish';
         if (dishModalIcon) dishModalIcon.textContent = '🍔';
       }
+      syncDishEditorComboFieldMode();
     });
   }
 
@@ -2416,6 +2657,7 @@ const initAdminApp = () => {
         if (dishModalTitle) dishModalTitle.textContent = dishEditId?.value ? 'Edit Combo Meal' : 'Add New Combo Meal';
         if (dishModalIcon) dishModalIcon.textContent = '🍱';
       }
+      syncDishEditorComboFieldMode();
     });
   }
 
@@ -2447,6 +2689,16 @@ const initAdminApp = () => {
     const originalPrice = (!isNaN(parsedOrigPrice) && parsedOrigPrice > price) ? Math.round(parsedOrigPrice) : null;
 
     const isCombo = dishIsComboInput ? Boolean(dishIsComboInput.checked) : isComboCategory(category);
+    const isComboEditorMode = isCombo || isComboCategory(category);
+    if (isComboEditorMode) {
+      commitComboItemInput({ silent: true });
+      if (currentComboItems.length === 0) {
+        showToast('Please add at least 1 combo item box (type item name and press Enter).', 'warning');
+        if (dishComboItemInput) dishComboItemInput.focus();
+        return;
+      }
+    }
+
     const sortOrder = dishSortOrderInput ? normalizeSortOrder(dishSortOrderInput.value.trim()) : null;
     let badge = dishBadgeInput.value.trim();
     if (badge === 'Custom') {
@@ -2460,7 +2712,13 @@ const initAdminApp = () => {
     const time = dishTimeInput.value.trim();
     const calories = dishCaloriesInput.value.trim();
     const diet = dishDietInput.value.trim();
-    const desc = dishDescInput.value.trim();
+    const comboItems = isComboEditorMode ? normalizeComboItems(currentComboItems) : [];
+    const desc = (isComboEditorMode && comboItems.length > 0)
+      ? comboItems.join(' + ')
+      : dishDescInput.value.trim();
+    if (isComboEditorMode && dishDescInput && desc) {
+      dishDescInput.value = desc;
+    }
     let image = dishImageUrl.value.trim();
     const inStock = dishStockHidden ? dishStockHidden.value === 'true' : true;
     const gdriveFileId = currentDishGdriveFileId || '';
@@ -2529,6 +2787,7 @@ const initAdminApp = () => {
           calories,
           diet,
           desc,
+          comboItems,
           image,
           inStock,
           availableDays,
@@ -2560,6 +2819,7 @@ const initAdminApp = () => {
           calories,
           diet,
           desc,
+          comboItems,
           image,
           inStock,
           availableDays,
@@ -2782,6 +3042,22 @@ const initAdminApp = () => {
     }
   }
 
+  function resolveOrderItemComboItems(it) {
+    if (!it || typeof it !== 'object') return [];
+    const snapshotItems = normalizeComboItems(it.comboItems ?? it.combo_items);
+    if (snapshotItems.length > 0) return snapshotItems;
+    const allDishes = (typeof dataService.getDishes === 'function') ? dataService.getDishes() : [];
+    const matched = (it.id && typeof dataService.getDishById === 'function' ? dataService.getDishById(it.id) : null)
+      || allDishes.find(d => d && it.name && String(d.name).trim().toLowerCase() === String(it.name).trim().toLowerCase());
+    if (!matched) return [];
+    const catalogCombo = normalizeComboItems(matched.comboItems ?? matched.combo_items);
+    if (catalogCombo.length > 0) return catalogCombo;
+    if ((isComboDish(matched) || isComboCategory({ slug: matched.category, name: matched.categoryName })) && matched.desc && (matched.desc.includes('+') || matched.desc.includes('\n'))) {
+      return parseComboItemsFromText(matched.desc);
+    }
+    return [];
+  }
+
   function renderOrders() {
     const orders = dataService.getOrders();
     calculateOrderKPIs(orders);
@@ -2959,12 +3235,30 @@ const initAdminApp = () => {
       // Items list
       let itemsHtml = '';
       if (Array.isArray(order.items) && order.items.length > 0) {
-        itemsHtml = order.items.map(it => `
-          <div class="order-item-row">
-            <span class="item-qty-name">${parseInt(it.quantity) || 1}x ${escapeHtml(it.name)}</span>
-            <span class="item-subtotal">₹${Math.round((parseFloat(it.price) || 0) * (parseInt(it.quantity) || 1))}</span>
-          </div>
-        `).join('');
+        itemsHtml = order.items.map(it => {
+          const itemQty = parseInt(it.quantity, 10) || 1;
+          const comboParts = resolveOrderItemComboItems(it);
+          const comboBoxHtml = comboParts.length > 0 ? `
+            <div class="order-item-combo-breakdown">
+              <div class="combo-breakdown-head">
+                <span><i class="fa-solid fa-layer-group"></i> Combo Items (${comboParts.length})</span>
+                ${itemQty > 1 ? `<span class="combo-qty-multiplier">×${itemQty} COMBOS</span>` : ''}
+              </div>
+              <div class="combo-breakdown-chips">
+                ${comboParts.map(part => `<span class="combo-breakdown-chip">${escapeHtml(part)}</span>`).join('')}
+              </div>
+            </div>
+          ` : '';
+          return `
+            <div class="order-item-block ${comboParts.length > 0 ? 'has-combo-breakdown' : ''}">
+              <div class="order-item-row">
+                <span class="item-qty-name">${itemQty}x ${escapeHtml(it.name)}</span>
+                <span class="item-subtotal">₹${Math.round((parseFloat(it.price) || 0) * itemQty)}</span>
+              </div>
+              ${comboBoxHtml}
+            </div>
+          `;
+        }).join('');
       } else {
         itemsHtml = `
           <div class="order-item-row">
@@ -3499,16 +3793,19 @@ const initAdminApp = () => {
     let items = [];
     if (Array.isArray(order.items) && order.items.length > 0) {
       items = order.items.map(it => ({
+        id: it.id,
         name: it.name || 'Dish Item',
         quantity: Math.max(1, Number(it.quantity) || 1),
-        price: parseFloat(it.price) || 0
+        price: parseFloat(it.price) || 0,
+        comboItems: resolveOrderItemComboItems(it)
       }));
     } else if (order.itemsSummary) {
       const parsedPrice = parseFloat(String(order.total || '0').replace(/[^0-9.]/g, '')) || 0;
       items = [{
         name: order.itemsSummary,
         quantity: 1,
-        price: parsedPrice
+        price: parsedPrice,
+        comboItems: []
       }];
     }
 
@@ -3530,16 +3827,28 @@ const initAdminApp = () => {
       const lineSubtotal = Math.round(it.price * it.quantity);
       const unitPriceStr = it.price > 0 && it.quantity > 1 ? `₹${Math.round(it.price)} ea` : '';
       const safeName = escapeHtml(it.name);
+      const comboParts = Array.isArray(it.comboItems) ? it.comboItems : [];
+      const comboReadonlyHtml = comboParts.length > 0 ? `
+        <div class="order-item-readonly-combo-box">
+          <div class="combo-readonly-label">🍱 Included in combo (${comboParts.length} items)${it.quantity > 1 ? ` · Pack ×${it.quantity} sets` : ''}:</div>
+          <div class="combo-readonly-chips">
+            ${comboParts.map(part => `<span class="combo-readonly-chip">${escapeHtml(part)}</span>`).join('')}
+          </div>
+        </div>
+      ` : '';
       return `
-        <div class="order-item-readonly-row">
-          <div class="item-readonly-left">
-            <span class="item-readonly-qty-badge">${parseInt(it.quantity) || 1}x</span>
-            <span class="item-readonly-name" title="${safeName}">${safeName}</span>
+        <div class="order-item-readonly-wrapper">
+          <div class="order-item-readonly-row">
+            <div class="item-readonly-left">
+              <span class="item-readonly-qty-badge">${parseInt(it.quantity) || 1}x</span>
+              <span class="item-readonly-name" title="${safeName}">${safeName}</span>
+            </div>
+            <div class="item-readonly-pricing">
+              ${unitPriceStr ? `<span class="item-readonly-unit-price">${unitPriceStr}</span>` : ''}
+              <span class="item-readonly-subtotal">₹${lineSubtotal}</span>
+            </div>
           </div>
-          <div class="item-readonly-pricing">
-            ${unitPriceStr ? `<span class="item-readonly-unit-price">${unitPriceStr}</span>` : ''}
-            <span class="item-readonly-subtotal">₹${lineSubtotal}</span>
-          </div>
+          ${comboReadonlyHtml}
         </div>
       `;
     }).join('');
@@ -3894,13 +4203,24 @@ const initAdminApp = () => {
     });
 
     const items = Array.isArray(order.items) ? order.items : [];
-    const itemsRows = items.length > 0 ? items.map(item => `
-      <tr>
-        <td style="text-align: left; padding: 3px 0; font-weight: 700; width: 15%;">${parseInt(item.quantity, 10) || 1}x</td>
-        <td style="text-align: left; padding: 3px 0; width: 60%;">${escapeHtml(item.name || 'Food Item')}</td>
-        <td style="text-align: right; padding: 3px 0; font-weight: 700; width: 25%;">₹${Math.round((item.price || 0) * (item.quantity || 1))}</td>
-      </tr>
-    `).join('') : `
+    const itemsRows = items.length > 0 ? items.map(item => {
+      const itemQty = parseInt(item.quantity, 10) || 1;
+      const comboParts = resolveOrderItemComboItems(item);
+      const comboSubRows = comboParts.length > 0 ? comboParts.map(part => `
+        <tr>
+          <td style="text-align: left; padding: 1px 0 1px 6px; font-size: 11px;">•</td>
+          <td colspan="2" style="text-align: left; padding: 1px 0; font-size: 11px; font-weight: 600;">${itemQty > 1 ? `(${itemQty}x) ` : ''}${escapeHtml(part)}</td>
+        </tr>
+      `).join('') : '';
+      return `
+        <tr>
+          <td style="text-align: left; padding: 3px 0; font-weight: 700; width: 15%;">${itemQty}x</td>
+          <td style="text-align: left; padding: 3px 0; width: 60%;">${escapeHtml(item.name || 'Food Item')}</td>
+          <td style="text-align: right; padding: 3px 0; font-weight: 700; width: 25%;">₹${Math.round((item.price || 0) * (item.quantity || 1))}</td>
+        </tr>
+        ${comboSubRows}
+      `;
+    }).join('') : `
       <tr>
         <td style="text-align: left; padding: 3px 0; font-weight: 700; width: 15%;">1x</td>
         <td style="text-align: left; padding: 3px 0; width: 60%;">${escapeHtml(order.itemsSummary || 'Assorted Dishes')}</td>

@@ -365,6 +365,17 @@ export default async function handler(req, res) {
     const itemTotal = unitPrice * quantity;
     const safeSpice = (typeof item.spice === 'string' && item.spice.trim()) ? item.spice.trim().slice(0, 40) : undefined;
     const safeSauce = (typeof item.sauce === 'string' && item.sauce.trim()) ? item.sauce.trim().slice(0, 40) : undefined;
+    let rawComboSource = dish?.combo_items ?? dish?.comboItems;
+    if (typeof rawComboSource === 'string' && rawComboSource.trim().startsWith('[')) {
+      try { rawComboSource = JSON.parse(rawComboSource); } catch { rawComboSource = []; }
+    }
+    const comboSourceArr = Array.isArray(rawComboSource)
+      ? rawComboSource
+      : (allowTestOverrides && Array.isArray(item.comboItems) ? item.comboItems : []);
+    const safeComboItems = comboSourceArr
+      .map(x => String(x ?? '').replace(/\s+/g, ' ').trim().slice(0, 120))
+      .filter(Boolean)
+      .slice(0, 40);
     verifiedItems.push({
       id: dish?.id || item.id,
       name: String(dish?.name || item.name || 'Special Dish').slice(0, 100),
@@ -372,7 +383,8 @@ export default async function handler(req, res) {
       price: unitPrice,
       total: itemTotal,
       ...(safeSpice ? { spice: safeSpice } : {}),
-      ...(safeSauce ? { sauce: safeSauce } : {})
+      ...(safeSauce ? { sauce: safeSauce } : {}),
+      ...(safeComboItems.length > 0 ? { comboItems: safeComboItems } : {})
     });
   }
 

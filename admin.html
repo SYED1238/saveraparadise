@@ -1757,9 +1757,34 @@
           </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="dish-desc-group">
           <label for="dish-desc-input">Description</label>
           <textarea id="dish-desc-input" rows="2" placeholder="Describe the flavors, seasoning, and texture..."></textarea>
+        </div>
+
+        <div class="form-group combo-items-builder-group" id="dish-combo-items-group" style="display: none;">
+          <div class="combo-items-label-row">
+            <label for="dish-combo-item-input">🍱 Combo Included Items *</label>
+            <span class="combo-items-count-pill" id="combo-items-count-pill">0 items</span>
+          </div>
+          <p class="combo-items-hint">Type 1 item and press <strong>Enter</strong> (or tap <strong>+ Add</strong>) to create a separate box. Kitchen &amp; KOT print every item!</p>
+          <div class="combo-item-input-row">
+            <input
+              type="text"
+              id="dish-combo-item-input"
+              placeholder="e.g. Half Alfaham — press Enter to add box"
+              maxlength="120"
+              autocomplete="off"
+            >
+            <button type="button" class="btn-add-combo-item" id="btn-add-combo-item">
+              <i class="fa-solid fa-plus"></i> Add
+            </button>
+          </div>
+          <div class="combo-chips-list" id="dish-combo-chips-list" aria-live="polite"></div>
+          <div class="combo-legacy-convert-bar" id="combo-legacy-convert-bar" style="display: none;">
+            <span>Found <code>+</code> items in old description.</span>
+            <button type="button" class="btn-split-combo-desc" id="btn-split-combo-desc">Convert into boxes</button>
+          </div>
         </div>
 
         <!-- DISH SCHEDULE & SERVING AVAILABILITY -->

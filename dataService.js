@@ -380,6 +380,39 @@ export function isComboDish(dish) {
   return /\bcombos?\b/i.test(badge);
 }
 
+export function normalizeComboItems(raw) {
+  let arr = raw;
+  if (typeof arr === 'string') {
+    const trimmed = arr.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        arr = JSON.parse(trimmed);
+      } catch {
+        arr = [];
+      }
+    } else {
+      arr = [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  const items = [];
+  for (const entry of arr) {
+    const cleaned = String(entry ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (cleaned) items.push(cleaned);
+    if (items.length >= 40) break;
+  }
+  return items;
+}
+
+export function parseComboItemsFromText(text) {
+  if (!text || typeof text !== 'string') return [];
+  return text
+    .split(/\s*\+\s*|\r?\n+/)
+    .map(part => part.replace(/\s+/g, ' ').trim().slice(0, 120))
+    .filter(Boolean)
+    .slice(0, 40);
+}
+
 export const DEFAULT_CATEGORIES = [
   {
     "id": "cat-combos",
@@ -465,6 +498,7 @@ export const DEFAULT_DISHES = [
     "time": "10 - 15 mins",
     "diet": "Non-Veg",
     "desc": "Aromatic Biryani rice served with 2 crispy golden fried chicken kebabs.",
+    "comboItems": ["Biryani Rice", "2 Piece Chicken Kebab"],
     "inStock": true
   },
   {
@@ -3134,6 +3168,11 @@ class QuickBiteDataService {
               { inStock: rawInStock, stockOutDate },
               currentSettings
             );
+            const comboItems = d.combo_items !== undefined
+              ? normalizeComboItems(d.combo_items)
+              : (d.comboItems !== undefined
+                  ? normalizeComboItems(d.comboItems)
+                  : normalizeComboItems(localMatch?.comboItems));
             const mappedItem = {
               id: d.id,
               name: d.name,
@@ -3157,7 +3196,8 @@ class QuickBiteDataService {
               time: d.time || '10 - 15 mins',
               calories: d.calories || '',
               diet: d.diet || '',
-              desc: d.description || d.desc || '',
+              desc: d.description || d.desc || (comboItems.length > 0 ? comboItems.join(' + ') : ''),
+              comboItems,
               rawInStock,
               stockOutDate,
               inStock: effectiveInStock,
@@ -5770,6 +5810,14 @@ class QuickBiteDataService {
     return isComboDish(dish);
   }
 
+  normalizeComboItems(raw) {
+    return normalizeComboItems(raw);
+  }
+
+  parseComboItemsFromText(text) {
+    return parseComboItemsFromText(text);
+  }
+
   _sortCategoriesList(list) {
     if (!Array.isArray(list)) return [];
     return list.slice().sort((a, b) => {
@@ -6214,6 +6262,7 @@ class QuickBiteDataService {
         stockOutDate,
         inStock: resolveEffectiveDishInStock({ inStock: rawInStock, stockOutDate }, currentSettings),
         isCombo: isComboDish(d),
+        comboItems: normalizeComboItems(d.comboItems ?? d.combo_items),
         sortOrder: normalizeSortOrder(d.sortOrder ?? d.sort_order),
         image: sanitizeDishImageUrl(d.image),
           availableDays: (Array.isArray(d.availableDays) && d.availableDays.length > 0) ? d.availableDays : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
@@ -6342,6 +6391,8 @@ class QuickBiteDataService {
     while (list.some(d => d && d.id === ('item-' + dishIdTs))) {
       dishIdTs += 1;
     }
+    const comboItems = normalizeComboItems(dishData.comboItems ?? dishData.combo_items);
+    const trimmedDesc = typeof dishData.desc === 'string' ? dishData.desc.trim() : '';
     const newDish = {
       id: 'item-' + dishIdTs,
       createdAt: new Date().toISOString(),
@@ -6361,7 +6412,8 @@ class QuickBiteDataService {
       time: dishData.time || '10 - 15 mins',
       calories: dishData.calories || '520 kcal',
       diet: dishData.diet || 'Fresh Daily',
-      desc: dishData.desc || `${dishData.name} prepared fresh in our kitchen with premium ingredients.`,
+      desc: trimmedDesc || (comboItems.length > 0 ? comboItems.join(' + ') : `${dishData.name} prepared fresh in our kitchen with premium ingredients.`),
+      comboItems,
       rawInStock,
       stockOutDate,
       inStock: rawInStock,
@@ -6394,6 +6446,7 @@ class QuickBiteDataService {
       calories: newDish.calories,
       diet: newDish.diet,
       description: newDish.desc,
+      combo_items: newDish.comboItems.length > 0 ? newDish.comboItems : null,
       in_stock: newDish.inStock,
       stock_out_date: newDish.stockOutDate,
       available_days: newDish.availableDays,
@@ -6437,6 +6490,12 @@ class QuickBiteDataService {
       }
       const previousDish = { ...list[idx] };
       const normalizedUpdated = { ...updatedData };
+      if (updatedData.comboItems !== undefined || updatedData.combo_items !== undefined) {
+        normalizedUpdated.comboItems = normalizeComboItems(updatedData.comboItems ?? updatedData.combo_items);
+        if ((normalizedUpdated.desc === undefined || String(normalizedUpdated.desc).trim() === '') && normalizedUpdated.comboItems.length > 0) {
+          normalizedUpdated.desc = normalizedUpdated.comboItems.join(' + ');
+        }
+      }
       if (updatedData.sortOrder !== undefined || updatedData.sort_order !== undefined) {
         normalizedUpdated.sortOrder = normalizeSortOrder(updatedData.sortOrder ?? updatedData.sort_order);
       }
@@ -6454,6 +6513,7 @@ class QuickBiteDataService {
       this.saveDishes(list);
 
       const d = list[idx];
+      const dComboItems = normalizeComboItems(d.comboItems ?? d.combo_items);
       const updatePayload = {
         name: d.name,
         category: d.category,
@@ -6467,6 +6527,7 @@ class QuickBiteDataService {
         calories: d.calories,
         diet: d.diet,
         description: d.desc,
+        combo_items: dComboItems.length > 0 ? dComboItems : null,
         in_stock: d.rawInStock !== undefined ? d.rawInStock !== false : d.inStock,
         stock_out_date: normalizeOperationalDayKey(d.stockOutDate ?? d.stock_out_date) || null,
         available_days: d.availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
@@ -6930,13 +6991,17 @@ class QuickBiteDataService {
       computedSubtotal += cleanPrice * cleanQty;
       const safeSpice = (typeof item.spice === 'string' && item.spice.trim()) ? item.spice.trim().slice(0, 40) : undefined;
       const safeSauce = (typeof item.sauce === 'string' && item.sauce.trim()) ? item.sauce.trim().slice(0, 40) : undefined;
+      const dishComboItems = normalizeComboItems(dish?.comboItems ?? dish?.combo_items);
+      const itemComboItems = normalizeComboItems(item.comboItems ?? item.combo_items);
+      const finalComboItems = dishComboItems.length > 0 ? dishComboItems : itemComboItems;
       return {
         id: item.id || dish?.id,
         name: String(item.name || dish?.name || 'Special Dish').slice(0, 100),
         quantity: cleanQty,
         price: cleanPrice,
         ...(safeSpice ? { spice: safeSpice } : {}),
-        ...(safeSauce ? { sauce: safeSauce } : {})
+        ...(safeSauce ? { sauce: safeSauce } : {}),
+        ...(finalComboItems.length > 0 ? { comboItems: finalComboItems } : {})
       };
     });
 

@@ -46,7 +46,7 @@ function isOriginAllowed(origin) {
 
 const ALLOWED_DISH_FIELDS = [
   'id', 'name', 'category', 'category_name', 'price', 'original_price', 'is_combo', 'sort_order',
-  'badge', 'time', 'calories', 'diet', 'description', 'in_stock', 'stock_out_date',
+  'badge', 'time', 'calories', 'diet', 'description', 'combo_items', 'in_stock', 'stock_out_date',
   'image', 'available_days', 'time_restricted', 'available_from', 'available_to', 'r2_key'
 ];
 
@@ -55,7 +55,19 @@ function sanitizeDishFields(input) {
   const clean = {};
   for (const key of ALLOWED_DISH_FIELDS) {
     if (input[key] !== undefined) {
-      clean[key] = input[key];
+      if (key === 'combo_items') {
+        if (input[key] === null) {
+          clean[key] = null;
+        } else if (Array.isArray(input[key])) {
+          const normalized = input[key]
+            .map(item => String(item ?? '').replace(/\s+/g, ' ').trim().slice(0, 120))
+            .filter(Boolean)
+            .slice(0, 40);
+          clean[key] = normalized.length > 0 ? normalized : null;
+        }
+      } else {
+        clean[key] = input[key];
+      }
     }
   }
   return clean;
@@ -351,12 +363,13 @@ export default async function handler(req, res) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').upsert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date') || String(error.message || '').includes('combo_items'))) {
           delete dish.r2_key;
           delete dish.original_price;
           delete dish.is_combo;
           delete dish.sort_order;
           delete dish.stock_out_date;
+          delete dish.combo_items;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete dish[match[1]];
@@ -376,12 +389,13 @@ export default async function handler(req, res) {
         }
         let dish = sanitizeDishFields(rawDish);
         let { data, error } = await sb.from('dishes').insert([dish]).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date') || String(error.message || '').includes('combo_items'))) {
           delete dish.r2_key;
           delete dish.original_price;
           delete dish.is_combo;
           delete dish.sort_order;
           delete dish.stock_out_date;
+          delete dish.combo_items;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete dish[match[1]];
@@ -401,12 +415,13 @@ export default async function handler(req, res) {
         }
         let updates = sanitizeDishFields(rawUpdates);
         let { data, error } = await sb.from('dishes').update(updates).eq('id', id).select();
-        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date'))) {
+        if (error && (error.code === '42703' || String(error.message || '').includes('r2_key') || String(error.message || '').includes('original_price') || String(error.message || '').includes('is_combo') || String(error.message || '').includes('sort_order') || String(error.message || '').includes('stock_out_date') || String(error.message || '').includes('combo_items'))) {
           delete updates.r2_key;
           delete updates.original_price;
           delete updates.is_combo;
           delete updates.sort_order;
           delete updates.stock_out_date;
+          delete updates.combo_items;
           const match = String(error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
           if (match && match[1]) {
             delete updates[match[1]];
@@ -422,12 +437,13 @@ export default async function handler(req, res) {
           // If dish record was not yet in table, upsert it with ID to ensure persistence
           const upsertPayload = { id, ...updates };
           let upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
-          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key') || String(upsertRes.error.message || '').includes('original_price') || String(upsertRes.error.message || '').includes('is_combo') || String(upsertRes.error.message || '').includes('sort_order') || String(upsertRes.error.message || '').includes('stock_out_date'))) {
+          if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('r2_key') || String(upsertRes.error.message || '').includes('original_price') || String(upsertRes.error.message || '').includes('is_combo') || String(upsertRes.error.message || '').includes('sort_order') || String(upsertRes.error.message || '').includes('stock_out_date') || String(upsertRes.error.message || '').includes('combo_items'))) {
             delete upsertPayload.r2_key;
             delete upsertPayload.original_price;
             delete upsertPayload.is_combo;
             delete upsertPayload.sort_order;
             delete upsertPayload.stock_out_date;
+            delete upsertPayload.combo_items;
             const match = String(upsertRes.error.message || '').match(/column "([^"]+)" of relation "dishes" does not exist/i);
             if (match && match[1]) {
               delete upsertPayload[match[1]];
@@ -464,12 +480,13 @@ export default async function handler(req, res) {
           if (rawDish && rawDish.name) {
             const upsertPayload = sanitizeDishFields({ ...rawDish, id, ...updateFields });
             let upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
-            if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('stock_out_date') || String(upsertRes.error.message || '').includes('sort_order') || String(upsertRes.error.message || '').includes('is_combo') || String(upsertRes.error.message || '').includes('original_price') || String(upsertRes.error.message || '').includes('r2_key'))) {
+            if (upsertRes.error && (upsertRes.error.code === '42703' || String(upsertRes.error.message || '').includes('stock_out_date') || String(upsertRes.error.message || '').includes('sort_order') || String(upsertRes.error.message || '').includes('is_combo') || String(upsertRes.error.message || '').includes('original_price') || String(upsertRes.error.message || '').includes('r2_key') || String(upsertRes.error.message || '').includes('combo_items'))) {
               delete upsertPayload.r2_key;
               delete upsertPayload.original_price;
               delete upsertPayload.is_combo;
               delete upsertPayload.sort_order;
               delete upsertPayload.stock_out_date;
+              delete upsertPayload.combo_items;
               upsertRes = await sb.from('dishes').upsert([upsertPayload]).select();
             }
             if (upsertRes.error) throw upsertRes.error;

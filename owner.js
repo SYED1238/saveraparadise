@@ -3,7 +3,7 @@
 // Read-Only Live Analytics, Financial Audits, Fleet KMs & Payouts
 // ==============================================================
 
-import { dataService, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId, DEFAULT_PAYOUT_CONFIG } from './dataService.js';
+import { dataService, extractPhoneFromOrder, cleanDeliveryAddress, formatDisplayOrderId, DEFAULT_PAYOUT_CONFIG, normalizeComboItems } from './dataService.js';
 import {
   escapeHtml,
   sanitizePhone,
@@ -1926,12 +1926,20 @@ function openInvoiceModal(order) {
     <div style="background: #F8FAFC; padding: 14px; border-radius: 10px; border: 1px solid var(--owner-border);">
       <h4 style="margin: 0 0 10px 0; color: var(--owner-text); font-size: 0.88rem;"><i class="fa-solid fa-utensils"></i> Items Ordered</h4>
       <div style="display: flex; flex-direction: column; gap: 8px;">
-        ${items.map(it => `
-          <div style="display: flex; justify-content: space-between; font-size: 0.84rem;">
-            <span><strong style="color: #D97706;">${it.quantity || 1}x</strong> ${escapeHtml(it.name)}</span>
-            <span style="font-weight: 600; color: var(--owner-text);">₹${Number(it.price || 0) * (it.quantity || 1)}</span>
-          </div>
-        `).join('')}
+        ${items.map(it => {
+          const snapCombo = normalizeComboItems(it.comboItems ?? it.combo_items);
+          const catDish = snapCombo.length === 0 && it.id && typeof dataService.getDishById === 'function' ? dataService.getDishById(it.id) : null;
+          const comboParts = snapCombo.length > 0 ? snapCombo : normalizeComboItems(catDish?.comboItems ?? catDish?.combo_items);
+          return `
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.84rem;">
+                <span><strong style="color: #D97706;">${it.quantity || 1}x</strong> ${escapeHtml(it.name)}</span>
+                <span style="font-weight: 600; color: var(--owner-text);">₹${Number(it.price || 0) * (it.quantity || 1)}</span>
+              </div>
+              ${comboParts.length > 0 ? `<div style="font-size: 0.75rem; color: #9A3412; background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 6px; padding: 4px 8px;">🍱 ${comboParts.map(p => escapeHtml(p)).join(' · ')}</div>` : ''}
+            </div>
+          `;
+        }).join('')}
       </div>
     </div>
 
