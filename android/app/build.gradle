@@ -50,8 +50,8 @@ android {
         kitchenPlay {
             dimension "portal"
             applicationId "com.foodbliz.kitchen"
-            versionCode 2
-            versionName "1.0.1"
+            versionCode 3
+            versionName "1.0.2"
             resValue "string", "app_name", "FoodBliz Kitchen"
             resValue "string", "portal_url", "https://kitchen.foodbliz.in"
             resValue "color", "theme_color", "#1C1410"
@@ -59,8 +59,8 @@ android {
         rider {
             dimension "portal"
             applicationId "com.foodbliz.rider"
-            versionCode 16
-            versionName "1.2.4"
+            versionCode 17
+            versionName "1.2.5"
             resValue "string", "app_name", "Foodbliz Rider"
             resValue "string", "portal_url", "https://rider.foodbliz.in"
             resValue "color", "theme_color", "#E66B50"
@@ -87,4 +87,5 @@ dependencies {
     implementation 'androidx.webkit:webkit:1.10.0'
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
     implementation 'com.google.android.gms:play-services-location:21.2.0'
+    implementation 'com.google.android.play:app-update:2.1.0'
 }

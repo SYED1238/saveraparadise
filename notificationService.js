@@ -116,34 +116,32 @@ export function playNotificationSound(type = 'general_alert') {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
-    if (ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
-    }
 
-    const now = ctx.currentTime;
+    const scheduleToneBurst = () => {
+      const now = ctx.currentTime || 0;
 
-    // Master volume
-    const masterGain = ctx.createGain();
-    masterGain.gain.setValueAtTime(0.7, now);
+      // Master volume
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.7, now);
 
-    // Dynamics Compressor (brickwall limiter & leveler to prevent mobile speaker distortion/clipping)
-    let outputNode = ctx.destination;
-    if (typeof ctx.createDynamicsCompressor === 'function') {
-      const compressor = ctx.createDynamicsCompressor();
-      compressor.threshold.setValueAtTime(-6, now);
-      compressor.knee.setValueAtTime(10, now);
-      compressor.ratio.setValueAtTime(12, now);
-      compressor.attack.setValueAtTime(0.003, now);
-      compressor.release.setValueAtTime(0.15, now);
-      compressor.connect(ctx.destination);
-      outputNode = compressor;
-    }
-    masterGain.connect(outputNode);
+      // Dynamics Compressor (brickwall limiter & leveler to prevent mobile speaker distortion/clipping)
+      let outputNode = ctx.destination;
+      if (typeof ctx.createDynamicsCompressor === 'function') {
+        const compressor = ctx.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-6, now);
+        compressor.knee.setValueAtTime(10, now);
+        compressor.ratio.setValueAtTime(12, now);
+        compressor.attack.setValueAtTime(0.003, now);
+        compressor.release.setValueAtTime(0.15, now);
+        compressor.connect(ctx.destination);
+        outputNode = compressor;
+      }
+      masterGain.connect(outputNode);
 
-    // Tone definitions for different notification events
-    let notes = [];
+      // Tone definitions for different notification events
+      let notes = [];
 
-    switch (type) {
+      switch (type) {
       case 'custom_r2':
       case 'silent':
       case 'none':
@@ -274,26 +272,36 @@ export function playNotificationSound(type = 'general_alert') {
           { freq: 880.00, start: 0.12, dur: 0.30, gain: 0.55, type: 'sine' }
         ];
         break;
+      }
+
+      notes.forEach(note => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = note.type || 'sine';
+        osc.frequency.setValueAtTime(note.freq, now + note.start);
+
+        // Smooth envelope ramp to eliminate audio clicks
+        gain.gain.setValueAtTime(0.0001, now + note.start);
+        gain.gain.exponentialRampToValueAtTime(note.gain, now + note.start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + note.start + note.dur);
+
+        osc.connect(gain);
+        gain.connect(masterGain);
+
+        osc.start(now + note.start);
+        osc.stop(now + note.start + note.dur + 0.04);
+      });
+    };
+
+    if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+      Promise.resolve(ctx.resume())
+        .then(() => { scheduleToneBurst(); })
+        .catch(() => { try { scheduleToneBurst(); } catch {} });
+      return;
     }
 
-    notes.forEach(note => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = note.type || 'sine';
-      osc.frequency.setValueAtTime(note.freq, now + note.start);
-
-      // Smooth envelope ramp to eliminate audio clicks
-      gain.gain.setValueAtTime(0.0001, now + note.start);
-      gain.gain.exponentialRampToValueAtTime(note.gain, now + note.start + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + note.start + note.dur);
-
-      osc.connect(gain);
-      gain.connect(masterGain);
-
-      osc.start(now + note.start);
-      osc.stop(now + note.start + note.dur + 0.04);
-    });
+    scheduleToneBurst();
 
   } catch (err) {
     console.warn('[NotificationService] Web Audio error:', err);
@@ -320,7 +328,14 @@ export function isSystemNotificationSupported() {
 }
 
 export function getSystemNotificationPermission() {
-  if (typeof window !== 'undefined' && window.AndroidNative) return 'granted';
+  if (typeof window !== 'undefined' && window.AndroidNative) {
+    try {
+      if (typeof window.AndroidNative.areNotificationsEnabled === 'function') {
+        return window.AndroidNative.areNotificationsEnabled() ? 'granted' : 'denied';
+      }
+    } catch {}
+    return 'granted';
+  }
   const Notif = getNotificationClass();
   if (!Notif) return 'unsupported';
   return Notif.permission || 'default';
@@ -331,7 +346,7 @@ export async function requestSystemNotificationPermission() {
     if (typeof window.AndroidNative.requestNotificationPermission === 'function') {
       window.AndroidNative.requestNotificationPermission();
     }
-    return 'granted';
+    return getSystemNotificationPermission();
   }
   const Notif = getNotificationClass();
   if (!Notif) return 'unsupported';
@@ -391,7 +406,9 @@ if (typeof window !== 'undefined') {
 }
 
 export function isNotificationGranted() {
-  if (typeof window !== 'undefined' && window.AndroidNative) return true;
+  if (typeof window !== 'undefined' && window.AndroidNative) {
+    return getSystemNotificationPermission() === 'granted';
+  }
   const Notif = getNotificationClass();
   return isSystemNotificationSupported() && Notif?.permission === 'granted';
 }
@@ -1091,11 +1108,6 @@ export async function startKitchenAlarmAudio({ onFallback = null } = {}) {
     audio.onplay = () => {
       if (typeof window !== 'undefined' && typeof window._stopKitchenChimeFallback === 'function') {
         window._stopKitchenChimeFallback();
-      }
-      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.stopAlarm === 'function') {
-        try {
-          window.AndroidNative.stopAlarm();
-        } catch {}
       }
     };
 

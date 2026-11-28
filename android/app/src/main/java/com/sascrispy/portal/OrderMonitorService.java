@@ -99,8 +99,20 @@ public class OrderMonitorService extends Service {
     private static volatile String lastAlertOrderId = "";
     private static volatile boolean pendingWebAlarmStopSync = false;
     private static volatile OrderMonitorService activeInstance = null;
+    private static volatile Context appContextRef = null;
     private static volatile boolean isAppInForeground = false;
     private static volatile long lastAlarmStartedElapsedMs = 0L;
+
+    public static void registerAppContext(Context ctx) {
+        if (ctx != null) {
+            appContextRef = ctx.getApplicationContext();
+        }
+    }
+
+    public static boolean isServiceRunning() {
+        OrderMonitorService instance = activeInstance;
+        return instance != null && instance.isRunning;
+    }
 
     public static void setLastAlertNotifId(int notifId) {
         lastAlertNotifId = notifId;
@@ -374,10 +386,23 @@ public class OrderMonitorService extends Service {
         isAppInForeground = inForeground;
     }
 
+    public static void startNativeAlarm(Context ctx) {
+        registerAppContext(ctx);
+        startNativeAlarm();
+    }
+
     public static void startNativeAlarm() {
         OrderMonitorService instance = activeInstance;
         if (instance != null) {
             instance.startNativeAlarmLoop();
+            return;
+        }
+        Context fallbackCtx = appContextRef;
+        if (fallbackCtx != null) {
+            String pkg = fallbackCtx.getPackageName() != null ? fallbackCtx.getPackageName().toLowerCase() : "";
+            boolean rider = pkg.contains("rider");
+            boolean owner = pkg.contains("owner");
+            startNativeAlarmLoopForContext(fallbackCtx, rider, owner);
         }
     }
 
@@ -452,6 +477,7 @@ public class OrderMonitorService extends Service {
     public void onCreate() {
         super.onCreate();
         activeInstance = this;
+        registerAppContext(this);
         isRiderApp = getPackageName().toLowerCase().contains("rider");
         isOwnerApp = getPackageName().toLowerCase().contains("owner");
 
@@ -879,7 +905,7 @@ public class OrderMonitorService extends Service {
                     String status = order.optString("status");
                     String assignedRider = order.optString("assigned_rider_pin", "").trim();
                     boolean isClaimed = !assignedRider.isEmpty();
-                    boolean isFreshKitchenOrder = (createdAt > 0 && (now - createdAt <= 90 * 1000L));
+                    boolean isFreshKitchenOrder = (createdAt > 0 && (now - createdAt <= 5 * 60 * 1000L));
                     boolean isActiveReadyOrder = (createdAt > 0 && (now - createdAt <= 2 * 60 * 60 * 1000L))
                         && "ready_for_pickup".equalsIgnoreCase(status) && !isClaimed;
 
@@ -1011,9 +1037,10 @@ public class OrderMonitorService extends Service {
         }
     }
 
-    private void acquireAudioFocus() {
+    private static void acquireAudioFocus(Context ctx) {
         try {
-            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (ctx == null) return;
+            audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
             if (audioManager != null) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     AudioAttributes playbackAttributes = new AudioAttributes.Builder()
@@ -1054,10 +1081,10 @@ public class OrderMonitorService extends Service {
         }
     }
 
-    private void elevateAlarmVolumeIfNeeded() {
+    private static void elevateAlarmVolumeIfNeeded(Context ctx) {
         try {
-            if (audioManager == null) {
-                audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null && ctx != null) {
+                audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
             }
             if (audioManager != null) {
                 int maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM);
@@ -1082,9 +1109,10 @@ public class OrderMonitorService extends Service {
         originalAlarmVolume = -1;
     }
 
-    private List<Uri> getAlarmCandidateUris() {
+    private static List<Uri> getAlarmCandidateUris(Context rawCtx) {
         List<Uri> uris = new ArrayList<>();
-        Context ctx = getApplicationContext();
+        Context ctx = rawCtx != null ? rawCtx.getApplicationContext() : null;
+        if (ctx == null) return uris;
 
         // 1. User's actual default Alarm sound
         try {
@@ -1198,6 +1226,7 @@ public class OrderMonitorService extends Service {
                 } catch (Exception e) {
                     Log.w(TAG, "Procedural siren execution error: " + e.getMessage());
                 } finally {
+                    isSirenRunning = false;
                     if (track != null) {
                         try {
                             track.stop();
@@ -1293,16 +1322,17 @@ public class OrderMonitorService extends Service {
         }
 
         OrderMonitorService instance = activeInstance;
-        if (instance != null) {
+        Context notifCtx = instance != null ? instance : appContextRef;
+        if (notifCtx != null) {
             try {
-                Vibrator v = (Vibrator) instance.getSystemService(Context.VIBRATOR_SERVICE);
+                Vibrator v = (Vibrator) notifCtx.getSystemService(Context.VIBRATOR_SERVICE);
                 if (v != null) {
                     v.cancel();
                 }
             } catch (Exception ignored) {}
 
             try {
-                NotificationManager manager = (NotificationManager) instance.getSystemService(Context.NOTIFICATION_SERVICE);
+                NotificationManager manager = (NotificationManager) notifCtx.getSystemService(Context.NOTIFICATION_SERVICE);
                 if (manager != null) {
                     int notifToCancel = lastAlertNotifId;
                     if (notifToCancel != -1) {
@@ -1331,6 +1361,22 @@ public class OrderMonitorService extends Service {
             stopNativeAlarm(false);
             return;
         }
+        startNativeAlarmLoopForContext(getApplicationContext(), isRiderApp, isOwnerApp);
+    }
+
+    private static void startNativeAlarmLoopForContext(Context rawCtx, boolean riderFlag, boolean ownerFlag) {
+        if (rawCtx == null) return;
+        Context appCtx = rawCtx.getApplicationContext();
+        final boolean isRiderApp = riderFlag;
+        final boolean isOwnerApp = ownerFlag;
+        lastAlarmStartedElapsedMs = android.os.SystemClock.elapsedRealtime();
+        if (isOwnerApp) {
+            return;
+        }
+        if (isRiderApp && !isRiderOnDuty(appCtx)) {
+            stopNativeAlarm(false);
+            return;
+        }
         synchronized (alarmLock) {
             if (alarmTimeoutHandler != null && alarmTimeoutRunnable != null) {
                 try {
@@ -1356,20 +1402,20 @@ public class OrderMonitorService extends Service {
             stopProceduralSiren();
 
             // 1. Duck/pause YouTube or background music and claim exclusive audio
-            acquireAudioFocus();
+            acquireAudioFocus(appCtx);
 
             // 2. Safeguard stream volume so alarm is loudly audible
-            elevateAlarmVolumeIfNeeded();
+            elevateAlarmVolumeIfNeeded(appCtx);
 
             // 3. Multi-Tier Audio Playback
             boolean audioStarted = false;
 
             // Tier 0: Dedicated Kitchen Audio (Funk Criminal or POS Chime) for Kitchen App
             if (!isRiderApp && !isOwnerApp) {
-                String soundMode = getKitchenAlarmSoundMode(getApplicationContext());
+                String soundMode = getKitchenAlarmSoundMode(appCtx);
                 if (!"classic_chime".equalsIgnoreCase(soundMode)) {
                     try {
-                        int rawResId = getResources().getIdentifier("kitchen_alarm", "raw", getPackageName());
+                        int rawResId = appCtx.getResources().getIdentifier("kitchen_alarm", "raw", appCtx.getPackageName());
                         if (rawResId != 0) {
                             MediaPlayer mp = new MediaPlayer();
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -1382,13 +1428,13 @@ public class OrderMonitorService extends Service {
                             }
                             android.content.res.AssetFileDescriptor afd = null;
                             try {
-                                afd = getResources().openRawResourceFd(rawResId);
+                                afd = appCtx.getResources().openRawResourceFd(rawResId);
                             } catch (Exception ignored) {}
                             if (afd != null) {
                                 mp.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
                                 try { afd.close(); } catch (Exception ignored) {}
                             } else {
-                                mp.setDataSource(getApplicationContext(), Uri.parse("android.resource://" + getPackageName() + "/" + rawResId));
+                                mp.setDataSource(appCtx, Uri.parse("android.resource://" + appCtx.getPackageName() + "/" + rawResId));
                             }
                             mp.setLooping(true);
                             mp.setVolume(1.0f, 1.0f);
@@ -1418,7 +1464,7 @@ public class OrderMonitorService extends Service {
                 audioStarted = true;
             }
 
-            List<Uri> candidates = getAlarmCandidateUris();
+            List<Uri> candidates = getAlarmCandidateUris(appCtx);
 
             // Tier 1: MediaPlayer with DataSource resolution
             if (!audioStarted) {
@@ -1436,15 +1482,15 @@ public class OrderMonitorService extends Service {
                     }
 
                     try {
-                        AssetFileDescriptor afd = getContentResolver().openAssetFileDescriptor(uri, "r");
+                        AssetFileDescriptor afd = appCtx.getContentResolver().openAssetFileDescriptor(uri, "r");
                         if (afd != null) {
                             mp.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
                             afd.close();
                         } else {
-                            mp.setDataSource(getApplicationContext(), uri);
+                            mp.setDataSource(appCtx, uri);
                         }
                     } catch (Exception e) {
-                        mp.setDataSource(getApplicationContext(), uri);
+                        mp.setDataSource(appCtx, uri);
                     }
 
                     mp.setLooping(true);
@@ -1468,7 +1514,7 @@ public class OrderMonitorService extends Service {
                 for (Uri uri : candidates) {
                     if (uri == null) continue;
                     try {
-                        Ringtone ringtone = RingtoneManager.getRingtone(getApplicationContext(), uri);
+                        Ringtone ringtone = RingtoneManager.getRingtone(appCtx, uri);
                         if (ringtone != null) {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                                 ringtone.setAudioAttributes(new AudioAttributes.Builder()
@@ -1502,7 +1548,7 @@ public class OrderMonitorService extends Service {
 
             // Continuous hardware vibration pattern
             try {
-                Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                Vibrator v = (Vibrator) appCtx.getSystemService(Context.VIBRATOR_SERVICE);
                 if (v != null && v.hasVibrator()) {
                     activeVibrator = v;
                     long[] pattern = new long[]{0, 500, 250, 500, 250, 700};
@@ -1783,7 +1829,11 @@ public class OrderMonitorService extends Service {
         if (raw.isEmpty()) return 0L;
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                return java.time.Instant.parse(raw).toEpochMilli();
+                try {
+                    return java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli();
+                } catch (Exception ignoredOffset) {
+                    return java.time.Instant.parse(raw).toEpochMilli();
+                }
             }
         } catch (Exception ignored) {}
         try {

@@ -1437,4 +1437,70 @@ test('NOTIFICATION & POPUP AUDIT: Alert Deduplication & Siren Safety Suite', asy
     assert.match(pwaSrc, /showSamsungToast\(message,\s*type\)/,
       'showPwaToast must delegate to showSamsungToast for consistent One UI design');
   });
+
+  await t.test('32. Native cold-start alarm fallback, AudioContext resume, updatedAt mapping, and notification-block recovery', () => {
+    const omsSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/OrderMonitorService.java', import.meta.url),
+      'utf8'
+    );
+    const webAppSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/WebAppInterface.java', import.meta.url),
+      'utf8'
+    );
+    const receiverSrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/OrderMonitorReceiver.java', import.meta.url),
+      'utf8'
+    );
+    const mainActivitySrc = fs.readFileSync(
+      new URL('../android/app/src/main/java/com/sascrispy/portal/MainActivity.java', import.meta.url),
+      'utf8'
+    );
+    const dataServiceSrc = fs.readFileSync(
+      new URL('../dataService.js', import.meta.url),
+      'utf8'
+    );
+    const notifSrc = fs.readFileSync(
+      new URL('../notificationService.js', import.meta.url),
+      'utf8'
+    );
+    const adminSrc = fs.readFileSync(
+      new URL('../admin.js', import.meta.url),
+      'utf8'
+    );
+    const deliverySrc = fs.readFileSync(
+      new URL('../delivery.js', import.meta.url),
+      'utf8'
+    );
+
+    // 1. OrderMonitorService falls back to appContextRef when activeInstance is null & widens cold-start window
+    assert.match(omsSrc, /public\s+static\s+void\s+registerAppContext\(/);
+    assert.match(omsSrc, /public\s+static\s+boolean\s+isServiceRunning\(/);
+    assert.match(omsSrc, /startNativeAlarmLoopForContext\(/);
+    assert.match(omsSrc, /acquireAudioFocus\(/);
+    assert.match(omsSrc, /elevateAlarmVolumeIfNeeded\(/);
+    assert.match(omsSrc, /getAlarmCandidateUris\(/);
+    assert.match(omsSrc, /OffsetDateTime/);
+    assert.match(omsSrc, /now\s*-\s*createdAt\s*<=\s*5\s*\*\s*60\s*\*\s*1000L/);
+
+    // 2. MainActivity recovers killed OrderMonitorService on resume and WebAppInterface exposes OS notification check
+    assert.match(mainActivitySrc, /shouldRunOrderMonitorService\(\)\s*&&\s*!OrderMonitorService\.isServiceRunning\(\)/);
+    assert.match(receiverSrc, /OrderMonitorService\.registerAppContext\(/);
+    assert.match(webAppSrc, /public\s+boolean\s+areNotificationsEnabled\(/);
+    assert.match(webAppSrc, /public\s+void\s+openNotificationSettings\(/);
+
+    // 3. dataService populates updatedAt on remote sync and realtime deltas
+    assert.match(dataServiceSrc, /updatedAt:\s*parseTimestampMs\(remote\.updated_at\)/);
+    assert.match(dataServiceSrc, /mergedOrder\.updatedAt\s*=\s*parseTimestampMs\(remote\.updated_at\)\s*\|\|\s*Date\.now\(\)/);
+
+    // 4. Web Audio resumes suspended AudioContext before scheduling and doesn't silence native alarm on HTMLAudio play
+    assert.match(notifSrc, /ctx\.state\s*===\s*'suspended'[\s\S]*?Promise\.resolve\(ctx\.resume\(\)\)[\s\S]*?\.then\(\(\)\s*=>\s*\{\s*scheduleToneBurst\(\)/);
+    assert.match(notifSrc, /areNotificationsEnabled/);
+    assert.doesNotMatch(notifSrc, /audio\.onplay[\s\S]{0,200}AndroidNative\.stopAlarm\(/);
+
+    // 5. Admin & Rider check native isAlarmRinging() fallback and warn when OS/browser notifications are blocked
+    assert.match(adminSrc, /AndroidNative\.isAlarmRinging/);
+    assert.match(adminSrc, /getSystemNotificationPermission\(\)\s*===\s*'denied'/);
+    assert.match(deliverySrc, /AndroidNative\.isAlarmRinging/);
+    assert.match(deliverySrc, /getSystemNotificationPermission\(\)\s*===\s*'denied'/);
+  });
 });

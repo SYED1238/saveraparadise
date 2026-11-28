@@ -284,7 +284,7 @@ test('Rider Off-Duty / On-Break Complete Silence & Battery/Log Preservation', as
 
     const buildGradle = fs.readFileSync(path.join(ROOT, 'android/app/build.gradle'), 'utf8');
     const riderColorsXml = fs.readFileSync(path.join(ROOT, 'android/app/src/rider/res/values/colors.xml'), 'utf8');
-    assert.match(buildGradle, /applicationId "com\.foodbliz\.rider"[\s\S]*versionCode 16[\s\S]*theme_color", "#E66B50"/);
+    assert.match(buildGradle, /applicationId "com\.foodbliz\.rider"[\s\S]*versionCode 17[\s\S]*theme_color", "#E66B50"/);
     assert.match(riderColorsXml, /#191817/);
     assert.match(riderColorsXml, /#E66B50/);
   });
@@ -457,5 +457,25 @@ test('Rider Off-Duty / On-Break Complete Silence & Battery/Log Preservation', as
 
     // 4. Android MainActivity invokes update check on Rider resume
     assert.match(mainJava, /window\.__checkRiderAppUpdate\s*===\s*'function'.*window\.__checkRiderAppUpdate\(\)/);
+  });
+
+  await t.test('8. Google Play In-App Updates (IMMEDIATE) triggers on Play Store apps safely without breaking direct APKs', () => {
+    const buildGradle = fs.readFileSync(path.join(ROOT, 'android/app/build.gradle'), 'utf8');
+    const mainJava = fs.readFileSync(path.join(ROOT, 'android/app/src/main/java/com/sascrispy/portal/MainActivity.java'), 'utf8');
+
+    // 1. Play App Update SDK 2.1.0 & bumped Play flavors
+    assert.match(buildGradle, /com\.google\.android\.play:app-update:2\.1\.0/);
+    assert.match(buildGradle, /applicationId "com\.foodbliz\.kitchen"[\s\S]*versionCode 3/);
+    assert.match(buildGradle, /applicationId "com\.foodbliz\.rider"[\s\S]*versionCode 17/);
+
+    // 2. MainActivity restricts Play In-App Updates to Play Store flavors ("foodbliz") and uses IMMEDIATE flow
+    assert.match(mainJava, /boolean\s+isPlayStoreDistributedApp\(\)[\s\S]*contains\("foodbliz"\)/);
+    assert.match(mainJava, /AppUpdateManagerFactory\.create\(this\)/);
+    assert.match(mainJava, /UpdateAvailability\.UPDATE_AVAILABLE/);
+    assert.match(mainJava, /UpdateAvailability\.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS/);
+    assert.match(mainJava, /AppUpdateType\.IMMEDIATE/);
+    assert.match(mainJava, /StartIntentSenderForResult/);
+    assert.match(mainJava, /checkForPlayStoreUpdates\(true\)/);
+    assert.match(mainJava, /checkForPlayStoreUpdates\(false\)/);
   });
 });

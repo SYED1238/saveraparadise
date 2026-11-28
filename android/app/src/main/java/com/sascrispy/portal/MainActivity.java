@@ -25,6 +25,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.IntentSenderRequest;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -40,6 +43,12 @@ import com.google.android.gms.location.LocationSettingsResponse;
 import com.google.android.gms.location.Priority;
 import com.google.android.gms.location.SettingsClient;
 import com.google.android.gms.tasks.Task;
+import com.google.android.play.core.appupdate.AppUpdateInfo;
+import com.google.android.play.core.appupdate.AppUpdateManager;
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory;
+import com.google.android.play.core.appupdate.AppUpdateOptions;
+import com.google.android.play.core.install.model.AppUpdateType;
+import com.google.android.play.core.install.model.UpdateAvailability;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -48,6 +57,20 @@ public class MainActivity extends AppCompatActivity {
     private SwipeRefreshLayout swipeRefresh;
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int GPS_ENABLE_REQUEST_CODE = 1003;
+    private static final long PLAY_UPDATE_RECHECK_MS = 15 * 60 * 1000L;
+    private AppUpdateManager appUpdateManager;
+    private boolean playUpdatePromptShownThisSession = false;
+    private long lastPlayUpdateCheckMs = 0L;
+
+    private final ActivityResultLauncher<IntentSenderRequest> playUpdateLauncher =
+        registerForActivityResult(
+            new ActivityResultContracts.StartIntentSenderForResult(),
+            result -> {
+                if (result.getResultCode() != RESULT_OK) {
+                    android.util.Log.w("MainActivity", "Play in-app update ended with resultCode=" + result.getResultCode());
+                }
+            }
+        );
     private static java.lang.ref.WeakReference<MainActivity> activeActivityRef = null;
     private volatile String lastKnownUrl = "";
 
@@ -171,6 +194,8 @@ public class MainActivity extends AppCompatActivity {
 
         setupWebView();
         requestAppPermissions();
+        OrderMonitorService.registerAppContext(this);
+        checkForPlayStoreUpdates(true);
 
         boolean isRiderPackage = getPackageName().toLowerCase().contains("rider");
         boolean isKitchenPlayPackage = getPackageName().toLowerCase().contains("foodbliz.kitchen");
@@ -523,6 +548,65 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private boolean isPlayStoreDistributedApp() {
+        String pkg = getPackageName();
+        return pkg != null && pkg.toLowerCase(java.util.Locale.US).contains("foodbliz");
+    }
+
+    private void checkForPlayStoreUpdates(boolean forceFreshCheck) {
+        if (!isPlayStoreDistributedApp() || isFinishing() || isDestroyed()) {
+            return;
+        }
+        final long now = System.currentTimeMillis();
+        try {
+            if (appUpdateManager == null) {
+                appUpdateManager = AppUpdateManagerFactory.create(this);
+            }
+            appUpdateManager.getAppUpdateInfo()
+                .addOnSuccessListener(this, appUpdateInfo -> {
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+                    final int availability = appUpdateInfo.updateAvailability();
+                    final boolean immediateAllowed = appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE);
+                    if (!immediateAllowed) {
+                        return;
+                    }
+                    if (availability == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
+                        try {
+                            appUpdateManager.startUpdateFlowForResult(
+                                appUpdateInfo,
+                                playUpdateLauncher,
+                                AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
+                            );
+                        } catch (Exception e) {
+                            android.util.Log.w("MainActivity", "Failed to resume Play update flow", e);
+                        }
+                        return;
+                    }
+                    boolean shouldCheckNewUpdate = forceFreshCheck
+                        || (!playUpdatePromptShownThisSession && (now - lastPlayUpdateCheckMs >= PLAY_UPDATE_RECHECK_MS));
+                    if (availability == UpdateAvailability.UPDATE_AVAILABLE && shouldCheckNewUpdate) {
+                        lastPlayUpdateCheckMs = now;
+                        playUpdatePromptShownThisSession = true;
+                        try {
+                            appUpdateManager.startUpdateFlowForResult(
+                                appUpdateInfo,
+                                playUpdateLauncher,
+                                AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
+                            );
+                        } catch (Exception e) {
+                            android.util.Log.w("MainActivity", "Failed to start Play update flow", e);
+                        }
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    // Expected on sideloaded builds or when Play Store service is unreachable
+                });
+        } catch (Exception ignored) {
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -561,7 +645,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         activeActivityRef = new java.lang.ref.WeakReference<>(this);
+        OrderMonitorService.registerAppContext(this);
         OrderMonitorService.setAppInForeground(true);
+        if (shouldRunOrderMonitorService() && !OrderMonitorService.isServiceRunning()) {
+            startOrderMonitorService();
+        }
+        checkForPlayStoreUpdates(false);
         if (getIntent() != null && OrderMonitorService.ACTION_STOP_ALARM.equals(getIntent().getAction())) {
             String orderId = getIntent().getStringExtra("order_id");
             if (orderId != null && !orderId.isEmpty()) {

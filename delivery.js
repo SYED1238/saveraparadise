@@ -407,6 +407,8 @@ const initDeliveryApp = () => {
         initRiderLiveGeolocation(true);
         if (getSystemNotificationPermission() === 'default') {
           requestSystemNotificationPermission().catch(() => {});
+        } else if (getSystemNotificationPermission() === 'denied') {
+          showToast('🔕 Order alerts are disabled! Allow notifications in phone Settings so new order alarms ring.', 'warning');
         }
         checkAndHandlePendingGpsResync();
       }
@@ -1400,6 +1402,17 @@ const initDeliveryApp = () => {
       if (nextDutyOn) {
         if (getSystemNotificationPermission() === 'default') {
           requestSystemNotificationPermission().catch(() => {});
+        } else if (getSystemNotificationPermission() === 'denied') {
+          showToast('🔕 Order notifications are blocked! Enable notifications in Settings so order alarms ring.', 'warning');
+          try {
+            const promptKey = 'rider_notif_settings_prompted';
+            if (!sessionStorage.getItem(promptKey) && typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.requestNotificationPermission === 'function') {
+              sessionStorage.setItem(promptKey, '1');
+              setTimeout(() => {
+                try { window.AndroidNative.requestNotificationPermission(); } catch {}
+              }, 600);
+            }
+          } catch {}
         }
         resumeRiderDutyActivity();
         showToast('🟢 You are now Online and receiving delivery tasks!', 'success');
@@ -4552,20 +4565,24 @@ const initDeliveryApp = () => {
 
     // Trigger native Android background alarm loop if running inside Android APK
     const hasAndroidNative = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+    let nativeAlarmActive = false;
     if (hasAndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
       try {
         window.AndroidNative.startAlarm();
+        nativeAlarmActive = typeof window.AndroidNative.isAlarmRinging === 'function'
+          ? Boolean(window.AndroidNative.isAlarmRinging())
+          : true;
       } catch (e) {
         console.warn('[RiderAlarm] Native startAlarm bridge error:', e);
-        playNotificationSound('kitchen_alarm');
       }
-    } else {
+    }
+    if (!hasAndroidNative || !nativeAlarmActive) {
       playNotificationSound('kitchen_alarm');
     }
 
     // Loop classic chime repeatedly every 1.8s UNTIL rider clicks STOP button or accepts order
     if (riderAlarmInterval) clearInterval(riderAlarmInterval);
-    if (!hasAndroidNative) {
+    if (!hasAndroidNative || !nativeAlarmActive) {
       riderAlarmInterval = setInterval(() => {
         if (isRiderAlarmRinging) {
           playNotificationSound('kitchen_alarm');

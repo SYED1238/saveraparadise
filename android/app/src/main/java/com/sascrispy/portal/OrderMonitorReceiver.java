@@ -23,6 +23,7 @@ public class OrderMonitorReceiver extends BroadcastReceiver {
         Log.i(TAG, "OrderMonitorReceiver received broadcast action: " + action);
 
         if (context == null) return;
+        OrderMonitorService.registerAppContext(context);
 
         String pkg = context.getPackageName().toLowerCase();
         boolean shouldRun = pkg.contains("kitchen") || pkg.contains("rider");

@@ -3488,6 +3488,7 @@ class QuickBiteDataService {
               ...(local || {}),
               id: remote.id || local?.id,
               createdAt: parseTimestampMs(remote.created_at) || local?.createdAt || Date.now(),
+              updatedAt: parseTimestampMs(remote.updated_at) || local?.updatedAt || parseTimestampMs(remote.created_at) || Date.now(),
               userId: remote.user_id || local?.userId || null,
               customerName: remote.customer_name || local?.customerName || 'Online Guest',
               customerEmail: remote.customer_email || local?.customerEmail || '',
@@ -3572,6 +3573,7 @@ class QuickBiteDataService {
                                     local.cancellationReason !== mergedOrder.cancellationReason;
               localList[localIdx] = mergedOrder;
               if (hasDifference) {
+                mergedOrder.updatedAt = parseTimestampMs(remote.updated_at) || Date.now();
                 const prevStatus = local.status;
                 hasChanges = true;
                 updatedOrdersToNotify.push({ order: mergedOrder, prevStatus });
@@ -4232,6 +4234,7 @@ class QuickBiteDataService {
         ...(local || {}),
         id: remote.id || local?.id,
         createdAt: parseTimestampMs(remote.created_at) || local?.createdAt || Date.now(),
+        updatedAt: parseTimestampMs(remote.updated_at) || Date.now(),
         userId: remote.user_id || local?.userId || null,
         customerName: remote.customer_name || local?.customerName || 'Online Guest',
         customerEmail: remote.customer_email || local?.customerEmail || '',

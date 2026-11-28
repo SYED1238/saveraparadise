@@ -4888,9 +4888,13 @@ const initAdminApp = () => {
 
     // Trigger native Android background alarm loop if running inside Android APK
     const hasAndroidNative = typeof window !== 'undefined' && Boolean(window.AndroidNative);
+    let nativeAlarmActive = false;
     if (hasAndroidNative && typeof window.AndroidNative.startAlarm === 'function') {
       try {
         window.AndroidNative.startAlarm();
+        nativeAlarmActive = typeof window.AndroidNative.isAlarmRinging === 'function'
+          ? Boolean(window.AndroidNative.isAlarmRinging())
+          : true;
       } catch (e) {
         console.warn('[Admin] Native startAlarm failed:', e);
       }
@@ -4898,7 +4902,7 @@ const initAdminApp = () => {
 
     // In native Android APK, OrderMonitorService handles the continuous native alarm loop
     // (playing R.raw.kitchen_alarm Funk Criminal or Procedural POS Chime without web autoplay barriers).
-    // In standard Web/PWA browsers, run HTML5 Audio / WebAudio chime engine.
+    // In standard Web/PWA browsers (or if native bridge failed to start ringing), run HTML5 Audio / WebAudio chime engine.
     if (!hasAndroidNative) {
       if (soundMode === KITCHEN_ALARM_MODES.CLASSIC_CHIME) {
         stopKitchenAlarmAudio();
@@ -4938,6 +4942,18 @@ const initAdminApp = () => {
           }
         });
       }
+    } else if (!nativeAlarmActive) {
+      stopKitchenAlarmAudio();
+      playKitchenChime();
+      if (kitchenAlarmInterval) clearInterval(kitchenAlarmInterval);
+      kitchenAlarmInterval = setInterval(() => {
+        if (isKitchenAlarmRinging) {
+          playKitchenChime();
+        } else {
+          clearInterval(kitchenAlarmInterval);
+          kitchenAlarmInterval = null;
+        }
+      }, 1600);
     }
   }
 
@@ -5179,6 +5195,11 @@ const initAdminApp = () => {
         }
         if (getSystemNotificationPermission() === 'default') {
           await requestSystemNotificationPermission();
+        } else if (getSystemNotificationPermission() === 'denied') {
+          showToast('🔕 Notification alerts are blocked! Enable notifications in app settings so kitchen alarms work reliably.', 'warning');
+          if (typeof window !== 'undefined' && window.AndroidNative) {
+            await requestSystemNotificationPermission();
+          }
         }
 
         const mode = getKitchenAlarmSoundMode();

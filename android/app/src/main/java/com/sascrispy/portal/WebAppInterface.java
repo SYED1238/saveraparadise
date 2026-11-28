@@ -28,6 +28,7 @@ public class WebAppInterface {
 
     public WebAppInterface(Context context) {
         this.context = context;
+        OrderMonitorService.registerAppContext(context);
         createNotificationChannel();
     }
 
@@ -220,6 +221,7 @@ public class WebAppInterface {
                 OrderMonitorService.registerActiveAlertOrder(tag);
                 // Start continuous looping MediaPlayer + repeating Vibrator waveform & acquire audio focus
                 if (!OrderMonitorService.isAlarmRinging()) {
+                    OrderMonitorService.registerAppContext(context);
                     OrderMonitorService.startNativeAlarm();
                 }
             } else {
@@ -238,6 +240,7 @@ public class WebAppInterface {
     public void startAlarm() {
         try {
             if (!isCurrentOriginTrusted()) return;
+            OrderMonitorService.registerAppContext(context);
             if (context.getPackageName() != null &&
                 context.getPackageName().toLowerCase().contains("rider") &&
                 !OrderMonitorService.isRiderOnDuty(context)) {
@@ -248,12 +251,51 @@ public class WebAppInterface {
     }
 
     @JavascriptInterface
+    public boolean areNotificationsEnabled() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    return false;
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                return manager == null || manager.areNotificationsEnabled();
+            }
+            return true;
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    @JavascriptInterface
+    public void openNotificationSettings() {
+        try {
+            if (!isCurrentOriginTrusted()) return;
+            Intent intent = new Intent();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                intent.setAction(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.getPackageName());
+            } else {
+                intent.setAction(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.parse("package:" + context.getPackageName()));
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+        } catch (Exception ignored) {}
+    }
+
+    @JavascriptInterface
     public void requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && context instanceof Activity) {
             Activity activity = (Activity) context;
             if (ContextCompat.checkSelfPermission(activity, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(activity, new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1002);
+                return;
             }
+        }
+        if (!areNotificationsEnabled()) {
+            openNotificationSettings();
         }
     }
 
