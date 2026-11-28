@@ -527,7 +527,7 @@ const initDeliveryApp = () => {
       if (clearCachedOrders) {
         localStorage.removeItem('quickbite_orders');
         localStorage.removeItem('quickbite_rider_duty_on');
-        isDutyOn = true;
+        isDutyOn = false;
       }
     } catch {}
     if (clearCachedOrders) {
@@ -548,7 +548,10 @@ const initDeliveryApp = () => {
     clearPersistedRiderGpsState();
     clearStaffSession('rider');
     releaseWakeLock();
-    if (typeof dataService.teardownRealtime === 'function' && dataService.isRiderOnBreakIdle()) {
+    if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
+      try { window.AndroidNative.setDutyStatus(false); } catch {}
+    }
+    if (typeof dataService.teardownRealtime === 'function') {
       dataService.teardownRealtime();
     }
     if (riderLockOverlay) {
@@ -1335,8 +1338,9 @@ const initDeliveryApp = () => {
         pauseRiderBreakActivity();
       }
     }
+    const shouldRunNativeService = isDutyOn && isStaffSessionActive('rider');
     if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
-      try { window.AndroidNative.setDutyStatus(isDutyOn); } catch {}
+      try { window.AndroidNative.setDutyStatus(shouldRunNativeService); } catch {}
     }
   }
 
@@ -1361,6 +1365,14 @@ const initDeliveryApp = () => {
         if (!wasDutyOn && serverDutyOn && isStaffSessionActive('rider')) {
           resumeRiderDutyActivity();
         }
+      } else if (isStaffSessionActive('rider')) {
+        if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
+          try { window.AndroidNative.setDutyStatus(Boolean(isDutyOn)); } catch {}
+        }
+      }
+    } else if (isStaffSessionActive('rider')) {
+      if (typeof window !== 'undefined' && window.AndroidNative && typeof window.AndroidNative.setDutyStatus === 'function') {
+        try { window.AndroidNative.setDutyStatus(Boolean(isDutyOn)); } catch {}
       }
     }
   }
@@ -4842,12 +4854,19 @@ const initDeliveryApp = () => {
         const refTs = Number(o.updatedAt || o.createdAt || 0);
         return o.status === 'ready_for_pickup' && !oPin && (!refTs || (nowScan - refTs) < 2 * 60 * 60 * 1000);
       });
-      if (readyArrivals.length > 0) {
+      if (readyArrivals.length > 0 && isDutyOn) {
         handleRiderIncomingOrder(readyArrivals[0]);
       } else {
+        if (!isDutyOn && isRiderAlarmRinging) {
+          stopRiderAlarm();
+        }
         renderPortal();
       }
     } else {
+      if (!isDutyOn) {
+        if (isRiderAlarmRinging) stopRiderAlarm();
+        return;
+      }
       const nowScan = Date.now();
       const unalertedReady = latestList.find(o => {
         if (!o || o.status !== 'ready_for_pickup') return false;

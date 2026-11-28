@@ -567,7 +567,10 @@ public class OrderMonitorService extends Service {
 
         String title;
         String subtitle;
-        if (isMultiTenantFoodBlizApp()) {
+        if (isRiderApp && !isRiderOnDuty(this)) {
+            title = isMultiTenantFoodBlizApp() ? "FoodBliz Rider" : "Savera Rider";
+            subtitle = "On Break • Order alerts paused";
+        } else if (isMultiTenantFoodBlizApp()) {
             title = isRiderApp ? "FoodBliz Rider Live" : "FoodBliz Kitchen Monitor Live";
             subtitle = "quiet".equals(mode)
                 ? "Night quiet hours (1 AM – 9 AM IST)"
@@ -1324,6 +1327,10 @@ public class OrderMonitorService extends Service {
         if (isOwnerApp) {
             return;
         }
+        if (isRiderApp && !isRiderOnDuty(getApplicationContext())) {
+            stopNativeAlarm(false);
+            return;
+        }
         synchronized (alarmLock) {
             if (alarmTimeoutHandler != null && alarmTimeoutRunnable != null) {
                 try {
@@ -1528,6 +1535,10 @@ public class OrderMonitorService extends Service {
 
     private void fireHeadsUpNotification(String title, String message, String orderId) {
         try {
+            if (isRiderApp && !isRiderOnDuty(this)) {
+                stopNativeAlarm(false);
+                return;
+            }
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager == null) return;
 

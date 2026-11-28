@@ -97,8 +97,6 @@ public class WebAppInterface {
     public void showNotification(String title, String message, String tag, String soundType) {
         try {
             if (!isCurrentOriginTrusted()) return;
-            // Mark order notified in background service to prevent double alerting
-            OrderMonitorService.markOrderNotified(tag);
 
             NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager == null) return;
@@ -115,6 +113,14 @@ public class WebAppInterface {
                                    (tag != null && (tag.startsWith("rider-ready-") || 
                                                     tag.startsWith("rider-task-") ||
                                                     tag.startsWith("rider-")));
+
+            boolean isRiderPkg = context.getPackageName() != null && context.getPackageName().toLowerCase().contains("rider");
+            if (isRiderPkg && isAlarmAlert && !OrderMonitorService.isRiderOnDuty(context)) {
+                return;
+            }
+
+            // Mark order notified in background service to prevent double alerting
+            OrderMonitorService.markOrderNotified(tag);
 
             // Guard against re-firing native alarm notification if order alarm was already silenced while minimized
             if (isAlarmAlert && OrderMonitorService.isOrderAlarmAcknowledged(tag)) {
@@ -232,6 +238,11 @@ public class WebAppInterface {
     public void startAlarm() {
         try {
             if (!isCurrentOriginTrusted()) return;
+            if (context.getPackageName() != null &&
+                context.getPackageName().toLowerCase().contains("rider") &&
+                !OrderMonitorService.isRiderOnDuty(context)) {
+                return;
+            }
             OrderMonitorService.startNativeAlarm();
         } catch (Exception ignored) {}
     }

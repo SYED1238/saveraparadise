@@ -37,8 +37,10 @@ const STORE_SETTINGS_CACHE_TTL_MS = 3600000; // 1 hour cache (auto-invalidates i
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 const SYNC_ORDERS_CACHE_TTL_MS = 20000;
 const RIDER_PROFILE_CACHE_TTL_MS = 45000;
+const RIDER_DUTY_POLL_CACHE_TTL_MS = 15000;
 
 const riderProfileCache = new Map();
+const riderDutyPollCache = new Map();
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
 let kitchenPollStoreSettingsCache = null;
@@ -140,11 +142,39 @@ export function invalidateOrderActionMemoryCache(options = {}) {
   syncOrdersCachedLimit = 0;
   syncOrdersVersion = '0';
   riderProfileCache.clear();
+  riderDutyPollCache.clear();
   if (options?.markActiveOrder !== false) {
     lastActiveOrderSeenAt = Date.now();
   }
 }
 export const invalidateKitchenPollCache = invalidateOrderActionMemoryCache;
+
+async function isAuthenticatedRiderOffDuty(sb, auth, simulateRiderStatus = null) {
+  if (!auth || !auth.valid || auth.payload?.role !== 'rider') return false;
+  const riderPin = String(auth.payload?.riderPin || '').trim();
+  if (!riderPin) return false;
+  if (simulateRiderStatus) {
+    return String(simulateRiderStatus).trim().toLowerCase() === 'offline';
+  }
+  const cached = riderDutyPollCache.get(riderPin);
+  if (cached && (Date.now() - cached.cachedAt) < RIDER_DUTY_POLL_CACHE_TTL_MS) {
+    return cached.status === 'offline';
+  }
+  if (!sb) return false;
+  try {
+    const { data, error } = await sb
+      .from('riders')
+      .select('status')
+      .eq('pin', riderPin)
+      .maybeSingle();
+    if (!error && data && data.status) {
+      const normalized = String(data.status).trim().toLowerCase();
+      riderDutyPollCache.set(riderPin, { status: normalized, cachedAt: Date.now() });
+      return normalized === 'offline';
+    }
+  } catch {}
+  return cached ? cached.status === 'offline' : false;
+}
 
 export async function purgeKitchenPollEdgeCache() {
   invalidateOrderActionMemoryCache();
@@ -599,6 +629,12 @@ export default async function handler(req, res) {
     }
 
     if (isTestEnv && action === 'kitchen_poll') {
+      const auth = verifyAdminToken(req, ['admin', 'owner', 'rider']);
+      const simStatus = body?.simulateRiderStatus || req.query?.simulateRiderStatus;
+      if (await isAuthenticatedRiderOffDuty(null, auth, simStatus)) {
+        res.setHeader('Cache-Control', 'private, no-store');
+        return res.status(200).json([]);
+      }
       const sample = [
         { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', created_at: new Date().toISOString(), assigned_rider_pin: 'ASSIGNED' }
       ];
@@ -1151,6 +1187,7 @@ export default async function handler(req, res) {
         if (simExisting && simExisting.status === 'inactive') {
           return res.status(403).json({ error: 'Forbidden: Rider account is deactivated' });
         }
+        riderDutyPollCache.set(targetPin, { status: nextStatus, cachedAt: Date.now() });
         return res.status(200).json({
           success: true,
           status: nextStatus,
@@ -1200,6 +1237,11 @@ export default async function handler(req, res) {
         const providedKey = req.headers['x-kitchen-poll-key'] || req.query?.key;
         const isKeyValid = Boolean(kitchenSecret && providedKey && String(providedKey).trim() === String(kitchenSecret).trim());
         const hasAuth = isStaff || isKeyValid || isTestEnv;
+
+        if (isStaff && auth.payload?.role === 'rider' && await isAuthenticatedRiderOffDuty(sb, auth)) {
+          res.setHeader('Cache-Control', 'private, no-store');
+          return res.status(200).json([]);
+        }
 
         const projectPollRows = (rows) => (rows || []).map(row => ({
           id: row.id,
@@ -2550,6 +2592,7 @@ export default async function handler(req, res) {
         if (error) throw error;
 
         riderProfileCache.clear();
+        riderDutyPollCache.set(targetPin, { status: nextStatus, cachedAt: Date.now() });
         invalidateRidersListCache();
         const updatedRider = data && data.length > 0 ? data[0] : { ...existingRider, status: nextStatus };
         return res.status(200).json({ success: true, status: nextStatus, rider: updatedRider });

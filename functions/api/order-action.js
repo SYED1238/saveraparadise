@@ -17,8 +17,10 @@ const STORE_SETTINGS_CACHE_TTL_MS = 3600000; // 1 hour cache (auto-invalidates i
 const ACTIVE_ORDER_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 const SYNC_ORDERS_CACHE_TTL_MS = 20000;
 const RIDER_PROFILE_CACHE_TTL_MS = 45000;
+const RIDER_DUTY_POLL_CACHE_TTL_MS = 15000;
 
 const riderProfileCache = new Map();
+const riderDutyPollCache = new Map();
 let kitchenPollCache = null;
 let kitchenPollCachedAt = 0;
 let kitchenPollStoreSettingsCache = null;
@@ -120,11 +122,39 @@ export function invalidateOrderActionMemoryCache(options = {}) {
   syncOrdersCachedLimit = 0;
   syncOrdersVersion = '0';
   riderProfileCache.clear();
+  riderDutyPollCache.clear();
   if (options?.markActiveOrder !== false) {
     lastActiveOrderSeenAt = Date.now();
   }
 }
 export const invalidateKitchenPollCache = invalidateOrderActionMemoryCache;
+
+async function isAuthenticatedRiderOffDuty(sb, auth, simulateRiderStatus = null) {
+  if (!auth || !auth.valid || auth.payload?.role !== 'rider') return false;
+  const riderPin = String(auth.payload?.riderPin || '').trim();
+  if (!riderPin) return false;
+  if (simulateRiderStatus) {
+    return String(simulateRiderStatus).trim().toLowerCase() === 'offline';
+  }
+  const cached = riderDutyPollCache.get(riderPin);
+  if (cached && (Date.now() - cached.cachedAt) < RIDER_DUTY_POLL_CACHE_TTL_MS) {
+    return cached.status === 'offline';
+  }
+  if (!sb) return false;
+  try {
+    const { data, error } = await sb
+      .from('riders')
+      .select('status')
+      .eq('pin', riderPin)
+      .maybeSingle();
+    if (!error && data && data.status) {
+      const normalized = String(data.status).trim().toLowerCase();
+      riderDutyPollCache.set(riderPin, { status: normalized, cachedAt: Date.now() });
+      return normalized === 'offline';
+    }
+  } catch {}
+  return cached ? cached.status === 'offline' : false;
+}
 
 function filterOrdersForRider(orders, riderPin) {
   const claimableStatuses = ['ready_for_pickup', 'cooking', 'accepted', 'pending', 'on_the_way'];
@@ -633,6 +663,13 @@ export async function onRequest(context) {
     }
 
     if (isTestEnv && action === 'kitchen_poll') {
+      const auth = verifyAdminToken(request, env, ['admin', 'owner', 'rider']);
+      const simStatus = body?.simulateRiderStatus || parsedUrl.searchParams.get('simulateRiderStatus');
+      if (await isAuthenticatedRiderOffDuty(null, auth, simStatus)) {
+        const offHeaders = Object.fromEntries(corsHeaders.entries());
+        offHeaders['Cache-Control'] = 'private, no-store';
+        return jsonResponse([], 200, offHeaders);
+      }
       const sample = [
         { id: '#QB-101', status: 'ready_for_pickup', customer_name: 'Test Customer', total: '₹500', created_at: new Date().toISOString(), assigned_rider_pin: 'ASSIGNED' }
       ];
@@ -1130,6 +1167,7 @@ export async function onRequest(context) {
         if (simExisting && simExisting.status === 'inactive') {
           return jsonResponse({ error: 'Forbidden: Rider account is deactivated' }, 403, Object.fromEntries(corsHeaders.entries()));
         }
+        riderDutyPollCache.set(targetPin, { status: nextStatus, cachedAt: Date.now() });
         return jsonResponse({
           success: true,
           status: nextStatus,
@@ -1237,6 +1275,12 @@ export async function onRequest(context) {
         const providedKey = request.headers.get('x-kitchen-poll-key') || parsedUrl.searchParams.get('key');
         const isKeyValid = Boolean(kitchenSecret && providedKey && String(providedKey).trim() === String(kitchenSecret).trim());
         const hasAuth = isStaff || isKeyValid || isTestEnv;
+
+        if (isStaff && auth.payload?.role === 'rider' && await isAuthenticatedRiderOffDuty(sb, auth)) {
+          const offHeaders = Object.fromEntries(corsHeaders.entries());
+          offHeaders['Cache-Control'] = 'private, no-store';
+          return jsonResponse([], 200, offHeaders);
+        }
 
         const projectPollRows = (rows) => (rows || []).map(row => ({
           id: row.id,
@@ -2631,6 +2675,7 @@ export async function onRequest(context) {
         if (error) throw error;
 
         riderProfileCache.clear();
+        riderDutyPollCache.set(targetPin, { status: nextStatus, cachedAt: Date.now() });
         invalidateRidersListCache();
         const updatedRider = data && data.length > 0 ? data[0] : { ...existingRider, status: nextStatus };
         return jsonResponse({ success: true, status: nextStatus, rider: updatedRider }, 200, Object.fromEntries(corsHeaders.entries()));

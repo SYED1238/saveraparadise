@@ -237,6 +237,9 @@ test('Rider Off-Duty / On-Break Complete Silence & Battery/Log Preservation', as
     assert.match(deliveryJs, /function initRiderLiveGeolocation\(forceRetry = false\)\s*\{\s*if\s*\(isRiderBreakSilenceActive\(\)\)/);
     assert.match(deliveryJs, /function updatePickupGpsGateUI\(\)[\s\S]*if\s*\(isRiderBreakSilenceActive\(\)\)/);
     assert.match(deliveryJs, /function renderPortal\(\)[\s\S]*if\s*\(isRiderBreakSilenceActive\(\)\)\s*\{\s*pauseRiderBreakActivity\(\)/);
+    assert.match(deliveryJs, /const shouldRunNativeService = isDutyOn && isStaffSessionActive\('rider'\);[\s\S]*setDutyStatus\(shouldRunNativeService\)/);
+    assert.match(deliveryJs, /function lockRiderPortalState[\s\S]*setDutyStatus\(false\)/);
+    assert.match(deliveryJs, /function scanRiderNewOrders\(\)[\s\S]*readyArrivals\.length > 0 && isDutyOn/);
   });
 
   await t.test('4. Android native Java components strictly stop Rider polling & foreground notification on break without disturbing Kitchen/Owner', () => {
@@ -257,6 +260,9 @@ test('Rider Off-Duty / On-Break Complete Silence & Battery/Log Preservation', as
       serviceJava,
       /startForegroundNotification\(\);\s*if\s*\(isRiderApp && !isRiderOnDuty\(this\)\)[\s\S]*stopServiceAndDismissForeground\(\);\s*return;/
     );
+    assert.match(serviceJava, /if\s*\(isRiderApp && !isRiderOnDuty\(this\)\)[\s\S]*On Break • Order alerts paused/);
+    assert.match(serviceJava, /private void startNativeAlarmLoop\(\)[\s\S]*if\s*\(isRiderApp && !isRiderOnDuty\(getApplicationContext\(\)\)\)[\s\S]*stopNativeAlarm\(false\);\s*return;/);
+    assert.match(serviceJava, /private void fireHeadsUpNotification\([\s\S]*if\s*\(isRiderApp && !isRiderOnDuty\(this\)\)[\s\S]*stopNativeAlarm\(false\);\s*return;/);
 
     // Every polling & restart entry point checks isRiderApp && !isRiderOnDuty(this)
     assert.match(serviceJava, /private void startPolling\(\)\s*\{\s*if\s*\(isRiderApp && !isRiderOnDuty\(this\)\)/);
@@ -268,15 +274,17 @@ test('Rider Off-Duty / On-Break Complete Silence & Battery/Log Preservation', as
     // Bridge, Receiver, Activity gates
     assert.match(bridgeJava, /OrderMonitorService\.syncDutyServiceLifecycle\(context,\s*onDuty\);/);
     assert.match(bridgeJava, /setRestaurantBaseUrl[\s\S]*pkg\.contains\("rider"\)\s*&&\s*!OrderMonitorService\.isRiderOnDuty\(context\)/);
+    assert.match(bridgeJava, /if\s*\(isRiderPkg && isAlarmAlert && !OrderMonitorService\.isRiderOnDuty\(context\)\)\s*\{\s*return;\s*\}/);
+    assert.match(bridgeJava, /public void startAlarm\(\)[\s\S]*!OrderMonitorService\.isRiderOnDuty\(context\)\)\s*\{\s*return;\s*\}/);
     assert.match(receiverJava, /pkg\.contains\("rider"\)\s*&&\s*!OrderMonitorService\.isRiderOnDuty\(context\)[\s\S]*cancelKeepAliveWatchdogs\(context\)/);
     assert.match(mainJava, /shouldRunOrderMonitorService[\s\S]*pkg\.contains\("rider"\)\s*&&\s*!OrderMonitorService\.isRiderOnDuty\(this\)/);
-    assert.match(mainJava, /onResume[\s\S]*getPackageName\(\)\.toLowerCase\(\)\.contains\("rider"\)\s*&&\s*OrderMonitorService\.isRiderOnDuty\(this\)\s*&&\s*isDeviceLocationEnabled\(\)/);
+    assert.match(mainJava, /onResume[\s\S]*if\s*\(!OrderMonitorService\.isRiderOnDuty\(this\)\)[\s\S]*updateRiderScreenWakeFlag\(false\);[\s\S]*cancelKeepAliveWatchdogs\(this\);[\s\S]*stopNativeAlarm\(false\);[\s\S]*else if\s*\(isDeviceLocationEnabled\(\)\)/);
     assert.match(mainJava, /public static void updateRiderScreenWakeFlag\(boolean onDuty\)/);
     assert.match(serviceJava, /MainActivity\.updateRiderScreenWakeFlag\(onDuty\);/);
 
     const buildGradle = fs.readFileSync(path.join(ROOT, 'android/app/build.gradle'), 'utf8');
     const riderColorsXml = fs.readFileSync(path.join(ROOT, 'android/app/src/rider/res/values/colors.xml'), 'utf8');
-    assert.match(buildGradle, /applicationId "com\.foodbliz\.rider"[\s\S]*versionCode 14[\s\S]*theme_color", "#E66B50"/);
+    assert.match(buildGradle, /applicationId "com\.foodbliz\.rider"[\s\S]*versionCode 15[\s\S]*theme_color", "#E66B50"/);
     assert.match(riderColorsXml, /#191817/);
     assert.match(riderColorsXml, /#E66B50/);
   });
@@ -293,5 +301,127 @@ test('Rider Off-Duty / On-Break Complete Silence & Battery/Log Preservation', as
     assert.ok(handleStartMatch, 'handleStartDelivery must exist');
     assert.match(handleStartMatch[0], /executeOneTapOrderAccept\(order, code, triggerBtn\)/);
     assert.doesNotMatch(handleStartMatch[0], /openBagPreviewModal/);
+  });
+
+  await t.test('6. Dual-API kitchen_poll returns empty [] for On-Break riders while preserving Admin/On-Duty responses', async () => {
+    const { onRequest: cfOrderAction } = await import('../functions/api/order-action.js');
+    const apiOrderActionMod = await import('../api/order-action.js');
+    const apiOrderAction = apiOrderActionMod.default || apiOrderActionMod;
+    const { createAdminToken: cfCreateToken } = await import('../functions/api/_auth.js');
+    const { createAdminToken: apiCreateToken } = await import('../api/_auth.js');
+
+    const mockEnv = {
+      SESSION_SECRET: 'test-session-secret-32-chars-minimum-len',
+      NODE_ENV: 'test',
+      ENVIRONMENT: 'test'
+    };
+    const prevSecret = process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = mockEnv.SESSION_SECRET;
+
+    try {
+      const cfRiderToken = cfCreateToken(undefined, 'rider', mockEnv, { riderPin: '4422' });
+      const apiRiderToken = apiCreateToken(undefined, 'rider', { riderPin: '4422' });
+      const cfAdminToken = cfCreateToken(undefined, 'admin', mockEnv);
+      const apiAdminToken = apiCreateToken(undefined, 'admin');
+
+      const postNode = async (token, payload) => {
+        const resState = { statusCode: 200, body: null };
+        const headers = { origin: 'https://saveraparadise.com' };
+        if (token) headers.authorization = `Bearer ${token}`;
+        const req = { method: 'POST', headers, body: payload };
+        const res = {
+          setHeader: () => {},
+          status: (c) => { resState.statusCode = c; return res; },
+          json: (b) => { resState.body = b; return res; },
+          end: () => res
+        };
+        await apiOrderAction(req, res);
+        return resState;
+      };
+
+      const pollNode = async (token) => {
+        const headersOut = {};
+        const resState = { statusCode: 200, body: null, headers: headersOut };
+        const headers = { origin: 'https://saveraparadise.com' };
+        if (token) headers.authorization = `Bearer ${token}`;
+        const req = { method: 'GET', url: '/api/order-action?action=kitchen_poll', query: { action: 'kitchen_poll' }, headers };
+        const res = {
+          setHeader: (k, v) => { headersOut[String(k).toLowerCase()] = v; },
+          status: (c) => { resState.statusCode = c; return res; },
+          json: (b) => { resState.body = b; return res; },
+          end: () => res
+        };
+        await apiOrderAction(req, res);
+        return resState;
+      };
+
+      const postCf = async (token, payload) => {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const req = new Request('https://saveraparadise.com/api/order-action', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload)
+        });
+        const resp = await cfOrderAction({ request: req, env: mockEnv });
+        return { statusCode: resp.status, body: await resp.json() };
+      };
+
+      const pollCf = async (token) => {
+        const headers = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const req = new Request('https://saveraparadise.com/api/order-action?action=kitchen_poll', {
+          method: 'GET',
+          headers
+        });
+        const resp = await cfOrderAction({ request: req, env: mockEnv });
+        return {
+          statusCode: resp.status,
+          cacheControl: resp.headers.get('Cache-Control'),
+          body: await resp.json()
+        };
+      };
+
+      // Toggle rider offline -> kitchen_poll returns [] for that rider, still works for admin
+      const [cfDutyOff, apiDutyOff] = await Promise.all([
+        postCf(cfRiderToken, { action: 'set_rider_duty', riderPin: '4422', onDuty: false }),
+        postNode(apiRiderToken, { action: 'set_rider_duty', riderPin: '4422', onDuty: false })
+      ]);
+      assert.equal(cfDutyOff.statusCode, 200);
+      assert.equal(apiDutyOff.statusCode, 200);
+
+      const [cfPollOff, apiPollOff, cfAdminPoll, apiAdminPoll] = await Promise.all([
+        pollCf(cfRiderToken),
+        pollNode(apiRiderToken),
+        pollCf(cfAdminToken),
+        pollNode(apiAdminToken)
+      ]);
+      assert.equal(cfPollOff.statusCode, 200);
+      assert.deepEqual(cfPollOff.body, []);
+      assert.equal(cfPollOff.cacheControl, 'private, no-store');
+
+      assert.equal(apiPollOff.statusCode, 200);
+      assert.deepEqual(apiPollOff.body, []);
+      assert.equal(apiPollOff.headers['cache-control'], 'private, no-store');
+
+      assert.ok(Array.isArray(cfAdminPoll.body) && cfAdminPoll.body.length > 0, 'Kitchen Admin must continue receiving orders while rider is on break');
+      assert.ok(Array.isArray(apiAdminPoll.body) && apiAdminPoll.body.length > 0, 'Node Admin kitchen_poll must continue receiving orders while rider is on break');
+
+      // Toggle rider back online -> kitchen_poll resumes immediately
+      await Promise.all([
+        postCf(cfRiderToken, { action: 'set_rider_duty', riderPin: '4422', onDuty: true }),
+        postNode(apiRiderToken, { action: 'set_rider_duty', riderPin: '4422', onDuty: true })
+      ]);
+
+      const [cfPollOn, apiPollOn] = await Promise.all([
+        pollCf(cfRiderToken),
+        pollNode(apiRiderToken)
+      ]);
+      assert.ok(Array.isArray(cfPollOn.body) && cfPollOn.body.length > 0, 'Rider resuming On Duty must immediately resume receiving kitchen_poll orders');
+      assert.ok(Array.isArray(apiPollOn.body) && apiPollOn.body.length > 0, 'Node Rider resuming On Duty must immediately resume receiving kitchen_poll orders');
+    } finally {
+      if (prevSecret === undefined) delete process.env.SESSION_SECRET;
+      else process.env.SESSION_SECRET = prevSecret;
+    }
   });
 });

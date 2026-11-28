@@ -578,8 +578,14 @@ public class MainActivity extends AppCompatActivity {
                 triggerWebAlarmStop();
             }
         }
-        if (getPackageName().toLowerCase().contains("rider") && OrderMonitorService.isRiderOnDuty(this) && isDeviceLocationEnabled()) {
-            notifyWebViewGpsEnabled();
+        if (getPackageName().toLowerCase().contains("rider")) {
+            if (!OrderMonitorService.isRiderOnDuty(this)) {
+                updateRiderScreenWakeFlag(false);
+                OrderMonitorService.cancelKeepAliveWatchdogs(this);
+                OrderMonitorService.stopNativeAlarm(false);
+            } else if (isDeviceLocationEnabled()) {
+                notifyWebViewGpsEnabled();
+            }
         }
     }
 
